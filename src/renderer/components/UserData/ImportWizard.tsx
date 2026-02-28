@@ -12,7 +12,7 @@ interface ImportWizardProps {
 type WizardStep = 'file-selection' | 'parse-config' | 'island-selection' | 'column-split' | 'table-info' | 'column-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete }) => {
-  const { parseExcel, importExcel, importIsland, selectExcelFile, validateTableName } = useUserData();
+  const { parseExcel, importExcel, importIsland, importMergedIslands, selectExcelFile, validateTableName } = useUserData();
 
   const [currentStep, setCurrentStep] = useState<WizardStep>('file-selection');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -56,6 +56,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
   const [showErrors, setShowErrors] = useState(false);
   const [acceptedSplits, setAcceptedSplits] = useState<Set<string>>(new Set());
   const [selectedIslands, setSelectedIslands] = useState<Set<number>>(new Set()); // Island indices
+  const [islandImportMode, setIslandImportMode] = useState<'separate' | 'merged'>('separate');
+  const [addMetadataColumns, setAddMetadataColumns] = useState(true);
+  const [mergedTableName, setMergedTableName] = useState(''); // For merged mode
+  const [mergedDisplayName, setMergedDisplayName] = useState(''); // For merged mode
 
   const handleFileSelect = async () => {
     try {
@@ -406,51 +410,81 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
     setIsImporting(true);
     setImportError(null);
 
-    const results: Array<{
-      tableName: string;
-      displayName: string;
-      rowsImported: number;
-      rowsSkipped: number;
-    }> = [];
-
     try {
-      for (const islandIndex of selectedIslandsList) {
-        const island = islands[islandIndex];
-        if (!island) continue;
+      if (islandImportMode === 'merged') {
+        // Merge mode: import all selected islands as one table
+        const islandsToMerge = selectedIslandsList.map(idx => islands[idx]).filter(Boolean);
 
-        // Generate table name from island title
-        // "3. 자금의 증가" → "자금의증가"
-        const cleanTitle = island.title.replace(/^\d+\s+\.\s+/, '').trim();
-        const baseTableName = sanitizeTableName(cleanTitle);
-        const islandTableName = `${parsedData.suggestedTableName}_${baseTableName}`;
-        const islandDisplayName = cleanTitle;
+        console.log(`🔀 Merging ${islandsToMerge.length} islands into table "${mergedTableName}"`);
 
-        console.log(`📦 Importing island "${island.title}" as table "${islandTableName}"`);
-
-        // Import the island using pre-parsed data
-        const result = await importIsland({
-          tableName: islandTableName,
-          displayName: islandDisplayName,
-          description: `Imported from island: ${island.title}`,
-          headers: island.headers,
-          rows: island.rows,
-          detectedTypes: island.detectedTypes,
-          // No duplicate detection for islands by default
+        const result = await importMergedIslands({
+          tableName: mergedTableName,
+          displayName: mergedDisplayName,
+          description: `Merged from ${islandsToMerge.length} islands`,
+          islands: islandsToMerge,
+          addMetadataColumns,
+          addIslandIndex: false,
           uniqueKeyColumns: [],
           duplicateAction: 'skip',
         });
 
-        results.push({
-          tableName: islandTableName,
-          displayName: islandDisplayName,
+        // Set results for display
+        setMultiTableImportResults([{
+          tableName: mergedTableName,
+          displayName: mergedDisplayName,
           rowsImported: result.importOperation.rowsImported,
           rowsSkipped: result.importOperation.rowsSkipped,
-        });
+        }]);
 
-        console.log(`✅ Island "${island.title}" imported: ${result.importOperation.rowsImported} rows`);
+        console.log(`✅ Merged ${result.mergedIslandCount} islands: ${result.importOperation.rowsImported} total rows`);
+      } else {
+        // Separate mode: import each island as separate table
+        const results: Array<{
+          tableName: string;
+          displayName: string;
+          rowsImported: number;
+          rowsSkipped: number;
+        }> = [];
+
+        for (const islandIndex of selectedIslandsList) {
+          const island = islands[islandIndex];
+          if (!island) continue;
+
+          // Generate table name from island title
+          // "3. 자금의 증가" → "자금의증가"
+          const cleanTitle = island.title.replace(/^\d+\s+\.\s+/, '').trim();
+          const baseTableName = sanitizeTableName(cleanTitle);
+          const islandTableName = `${parsedData.suggestedTableName}_${baseTableName}`;
+          const islandDisplayName = cleanTitle;
+
+          console.log(`📦 Importing island "${island.title}" as table "${islandTableName}"`);
+
+          // Import the island using pre-parsed data
+          const result = await importIsland({
+            tableName: islandTableName,
+            displayName: islandDisplayName,
+            description: `Imported from island: ${island.title}`,
+            headers: island.headers,
+            rows: island.rows,
+            detectedTypes: island.detectedTypes,
+            // No duplicate detection for islands by default
+            uniqueKeyColumns: [],
+            duplicateAction: 'skip',
+          });
+
+          results.push({
+            tableName: islandTableName,
+            displayName: islandDisplayName,
+            rowsImported: result.importOperation.rowsImported,
+            rowsSkipped: result.importOperation.rowsSkipped,
+          });
+
+          console.log(`✅ Island "${island.title}" imported: ${result.importOperation.rowsImported} rows`);
+        }
+
+        setMultiTableImportResults(results);
       }
 
-      setMultiTableImportResults(results);
       setCurrentStep('complete');
     } catch (err) {
       console.error('Multi-island import failed:', err);
@@ -484,13 +518,113 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onComplete 
           <h4 style={{ margin: '0 0 4px 0' }}>🏝️ Multiple Data Tables Detected</h4>
           <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
             This spreadsheet contains {islands.length} separate data table{islands.length > 1 ? 's' : ''}.
-            Select which one(s) you'd like to import.
+            Choose how you'd like to import them.
           </p>
         </div>
 
-        <h3 style={{ marginTop: 0 }}>Select Islands to Import</h3>
+        {/* Import Mode Selection */}
+        <div style={{ marginBottom: '24px', background: '#f5f5f5', padding: '16px', borderRadius: '8px' }}>
+          <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Import Mode</h4>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '8px' }}>
+              <input
+                type="radio"
+                value="separate"
+                checked={islandImportMode === 'separate'}
+                onChange={() => {
+                  setIslandImportMode('separate');
+                  setSelectedIslands(new Set());
+                }}
+                style={{ marginRight: '8px' }}
+              />
+              <span><strong>Create separate tables</strong> (one table per island)</span>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                value="merged"
+                checked={islandImportMode === 'merged'}
+                onChange={() => {
+                  setIslandImportMode('merged');
+                  // Auto-select all islands in merge mode
+                  setSelectedIslands(new Set(islands.map((_, idx) => idx)));
+                  // Set default merged table name
+                  if (!mergedTableName) {
+                    setMergedTableName(parsedData.suggestedTableName);
+                    setMergedDisplayName(parsedData.suggestedTableName.replace(/_/g, ' '));
+                  }
+                }}
+                style={{ marginRight: '8px' }}
+              />
+              <span><strong>Merge into one table</strong> (combine all islands)</span>
+            </label>
+          </div>
+
+          {islandImportMode === 'merged' && (
+            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #ddd' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={addMetadataColumns}
+                  onChange={(e) => setAddMetadataColumns(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>Include metadata columns</span>
+              </label>
+              <p style={{ marginLeft: '28px', fontSize: '12px', color: '#666', marginTop: '4px', marginBottom: '12px' }}>
+                Adds columns: 회사명, 기간, 계정코드_메타, 계정명_메타 (extracted from island titles)
+              </p>
+
+              <div style={{ marginTop: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Merged Table Name:
+                </label>
+                <input
+                  type="text"
+                  value={mergedTableName}
+                  onChange={(e) => setMergedTableName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
+                  placeholder="Enter table name"
+                />
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Display Name:
+                </label>
+                <input
+                  type="text"
+                  value={mergedDisplayName}
+                  onChange={(e) => setMergedDisplayName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
+                  placeholder="Enter display name"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>
+          {islandImportMode === 'separate' ? 'Select Islands to Import' : 'Islands to Merge'}
+        </h3>
         <p style={{ color: '#666', marginBottom: '24px' }}>
-          Each island will be imported as a separate table.
+          {islandImportMode === 'separate'
+            ? 'Each selected island will be imported as a separate table.'
+            : 'All islands will be merged into a single table. Ensure they have identical column structure.'}
         </p>
 
         {islands.map((island, idx) => {

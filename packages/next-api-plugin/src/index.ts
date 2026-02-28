@@ -15,6 +15,7 @@ import {
 import { generateMiddleware } from './generate-middleware';
 import { generateProxy } from './generate-proxy';
 import { generateHelpers } from './generate-helpers';
+import { generateApiWrapper } from './generate-api-wrapper';
 
 export interface SetupOptions {
   egdeskUrl?: string;
@@ -75,6 +76,7 @@ export async function setupNextApiPlugin(
 
     generateConfigFile(projectPath, config);
     generateHelpers(projectPath);
+    generateApiWrapper(projectPath);
     updateEnvLocal(projectPath, config);
 
     const proxyFile = useProxy ? 'proxy.ts' : 'middleware.ts';
@@ -84,6 +86,7 @@ export async function setupNextApiPlugin(
     console.log(`   - ${proxyFile} (database proxy)`);
     console.log('   - egdesk.config.ts (type-safe config)');
     console.log('   - egdesk-helpers.ts (helper functions)');
+    console.log('   - src/lib/api.ts (basePath-aware fetch wrapper)');
     console.log('   - .env.local (environment variables)');
     console.log('');
     console.log('📝 Next steps:');
@@ -92,9 +95,14 @@ export async function setupNextApiPlugin(
     console.log('   3. Import and use helpers in your components:');
     console.log('      import { queryTable } from "./egdesk-helpers"');
     console.log('      import { TABLES } from "./egdesk.config"');
+    console.log('      import { apiFetch } from "@/lib/api"');
     console.log('');
-    console.log('Example usage in a component:');
+    console.log('Example usage:');
+    console.log('   // Database queries');
     console.log('   const data = await queryTable(TABLES.table1.name, { limit: 10 });');
+    console.log('   ');
+    console.log('   // API routes (use apiFetch for basePath support)');
+    console.log('   const response = await apiFetch("/api/transactions");');
   } catch (error) {
     console.error('❌ Setup failed:', error);
     throw error;
@@ -107,3 +115,4 @@ export { discoverTables } from './setup-userdata';
 export { generateMiddleware } from './generate-middleware';
 export { generateProxy } from './generate-proxy';
 export { generateHelpers } from './generate-helpers';
+export { generateApiWrapper } from './generate-api-wrapper';

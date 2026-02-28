@@ -323,6 +323,38 @@ export function useUserData() {
   );
 
   /**
+   * Import merged islands as a single table
+   */
+  const importMergedIslands = useCallback(
+    async (config: {
+      tableName: string;
+      displayName: string;
+      description?: string;
+      islands: any[]; // DataIsland[]
+      addMetadataColumns?: boolean;
+      addIslandIndex?: boolean;
+      addTimestamp?: boolean;
+      uniqueKeyColumns?: string[];
+      duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    }) => {
+      try {
+        const result = await window.electron.invoke('user-data:import-merged-islands', config);
+
+        if (result.success) {
+          // Refresh tables list
+          await fetchTables();
+          return result.data;
+        } else {
+          throw new Error(result.error || 'Failed to import merged islands');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    [fetchTables]
+  );
+
+  /**
    * Sync Excel data to existing table
    */
   const syncToExistingTable = useCallback(
@@ -373,6 +405,7 @@ export function useUserData() {
     parseExcel,
     importExcel,
     importIsland,
+    importMergedIslands,
     selectExcelFile,
     validateTableName,
     getImportOperations,

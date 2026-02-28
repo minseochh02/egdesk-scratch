@@ -6,12 +6,13 @@
  * Provides middleware-based database access for Next.js applications.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateHelpers = exports.generateProxy = exports.generateMiddleware = exports.discoverTables = void 0;
+exports.generateApiWrapper = exports.generateHelpers = exports.generateProxy = exports.generateMiddleware = exports.discoverTables = void 0;
 exports.setupNextApiPlugin = setupNextApiPlugin;
 const setup_userdata_1 = require("./setup-userdata");
 const generate_middleware_1 = require("./generate-middleware");
 const generate_proxy_1 = require("./generate-proxy");
 const generate_helpers_1 = require("./generate-helpers");
+const generate_api_wrapper_1 = require("./generate-api-wrapper");
 /**
  * Main setup function for Next.js projects
  *
@@ -57,6 +58,7 @@ async function setupNextApiPlugin(projectPath, options = {}) {
         }
         (0, setup_userdata_1.generateConfigFile)(projectPath, config);
         (0, generate_helpers_1.generateHelpers)(projectPath);
+        (0, generate_api_wrapper_1.generateApiWrapper)(projectPath);
         (0, setup_userdata_1.updateEnvLocal)(projectPath, config);
         const proxyFile = useProxy ? 'proxy.ts' : 'middleware.ts';
         console.log('');
@@ -64,6 +66,7 @@ async function setupNextApiPlugin(projectPath, options = {}) {
         console.log(`   - ${proxyFile} (database proxy)`);
         console.log('   - egdesk.config.ts (type-safe config)');
         console.log('   - egdesk-helpers.ts (helper functions)');
+        console.log('   - src/lib/api.ts (basePath-aware fetch wrapper)');
         console.log('   - .env.local (environment variables)');
         console.log('');
         console.log('📝 Next steps:');
@@ -72,9 +75,14 @@ async function setupNextApiPlugin(projectPath, options = {}) {
         console.log('   3. Import and use helpers in your components:');
         console.log('      import { queryTable } from "./egdesk-helpers"');
         console.log('      import { TABLES } from "./egdesk.config"');
+        console.log('      import { apiFetch } from "@/lib/api"');
         console.log('');
-        console.log('Example usage in a component:');
+        console.log('Example usage:');
+        console.log('   // Database queries');
         console.log('   const data = await queryTable(TABLES.table1.name, { limit: 10 });');
+        console.log('   ');
+        console.log('   // API routes (use apiFetch for basePath support)');
+        console.log('   const response = await apiFetch("/api/transactions");');
     }
     catch (error) {
         console.error('❌ Setup failed:', error);
@@ -89,3 +97,5 @@ var generate_proxy_2 = require("./generate-proxy");
 Object.defineProperty(exports, "generateProxy", { enumerable: true, get: function () { return generate_proxy_2.generateProxy; } });
 var generate_helpers_2 = require("./generate-helpers");
 Object.defineProperty(exports, "generateHelpers", { enumerable: true, get: function () { return generate_helpers_2.generateHelpers; } });
+var generate_api_wrapper_2 = require("./generate-api-wrapper");
+Object.defineProperty(exports, "generateApiWrapper", { enumerable: true, get: function () { return generate_api_wrapper_2.generateApiWrapper; } });

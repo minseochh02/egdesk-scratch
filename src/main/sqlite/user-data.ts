@@ -1311,7 +1311,8 @@ export class UserDataDbManager {
     try {
       this.database.prepare(`EXPLAIN QUERY PLAN ${sql}`).all();
     } catch (error) {
-      throw new Error('Invalid SQL query');
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid SQL query: ${message}`);
     }
 
     // Execute query

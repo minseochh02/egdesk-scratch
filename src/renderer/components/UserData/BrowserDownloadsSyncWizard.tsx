@@ -10,7 +10,7 @@ interface BrowserDownloadsSyncWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'column-split' | 'import-mode' | 'table-info' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
+type WizardStep = 'folder-selection' | 'file-selection' | 'parse-config' | 'island-selection' | 'column-split' | 'import-mode' | 'table-info' | 'column-mapping' | 'existing-table-mapping' | 'duplicate-detection' | 'preview' | 'importing' | 'complete';
 type ImportMode = 'create-new' | 'sync-existing' | null;
 
 interface BrowserDownloadFolder {
@@ -32,7 +32,7 @@ interface BrowserDownloadFile {
 }
 
 export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProps> = ({ onClose, onComplete }) => {
-  const { tables, parseExcel, importExcel, validateTableName, syncToExistingTable } = useUserData();
+  const { tables, parseExcel, importExcel, importMergedIslands, validateTableName, syncToExistingTable } = useUserData();
 
   const [currentStep, setCurrentStep] = useState<WizardStep>('folder-selection');
   const [downloadFolders, setDownloadFolders] = useState<BrowserDownloadFolder[]>([]);
@@ -75,6 +75,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     addTimestamp: false,
   });
   const [acceptedSplits, setAcceptedSplits] = useState<Set<string>>(new Set());
+  const [selectedIslands, setSelectedIslands] = useState<Set<number>>(new Set());
+  const [islandImportMode, setIslandImportMode] = useState<'separate' | 'merged'>('merged');
+  const [addMetadataColumns, setAddMetadataColumns] = useState(true);
+  const [mergedTableName, setMergedTableName] = useState('');
+  const [mergedDisplayName, setMergedDisplayName] = useState('');
 
   useEffect(() => {
     loadBrowserDownloadFolders();
@@ -168,10 +173,19 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
       setSelectedSheet(0);
       setAcceptedSplits(new Set());
+      setSelectedIslands(new Set());
 
-      // Check if we have split suggestions
+      // Check flow: islands → splits → import-mode
       const currentSheet = parsed.sheets[0];
-      if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+
+      // Check if we have detected islands
+      if (currentSheet.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        // Auto-select all islands and set default merge table name
+        setSelectedIslands(new Set(currentSheet.detectedIslands.map((_: any, idx: number) => idx)));
+        setMergedTableName(parsed.suggestedTableName);
+        setMergedDisplayName(parsed.suggestedTableName.replace(/_/g, ' '));
+        setCurrentStep('island-selection');
+      } else if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
         setCurrentStep('column-split');
       } else {
         setCurrentStep('import-mode');
@@ -180,6 +194,19 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
       setError(err instanceof Error ? err.message : 'Failed to parse Excel file');
     } finally {
       setLoadingFiles(false);
+    }
+  };
+
+  const handleIslandSelection = () => {
+    if (!parsedData) return;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+
+    // Check if we have split suggestions
+    if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+      setCurrentStep('column-split');
+    } else {
+      setCurrentStep('import-mode');
     }
   };
 
@@ -327,13 +354,23 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     } else if (currentStep === 'parse-config') {
       setCurrentStep('file-selection');
       setSelectedFile(null);
-    } else if (currentStep === 'column-split') {
+    } else if (currentStep === 'island-selection') {
       setCurrentStep('parse-config');
+    } else if (currentStep === 'column-split') {
+      // Check if there were islands
+      const currentSheet = parsedData?.sheets[selectedSheet];
+      if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        setCurrentStep('island-selection');
+      } else {
+        setCurrentStep('parse-config');
+      }
     } else if (currentStep === 'import-mode') {
-      // Check if there were split suggestions
+      // Check navigation backwards
       const currentSheet = parsedData?.sheets[selectedSheet];
       if (currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
         setCurrentStep('column-split');
+      } else if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+        setCurrentStep('island-selection');
       } else {
         setCurrentStep('parse-config');
       }
@@ -397,33 +434,63 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         let result: any = null;
 
         if (importMode === 'create-new') {
-          // Table name already validated in table-info step
-          result = await importExcel({
-            filePath: selectedFile!.path,
-            sheetIndex: selectedSheet,
-            tableName,
-            displayName,
-            description: description.trim() || undefined,
-            columnMappings: columnMappings || undefined,
-            columnTypes: columnTypes || undefined,
-            mergeConfig: mergeConfig || undefined,
-            appliedSplits: appliedSplitsState.length > 0 ? appliedSplitsState : undefined,
-            headerRow,
-            skipBottomRows,
-            uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
-              ? duplicateDetectionSettings.uniqueKeyColumns
-              : undefined,
-            duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' ||
-              duplicateDetectionSettings.uniqueKeyColumns.length > 0
-              ? duplicateDetectionSettings.duplicateAction
-              : undefined,
-            addTimestamp: duplicateDetectionSettings.addTimestamp,
-          });
+          // Check if we have islands to merge
+          const currentSheet = parsedData?.sheets[selectedSheet];
+          const hasIslands = currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0;
 
-          setImportProgress({
-            rowsImported: result.importOperation.rowsImported,
-            rowsSkipped: result.importOperation.rowsSkipped,
-          });
+          if (hasIslands) {
+            // Import merged islands
+            const islandsToMerge = currentSheet.detectedIslands;
+
+            result = await importMergedIslands({
+              tableName: mergedTableName,
+              displayName: mergedDisplayName,
+              description: description.trim() || `Merged from ${islandsToMerge.length} islands`,
+              islands: islandsToMerge,
+              addMetadataColumns,
+              addIslandIndex: false,
+              addTimestamp: duplicateDetectionSettings.addTimestamp,
+              uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.uniqueKeyColumns
+                : undefined,
+              duplicateAction: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.duplicateAction
+                : undefined,
+            });
+
+            setImportProgress({
+              rowsImported: result.importOperation.rowsImported,
+              rowsSkipped: result.importOperation.rowsSkipped,
+            });
+          } else {
+            // Normal Excel import (no islands)
+            result = await importExcel({
+              filePath: selectedFile!.path,
+              sheetIndex: selectedSheet,
+              tableName,
+              displayName,
+              description: description.trim() || undefined,
+              columnMappings: columnMappings || undefined,
+              columnTypes: columnTypes || undefined,
+              mergeConfig: mergeConfig || undefined,
+              appliedSplits: appliedSplitsState.length > 0 ? appliedSplitsState : undefined,
+              headerRow,
+              skipBottomRows,
+              uniqueKeyColumns: duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.uniqueKeyColumns
+                : undefined,
+              duplicateAction: duplicateDetectionSettings.duplicateAction === 'replace-date-range' ||
+                duplicateDetectionSettings.uniqueKeyColumns.length > 0
+                ? duplicateDetectionSettings.duplicateAction
+                : undefined,
+              addTimestamp: duplicateDetectionSettings.addTimestamp,
+            });
+
+            setImportProgress({
+              rowsImported: result.importOperation.rowsImported,
+              rowsSkipped: result.importOperation.rowsSkipped,
+            });
+          }
         } else if (importMode === 'sync-existing') {
           // Sync to existing table
           if (!selectedTableId || !existingTableColumnMappings) {
@@ -920,6 +987,127 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     );
   };
 
+  const renderIslandSelection = () => {
+    if (!parsedData) return null;
+
+    const currentSheet = parsedData.sheets[selectedSheet];
+    const islands = currentSheet.detectedIslands || [];
+
+    if (islands.length === 0) {
+      handleIslandSelection();
+      return null;
+    }
+
+    return (
+      <div>
+        <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 4px 0' }}>🏝️ Multiple Data Tables Detected</h4>
+          <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+            This spreadsheet contains {islands.length} separate data table{islands.length > 1 ? 's' : ''}.
+            They will be merged into a single table.
+          </p>
+        </div>
+
+        {/* Import Mode - Fixed to merged for browser downloads */}
+        <div style={{ marginBottom: '24px', background: '#f5f5f5', padding: '16px', borderRadius: '8px' }}>
+          <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Import Mode: Merge into One Table</h4>
+          <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
+            For browser download sync, all islands will be automatically merged into a single table.
+          </p>
+
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '12px' }}>
+            <input
+              type="checkbox"
+              checked={addMetadataColumns}
+              onChange={(e) => setAddMetadataColumns(e.target.checked)}
+              style={{ marginRight: '8px' }}
+            />
+            <span>Include metadata columns</span>
+          </label>
+          <p style={{ marginLeft: '28px', fontSize: '12px', color: '#666', marginTop: '4px', marginBottom: '12px' }}>
+            Adds columns: 회사명, 기간, 계정코드_메타, 계정명_메타 (extracted from island titles)
+          </p>
+
+          <div style={{ marginTop: '12px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold' }}>
+              Merged Table Name:
+            </label>
+            <input
+              type="text"
+              value={mergedTableName}
+              onChange={(e) => setMergedTableName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+              placeholder="Enter table name"
+            />
+          </div>
+
+          <div style={{ marginTop: '12px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold' }}>
+              Display Name:
+            </label>
+            <input
+              type="text"
+              value={mergedDisplayName}
+              onChange={(e) => setMergedDisplayName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+              placeholder="Enter display name"
+            />
+          </div>
+        </div>
+
+        <h3 style={{ marginTop: 0 }}>Islands to Merge ({islands.length})</h3>
+        <p style={{ color: '#666', marginBottom: '24px' }}>
+          All islands will be merged into a single table. Ensure they have identical column structure.
+        </p>
+
+        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          {islands.map((island: any, idx: number) => (
+            <div
+              key={idx}
+              style={{
+                border: '2px solid #4caf50',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px',
+                backgroundColor: '#f1f8f4',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ marginRight: '8px', fontSize: '20px' }}>✓</span>
+                <strong style={{ fontSize: '16px' }}>{island.title}</strong>
+              </div>
+
+              <div style={{ marginLeft: '28px', color: '#666', fontSize: '14px' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>📊 {island.rowCount} rows</strong> × <strong>{island.headers.length} columns</strong>
+                </div>
+
+                <div style={{ fontSize: '13px', color: '#999' }}>
+                  <strong>Columns:</strong> {island.headers.slice(0, 5).join(', ')}
+                  {island.headers.length > 5 && ` +${island.headers.length - 5} more`}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+      </div>
+    );
+  };
+
   const renderColumnSplit = () => {
     if (!parsedData) return null;
 
@@ -1139,6 +1327,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
     const currentSheet = parsedData.sheets[selectedSheet];
 
+    // Get data source: use island data if available, otherwise use sheet data
+    const hasIslands = currentSheet.detectedIslands && currentSheet.detectedIslands.length > 0;
+    const sourceHeaders = hasIslands ? currentSheet.detectedIslands[0].headers : currentSheet.headers;
+    const sourceTypes = hasIslands ? currentSheet.detectedIslands[0].detectedTypes : currentSheet.detectedTypes;
+    const sourceRows = hasIslands
+      ? currentSheet.detectedIslands.flatMap((island: any) => island.rows)
+      : currentSheet.rows;
+
     return (
       <div>
         {parsedData.sheets.length > 1 && (
@@ -1153,11 +1349,17 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 setMergeConfig(null);
               }}
             >
-              {parsedData.sheets.map((sheet: any, index: number) => (
-                <option key={index} value={index}>
-                  {sheet.name} ({sheet.rows.length} rows)
-                </option>
-              ))}
+              {parsedData.sheets.map((sheet: any, index: number) => {
+                const hasIslands = sheet.detectedIslands && sheet.detectedIslands.length > 0;
+                const rowCount = hasIslands
+                  ? sheet.detectedIslands.reduce((sum: number, island: any) => sum + island.rowCount, 0)
+                  : sheet.rows.length;
+                return (
+                  <option key={index} value={index}>
+                    {sheet.name} ({rowCount} rows{hasIslands ? ` from ${sheet.detectedIslands.length} islands` : ''})
+                  </option>
+                );
+              })}
             </select>
           </div>
         )}
@@ -1257,11 +1459,11 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         </div>
 
         <VisualColumnMapper
-          excelColumns={currentSheet.headers.map((header: string, idx: number) => ({
+          excelColumns={sourceHeaders.map((header: string, idx: number) => ({
             name: header,
-            type: currentSheet.detectedTypes[idx],
+            type: sourceTypes[idx],
           }))}
-          sampleRows={currentSheet.rows.slice(0, 3)}
+          sampleRows={sourceRows.slice(0, 3)}
           onMappingComplete={handleColumnMappingComplete}
           onBack={handleBack}
         />
@@ -1335,7 +1537,13 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
     if (importMode === 'create-new') {
       if (!columnMappings) return null;
 
-      const previewRows = currentSheet.rows.slice(0, 10);
+      // Get rows: use island data if available, otherwise use sheet data
+      const hasIslands = currentSheet.detectedIslands && currentSheet.detectedIslands.length > 0;
+      const sourceRows = hasIslands
+        ? currentSheet.detectedIslands.flatMap((island: any) => island.rows)
+        : currentSheet.rows;
+
+      const previewRows = sourceRows.slice(0, 10);
       const uniqueDbColumns = Array.from(new Set(Object.values(columnMappings)));
 
       const mappedPreviewRows = previewRows.map((row: any) => {
@@ -1390,8 +1598,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
           <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
             <h4 style={{ margin: '0 0 8px 0' }}>Import Summary</h4>
             <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
-              <strong>Table:</strong> {displayName} ({tableName})<br />
-              <strong>Total Rows:</strong> {currentSheet.rows.length.toLocaleString()}<br />
+              <strong>Table:</strong> {hasIslands ? mergedDisplayName : displayName} ({hasIslands ? mergedTableName : tableName})<br />
+              <strong>Total Rows:</strong> {sourceRows.length.toLocaleString()}{hasIslands && ` (merged from ${currentSheet.detectedIslands.length} islands)`}<br />
               <strong>Columns:</strong> {uniqueDbColumns.length}
             </p>
           </div>
@@ -1548,6 +1756,8 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         return renderFileSelection();
       case 'parse-config':
         return renderParseConfig();
+      case 'island-selection':
+        return renderIslandSelection();
       case 'column-split':
         return renderColumnSplit();
       case 'import-mode':
@@ -1602,7 +1812,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
         <div className="import-wizard-footer">
           <div>
-            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'column-split' || currentStep === 'import-mode' || currentStep === 'table-info' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
+            {(currentStep === 'file-selection' || currentStep === 'parse-config' || currentStep === 'island-selection' || currentStep === 'column-split' || currentStep === 'import-mode' || currentStep === 'table-info' || currentStep === 'column-mapping' || currentStep === 'existing-table-mapping' || currentStep === 'duplicate-detection' || currentStep === 'preview') && (
               <button className="btn btn-secondary" onClick={handleBack}>
                 ⬅️ Back
               </button>
@@ -1621,6 +1831,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 disabled={loadingFiles}
               >
                 {loadingFiles ? 'Parsing...' : 'Next: Parse Excel →'}
+              </button>
+            ) : currentStep === 'island-selection' ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleIslandSelection}
+                disabled={!mergedTableName.trim() || !mergedDisplayName.trim()}
+              >
+                Next: Merge {parsedData?.sheets[selectedSheet]?.detectedIslands?.length || 0} Islands →
               </button>
             ) : currentStep === 'column-split' ? (
               <button className="btn btn-primary" onClick={handleApplySplits}>

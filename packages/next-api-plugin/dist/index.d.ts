@@ -24,3 +24,4 @@ export { discoverTables } from './setup-userdata';
 export { generateMiddleware } from './generate-middleware';
 export { generateProxy } from './generate-proxy';
 export { generateHelpers } from './generate-helpers';
+export { generateApiWrapper } from './generate-api-wrapper';

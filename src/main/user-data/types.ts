@@ -157,7 +157,7 @@ export interface ColumnSplitSuggestion {
  * Detected data island within a spreadsheet
  */
 export interface DataIsland {
-  title: string; // e.g., "3. 자금의 증가"
+  title: string; // e.g., "3. 자금의 증가" or "회사명 : (주)영일오엔씨 / 2026/01/01 ~ 2026/01/31 / 계정별원장 / 1023(현금 시재금-창원)"
   titleRowIndex: number; // 0-based row index of title
   headerRowIndex: number; // 0-based row index of headers
   dataStartIndex: number; // 0-based row index where data starts
@@ -166,6 +166,25 @@ export interface DataIsland {
   rows: any[];
   detectedTypes: ColumnType[];
   rowCount: number;
+  splitSuggestions?: ColumnSplitSuggestion[]; // Suggested column splits
+  metadata?: {
+    company?: string; // e.g., "(주)영일오엔씨"
+    dateRange?: string; // e.g., "2026/01/01 ~ 2026/01/31"
+    accountCode?: string; // e.g., "1023"
+    accountName?: string; // e.g., "현금 시재금-창원"
+    rawTitle: string; // Full title text
+  };
+}
+
+/**
+ * Result from merging multiple islands into one dataset
+ */
+export interface MergedIslandsResult {
+  headers: string[];
+  rows: any[];
+  detectedTypes: ColumnType[];
+  mergedIslandCount: number;
+  islandTitles: string[];
 }
 
 /**
