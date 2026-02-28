@@ -6,8 +6,9 @@ import {
   validateExcelFile,
   sanitizeTableName,
   sanitizeColumnName,
+  mergeIslands,
 } from './excel-parser';
-import { ExcelImportConfig, ColumnSchema } from './types';
+import { ExcelImportConfig, ColumnSchema, DataIsland } from './types';
 import {
   autoDetectUniqueKeyColumns,
   getRecommendedDuplicateAction,
@@ -600,6 +601,147 @@ export function registerUserDataIPCHandlers(): void {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to import island',
+      };
+    }
+  });
+
+  /**
+   * Import merged islands as a single table
+   */
+  ipcMain.handle('user-data:import-merged-islands', async (event, config: {
+    tableName: string;
+    displayName: string;
+    description?: string;
+    islands: DataIsland[];
+    addMetadataColumns?: boolean;
+    addIslandIndex?: boolean;
+    addTimestamp?: boolean;
+    uniqueKeyColumns?: string[];
+    duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+
+      console.log(`🔀 Merging ${config.islands.length} islands into table "${config.tableName}"`);
+
+      // Merge islands
+      const merged = mergeIslands(config.islands, {
+        addMetadataColumns: config.addMetadataColumns,
+        addIslandIndex: config.addIslandIndex,
+      });
+
+      // Build column schema from merged headers and detected types
+      const schema: ColumnSchema[] = merged.headers.map((header, idx) => ({
+        name: header,
+        type: merged.detectedTypes[idx],
+        notNull: false,
+      }));
+
+      // Add imported_at column if requested
+      if (config.addTimestamp) {
+        schema.push({
+          name: 'imported_at',
+          type: 'TEXT', // Store as ISO string in SQLite
+          notNull: false,
+        });
+        console.log('✅ Added imported_at timestamp column to merged islands schema');
+      }
+
+      // Ensure table name is sanitized
+      const sanitizedTableName = sanitizeTableName(config.tableName);
+
+      // Check if table already exists
+      const existingTable = userDataManager.getTableByName(sanitizedTableName);
+      if (existingTable) {
+        return {
+          success: false,
+          error: `A table with name "${sanitizedTableName}" already exists`,
+        };
+      }
+
+      console.log(`📦 Creating merged table "${sanitizedTableName}" with ${merged.rows.length} rows`);
+
+      // Create table
+      const table = userDataManager.createTableFromSchema(config.displayName, schema, {
+        description: config.description || `Merged from ${merged.mergedIslandCount} islands: ${merged.islandTitles.join(', ')}`,
+        uniqueKeyColumns: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
+          ? config.uniqueKeyColumns
+          : undefined,
+        duplicateAction: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
+          ? config.duplicateAction
+          : undefined,
+      });
+
+      console.log(`✅ Merged table created: ${table.id}`);
+
+      // Create import operation
+      const importOperation = userDataManager.createImportOperation({
+        tableId: table.id,
+        fileName: 'merged_islands',
+      });
+
+      try {
+        // Add timestamp to rows if requested
+        const rowsToInsert = config.addTimestamp
+          ? merged.rows.map(row => ({
+              ...row,
+              imported_at: new Date().toISOString(),
+            }))
+          : merged.rows;
+
+        // Insert rows
+        const insertResult = userDataManager.insertRows(table.id, rowsToInsert);
+
+        console.log(`📊 Merged import results: ${insertResult.inserted} inserted, ${insertResult.skipped} skipped`);
+
+        // Complete import operation
+        userDataManager.completeImportOperation(importOperation.id, {
+          rowsImported: insertResult.inserted,
+          rowsSkipped: insertResult.skipped,
+          errorMessage: insertResult.errors.length > 0
+            ? insertResult.errors.slice(0, 5).join('; ')
+            : undefined,
+        });
+
+        return {
+          success: true,
+          data: {
+            table,
+            importOperation: {
+              ...importOperation,
+              rowsImported: insertResult.inserted,
+              rowsSkipped: insertResult.skipped,
+            },
+            mergedIslandCount: merged.mergedIslandCount,
+            islandTitles: merged.islandTitles,
+          },
+        };
+      } catch (error) {
+        console.error('Merged island import failed:', error);
+
+        // Complete import operation with error
+        userDataManager.completeImportOperation(importOperation.id, {
+          rowsImported: 0,
+          rowsSkipped: 0,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+
+        // Clean up: Drop the table
+        try {
+          manager.getUserDataDatabase().exec(`DROP TABLE IF EXISTS "${table.tableName}"`);
+          manager.getUserDataDatabase().prepare('DELETE FROM user_tables WHERE id = ?').run(table.id);
+        } catch (cleanupError) {
+          console.error('Error during cleanup:', cleanupError);
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error importing merged islands:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to import merged islands',
       };
     }
   });

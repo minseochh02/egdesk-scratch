@@ -6,6 +6,7 @@ import {
   ColumnType,
   ColumnSplitSuggestion,
   DataIsland,
+  MergedIslandsResult,
 } from './types';
 
 /**
@@ -378,6 +379,55 @@ function forwardFillCategoryColumns(rows: any[], headers: string[], numCategoryC
 }
 
 /**
+ * Detect noise rows that should be filtered out from islands
+ * Examples:
+ * - "이월잔액" (carried forward balance) rows
+ * - Timestamp rows like "2026/02/27 오후 7:02:42"
+ */
+function isNoiseRow(rowData: any, headers: string[]): boolean {
+  const values = Object.values(rowData);
+  const nonEmptyValues = values.filter(v => v !== null && v !== undefined && v !== '');
+
+  // Check if row is mostly empty (less than 2 non-empty values)
+  if (nonEmptyValues.length < 2) {
+    return true;
+  }
+
+  // Check for "이월잔액" (carried forward balance)
+  // Look for it in ANY column, and check if first column (date column) is empty
+  const firstCol = rowData[headers[0]];
+  const firstColEmpty = !firstCol || (typeof firstCol === 'string' && firstCol.trim() === '');
+
+  // Check if any value is exactly "이월잔액" (standalone, not part of other text)
+  const hasCarriedBalance = values.some(v =>
+    v && typeof v === 'string' && v.trim() === '이월잔액'
+  );
+
+  // If first column (usually date) is empty AND we have "이월잔액", it's a noise row
+  if (firstColEmpty && hasCarriedBalance) {
+    return true;
+  }
+
+  // Check for timestamp pattern in first column with mostly empty rest
+  // Pattern: "2026/02/27 오후 7:02:42" or similar date/time strings
+  const firstValue = rowData[headers[0]];
+  if (firstValue && typeof firstValue === 'string') {
+    const trimmed = firstValue.trim();
+    // Check if it looks like a timestamp: contains date and time components
+    const hasTimestamp = /\d{4}\/\d{1,2}\/\d{1,2}.*(?:오전|오후|\d{1,2}:\d{2})/.test(trimmed);
+
+    // And check if rest of columns are mostly empty (less than 2 other values)
+    const otherValues = values.slice(1).filter(v => v !== null && v !== undefined && v !== '');
+
+    if (hasTimestamp && otherValues.length < 2) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Check if a row is likely a summary/total row that should be skipped
  * Now primarily uses merged cell detection as the most reliable indicator
  *
@@ -385,14 +435,8 @@ function forwardFillCategoryColumns(rows: any[], headers: string[], numCategoryC
  * because they're part of the hierarchical data structure
  */
 function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[], isPivotTable: boolean = false): boolean {
-  // Primary detection: Check for merged cells (most reliable)
-  if (rowIndex !== undefined && merges !== undefined) {
-    if (rowHasMergedCells(rowIndex, merges)) {
-      return true;
-    }
-  }
-
   // For pivot tables, don't skip subtotal rows (they're part of the data hierarchy)
+  // This check must come BEFORE merged cell detection
   if (isPivotTable) {
     // Only skip grand total rows like "총합계", "합계" (standalone)
     const values = Object.values(rowData);
@@ -407,7 +451,14 @@ function isSummaryRow(rowData: any, rowIndex?: number, merges?: any[], isPivotTa
       }
     }
 
-    return false; // Keep subtotal rows in pivot tables
+    return false; // Keep subtotal rows in pivot tables (even if they have merged cells)
+  }
+
+  // Non-pivot tables: Check for merged cells (most reliable indicator)
+  if (rowIndex !== undefined && merges !== undefined) {
+    if (rowHasMergedCells(rowIndex, merges)) {
+      return true;
+    }
   }
 
   // Non-pivot table: Original behavior - skip all summary rows
@@ -580,9 +631,60 @@ export function detectSplitSuggestions(
 }
 
 /**
+ * Parse metadata from island title with "회사명 : ..." format
+ * Example: "회사명 : (주)영일오엔씨 / 2026/01/01 ~ 2026/01/31 / 계정별원장 / 1023(현금 시재금-창원)"
+ */
+function parseIslandMetadata(title: string): DataIsland['metadata'] | undefined {
+  // Pattern: "회사명 : company / dateRange / reportType / accountCode(accountName)"
+  const companyMatch = title.match(/회사명\s*:\s*([^/]+)/);
+  if (!companyMatch) return undefined;
+
+  const parts = title.split('/').map(p => p.trim());
+
+  // Extract company (first part after "회사명 :")
+  const company = companyMatch[1].trim();
+
+  // Extract date range (second part, usually contains ~)
+  let dateRange: string | undefined;
+  const dateRangePart = parts.find(p => p.includes('~'));
+  if (dateRangePart) {
+    dateRange = dateRangePart.trim();
+  }
+
+  // Extract account code and name from last part
+  // Pattern: "1023(현금 시재금-창원)" or "1023 현금 시재금-창원"
+  let accountCode: string | undefined;
+  let accountName: string | undefined;
+  const lastPart = parts[parts.length - 1];
+
+  // Try pattern with parentheses: "1023(현금 시재금-창원)"
+  const accountMatch = lastPart.match(/(\d+)\s*\(([^)]+)\)/);
+  if (accountMatch) {
+    accountCode = accountMatch[1];
+    accountName = accountMatch[2];
+  } else {
+    // Try pattern without parentheses: "1023 현금 시재금-창원"
+    const accountMatch2 = lastPart.match(/(\d+)\s+(.+)/);
+    if (accountMatch2) {
+      accountCode = accountMatch2[1];
+      accountName = accountMatch2[2];
+    }
+  }
+
+  return {
+    company,
+    dateRange,
+    accountCode,
+    accountName,
+    rawTitle: title,
+  };
+}
+
+/**
  * Detect data islands in a spreadsheet
  * Islands are separate tables within one sheet, identified by:
  * - Title pattern: "number space dot text" (e.g., "3. 자금의 증가")
+ *   OR "회사명 : ..." (e.g., "회사명 : (주)영일오엔씨 / 2026/01/01 ~ 2026/01/31 / 계정별원장 / 1023(현금 시재금-창원)")
  * - Headers on the next non-empty row
  * - Data rows until summary row (합계, 소계, etc.)
  */
@@ -594,9 +696,13 @@ export function detectDataIslands(
 ): DataIsland[] {
   const islands: DataIsland[] = [];
 
-  // Title pattern: number + space + dot + space + text
-  // Examples: "3. 자금의 증가", "1. 매출현황"
-  const titlePattern = /^\d+\s+\.\s+(.+)$/;
+  // Title patterns:
+  // 1. "3. 자금의 증가" - number + space + dot + space + text
+  // 2. "회사명 : (주)영일오엔씨 / ..." - company name format
+  const titlePatterns = [
+    /^\d+\s+\.\s+(.+)$/,
+    /^회사명\s*:\s*(.+)$/,
+  ];
 
   let i = skipRows;
   while (i < allRows.length) {
@@ -606,14 +712,29 @@ export function detectDataIslands(
       continue;
     }
 
-    // Check if first cell matches title pattern
+    // Check if first cell matches any title pattern
     const firstCell = row[0];
     if (typeof firstCell === 'string') {
-      const titleMatch = firstCell.trim().match(titlePattern);
+      const trimmedCell = firstCell.trim();
+      let titleMatch = null;
+      let matchedPattern = null;
+
+      // Try each pattern
+      for (const pattern of titlePatterns) {
+        const match = trimmedCell.match(pattern);
+        if (match) {
+          titleMatch = match;
+          matchedPattern = pattern;
+          break;
+        }
+      }
 
       if (titleMatch) {
-        const title = firstCell.trim();
+        const title = trimmedCell;
         const titleRowIndex = i;
+
+        // Try to parse metadata (for "회사명 : ..." format)
+        const metadata = parseIslandMetadata(title);
 
         console.log(`🏝️  Found island title at row ${titleRowIndex + 1}: "${title}"`);
 
@@ -690,18 +811,46 @@ export function detectDataIslands(
             break;
           }
 
-          // Quick pivot table check after collecting ~10 rows
-          if (islandRows.length === 10) {
+          // Check if it's a noise row (이월잔액, timestamps, etc.)
+          if (isNoiseRow(rowData, uniqueHeaders)) {
+            console.log(`   🗑️  Skipping noise row at ${j + 1}:`, Object.values(rowData).slice(0, 3));
+            continue; // Skip this row, don't add to island
+          }
+
+          // Early pivot table detection: if we see a subtotal row (ending with " 계")
+          // that's a strong indicator of pivot table structure
+          const firstColValue = rowData[uniqueHeaders[0]];
+          const isSubtotalRow = typeof firstColValue === 'string' && firstColValue.trim().endsWith(' 계');
+
+          if (!islandIsPivotTable && isSubtotalRow) {
+            // This is a subtotal row, which means this island is likely a pivot table
+            islandIsPivotTable = true;
+            console.log(`   📊 Island "${title}" appears to be a pivot table (detected subtotal row)`);
+          }
+
+          // Skip subtotal rows (they have merged cells and are summary rows)
+          if (isSubtotalRow) {
+            console.log(`   ⏭️  Skipping subtotal row at ${j + 1}: "${firstColValue}"`);
+            continue; // Skip this row, don't add to island
+          }
+
+          // Skip rows with merged cells (summary/subtotal rows)
+          if (merges && rowHasMergedCells(j, merges)) {
+            console.log(`   ⏭️  Skipping merged cell row at ${j + 1}`);
+            continue; // Skip this row, don't add to island
+          }
+
+          // Quick pivot table check after collecting ~10 rows (if not already detected)
+          if (!islandIsPivotTable && islandRows.length === 10) {
             islandIsPivotTable = isPivotTableQuickCheck(islandRows, uniqueHeaders);
             if (islandIsPivotTable) {
-              console.log(`   📊 Island "${title}" appears to be a pivot table - keeping subtotal rows`);
+              console.log(`   📊 Island "${title}" appears to be a pivot table`);
             }
           }
 
-          // Check if it's a summary row
-          // For pivot tables, keep subtotal rows (they're part of the hierarchy)
+          // Check if it's a summary row (grand total like "합계", "총합계")
           if (isSummaryRow(rowData, j, merges, islandIsPivotTable)) {
-            console.log(`   📊 Found summary row at ${j + 1} for island "${title}"`);
+            console.log(`   📊 Found grand total row at ${j + 1} for island "${title}"`);
             dataEndIndex = j;
             break;
           }
@@ -709,7 +858,9 @@ export function detectDataIslands(
           // Check if next row is a new island title
           const nextRow = allRows[j + 1];
           if (nextRow && nextRow[0] && typeof nextRow[0] === 'string') {
-            if (titlePattern.test(nextRow[0].trim())) {
+            const nextCellTrimmed = nextRow[0].trim();
+            const isNextTitle = titlePatterns.some(pattern => pattern.test(nextCellTrimmed));
+            if (isNextTitle) {
               console.log(`   🏝️  Next island detected at row ${j + 2}`);
               dataEndIndex = j + 1;
               break;
@@ -729,8 +880,16 @@ export function detectDataIslands(
           }
 
           const detectedTypes = detectColumnTypes(islandRows, uniqueHeaders);
+          const splitSuggestions = detectSplitSuggestions(islandRows, uniqueHeaders);
 
-          islands.push({
+          if (splitSuggestions.length > 0) {
+            console.log(`   💡 Island "${title}" has ${splitSuggestions.length} column split suggestion(s):`);
+            splitSuggestions.forEach((suggestion) => {
+              console.log(`      "${suggestion.originalColumn}" → [${suggestion.suggestedColumns.map(c => `"${c.name}" (${c.type})`).join(', ')}]`);
+            });
+          }
+
+          const island: DataIsland = {
             title,
             titleRowIndex,
             headerRowIndex,
@@ -740,7 +899,16 @@ export function detectDataIslands(
             rows: islandRows,
             detectedTypes,
             rowCount: islandRows.length,
-          });
+            splitSuggestions: splitSuggestions.length > 0 ? splitSuggestions : undefined,
+          };
+
+          // Add metadata if available
+          if (metadata) {
+            island.metadata = metadata;
+            console.log(`   📋 Metadata extracted: company=${metadata.company}, account=${metadata.accountCode}`);
+          }
+
+          islands.push(island);
 
           console.log(`   ✅ Island "${title}": ${islandRows.length} rows, ${uniqueHeaders.length} columns`);
         }
@@ -756,6 +924,141 @@ export function detectDataIslands(
   }
 
   return islands;
+}
+
+/**
+ * Merge multiple islands with identical structure into a single dataset
+ * Optionally adds metadata columns from island titles
+ */
+export function mergeIslands(
+  islands: DataIsland[],
+  options?: {
+    addMetadataColumns?: boolean; // Add columns for island metadata
+    addIslandIndex?: boolean; // Add "island_number" column
+  }
+): MergedIslandsResult {
+  if (islands.length === 0) {
+    throw new Error('Cannot merge empty islands array');
+  }
+
+  console.log(`🔀 Merging ${islands.length} islands...`);
+
+  // Validate: all islands must have identical headers
+  const firstHeaders = islands[0].headers;
+  const headerMismatch = islands.find(
+    (island, idx) => {
+      if (island.headers.length !== firstHeaders.length) {
+        console.error(`Island ${idx} has ${island.headers.length} columns, expected ${firstHeaders.length}`);
+        return true;
+      }
+      const mismatch = island.headers.some((h, i) => h !== firstHeaders[i]);
+      if (mismatch) {
+        console.error(`Island ${idx} has different header names:`, island.headers);
+      }
+      return mismatch;
+    }
+  );
+
+  if (headerMismatch) {
+    throw new Error(
+      'Cannot merge islands with different header structures. All islands must have identical column names and order.'
+    );
+  }
+
+  // Prepare merged headers (original + metadata columns if requested)
+  let mergedHeaders = [...firstHeaders];
+  const metadataColumnNames: string[] = [];
+
+  if (options?.addMetadataColumns) {
+    // Check if any island has metadata
+    const hasMetadata = islands.some(island => island.metadata);
+
+    if (hasMetadata) {
+      metadataColumnNames.push('회사명', '기간', '계정코드_메타', '계정명_메타');
+      mergedHeaders = [...mergedHeaders, ...metadataColumnNames];
+      console.log(`   📋 Adding metadata columns: ${metadataColumnNames.join(', ')}`);
+    }
+  }
+
+  if (options?.addIslandIndex) {
+    mergedHeaders.push('island_number');
+    console.log(`   📊 Adding island_number column`);
+  }
+
+  // Merge all rows
+  const mergedRows: any[] = [];
+  const islandTitles: string[] = [];
+
+  islands.forEach((island, islandIndex) => {
+    islandTitles.push(island.title);
+
+    island.rows.forEach(row => {
+      const mergedRow = { ...row };
+
+      // Add metadata columns if requested
+      if (options?.addMetadataColumns && metadataColumnNames.length > 0) {
+        if (island.metadata) {
+          mergedRow['회사명'] = island.metadata.company || null;
+          mergedRow['기간'] = island.metadata.dateRange || null;
+          mergedRow['계정코드_메타'] = island.metadata.accountCode || null;
+          mergedRow['계정명_메타'] = island.metadata.accountName || null;
+        } else {
+          // No metadata available for this island
+          mergedRow['회사명'] = null;
+          mergedRow['기간'] = null;
+          mergedRow['계정코드_메타'] = null;
+          mergedRow['계정명_메타'] = null;
+        }
+      }
+
+      // Add island index if requested
+      if (options?.addIslandIndex) {
+        mergedRow['island_number'] = islandIndex + 1;
+      }
+
+      mergedRows.push(mergedRow);
+    });
+
+    console.log(`   ✅ Merged island ${islandIndex + 1}/${islands.length}: "${island.title}" (${island.rows.length} rows)`);
+  });
+
+  // Detect column types for merged dataset
+  // Use the most permissive type if columns have different types across islands
+  const detectedTypes: ColumnType[] = [];
+
+  for (let colIdx = 0; colIdx < firstHeaders.length; colIdx++) {
+    const columnName = firstHeaders[colIdx];
+    const typesAcrossIslands = islands.map(island => island.detectedTypes[colIdx]);
+
+    // If all types are the same, use that type
+    const allSameType = typesAcrossIslands.every(t => t === typesAcrossIslands[0]);
+    if (allSameType) {
+      detectedTypes.push(typesAcrossIslands[0]);
+    } else {
+      // Use TEXT as the most permissive type
+      console.log(`   ⚠️  Column "${columnName}" has mixed types across islands, using TEXT`);
+      detectedTypes.push('TEXT');
+    }
+  }
+
+  // Add types for metadata columns
+  if (options?.addMetadataColumns && metadataColumnNames.length > 0) {
+    detectedTypes.push('TEXT', 'TEXT', 'TEXT', 'TEXT'); // 회사명, 기간, 계정코드, 계정명
+  }
+
+  if (options?.addIslandIndex) {
+    detectedTypes.push('INTEGER'); // island_number
+  }
+
+  console.log(`✅ Merged ${islands.length} islands: ${mergedRows.length} total rows, ${mergedHeaders.length} columns`);
+
+  return {
+    headers: mergedHeaders,
+    rows: mergedRows,
+    detectedTypes,
+    mergedIslandCount: islands.length,
+    islandTitles,
+  };
 }
 
 /**
