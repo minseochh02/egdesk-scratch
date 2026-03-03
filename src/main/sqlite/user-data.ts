@@ -49,6 +49,7 @@ export class UserDataDbManager {
     displayName: string,
     schema: ColumnSchema[],
     options?: {
+      tableName?: string; // Optional SQL table name (if not provided, will sanitize displayName)
       description?: string;
       createdFromFile?: string;
       uniqueKeyColumns?: string[];
@@ -68,7 +69,8 @@ export class UserDataDbManager {
     });
 
     const id = randomUUID();
-    const tableName = this.sanitizeTableName(displayName);
+    // Use provided table name or sanitize display name
+    const tableName = options?.tableName || this.sanitizeTableName(displayName);
     const now = new Date().toISOString();
 
     // Add auto-incrementing ID column as the first column
