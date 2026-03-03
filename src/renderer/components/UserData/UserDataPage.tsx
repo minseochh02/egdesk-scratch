@@ -8,11 +8,17 @@ import { SyncConfigurationsManager } from './SyncConfigurationsManager';
 import './UserData.css';
 
 export const UserDataPage: React.FC = () => {
-  const { tables, loading, error, fetchTables, renameTable, deleteTable } = useUserData();
+  const { tables, loading, error, fetchTables, renameTable, deleteTable, exportAllTables, importAllSheets, dropAllTables, exportSQL, importSQL, forceDropAllTables } = useUserData();
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
   const [showSyncConfigManager, setShowSyncConfigManager] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const [exportingSql, setExportingSql] = useState(false);
+  const [importingSql, setImportingSql] = useState(false);
+  const [forceDropping, setForceDropping] = useState(false);
 
   const handleSelectTable = (table: UserTable) => {
     setSelectedTable(table);
@@ -55,6 +61,220 @@ export const UserDataPage: React.FC = () => {
     fetchTables();
   };
 
+  const handleExportAll = async () => {
+    if (tables.length === 0) {
+      alert('No tables to export');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const result = await exportAllTables();
+
+      if (result) {
+        alert(`Successfully exported ${result.tablesExported} table(s) with ${result.totalRows} total rows to:\n${result.filePath}`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to export tables');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportAll = async () => {
+    // Ask user if they want to overwrite existing tables
+    let overwrite = false;
+    if (tables.length > 0) {
+      overwrite = window.confirm(
+        '📥 Import All Sheets\n\n' +
+        'Do you want to OVERWRITE existing tables with the same name?\n\n' +
+        'YES = Overwrite existing tables\n' +
+        'NO = Skip existing tables (import only new ones)'
+      );
+    }
+
+    setImporting(true);
+    try {
+      const result = await importAllSheets({ overwrite });
+
+      if (result) {
+        const successMsg = result.successCount > 0
+          ? `✅ Successfully imported ${result.successCount} sheet(s) as tables.`
+          : '';
+        const failMsg = result.failCount > 0
+          ? `\n⚠️ ${result.failCount} sheet(s) failed or were skipped.`
+          : '';
+
+        // Show details for failed/skipped sheets
+        const skippedSheets = result.results.filter((r: any) => !r.success && r.skipped);
+        const failedSheets = result.results.filter((r: any) => !r.success && !r.skipped);
+
+        let details = '';
+        if (skippedSheets.length > 0) {
+          details += `\n\nSkipped (already exist):\n${skippedSheets.map((r: any) => `  • ${r.sheetName}`).join('\n')}`;
+        }
+        if (failedSheets.length > 0) {
+          details += `\n\nFailed:\n${failedSheets.map((r: any) => `  • ${r.sheetName}: ${r.error}`).join('\n')}`;
+        }
+
+        alert(`Import from "${result.fileName}":\n${successMsg}${failMsg}${details}`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to import sheets');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDropAll = async () => {
+    if (tables.length === 0) {
+      alert('No tables to drop');
+      return;
+    }
+
+    // Double confirmation for destructive action
+    const firstConfirm = window.confirm(
+      `⚠️ WARNING: This will permanently delete ALL ${tables.length} table(s) and their data.\n\nThis action CANNOT be undone.\n\nAre you sure you want to continue?`
+    );
+
+    if (!firstConfirm) {
+      return;
+    }
+
+    const secondConfirm = window.confirm(
+      `⚠️ FINAL CONFIRMATION\n\nYou are about to delete:\n${tables.map(t => `  - ${t.displayName} (${t.rowCount} rows)`).join('\n')}\n\nType YES in your mind and click OK to proceed.`
+    );
+
+    if (!secondConfirm) {
+      return;
+    }
+
+    setDropping(true);
+    try {
+      const result = await dropAllTables();
+
+      if (result) {
+        const successMsg = result.successCount > 0
+          ? `Successfully dropped ${result.successCount} table(s).`
+          : '';
+        const failMsg = result.failCount > 0
+          ? `\n${result.failCount} table(s) failed to drop.`
+          : '';
+
+        alert(`Drop All Complete:\n${successMsg}${failMsg}`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to drop tables');
+    } finally {
+      setDropping(false);
+    }
+  };
+
+  const handleExportSQL = async () => {
+    if (tables.length === 0) {
+      alert('No tables to export');
+      return;
+    }
+
+    setExportingSql(true);
+    try {
+      const result = await exportSQL();
+
+      if (result) {
+        alert(`✅ Successfully exported ${result.tablesExported} table(s) with ${result.totalRows} total rows as SQL to:\n${result.filePath}`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to export SQL');
+    } finally {
+      setExportingSql(false);
+    }
+  };
+
+  const handleImportSQL = async () => {
+    const confirm = window.confirm(
+      '📥 Import SQL\n\n' +
+      'This will execute all SQL statements from the file.\n\n' +
+      'WARNING: If tables already exist, this may cause errors.\n' +
+      'Consider using "Drop All" first if you want to replace all data.\n\n' +
+      'Continue?'
+    );
+
+    if (!confirm) {
+      return;
+    }
+
+    setImportingSql(true);
+    try {
+      const result = await importSQL();
+
+      if (result) {
+        const successMsg = `✅ Executed ${result.statementsExecuted} SQL statement(s)`;
+        const tablesMsg = result.tablesRegistered > 0
+          ? `\n📋 Registered ${result.tablesRegistered} new table(s)`
+          : '';
+        const errorMsg = result.errorCount > 0
+          ? `\n⚠️ ${result.errorCount} statement(s) failed`
+          : '';
+        const errorDetails = result.errors && result.errors.length > 0
+          ? `\n\nFirst errors:\n${result.errors.slice(0, 3).join('\n\n')}`
+          : '';
+
+        alert(`Import from "${result.fileName}":\n${successMsg}${tablesMsg}${errorMsg}${errorDetails}`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to import SQL');
+    } finally {
+      setImportingSql(false);
+    }
+  };
+
+  const handleForceDropAll = async () => {
+    // Triple confirmation for nuclear option
+    const firstConfirm = window.confirm(
+      `⚠️ FORCE DROP ALL TABLES\n\n` +
+      `This will delete ALL tables from the database, including:\n` +
+      `- Tables with metadata (${tables.length})\n` +
+      `- Orphaned tables without metadata\n` +
+      `- ALL data will be PERMANENTLY deleted\n\n` +
+      `This action CANNOT be undone.\n\n` +
+      `Are you absolutely sure?`
+    );
+
+    if (!firstConfirm) {
+      return;
+    }
+
+    const secondConfirm = window.confirm(
+      `⚠️ FINAL WARNING\n\n` +
+      `This is a DESTRUCTIVE operation that will wipe your entire database.\n\n` +
+      `Click OK only if you are 100% certain.`
+    );
+
+    if (!secondConfirm) {
+      return;
+    }
+
+    setForceDropping(true);
+    try {
+      const result = await forceDropAllTables();
+
+      if (result) {
+        const successMsg = result.successCount > 0
+          ? `Successfully dropped ${result.successCount} table(s).`
+          : '';
+        const failMsg = result.failCount > 0
+          ? `\n${result.failCount} table(s) failed to drop.`
+          : '';
+
+        alert(`Force Drop Complete:\n${successMsg}${failMsg}\n\nDatabase is now empty.`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to force drop tables');
+    } finally {
+      setForceDropping(false);
+    }
+  };
+
   if (loading && tables.length === 0) {
     return (
       <div className="user-data-page">
@@ -80,6 +300,49 @@ export const UserDataPage: React.FC = () => {
             </button>
             <button className="btn btn-secondary" onClick={() => setShowSyncConfigManager(true)}>
               ⚙️ Configurations
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleImportAll}
+              disabled={importing}
+            >
+              {importing ? '⏳ Importing...' : '📥 Import All'}
+            </button>
+            <button
+              className="btn btn-success"
+              onClick={handleExportAll}
+              disabled={exporting || tables.length === 0}
+            >
+              {exporting ? '⏳ Exporting...' : '📤 Export All'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={handleImportSQL}
+              disabled={importingSql}
+            >
+              {importingSql ? '⏳ Importing...' : '📥 Import SQL'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={handleExportSQL}
+              disabled={exportingSql || tables.length === 0}
+            >
+              {exportingSql ? '⏳ Exporting...' : '📤 Export SQL'}
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleDropAll}
+              disabled={dropping || tables.length === 0}
+            >
+              {dropping ? '⏳ Dropping...' : '🗑️ Drop All'}
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleForceDropAll}
+              disabled={forceDropping}
+              title="Force drop ALL tables (including orphaned ones)"
+            >
+              {forceDropping ? '⏳ Force Dropping...' : '💣 Force Drop'}
             </button>
           </>
         )}

@@ -1,5 +1,8 @@
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, app } from 'electron';
 import path from 'path';
+import fs from 'fs/promises';
+import { randomUUID } from 'crypto';
+import * as XLSX from 'xlsx';
 import { getSQLiteManager } from '../sqlite/manager';
 import {
   parseExcelFile,
@@ -171,15 +174,12 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Ensure table name is sanitized
-      const sanitizedTableName = sanitizeTableName(config.tableName);
-
-      // Check if table already exists
-      const existingTable = userDataManager.getTableByName(sanitizedTableName);
+      // Check if table already exists (config.tableName should already be a valid SQL name)
+      const existingTable = userDataManager.getTableByName(config.tableName);
       if (existingTable) {
         return {
           success: false,
-          error: `A table with name "${sanitizedTableName}" already exists`,
+          error: `A table with name "${config.tableName}" already exists`,
         };
       }
 
@@ -241,6 +241,7 @@ export function registerUserDataIPCHandlers(): void {
 
         // Create table from schema with duplicate detection settings
         table = userDataManager.createTableFromSchema(config.displayName, schema, {
+          tableName: config.tableName, // Use user-specified table name
           description: config.description,
           createdFromFile: fileName,
           uniqueKeyColumns: uniqueKeyColumns.length > 0 ? uniqueKeyColumns : undefined,
@@ -517,22 +518,20 @@ export function registerUserDataIPCHandlers(): void {
         notNull: false,
       }));
 
-      // Ensure table name is sanitized
-      const sanitizedTableName = sanitizeTableName(config.tableName);
-
-      // Check if table already exists
-      const existingTable = userDataManager.getTableByName(sanitizedTableName);
+      // Check if table already exists (config.tableName should already be a valid SQL name)
+      const existingTable = userDataManager.getTableByName(config.tableName);
       if (existingTable) {
         return {
           success: false,
-          error: `A table with name "${sanitizedTableName}" already exists`,
+          error: `A table with name "${config.tableName}" already exists`,
         };
       }
 
-      console.log(`📦 Creating island table "${sanitizedTableName}" with ${config.rows.length} rows`);
+      console.log(`📦 Creating island table "${config.tableName}" with ${config.rows.length} rows`);
 
       // Create table
       const table = userDataManager.createTableFromSchema(config.displayName, schema, {
+        tableName: config.tableName, // Use user-specified table name
         description: config.description,
         uniqueKeyColumns: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
           ? config.uniqueKeyColumns
@@ -648,22 +647,20 @@ export function registerUserDataIPCHandlers(): void {
         console.log('✅ Added imported_at timestamp column to merged islands schema');
       }
 
-      // Ensure table name is sanitized
-      const sanitizedTableName = sanitizeTableName(config.tableName);
-
-      // Check if table already exists
-      const existingTable = userDataManager.getTableByName(sanitizedTableName);
+      // Check if table already exists (config.tableName should already be a valid SQL name)
+      const existingTable = userDataManager.getTableByName(config.tableName);
       if (existingTable) {
         return {
           success: false,
-          error: `A table with name "${sanitizedTableName}" already exists`,
+          error: `A table with name "${config.tableName}" already exists`,
         };
       }
 
-      console.log(`📦 Creating merged table "${sanitizedTableName}" with ${merged.rows.length} rows`);
+      console.log(`📦 Creating merged table "${config.tableName}" with ${merged.rows.length} rows`);
 
       // Create table
       const table = userDataManager.createTableFromSchema(config.displayName, schema, {
+        tableName: config.tableName, // Use user-specified table name
         description: config.description || `Merged from ${merged.mergedIslandCount} islands: ${merged.islandTitles.join(', ')}`,
         uniqueKeyColumns: config.uniqueKeyColumns && config.uniqueKeyColumns.length > 0
           ? config.uniqueKeyColumns
@@ -937,6 +934,904 @@ export function registerUserDataIPCHandlers(): void {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to sync data',
+      };
+    }
+  });
+
+  /**
+   * Export all tables to a single Excel file
+   */
+  ipcMain.handle('user-data:export-all-tables', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const db = manager.getUserDataDatabase();
+
+      // Get all user tables
+      const tables = userDataManager.getAllTables();
+
+      if (tables.length === 0) {
+        return {
+          success: false,
+          error: 'No tables to export',
+        };
+      }
+
+      console.log(`📦 Exporting ${tables.length} table(s) to Excel...`);
+
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+
+      // Export each table as a separate sheet
+      for (const table of tables) {
+        try {
+          // Get all data from the table, excluding the auto-generated 'id' column
+          const columnsToExport = table.schema
+            .filter(col => col.name !== 'id')
+            .map(col => `"${col.name}"`)
+            .join(', ');
+
+          const query = `SELECT ${columnsToExport} FROM "${table.tableName}"`;
+          const stmt = db.prepare(query);
+          const rows = stmt.all();
+
+          console.log(`   📄 Exporting table "${table.displayName}" (${rows.length} rows, ${table.schema.length - 1} columns)`);
+
+          // Convert rows to worksheet format
+          // If there's data, create worksheet from rows
+          let worksheet;
+          if (rows.length > 0) {
+            worksheet = XLSX.utils.json_to_sheet(rows);
+          } else {
+            // If no data, create empty sheet with headers (excluding 'id')
+            const headers = table.schema
+              .filter(col => col.name !== 'id')
+              .map(col => col.name);
+            worksheet = XLSX.utils.aoa_to_sheet([headers]);
+          }
+
+          // Encode both display name and table name in sheet name
+          // Format: "DisplayName(tablename)"
+          const encodedName = `${table.displayName}(${table.tableName})`;
+
+          // Sanitize sheet name (Excel has 31 char limit and doesn't allow certain chars)
+          // Excel disallows: : \ / ? * [ ]
+          let sheetName = encodedName
+            .replace(/[:\\\/\?\*\[\]]/g, '_') // Remove invalid chars
+            .substring(0, 31); // Max 31 chars
+
+          // If truncated, try to keep at least the table name part
+          if (encodedName.length > 31) {
+            // Try format: shortened display + (tablename)
+            const tableNamePart = `(${table.tableName})`;
+            const maxDisplayLength = 31 - tableNamePart.length;
+            if (maxDisplayLength > 0) {
+              sheetName = table.displayName.substring(0, maxDisplayLength) + tableNamePart;
+            }
+          }
+
+          // Ensure unique sheet name
+          let counter = 1;
+          let finalSheetName = sheetName;
+          while (workbook.SheetNames.includes(finalSheetName)) {
+            const suffix = `_${counter}`;
+            const maxLength = 31 - suffix.length;
+            finalSheetName = sheetName.substring(0, maxLength) + suffix;
+            counter++;
+          }
+
+          // Add worksheet to workbook
+          XLSX.utils.book_append_sheet(workbook, worksheet, finalSheetName);
+
+          console.log(`   ✅ Exported "${table.displayName}" as sheet "${finalSheetName}"`);
+        } catch (tableError) {
+          console.error(`Error exporting table "${table.displayName}":`, tableError);
+          // Continue with other tables even if one fails
+        }
+      }
+
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export All Tables',
+        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.xlsx`),
+        filters: [
+          {
+            name: 'Excel Files',
+            extensions: ['xlsx'],
+          },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
+
+      // Generate Excel file buffer
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      // Write buffer to file using fs
+      await fs.writeFile(result.filePath, buffer);
+
+      console.log(`✅ Successfully exported ${tables.length} table(s) to: ${result.filePath}`);
+
+      return {
+        success: true,
+        data: {
+          filePath: result.filePath,
+          tablesExported: tables.length,
+          totalRows: tables.reduce((sum, t) => sum + t.rowCount, 0),
+        },
+      };
+    } catch (error) {
+      console.error('Error exporting all tables:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to export tables',
+      };
+    }
+  });
+
+  /**
+   * Import all sheets from an Excel file as separate tables
+   */
+  ipcMain.handle('user-data:import-all-sheets', async (event, options?: { overwrite?: boolean }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+
+      // Show file picker dialog
+      const fileResult = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Excel Files',
+            extensions: ['xlsx', 'xls', 'xlsm'],
+          },
+        ],
+      });
+
+      if (fileResult.canceled || fileResult.filePaths.length === 0) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
+
+      const filePath = fileResult.filePaths[0];
+      const fileName = path.basename(filePath);
+
+      // Validate file
+      const validation = validateExcelFile(filePath);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+        };
+      }
+
+      // Parse Excel file
+      const parsedData = await parseExcelFile(filePath);
+
+      console.log(`📦 Importing ${parsedData.sheets.length} sheet(s) from "${fileName}"...`);
+
+      const results: any[] = [];
+      let successCount = 0;
+      let failCount = 0;
+
+      // Import each sheet as a separate table
+      for (let i = 0; i < parsedData.sheets.length; i++) {
+        const sheet = parsedData.sheets[i];
+        const sheetResult: any = {
+          sheetName: sheet.name,
+          sheetIndex: i,
+        };
+
+        try {
+          // Parse sheet name to extract display name and table name
+          // Format: "DisplayName(tablename)" or just "DisplayName" (legacy)
+          let tableName: string;
+          let displayName: string;
+
+          const match = sheet.name.match(/^(.+)\((.+)\)$/);
+          if (match) {
+            // New format: "DisplayName(tablename)"
+            displayName = match[1];
+            tableName = match[2];
+            console.log(`   📋 Parsed sheet name: display="${displayName}", table="${tableName}"`);
+          } else {
+            // Legacy format: just use the sheet name as-is
+            displayName = sheet.name;
+            tableName = sanitizeTableName(sheet.name);
+            console.log(`   📋 Legacy format: using sheet name "${sheet.name}" → table="${tableName}"`);
+          }
+
+          // Check if table already exists
+          const existingTable = userDataManager.getTableByName(tableName);
+          if (existingTable) {
+            if (options?.overwrite) {
+              // Drop existing table and its metadata
+              try {
+                console.log(`   🔄 Overwriting existing table "${tableName}"...`);
+                manager.getUserDataDatabase().exec(`DROP TABLE IF EXISTS "${existingTable.tableName}"`);
+                manager.getUserDataDatabase().prepare('DELETE FROM user_tables WHERE id = ?').run(existingTable.id);
+                console.log(`   ✅ Dropped existing table "${tableName}"`);
+              } catch (dropError) {
+                console.error(`Error dropping existing table "${tableName}":`, dropError);
+                sheetResult.success = false;
+                sheetResult.error = `Failed to drop existing table: ${dropError instanceof Error ? dropError.message : 'Unknown error'}`;
+                failCount++;
+                results.push(sheetResult);
+                continue;
+              }
+            } else {
+              sheetResult.success = false;
+              sheetResult.error = `Table already exists`;
+              sheetResult.skipped = true;
+              failCount++;
+              results.push(sheetResult);
+              console.log(`   ⚠️  Skipped sheet "${sheet.name}": table "${tableName}" already exists`);
+              continue;
+            }
+          }
+
+          // Build column schema from detected types
+          const schema: ColumnSchema[] = sheet.headers.map((header, idx) => ({
+            name: header,
+            type: sheet.detectedTypes[idx],
+            notNull: false,
+          }));
+
+          console.log(`   📄 Importing sheet "${sheet.name}" (${sheet.rows.length} rows, ${schema.length} columns)`);
+
+          // Create table with explicit table name
+          const table = userDataManager.createTableFromSchema(displayName, schema, {
+            tableName: tableName, // Use the parsed/specified table name
+            description: `Imported from ${fileName} - Sheet: ${sheet.name}`,
+            createdFromFile: fileName,
+          });
+
+          // Create import operation
+          const importOperation = userDataManager.createImportOperation({
+            tableId: table.id,
+            fileName: `${fileName} (${sheet.name})`,
+          });
+
+          try {
+            // Insert rows
+            const insertResult = userDataManager.insertRows(table.id, sheet.rows);
+
+            console.log(`   ✅ Imported sheet "${sheet.name}": ${insertResult.inserted} rows inserted`);
+
+            // Complete import operation
+            userDataManager.completeImportOperation(importOperation.id, {
+              rowsImported: insertResult.inserted,
+              rowsSkipped: insertResult.skipped,
+              errorMessage: insertResult.errors.length > 0
+                ? insertResult.errors.slice(0, 5).join('; ')
+                : undefined,
+            });
+
+            sheetResult.success = true;
+            sheetResult.tableId = table.id;
+            sheetResult.tableName = table.tableName;
+            sheetResult.displayName = table.displayName;
+            sheetResult.rowsImported = insertResult.inserted;
+            sheetResult.rowsSkipped = insertResult.skipped;
+            successCount++;
+          } catch (insertError) {
+            console.error(`Error inserting data for sheet "${sheet.name}":`, insertError);
+
+            // Complete import operation with error
+            userDataManager.completeImportOperation(importOperation.id, {
+              rowsImported: 0,
+              rowsSkipped: 0,
+              errorMessage: insertError instanceof Error ? insertError.message : 'Unknown error',
+            });
+
+            // Clean up: Drop the table
+            try {
+              manager.getUserDataDatabase().exec(`DROP TABLE IF EXISTS "${table.tableName}"`);
+              manager.getUserDataDatabase().prepare('DELETE FROM user_tables WHERE id = ?').run(table.id);
+            } catch (cleanupError) {
+              console.error('Error during cleanup:', cleanupError);
+            }
+
+            sheetResult.success = false;
+            sheetResult.error = insertError instanceof Error ? insertError.message : 'Failed to insert data';
+            failCount++;
+          }
+        } catch (sheetError) {
+          console.error(`Error importing sheet "${sheet.name}":`, sheetError);
+          sheetResult.success = false;
+          sheetResult.error = sheetError instanceof Error ? sheetError.message : 'Failed to import sheet';
+          failCount++;
+        }
+
+        results.push(sheetResult);
+      }
+
+      console.log(`✅ Import complete: ${successCount} succeeded, ${failCount} failed`);
+
+      return {
+        success: true,
+        data: {
+          filePath,
+          fileName,
+          totalSheets: parsedData.sheets.length,
+          successCount,
+          failCount,
+          results,
+        },
+      };
+    } catch (error) {
+      console.error('Error importing all sheets:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to import sheets',
+      };
+    }
+  });
+
+  /**
+   * Force drop ALL tables from the database (including orphaned ones without metadata)
+   */
+  ipcMain.handle('user-data:force-drop-all-tables', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const db = manager.getUserDataDatabase();
+
+      console.log(`🗑️  Force dropping ALL tables from database...`);
+
+      // Disable foreign key constraints temporarily
+      db.pragma('foreign_keys = OFF');
+      console.log(`   🔓 Disabled foreign key constraints`);
+
+      try {
+        // Get all tables from the database (excluding system tables)
+        const allTables = db.prepare(`
+          SELECT name FROM sqlite_master
+          WHERE type='table'
+          AND name NOT LIKE 'sqlite_%'
+          AND name NOT IN ('user_tables', 'user_imports')
+        `).all() as Array<{ name: string }>;
+
+        console.log(`   Found ${allTables.length} table(s) in database`);
+
+        let successCount = 0;
+        let failCount = 0;
+        const results: any[] = [];
+
+        // Drop each table
+        for (const { name: tableName } of allTables) {
+          const result: any = {
+            tableName,
+          };
+
+          try {
+            // Drop the table
+            db.exec(`DROP TABLE IF EXISTS "${tableName}"`);
+            console.log(`   🗑️  Dropped table: ${tableName}`);
+
+            // Try to delete metadata if it exists
+            try {
+              db.prepare('DELETE FROM user_tables WHERE table_name = ?').run(tableName);
+            } catch (metaError) {
+              // Ignore metadata deletion errors
+            }
+
+            result.success = true;
+            successCount++;
+          } catch (tableError) {
+            console.error(`Error dropping table "${tableName}":`, tableError);
+            result.success = false;
+            result.error = tableError instanceof Error ? tableError.message : 'Failed to drop table';
+            failCount++;
+          }
+
+          results.push(result);
+        }
+
+        console.log(`✅ Force drop complete: ${successCount} succeeded, ${failCount} failed`);
+
+        return {
+          success: true,
+          data: {
+            totalTables: allTables.length,
+            successCount,
+            failCount,
+            results,
+          },
+        };
+      } finally {
+        // Always re-enable foreign key constraints
+        db.pragma('foreign_keys = ON');
+        console.log(`   🔒 Re-enabled foreign key constraints`);
+      }
+    } catch (error) {
+      console.error('Error force dropping all tables:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to force drop tables',
+      };
+    }
+  });
+
+  /**
+   * Drop all user tables from the database
+   */
+  ipcMain.handle('user-data:drop-all-tables', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const db = manager.getUserDataDatabase();
+
+      // Get all user tables
+      const tables = userDataManager.getAllTables();
+
+      if (tables.length === 0) {
+        return {
+          success: false,
+          error: 'No tables to drop',
+        };
+      }
+
+      console.log(`🗑️  Dropping ${tables.length} table(s)...`);
+
+      let successCount = 0;
+      let failCount = 0;
+      const results: any[] = [];
+
+      // Drop each table
+      for (const table of tables) {
+        const result: any = {
+          tableId: table.id,
+          tableName: table.tableName,
+          displayName: table.displayName,
+        };
+
+        try {
+          // Drop the actual data table
+          db.exec(`DROP TABLE IF EXISTS "${table.tableName}"`);
+          console.log(`   🗑️  Dropped data table: ${table.tableName}`);
+
+          // Delete metadata
+          db.prepare('DELETE FROM user_tables WHERE id = ?').run(table.id);
+          console.log(`   🗑️  Deleted metadata for: ${table.displayName}`);
+
+          result.success = true;
+          successCount++;
+        } catch (tableError) {
+          console.error(`Error dropping table "${table.displayName}":`, tableError);
+          result.success = false;
+          result.error = tableError instanceof Error ? tableError.message : 'Failed to drop table';
+          failCount++;
+        }
+
+        results.push(result);
+      }
+
+      console.log(`✅ Drop all complete: ${successCount} succeeded, ${failCount} failed`);
+
+      return {
+        success: true,
+        data: {
+          totalTables: tables.length,
+          successCount,
+          failCount,
+          results,
+        },
+      };
+    } catch (error) {
+      console.error('Error dropping all tables:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to drop tables',
+      };
+    }
+  });
+
+  /**
+   * Export all tables as SQL commands
+   */
+  ipcMain.handle('user-data:export-sql', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const db = manager.getUserDataDatabase();
+
+      // Get all user tables
+      const tables = userDataManager.getAllTables();
+
+      if (tables.length === 0) {
+        return {
+          success: false,
+          error: 'No tables to export',
+        };
+      }
+
+      console.log(`📦 Exporting ${tables.length} table(s) as SQL...`);
+
+      let sqlContent = `-- User Database SQL Export
+-- Generated: ${new Date().toISOString()}
+-- Tables: ${tables.length}
+-- Total Rows: ${tables.reduce((sum, t) => sum + t.rowCount, 0)}
+
+`;
+
+      // Export each table
+      for (const table of tables) {
+        try {
+          console.log(`   📄 Exporting table "${table.displayName}" (${table.rowCount} rows)`);
+
+          // Add comment header for this table
+          sqlContent += `\n-- ============================================\n`;
+          sqlContent += `-- Table: ${table.displayName}\n`;
+          sqlContent += `-- SQL Name: ${table.tableName}\n`;
+          sqlContent += `-- Rows: ${table.rowCount}\n`;
+          sqlContent += `-- ============================================\n\n`;
+
+          // Generate CREATE TABLE statement (excluding auto-generated id column)
+          const columnsForCreate = table.schema
+            .filter(col => col.name !== 'id')
+            .map(col => {
+              const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
+              let colDef = `  "${col.name}" ${sqliteType}`;
+              if (col.notNull) colDef += ' NOT NULL';
+              if (col.defaultValue !== undefined) {
+                if (typeof col.defaultValue === 'string') {
+                  colDef += ` DEFAULT '${col.defaultValue}'`;
+                } else if (col.defaultValue === null) {
+                  colDef += ' DEFAULT NULL';
+                } else {
+                  colDef += ` DEFAULT ${col.defaultValue}`;
+                }
+              }
+              return colDef;
+            });
+
+          sqlContent += `CREATE TABLE "${table.tableName}" (\n`;
+          sqlContent += `  id INTEGER PRIMARY KEY AUTOINCREMENT,\n`;
+          sqlContent += columnsForCreate.join(',\n');
+          sqlContent += `\n);\n\n`;
+
+          // Generate INSERT statements (excluding id column)
+          if (table.rowCount > 0) {
+            const columnsToExport = table.schema
+              .filter(col => col.name !== 'id')
+              .map(col => col.name);
+
+            const columnList = columnsToExport.map(col => `"${col}"`).join(', ');
+
+            const query = `SELECT ${columnsToExport.map(col => `"${col}"`).join(', ')} FROM "${table.tableName}"`;
+            const stmt = db.prepare(query);
+            const rows = stmt.all();
+
+            for (const row of rows) {
+              const values = columnsToExport.map(col => {
+                const value = row[col];
+                if (value === null || value === undefined) {
+                  return 'NULL';
+                } else if (typeof value === 'string') {
+                  // Escape single quotes in strings
+                  return `'${value.replace(/'/g, "''")}'`;
+                } else {
+                  return value;
+                }
+              });
+
+              sqlContent += `INSERT INTO "${table.tableName}" (${columnList}) VALUES (${values.join(', ')});\n`;
+            }
+
+            sqlContent += `\n`;
+          }
+
+          // Store metadata as SQL comments
+          sqlContent += `-- Table Metadata:\n`;
+          sqlContent += `-- Display Name: ${table.displayName}\n`;
+          if (table.description) {
+            sqlContent += `-- Description: ${table.description}\n`;
+          }
+          if (table.createdFromFile) {
+            sqlContent += `-- Created From: ${table.createdFromFile}\n`;
+          }
+          if (table.uniqueKeyColumns) {
+            sqlContent += `-- Unique Key Columns: ${JSON.parse(table.uniqueKeyColumns).join(', ')}\n`;
+          }
+          if (table.duplicateAction) {
+            sqlContent += `-- Duplicate Action: ${table.duplicateAction}\n`;
+          }
+          sqlContent += `\n`;
+
+          console.log(`   ✅ Exported "${table.displayName}"`);
+        } catch (tableError) {
+          console.error(`Error exporting table "${table.displayName}":`, tableError);
+          sqlContent += `-- ERROR exporting table "${table.displayName}": ${tableError instanceof Error ? tableError.message : 'Unknown error'}\n\n`;
+        }
+      }
+
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export as SQL',
+        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.sql`),
+        filters: [
+          {
+            name: 'SQL Files',
+            extensions: ['sql'],
+          },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
+
+      // Write SQL content to file
+      await fs.writeFile(result.filePath, sqlContent, 'utf-8');
+
+      console.log(`✅ Successfully exported ${tables.length} table(s) as SQL to: ${result.filePath}`);
+
+      return {
+        success: true,
+        data: {
+          filePath: result.filePath,
+          tablesExported: tables.length,
+          totalRows: tables.reduce((sum, t) => sum + t.rowCount, 0),
+        },
+      };
+    } catch (error) {
+      console.error('Error exporting as SQL:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to export as SQL',
+      };
+    }
+  });
+
+  /**
+   * Import SQL commands from a file
+   */
+  ipcMain.handle('user-data:import-sql', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const db = manager.getUserDataDatabase();
+
+      // Show file picker dialog
+      const fileResult = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'SQL Files',
+            extensions: ['sql'],
+          },
+        ],
+      });
+
+      if (fileResult.canceled || fileResult.filePaths.length === 0) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
+
+      const filePath = fileResult.filePaths[0];
+      const fileName = path.basename(filePath);
+
+      console.log(`📥 Importing SQL from "${fileName}"...`);
+
+      // Read SQL file
+      const sqlContent = await fs.readFile(filePath, 'utf-8');
+
+      // Smart SQL statement splitter that handles BEGIN...END blocks
+      const statements: string[] = [];
+      let currentStatement = '';
+      let inBeginEnd = 0; // Track nesting level of BEGIN...END blocks
+      let inString = false;
+      let stringChar = '';
+
+      const lines = sqlContent.split('\n');
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        // Skip comment-only lines
+        if (trimmedLine.startsWith('--') || trimmedLine.length === 0) {
+          continue;
+        }
+
+        // Process character by character to handle strings and keywords
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          currentStatement += char;
+
+          // Handle string literals
+          if ((char === "'" || char === '"') && (i === 0 || line[i - 1] !== '\\')) {
+            if (!inString) {
+              inString = true;
+              stringChar = char;
+            } else if (char === stringChar) {
+              inString = false;
+            }
+          }
+
+          // Only process keywords when not inside a string
+          if (!inString) {
+            // Check for BEGIN keyword (case insensitive)
+            const remaining = line.substring(i).toUpperCase();
+            if (remaining.startsWith('BEGIN')) {
+              // Make sure it's a word boundary
+              const nextChar = line[i + 5];
+              if (!nextChar || /\s/.test(nextChar)) {
+                inBeginEnd++;
+              }
+            }
+
+            // Check for END keyword (case insensitive)
+            if (remaining.startsWith('END')) {
+              // Make sure it's a word boundary
+              const nextChar = line[i + 3];
+              if (!nextChar || /\s|;/.test(nextChar)) {
+                if (inBeginEnd > 0) {
+                  inBeginEnd--;
+                }
+              }
+            }
+
+            // Check for semicolon - statement terminator
+            if (char === ';' && inBeginEnd === 0) {
+              const stmt = currentStatement.trim();
+              if (stmt.length > 0) {
+                statements.push(stmt);
+              }
+              currentStatement = '';
+            }
+          }
+        }
+
+        currentStatement += '\n';
+      }
+
+      // Add any remaining statement
+      const finalStmt = currentStatement.trim();
+      if (finalStmt.length > 0 && !finalStmt.startsWith('--')) {
+        statements.push(finalStmt);
+      }
+
+      console.log(`   📝 Found ${statements.length} SQL statement(s)`);
+
+      let executedCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      // Execute statements in a transaction
+      const transaction = db.transaction(() => {
+        for (const statement of statements) {
+          try {
+            db.exec(statement);
+            executedCount++;
+          } catch (error) {
+            errorCount++;
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(`Statement failed: ${statement.substring(0, 100)}...\nError: ${errorMsg}`);
+            console.error(`   ❌ Error executing statement:`, errorMsg);
+            console.error(`   Statement: ${statement.substring(0, 200)}`);
+
+            // Continue with other statements instead of failing completely
+          }
+        }
+      });
+
+      try {
+        transaction();
+        console.log(`✅ Import complete: ${executedCount} statements executed, ${errorCount} errors`);
+      } catch (error) {
+        console.error('Transaction failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Transaction failed',
+        };
+      }
+
+      // After importing, scan for tables that don't have metadata entries and create them
+      console.log(`🔍 Scanning for tables without metadata...`);
+      const userDataManager = manager.getUserDataManager();
+
+      // Get all tables from the database
+      const allTables = db.prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type='table'
+        AND name NOT LIKE 'sqlite_%'
+        AND name NOT IN ('user_tables', 'user_imports')
+      `).all() as Array<{ name: string }>;
+
+      let metadataCreatedCount = 0;
+
+      for (const { name: tableName } of allTables) {
+        // Check if metadata exists
+        const existingMetadata = userDataManager.getTableByName(tableName);
+
+        if (!existingMetadata) {
+          console.log(`   📝 Creating metadata for table "${tableName}"`);
+
+          try {
+            // Get table schema from database
+            const tableInfo = db.prepare(`PRAGMA table_info("${tableName}")`).all() as Array<{
+              cid: number;
+              name: string;
+              type: string;
+              notnull: number;
+              dflt_value: any;
+              pk: number;
+            }>;
+
+            // Get row count
+            const rowCountResult = db.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get() as { count: number };
+            const rowCount = rowCountResult.count;
+
+            // Build schema (excluding id column as it's handled separately)
+            const schema = tableInfo.map(col => ({
+              name: col.name,
+              type: col.type as any,
+              notNull: col.notnull === 1,
+              defaultValue: col.dflt_value,
+            }));
+
+            // Create metadata entry
+            const now = new Date().toISOString();
+            const tableId = randomUUID();
+
+            db.prepare(`
+              INSERT INTO user_tables (
+                id, table_name, display_name, description, created_from_file,
+                row_count, column_count, created_at, updated_at, schema_json,
+                unique_key_columns, duplicate_action
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              tableId,
+              tableName,
+              tableName, // Use table name as display name
+              `Imported from ${fileName}`,
+              fileName,
+              rowCount,
+              schema.length,
+              now,
+              now,
+              JSON.stringify(schema),
+              null,
+              'skip'
+            );
+
+            metadataCreatedCount++;
+            console.log(`   ✅ Created metadata for "${tableName}" (${rowCount} rows, ${schema.length} columns)`);
+          } catch (metadataError) {
+            console.error(`   ❌ Error creating metadata for "${tableName}":`, metadataError);
+          }
+        }
+      }
+
+      console.log(`✅ Metadata scan complete: ${metadataCreatedCount} new table(s) registered`);
+
+      return {
+        success: true,
+        data: {
+          filePath,
+          fileName,
+          statementsExecuted: executedCount,
+          errorCount,
+          errors: errors.slice(0, 10), // Return first 10 errors
+          tablesRegistered: metadataCreatedCount,
+        },
+      };
+    } catch (error) {
+      console.error('Error importing SQL:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to import SQL',
       };
     }
   });

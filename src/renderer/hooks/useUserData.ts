@@ -387,6 +387,124 @@ export function useUserData() {
     [fetchTables]
   );
 
+  /**
+   * Export all tables to a single Excel file
+   */
+  const exportAllTables = useCallback(async () => {
+    try {
+      const result = await window.electron.invoke('user-data:export-all-tables');
+
+      if (result.success) {
+        return result.data;
+      } else if (result.canceled) {
+        return null;
+      } else {
+        throw new Error(result.error || 'Failed to export tables');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Import all sheets from an Excel file as separate tables
+   */
+  const importAllSheets = useCallback(async (options?: { overwrite?: boolean }) => {
+    try {
+      const result = await window.electron.invoke('user-data:import-all-sheets', options);
+
+      if (result.success) {
+        // Refresh tables list
+        await fetchTables();
+        return result.data;
+      } else if (result.canceled) {
+        return null;
+      } else {
+        throw new Error(result.error || 'Failed to import sheets');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchTables]);
+
+  /**
+   * Drop all tables from the database
+   */
+  const dropAllTables = useCallback(async () => {
+    try {
+      const result = await window.electron.invoke('user-data:drop-all-tables');
+
+      if (result.success) {
+        // Refresh tables list
+        await fetchTables();
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to drop tables');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchTables]);
+
+  /**
+   * Export all tables as SQL commands
+   */
+  const exportSQL = useCallback(async () => {
+    try {
+      const result = await window.electron.invoke('user-data:export-sql');
+
+      if (result.success) {
+        return result.data;
+      } else if (result.canceled) {
+        return null;
+      } else {
+        throw new Error(result.error || 'Failed to export SQL');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Import SQL commands from a file
+   */
+  const importSQL = useCallback(async () => {
+    try {
+      const result = await window.electron.invoke('user-data:import-sql');
+
+      if (result.success) {
+        // Refresh tables list
+        await fetchTables();
+        return result.data;
+      } else if (result.canceled) {
+        return null;
+      } else {
+        throw new Error(result.error || 'Failed to import SQL');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchTables]);
+
+  /**
+   * Force drop ALL tables from database (including orphaned ones without metadata)
+   */
+  const forceDropAllTables = useCallback(async () => {
+    try {
+      const result = await window.electron.invoke('user-data:force-drop-all-tables');
+
+      if (result.success) {
+        // Refresh tables list
+        await fetchTables();
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to force drop tables');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchTables]);
+
   // Fetch tables on mount
   useEffect(() => {
     fetchTables();
@@ -410,5 +528,11 @@ export function useUserData() {
     validateTableName,
     getImportOperations,
     syncToExistingTable,
+    exportAllTables,
+    importAllSheets,
+    dropAllTables,
+    exportSQL,
+    importSQL,
+    forceDropAllTables,
   };
 }
