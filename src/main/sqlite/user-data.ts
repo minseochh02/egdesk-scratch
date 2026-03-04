@@ -73,15 +73,22 @@ export class UserDataDbManager {
     const tableName = options?.tableName || this.sanitizeTableName(displayName);
     const now = new Date().toISOString();
 
-    // Add auto-incrementing ID column as the first column
-    const idColumn: ColumnSchema = {
-      name: 'id',
-      type: 'INTEGER',
-      notNull: true,
-    };
+    // Check if user provided their own id column
+    const hasUserIdColumn = schema.some((col) => col.name.toLowerCase() === 'id');
 
-    // Full schema including ID column
-    const fullSchema = [idColumn, ...schema];
+    let fullSchema: ColumnSchema[];
+    if (hasUserIdColumn) {
+      // User defined their own id column - use it as-is
+      fullSchema = schema;
+    } else {
+      // Add auto-incrementing ID column as the first column
+      const idColumn: ColumnSchema = {
+        name: 'id',
+        type: 'INTEGER',
+        notNull: true,
+      };
+      fullSchema = [idColumn, ...schema];
+    }
 
     // Validate fullSchema is serializable
     const schemaJson = JSON.stringify(fullSchema);
@@ -92,14 +99,32 @@ export class UserDataDbManager {
     // Build CREATE TABLE SQL with ID column
     const columnDefs = fullSchema
       .map((col, index) => {
-        // First column is the auto-incrementing ID
-        if (index === 0) {
-          return 'id INTEGER PRIMARY KEY AUTOINCREMENT';
+        // Handle id column
+        if (col.name.toLowerCase() === 'id') {
+          if (!hasUserIdColumn && col.type === 'INTEGER') {
+            // Auto-generated INTEGER id
+            return 'id INTEGER PRIMARY KEY AUTOINCREMENT';
+          } else {
+            // User-defined id column (could be TEXT, INTEGER without autoincrement, etc.)
+            const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
+            const parts = [`"${col.name}"`, sqliteType, 'PRIMARY KEY'];
+            if (col.notNull) parts.push('NOT NULL');
+            if (col.defaultValue !== undefined) {
+              if (typeof col.defaultValue === 'string') {
+                parts.push(`DEFAULT '${col.defaultValue}'`);
+              } else if (col.defaultValue === null) {
+                parts.push('DEFAULT NULL');
+              } else {
+                parts.push(`DEFAULT ${col.defaultValue}`);
+              }
+            }
+            return parts.join(' ');
+          }
         }
 
         // Convert DATE type to TEXT for SQLite storage
         const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
-        
+
         const parts = [`"${col.name}"`, sqliteType];
         if (col.notNull) parts.push('NOT NULL');
         if (col.defaultValue !== undefined) {
@@ -459,8 +484,15 @@ export class UserDataDbManager {
       return this.replaceByDateRange(tableId, rows);
     }
 
-    // Filter out the ID column (first column) - SQLite will auto-generate it
-    const dataColumns = table.schema.filter((col) => col.name !== 'id');
+    // Check if id column is AUTOINCREMENT (first column is INTEGER with autoincrement)
+    const idColumn = table.schema.find((col) => col.name === 'id');
+    const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+
+    // Filter out the ID column only if it's auto-increment
+    // If user defined their own id column (e.g., TEXT), include it in inserts
+    const dataColumns = isAutoIncrementId
+      ? table.schema.filter((col) => col.name !== 'id')
+      : table.schema;
 
     // Prepare column names (excluding ID)
     const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
@@ -679,8 +711,15 @@ export class UserDataDbManager {
     const duplicateDetails: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }> = [];
     const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
 
-    // Filter out the ID column (first column) - SQLite will auto-generate it
-    const dataColumns = table.schema.filter((col) => col.name !== 'id');
+    // Check if id column is AUTOINCREMENT (first column is INTEGER with autoincrement)
+    const idColumn = table.schema.find((col) => col.name === 'id');
+    const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+
+    // Filter out the ID column only if it's auto-increment
+    // If user defined their own id column (e.g., TEXT), include it in inserts
+    const dataColumns = isAutoIncrementId
+      ? table.schema.filter((col) => col.name !== 'id')
+      : table.schema;
 
     // Prepare column names (excluding ID)
     const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
@@ -853,7 +892,14 @@ export class UserDataDbManager {
     try {
       // Convert all incoming row dates and find the date range
       const dateValues: Date[] = [];
-      const dataColumns = table.schema.filter((col) => col.name !== 'id');
+
+      // Check if id column is AUTOINCREMENT
+      const idColumn = table.schema.find((col) => col.name === 'id');
+      const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+
+      const dataColumns = isAutoIncrementId
+        ? table.schema.filter((col) => col.name !== 'id')
+        : table.schema;
       
       rows.forEach((row, idx) => {
         try {
@@ -1339,6 +1385,146 @@ export class UserDataDbManager {
 
     const sql = `SELECT * FROM "${table.tableName}" LIMIT ?`;
     return this.database.prepare(sql).all(Math.min(limit, 100));
+  }
+
+  /**
+   * Delete rows from a table by filter or by ID
+   */
+  deleteRows(tableId: string, options: {
+    ids?: number[];
+    filters?: Record<string, string>;
+  }): { deleted: number } {
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    let whereClauses: string[] = [];
+    let params: any[] = [];
+
+    // Delete by IDs
+    if (options.ids && options.ids.length > 0) {
+      const placeholders = options.ids.map(() => '?').join(', ');
+      whereClauses.push(`id IN (${placeholders})`);
+      params.push(...options.ids);
+    }
+
+    // Delete by filters
+    if (options.filters) {
+      for (const [column, value] of Object.entries(options.filters)) {
+        // Check if column exists
+        const columnExists = table.schema.some((col) => col.name === column);
+        if (!columnExists) continue;
+
+        // Parse operators (>, <, >=, <=, =, !=)
+        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        if (operatorMatch) {
+          const [, operator, val] = operatorMatch;
+          whereClauses.push(`"${column}" ${operator} ?`);
+          params.push(val.trim());
+        } else {
+          whereClauses.push(`"${column}" = ?`);
+          params.push(value);
+        }
+      }
+    }
+
+    if (whereClauses.length === 0) {
+      throw new Error('No deletion criteria provided (ids or filters required)');
+    }
+
+    const whereClause = whereClauses.join(' AND ');
+    const sql = `DELETE FROM "${table.tableName}" WHERE ${whereClause}`;
+
+    const stmt = this.database.prepare(sql);
+    const result = stmt.run(...params);
+
+    // Update row count
+    this.updateRowCount(tableId);
+
+    return { deleted: result.changes };
+  }
+
+  /**
+   * Update rows in a table by filter or by ID
+   */
+  updateRows(tableId: string, updates: Record<string, any>, options: {
+    ids?: number[];
+    filters?: Record<string, string>;
+  }): { updated: number } {
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    if (!updates || Object.keys(updates).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    // Build SET clause
+    const setClauses: string[] = [];
+    const setParams: any[] = [];
+    const dataColumns = table.schema.filter((col) => col.name !== 'id');
+
+    for (const [column, value] of Object.entries(updates)) {
+      // Check if column exists (excluding id which is auto-generated)
+      const columnSchema = dataColumns.find((col) => col.name === column);
+      if (!columnSchema) {
+        console.warn(`Column "${column}" not found in table schema, skipping`);
+        continue;
+      }
+
+      setClauses.push(`"${column}" = ?`);
+      setParams.push(this.convertValue(columnSchema, value));
+    }
+
+    if (setClauses.length === 0) {
+      throw new Error('No valid update columns provided');
+    }
+
+    // Build WHERE clause
+    let whereClauses: string[] = [];
+    let whereParams: any[] = [];
+
+    // Update by IDs
+    if (options.ids && options.ids.length > 0) {
+      const placeholders = options.ids.map(() => '?').join(', ');
+      whereClauses.push(`id IN (${placeholders})`);
+      whereParams.push(...options.ids);
+    }
+
+    // Update by filters
+    if (options.filters) {
+      for (const [column, value] of Object.entries(options.filters)) {
+        // Check if column exists
+        const columnExists = table.schema.some((col) => col.name === column);
+        if (!columnExists) continue;
+
+        // Parse operators (>, <, >=, <=, =, !=)
+        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        if (operatorMatch) {
+          const [, operator, val] = operatorMatch;
+          whereClauses.push(`"${column}" ${operator} ?`);
+          whereParams.push(val.trim());
+        } else {
+          whereClauses.push(`"${column}" = ?`);
+          whereParams.push(value);
+        }
+      }
+    }
+
+    if (whereClauses.length === 0) {
+      throw new Error('No update criteria provided (ids or filters required)');
+    }
+
+    const setClause = setClauses.join(', ');
+    const whereClause = whereClauses.join(' AND ');
+    const sql = `UPDATE "${table.tableName}" SET ${setClause} WHERE ${whereClause}`;
+
+    const stmt = this.database.prepare(sql);
+    const result = stmt.run(...setParams, ...whereParams);
+
+    return { updated: result.changes };
   }
 
   /**

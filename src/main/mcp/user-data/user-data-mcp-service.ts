@@ -188,6 +188,160 @@ export class UserDataMCPService implements IMCPService {
           },
           required: ['tableName']
         }
+      },
+      {
+        name: 'user_data_create_table',
+        description: 'Create a new user data table with specified schema',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            displayName: {
+              type: 'string',
+              description: 'Display name for the table'
+            },
+            schema: {
+              type: 'array',
+              description: 'Array of column definitions (excluding auto-generated id column)',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', description: 'Column name' },
+                  type: { type: 'string', enum: ['TEXT', 'INTEGER', 'REAL', 'DATE'], description: 'Column data type' },
+                  notNull: { type: 'boolean', description: 'Whether column is NOT NULL' },
+                  defaultValue: { description: 'Default value for the column' }
+                },
+                required: ['name', 'type']
+              }
+            },
+            description: {
+              type: 'string',
+              description: 'Optional description of the table'
+            },
+            tableName: {
+              type: 'string',
+              description: 'Optional SQL table name (auto-generated if not provided)'
+            },
+            uniqueKeyColumns: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional columns to use for duplicate detection'
+            },
+            duplicateAction: {
+              type: 'string',
+              enum: ['skip', 'update', 'allow', 'replace-date-range'],
+              description: 'Action to take when duplicates are found'
+            }
+          },
+          required: ['displayName', 'schema']
+        }
+      },
+      {
+        name: 'user_data_insert_rows',
+        description: 'Insert rows into a table',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table to insert into'
+            },
+            rows: {
+              type: 'array',
+              description: 'Array of row objects to insert (keys must match column names)',
+              items: { type: 'object' }
+            }
+          },
+          required: ['tableName', 'rows']
+        }
+      },
+      {
+        name: 'user_data_delete_table',
+        description: 'Delete a table and all its data',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table to delete'
+            }
+          },
+          required: ['tableName']
+        }
+      },
+      {
+        name: 'user_data_rename_table',
+        description: 'Rename a table',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'Current table name'
+            },
+            newTableName: {
+              type: 'string',
+              description: 'New table name'
+            },
+            newDisplayName: {
+              type: 'string',
+              description: 'Optional new display name'
+            }
+          },
+          required: ['tableName', 'newTableName']
+        }
+      },
+      {
+        name: 'user_data_delete_rows',
+        description: 'Delete rows from a table by ID or by filter conditions',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            ids: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Array of row IDs to delete'
+            },
+            filters: {
+              type: 'object',
+              description: 'Filter conditions for rows to delete (e.g., {"age": ">30", "status": "inactive"})',
+              additionalProperties: { type: 'string' }
+            }
+          },
+          required: ['tableName']
+        }
+      },
+      {
+        name: 'user_data_update_rows',
+        description: 'Update existing rows in a table by ID or by filter conditions',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            updates: {
+              type: 'object',
+              description: 'Fields to update with their new values (e.g., {"name": "New Name", "isActive": true})',
+              additionalProperties: true
+            },
+            ids: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Array of row IDs to update'
+            },
+            filters: {
+              type: 'object',
+              description: 'Filter conditions for rows to update (e.g., {"status": "pending"})',
+              additionalProperties: { type: 'string' }
+            }
+          },
+          required: ['tableName', 'updates']
+        }
       }
     ];
   }
@@ -353,6 +507,160 @@ export class UserDataMCPService implements IMCPService {
             previewRows: previewData,
             totalRows: table.rowCount,
             columns: table.schema.map((col) => col.name)
+          };
+          break;
+        }
+
+        case 'user_data_create_table': {
+          const { displayName, schema, description, tableName, uniqueKeyColumns, duplicateAction } = args;
+          if (!displayName || !schema) {
+            throw new Error('Missing required parameters: displayName and schema');
+          }
+
+          const createdTable = this.manager.createTableFromSchema(displayName, schema, {
+            tableName,
+            description,
+            uniqueKeyColumns,
+            duplicateAction
+          });
+
+          result = {
+            success: true,
+            table: {
+              id: createdTable.id,
+              tableName: createdTable.tableName,
+              displayName: createdTable.displayName,
+              description: createdTable.description,
+              rowCount: createdTable.rowCount,
+              columnCount: createdTable.columnCount,
+              schema: createdTable.schema,
+              createdAt: createdTable.createdAt
+            }
+          };
+          break;
+        }
+
+        case 'user_data_insert_rows': {
+          const { tableName, rows } = args;
+          if (!tableName || !rows) {
+            throw new Error('Missing required parameters: tableName and rows');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const insertResult = this.manager.insertRows(table.id, rows);
+
+          result = {
+            success: true,
+            tableName,
+            inserted: insertResult.inserted,
+            skipped: insertResult.skipped,
+            duplicates: insertResult.duplicates,
+            errors: insertResult.errors,
+            duplicateDetails: insertResult.duplicateDetails,
+            errorDetails: insertResult.errorDetails
+          };
+          break;
+        }
+
+        case 'user_data_delete_table': {
+          const { tableName } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const deleteSuccess = this.manager.deleteTable(table.id);
+
+          result = {
+            success: deleteSuccess,
+            tableName,
+            message: deleteSuccess ? 'Table deleted successfully' : 'Failed to delete table'
+          };
+          break;
+        }
+
+        case 'user_data_rename_table': {
+          const { tableName, newTableName, newDisplayName } = args;
+          if (!tableName || !newTableName) {
+            throw new Error('Missing required parameters: tableName and newTableName');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const renameResult = this.manager.renameTable(table.id, newTableName, newDisplayName);
+
+          result = {
+            success: renameResult.success,
+            oldTableName: tableName,
+            newTableName: renameResult.table?.tableName,
+            newDisplayName: renameResult.table?.displayName,
+            error: renameResult.error,
+            table: renameResult.table
+          };
+          break;
+        }
+
+        case 'user_data_delete_rows': {
+          const { tableName, ids, filters } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          if (!ids && !filters) {
+            throw new Error('Must provide either ids or filters for deletion');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const deleteResult = this.manager.deleteRows(table.id, { ids, filters });
+
+          result = {
+            success: true,
+            tableName,
+            deleted: deleteResult.deleted
+          };
+          break;
+        }
+
+        case 'user_data_update_rows': {
+          const { tableName, updates, ids, filters } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          if (!updates) {
+            throw new Error('Missing required parameter: updates');
+          }
+
+          if (!ids && !filters) {
+            throw new Error('Must provide either ids or filters for update');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const updateResult = this.manager.updateRows(table.id, updates, { ids, filters });
+
+          result = {
+            success: true,
+            tableName,
+            updated: updateResult.updated
           };
           break;
         }
