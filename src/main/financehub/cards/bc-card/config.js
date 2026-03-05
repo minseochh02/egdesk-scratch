@@ -67,6 +67,14 @@ const BC_CARD_XPATHS = {
   excelDownloadButton: {
     css: '.btnIconType > span:nth-child(1)',
     xpath: '//*[@id="btnDown"]/a[1]/span[1]',
+    fullXpath: '/html/body/div[3]/div/div/div/div[2]/div[2]/div[5]/div[4]/a[1]',
+  },
+
+  // Card list Excel download button (보유카드조회 page)
+  cardListExcelDownloadButton: {
+    fullXpath: '/html/body/div[3]/div[2]/div/div/div[2]/div[2]/div[5]/div[4]/a[1]',
+    xpath: '//*[@id="content"]/div[2]/div[5]/div[4]/a[1]',
+    css: 'a[onclick*="excelDown"]',
   },
 
   // Transaction table (line 308)

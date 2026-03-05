@@ -306,8 +306,36 @@ class BCCardAutomator extends BaseCardAutomator {
         timeout: this.config.timeouts.downloadWait
       });
 
-      // Click Excel download button
-      await this.page.locator('xpath=/html/body/div[3]/div[2]/div/div/div[2]/div[2]/div[5]/div[4]/a[1]').click();
+      // Click Excel download button with retry logic
+      this.log('Clicking card list Excel download button...');
+      let cardListDownloadClicked = false;
+
+      // Try CSS selector first
+      try {
+        await this.page.locator(this.config.xpaths.cardListExcelDownloadButton.css).click({ timeout: 10000 });
+        cardListDownloadClicked = true;
+        this.log('Card list download clicked with CSS selector');
+      } catch (e) {
+        this.log('CSS selector failed, trying XPath fallback...');
+
+        // Try XPath selector
+        try {
+          await this.page.locator(`xpath=${this.config.xpaths.cardListExcelDownloadButton.xpath}`).click({ timeout: 10000 });
+          cardListDownloadClicked = true;
+          this.log('Card list download clicked with XPath selector');
+        } catch (e2) {
+          this.log('XPath selector failed, trying full XPath fallback...');
+
+          // Try full XPath selector as final fallback
+          await this.page.locator(`xpath=${this.config.xpaths.cardListExcelDownloadButton.fullXpath}`).click({ timeout: 10000 });
+          cardListDownloadClicked = true;
+          this.log('Card list download clicked with full XPath selector');
+        }
+      }
+
+      if (!cardListDownloadClicked) {
+        throw new Error('Failed to click card list Excel download button with all selectors');
+      }
 
       // Wait for download
       const download = await downloadPromise;
@@ -594,11 +622,30 @@ class BCCardAutomator extends BaseCardAutomator {
 
       // Click Excel download button (line 331)
       this.log('Clicking Excel download button...');
+      let downloadButtonClicked = false;
+
+      // Try CSS selector first
       try {
         await this.page.locator(this.config.xpaths.excelDownloadButton.css).click({ timeout: 10000 });
+        downloadButtonClicked = true;
       } catch (e) {
         this.log('CSS selector failed, trying XPath fallback...');
-        await this.page.locator(`xpath=${this.config.xpaths.excelDownloadButton.xpath}`).click();
+
+        // Try XPath selector
+        try {
+          await this.page.locator(`xpath=${this.config.xpaths.excelDownloadButton.xpath}`).click({ timeout: 10000 });
+          downloadButtonClicked = true;
+        } catch (e2) {
+          this.log('XPath selector failed, trying full XPath fallback...');
+
+          // Try full XPath selector as final fallback
+          await this.page.locator(`xpath=${this.config.xpaths.excelDownloadButton.fullXpath}`).click({ timeout: 10000 });
+          downloadButtonClicked = true;
+        }
+      }
+
+      if (!downloadButtonClicked) {
+        throw new Error('Failed to click Excel download button with all selectors');
       }
 
       // Wait for download to complete (lines 338-341)
