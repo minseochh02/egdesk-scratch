@@ -2341,6 +2341,9 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-financehub-get-banks-with-credentials'),
     hasCredentials: (bankId: string) =>
       ipcRenderer.invoke('sqlite-financehub-has-credentials', bankId),
+    // Raw SQL query (DEBUG/DEV ONLY)
+    runRawQuery: (sql: string, params?: any[]) =>
+      ipcRenderer.invoke('sqlite-financehub-raw-query', sql, params),
   },
   /**
    * Finance Hub Scheduler API
