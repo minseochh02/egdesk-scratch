@@ -351,7 +351,14 @@ export function useTransactions(): UseTransactionsReturn {
       };
 
       // Apply card filters
-      if (cardFilters.bankId !== 'all') queryOptions.bankId = cardFilters.bankId;
+      // IMPORTANT: Always filter for card transactions at SQL level to avoid pagination issues
+      if (cardFilters.bankId !== 'all') {
+        queryOptions.bankId = cardFilters.bankId;
+      } else {
+        // When "All" is selected, we need to filter for ANY card at SQL level
+        // This prevents pagination from fetching only bank transactions
+        queryOptions.bankIdLike = '%-card';
+      }
       if (cardFilters.accountId !== 'all') queryOptions.accountId = cardFilters.accountId;
       if (cardFilters.startDate) queryOptions.startDate = formatDateForQuery(cardFilters.startDate);
       if (cardFilters.endDate) queryOptions.endDate = formatDateForQuery(cardFilters.endDate);

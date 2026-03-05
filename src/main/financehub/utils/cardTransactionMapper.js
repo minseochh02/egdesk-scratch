@@ -36,16 +36,17 @@ function cleanCardNumber(cardNumber) {
 
 /**
  * Parse card dateTime to separate date and time, and combined transaction_datetime
- * @param {string} dateTime - '2026/01/19 14:46:51'
+ * @param {string} dateTime - '2026/01/19 14:46:51' or '2026.03.03 20:30'
  * @returns {{date: string, time: string, transaction_datetime: string}}
  */
 function parseCardDateTime(dateTime) {
   if (!dateTime) return { date: '', time: null, transaction_datetime: '' };
 
   const [datePart, timePart] = dateTime.split(' ');
-  const date = datePart.replace(/\//g, '-'); // 2026/01/19 → 2026-01-19
+  // Keep original separator (dots or slashes) - normalize to YYYY-MM-DD for 'date' field
+  const date = datePart.replace(/[/.]/g, '-'); // 2026/01/19 or 2026.03.03 → 2026-01-19
   const time = timePart || null;
-  const transaction_datetime = dateTime; // Keep original format: YYYY/MM/DD HH:MM:SS
+  const transaction_datetime = dateTime; // Keep original format
   return { date, time, transaction_datetime };
 }
 
@@ -85,6 +86,11 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     // Format date if needed (YYYYMMDD -> YYYY-MM-DD)
     if (date && date.length === 8 && !date.includes('-')) {
       date = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+    }
+
+    // Normalize all date formats to YYYY-MM-DD (handle dots, slashes)
+    if (date && typeof date === 'string') {
+      date = date.replace(/[/.]/g, '-');
     }
   }
 
@@ -179,12 +185,12 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
 
   const merchantName = cardTx.merchantName || cardTx['가맹점명'] || cardTx.representativeName || cardTx['대표자성명'] || '';
 
-  // Combine date and time into transaction_datetime format: YYYY/MM/DD HH:MM:SS
+  // Combine date and time into transaction_datetime format: YYYY.MM.DD HH:MM:SS
   let transactionDatetime = '';
   if (date && time) {
-    transactionDatetime = date.replace(/-/g, '/') + ' ' + time;
+    transactionDatetime = date.replace(/-/g, '.') + ' ' + time;
   } else if (date) {
-    transactionDatetime = date.replace(/-/g, '/');
+    transactionDatetime = date.replace(/-/g, '.');
   }
 
   return {

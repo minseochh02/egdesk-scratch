@@ -1009,10 +1009,17 @@ class HanaCardAutomator extends BaseCardAutomator {
         // Determine if this is a cancelled transaction
         const isCancelled = approvalCancelAmount !== 0 || row.status === '승인취소';
 
+        // Combine usageDate and usageTime into dateTime format (keep YYYY.MM.DD format)
+        // Excel gives us dates like "2026.03.03" and time like "20:30"
+        const dateTime = row.usageDate && row.usageTime
+          ? `${row.usageDate} ${row.usageTime}`
+          : row.usageDate || '';
+
         return {
           // Basic transaction info
           no: row.no,
-          usageDate: row.usageDate,           // 이용일 = 접수일자/승인일자
+          dateTime: dateTime,                 // Combined: "2026.03.03 20:30" (for mapper)
+          usageDate: row.usageDate,           // 이용일 = 접수일자/승인일자 (raw format)
           usageTime: row.usageTime,           // 이용시간 = 접수시간/승인시간
           cardNumber: row.cardNumber,
           approvalNumber: row.approvalNumber,
