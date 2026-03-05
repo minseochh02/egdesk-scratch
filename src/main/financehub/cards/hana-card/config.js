@@ -22,7 +22,8 @@ const HANA_CARD_XPATHS = {
   postLoginPopupClose: '/html/body/div[1]/section/div/button',
 
   // Navigation - Use text-based XPath or CSS for more reliable selection
-  businessSelector: '//a[contains(text(), "기업")]', // 기업 selector using text
+  businessSelector: '/html/body/div[5]/header/div/nav[1]/ul[1]/li[2]/a', // 기업 selector (primary)
+  businessSelectorBackup: '//a[contains(text(), "기업")]', // 기업 selector (backup if primary fails)
   loginButton: '/html/body/div[7]/header/div/nav[1]/ul[2]/li[1]/a', // Login button after 기업
 
   // Login form - Full XPaths (login form is in main page, not in hsci frame)
