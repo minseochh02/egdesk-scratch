@@ -158,9 +158,23 @@ class HanaCardAutomator extends BaseCardAutomator {
       this.log('Checking for initial popup...');
       await this.handleInitialPopup();
 
-      // Step 5: Click business selector (기업)
+      // Step 5: Click business selector (기업) with fallback
       this.log('Clicking business selector (기업)...');
-      await this.clickElementInFrame(this.config.xpaths.businessSelector);
+      try {
+        // Try primary selector first
+        this.log('Trying primary business selector...');
+        await this.clickElementInFrame(this.config.xpaths.businessSelector);
+        this.log('Primary business selector clicked successfully');
+      } catch (primaryError) {
+        // If primary fails, try backup selector
+        this.log(`Primary business selector failed: ${primaryError.message}, trying backup...`);
+        if (this.config.xpaths.businessSelectorBackup) {
+          await this.clickElementInFrame(this.config.xpaths.businessSelectorBackup);
+          this.log('Backup business selector clicked successfully');
+        } else {
+          throw new Error(`Business selector failed and no backup configured: ${primaryError.message}`);
+        }
+      }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
       // Wait for page to load after clicking 기업
