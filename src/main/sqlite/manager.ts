@@ -899,6 +899,15 @@ export class SQLiteManager {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });
+
+    // Raw SQL query (DEBUG/DEV ONLY)
+    ipcMain.handle('sqlite-financehub-raw-query', async (event, sql, params = []) => {
+      try {
+        return await this.getFinanceHubManager().runRawQuery(sql, params);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
   }
 
   /**

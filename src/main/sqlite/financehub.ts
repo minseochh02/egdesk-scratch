@@ -1398,4 +1398,30 @@ export class FinanceHubDbManager {
       createdAt: row.created_at,
     };
   }
+
+  /**
+   * Execute raw SQL query (DEBUG/DEV ONLY)
+   * @param {string} sql - SQL query to execute
+   * @param {any[]} params - Query parameters
+   * @returns {Promise<{success: boolean, data?: any, error?: string}>}
+   */
+  async runRawQuery(sql: string, params: any[] = []): Promise<{success: boolean, data?: any, error?: string}> {
+    try {
+      // Determine if this is a SELECT query or a mutation
+      const isSelect = sql.trim().toLowerCase().startsWith('select');
+
+      if (isSelect) {
+        const stmt = this.db.prepare(sql);
+        const rows = stmt.all(...params);
+        return { success: true, data: rows };
+      } else {
+        const stmt = this.db.prepare(sql);
+        const result = stmt.run(...params);
+        return { success: true, data: { changes: result.changes, lastInsertRowid: result.lastInsertRowid } };
+      }
+    } catch (error: any) {
+      console.error('[FinanceHubDb] Raw query error:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
