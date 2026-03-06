@@ -44,6 +44,8 @@ const BrowserRecorderPage: React.FC = () => {
   const [renameValue, setRenameValue] = useState<string>('');
   const [showExtensionSelector, setShowExtensionSelector] = useState(false);
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Action Chain state
   const [justStoppedRecording, setJustStoppedRecording] = useState(false);
@@ -497,6 +499,102 @@ const BrowserRecorderPage: React.FC = () => {
     setCurrentChainId(null);
   };
 
+  // Export/Import Handlers
+  const handleExportSingle = async (test: any) => {
+    try {
+      setExporting(true);
+      addDebugLog(`📤 Exporting test: ${test.name}`);
+
+      const result = await (window as any).electron.debug.exportSingleTest(test.path);
+
+      if (result.success) {
+        addDebugLog(`✅ Test exported successfully: ${result.data.testName}`);
+        alert(`Test exported successfully!\n\nFile: ${result.data.testName}\nLocation: ${result.data.filePath}`);
+      } else {
+        addDebugLog(`❌ Export failed: ${result.error}`);
+        alert(`Export failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error exporting test:', error);
+      addDebugLog(`❌ Export error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      setExporting(true);
+      addDebugLog('📤 Exporting all tests...');
+
+      const result = await (window as any).electron.debug.exportAllTests();
+
+      if (result.success) {
+        const { testCount, chainCount, downloadFolders } = result.data;
+        addDebugLog(`✅ Export complete: ${testCount} tests, ${chainCount} chains, ${downloadFolders} download folders`);
+        alert(
+          `Export successful!\n\n` +
+          `Tests: ${testCount}\n` +
+          `Chains: ${chainCount}\n` +
+          `Download Folders: ${downloadFolders}\n\n` +
+          `Location: ${result.data.filePath}`
+        );
+      } else {
+        addDebugLog(`❌ Export failed: ${result.error}`);
+        alert(`Export failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error exporting tests:', error);
+      addDebugLog(`❌ Export error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportTests = async () => {
+    try {
+      setImporting(true);
+      addDebugLog('📥 Importing tests...');
+
+      const result = await (window as any).electron.debug.importTests();
+
+      if (result.success) {
+        const { imported, skipped, chains, downloadFolders } = result.data;
+        addDebugLog(`✅ Import complete: ${imported} imported, ${skipped} skipped, ${chains} chains, ${downloadFolders} download folders`);
+
+        // Refresh test list
+        const testsResult = await (window as any).electron.debug.getPlaywrightTests();
+        if (testsResult.success) {
+          setSavedTests(testsResult.tests);
+        }
+        await loadSchedules();
+
+        alert(
+          `Import successful!\n\n` +
+          `Imported: ${imported}\n` +
+          `Skipped: ${skipped}\n` +
+          `Chains Restored: ${chains}\n` +
+          `Download Folders: ${downloadFolders}`
+        );
+      } else {
+        if (result.error !== 'Import canceled') {
+          addDebugLog(`❌ Import failed: ${result.error}`);
+          alert(`Import failed: ${result.error}`);
+        } else {
+          addDebugLog('⏭️ Import canceled');
+        }
+      }
+    } catch (error) {
+      console.error('Error importing tests:', error);
+      addDebugLog(`❌ Import error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="browser-recorder-page">
       <div className="browser-recorder-scroll">
@@ -668,18 +766,36 @@ const BrowserRecorderPage: React.FC = () => {
             <div className="browser-recorder-section">
               <div className="browser-recorder-section-header">
                 <h2 className="browser-recorder-section-title">Saved Tests</h2>
-                <button
-                  onClick={async () => {
-                    const result = await (window as any).electron.debug.getPlaywrightTests();
-                    if (result.success) {
-                      setSavedTests(result.tests);
-                      setShowSavedTests(!showSavedTests);
-                    }
-                  }}
-                  className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-toggle"
-                >
-                  {showSavedTests ? 'Hide Tests' : `View Saved Tests (${savedTests.length})`}
-                </button>
+                <div className="browser-recorder-section-actions">
+                  <button
+                    onClick={handleImportTests}
+                    disabled={importing}
+                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
+                    title="Import tests"
+                  >
+                    {importing ? '⏳ Importing...' : '📥 Import'}
+                  </button>
+                  <button
+                    onClick={handleExportAll}
+                    disabled={exporting || savedTests.length === 0}
+                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
+                    title="Export all tests"
+                  >
+                    {exporting ? '⏳ Exporting...' : '📤 Export All'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const result = await (window as any).electron.debug.getPlaywrightTests();
+                      if (result.success) {
+                        setSavedTests(result.tests);
+                        setShowSavedTests(!showSavedTests);
+                      }
+                    }}
+                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-toggle"
+                  >
+                    {showSavedTests ? 'Hide Tests' : `View Saved Tests (${savedTests.length})`}
+                  </button>
+                </div>
               </div>
 
               {showSavedTests && savedTests.length > 0 && (
@@ -730,6 +846,14 @@ const BrowserRecorderPage: React.FC = () => {
                               title="View code"
                             >
                               👁️ View
+                            </button>
+                            <button
+                              onClick={() => handleExportSingle(test)}
+                              disabled={exporting}
+                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-secondary"
+                              title="Export test"
+                            >
+                              📤 Export
                             </button>
                             <button
                               onClick={() => openRenameModal(test)}

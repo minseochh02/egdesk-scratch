@@ -1,5 +1,5 @@
 // IPC handlers for Chrome browser automation and Lighthouse reports
-import { ipcMain, app, screen, BrowserWindow } from 'electron';
+import { ipcMain, app, screen, BrowserWindow, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -11,6 +11,7 @@ import { Browser, BrowserContext, Page } from 'playwright-core';
 import { ChromeExtensionScanner } from './chrome-extension-scanner';
 import { getStore } from './storage';
 import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
+import AdmZip from 'adm-zip';
 
 // ===== Paused Browser Session Management =====
 
@@ -3004,6 +3005,503 @@ const { chromium } = require('playwright-core');
       return {
         success: false,
         error: error?.message || 'Failed to rename test'
+      };
+    }
+  });
+
+  // ===== Browser Recorder Export/Import Handlers =====
+
+  // Export single test file
+  ipcMain.handle('browser-recorder:export-single', async (event, { testPath }: { testPath: string }) => {
+    try {
+      console.log('📤 Export single test:', testPath);
+
+      // Validate test file exists
+      if (!fs.existsSync(testPath)) {
+        return {
+          success: false,
+          error: `Test file not found: ${path.basename(testPath)}`
+        };
+      }
+
+      // Show save dialog
+      const testName = path.basename(testPath);
+      const saveResult = await dialog.showSaveDialog({
+        title: 'Export Test',
+        defaultPath: testName,
+        filters: [
+          { name: 'Test Files', extensions: ['js'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+
+      if (saveResult.canceled || !saveResult.filePath) {
+        return {
+          success: false,
+          error: 'Export canceled'
+        };
+      }
+
+      // Read test file content
+      let testContent = fs.readFileSync(testPath, 'utf-8');
+
+      // Check if test is part of a chain and prepend metadata if needed
+      const chainStore = getChainMetadataStore();
+      const allChains = chainStore.getAllChains();
+      const chain = allChains.find(c => c.scripts.some(s => s.scriptPath === testPath));
+
+      if (chain) {
+        const scriptInfo = chain.scripts.find(s => s.scriptPath === testPath);
+        const chainMetadata = `/*
+ * Chain Metadata
+ * Chain ID: ${chain.chainId}
+ * Step: ${scriptInfo?.order || 1}
+ * Created: ${scriptInfo?.timestamp || new Date().toISOString()}
+ * Has Downloads: ${scriptInfo?.hasDownloads || false}
+ * Downloaded File: ${scriptInfo?.downloadedFile || 'none'}
+ */
+
+`;
+        testContent = chainMetadata + testContent;
+      }
+
+      // Write to selected location
+      fs.writeFileSync(saveResult.filePath, testContent, 'utf-8');
+
+      console.log('✅ Test exported successfully:', saveResult.filePath);
+
+      return {
+        success: true,
+        data: {
+          filePath: saveResult.filePath,
+          testName: path.basename(saveResult.filePath)
+        }
+      };
+    } catch (error: any) {
+      console.error('Error exporting test:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to export test'
+      };
+    }
+  });
+
+  // Export all tests as bundle
+  ipcMain.handle('browser-recorder:export-all', async (event) => {
+    try {
+      console.log('📤 Export all tests');
+
+      // Get all test files
+      const outputDir = getOutputDir();
+
+      if (!fs.existsSync(outputDir)) {
+        return {
+          success: false,
+          error: 'No tests found. Browser recorder output directory does not exist.'
+        };
+      }
+
+      const testFiles = fs.readdirSync(outputDir)
+        .filter(file => file.endsWith('.spec.js'))
+        .map(file => path.join(outputDir, file));
+
+      if (testFiles.length === 0) {
+        return {
+          success: false,
+          error: 'No tests available to export'
+        };
+      }
+
+      // Show save dialog
+      const defaultName = `browser-recorder-export-${new Date().toISOString().split('T')[0]}.zip`;
+      const saveResult = await dialog.showSaveDialog({
+        title: 'Export All Tests',
+        defaultPath: defaultName,
+        filters: [
+          { name: 'ZIP Archives', extensions: ['zip'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+
+      if (saveResult.canceled || !saveResult.filePath) {
+        return {
+          success: false,
+          error: 'Export canceled'
+        };
+      }
+
+      // Create ZIP
+      const zip = new AdmZip();
+
+      // Track download folder info
+      const downloadsMetadata: Record<string, any> = {};
+      const downloadsBaseDir = path.join(os.homedir(), 'Downloads', 'EGDesk-Browser');
+      let totalDownloadFolders = 0;
+
+      // Add all test files to tests/ folder in ZIP
+      for (const testFile of testFiles) {
+        const testName = path.basename(testFile);
+        const testContent = fs.readFileSync(testFile, 'utf-8');
+        zip.addFile(`tests/${testName}`, Buffer.from(testContent, 'utf-8'));
+
+        // Check for download folder
+        // Extract script name from filename (remove .spec.js extension)
+        const scriptBaseName = testName.replace('.spec.js', '');
+        const downloadFolder = path.join(downloadsBaseDir, scriptBaseName);
+
+        if (fs.existsSync(downloadFolder) && fs.statSync(downloadFolder).isDirectory()) {
+          try {
+            const downloadFiles = fs.readdirSync(downloadFolder);
+
+            if (downloadFiles.length > 0) {
+              let totalSize = 0;
+
+              // Add all files from download folder to downloads/{scriptName}/ in ZIP
+              for (const downloadFile of downloadFiles) {
+                const downloadFilePath = path.join(downloadFolder, downloadFile);
+                const stats = fs.statSync(downloadFilePath);
+
+                if (stats.isFile()) {
+                  const fileContent = fs.readFileSync(downloadFilePath);
+                  zip.addFile(`downloads/${scriptBaseName}/${downloadFile}`, fileContent);
+                  totalSize += stats.size;
+                }
+              }
+
+              // Record metadata
+              downloadsMetadata[testName] = {
+                folderName: scriptBaseName,
+                files: downloadFiles,
+                totalSize
+              };
+
+              totalDownloadFolders++;
+              console.log(`✅ Added download folder for ${testName}: ${downloadFiles.length} files`);
+            }
+          } catch (err) {
+            console.warn(`⚠️ Cannot read download folder for ${testName}:`, err);
+          }
+        }
+      }
+
+      // Get chain metadata
+      const chainStore = getChainMetadataStore();
+      const allChains = chainStore.getAllChains();
+
+      // Transform chain metadata to use relative paths
+      const exportChains = allChains.map(chain => ({
+        chainId: chain.chainId,
+        scripts: chain.scripts.map(script => ({
+          scriptPath: `tests/${path.basename(script.scriptPath)}`,
+          scriptName: path.basename(script.scriptPath),
+          order: script.order,
+          timestamp: script.timestamp,
+          hasDownloads: script.hasDownloads,
+          downloadedFile: script.downloadedFile
+        })),
+        createdAt: chain.createdAt,
+        updatedAt: chain.updatedAt
+      }));
+
+      // Create metadata.json
+      const metadata = {
+        exportVersion: '1.0',
+        exportedAt: new Date().toISOString(),
+        testCount: testFiles.length,
+        downloads: downloadsMetadata,
+        chains: exportChains
+      };
+
+      zip.addFile('metadata.json', Buffer.from(JSON.stringify(metadata, null, 2), 'utf-8'));
+
+      // Write ZIP file
+      zip.writeZip(saveResult.filePath);
+
+      console.log(`✅ Exported ${testFiles.length} tests, ${exportChains.length} chains, ${totalDownloadFolders} download folders`);
+
+      return {
+        success: true,
+        data: {
+          filePath: saveResult.filePath,
+          testCount: testFiles.length,
+          chainCount: exportChains.length,
+          downloadFolders: totalDownloadFolders
+        }
+      };
+    } catch (error: any) {
+      console.error('Error exporting all tests:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to export tests'
+      };
+    }
+  });
+
+  // Import tests (single or bundle)
+  ipcMain.handle('browser-recorder:import-tests', async (event) => {
+    try {
+      console.log('📥 Import tests');
+
+      // Show open dialog
+      const openResult = await dialog.showOpenDialog({
+        title: 'Import Tests',
+        filters: [
+          { name: 'Test Files', extensions: ['js', 'zip'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return {
+          success: false,
+          error: 'Import canceled'
+        };
+      }
+
+      const importPath = openResult.filePaths[0];
+      const ext = path.extname(importPath).toLowerCase();
+      const outputDir = getOutputDir();
+
+      // Ensure output directory exists (getOutputDir already creates it)
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Handle single .js file import
+      if (ext === '.js') {
+        const fileName = path.basename(importPath);
+        const targetPath = path.join(outputDir, fileName);
+
+        // Check if file already exists
+        if (fs.existsSync(targetPath)) {
+          const overwriteResult = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Overwrite', 'Cancel'],
+            defaultId: 1,
+            title: 'File Exists',
+            message: `Test "${fileName}" already exists. Do you want to overwrite it?`
+          });
+
+          if (overwriteResult.response === 1) {
+            return {
+              success: false,
+              error: 'Import canceled - file already exists'
+            };
+          }
+        }
+
+        // Copy file
+        fs.copyFileSync(importPath, targetPath);
+
+        console.log('✅ Imported single test:', fileName);
+
+        return {
+          success: true,
+          data: {
+            imported: 1,
+            skipped: 0,
+            chains: 0,
+            downloadFolders: 0
+          }
+        };
+      }
+
+      // Handle .zip bundle import
+      if (ext === '.zip') {
+        const zip = new AdmZip(importPath);
+        const zipEntries = zip.getEntries();
+
+        // Extract and validate metadata.json
+        const metadataEntry = zipEntries.find(e => e.entryName === 'metadata.json');
+        let metadata: any = null;
+
+        if (metadataEntry) {
+          try {
+            metadata = JSON.parse(metadataEntry.getData().toString('utf-8'));
+          } catch (err) {
+            console.warn('⚠️ Could not parse metadata.json:', err);
+          }
+        }
+
+        // Get test files from ZIP
+        const testEntries = zipEntries.filter(e =>
+          e.entryName.startsWith('tests/') &&
+          e.entryName.endsWith('.spec.js') &&
+          !e.isDirectory
+        );
+
+        if (testEntries.length === 0) {
+          return {
+            success: false,
+            error: 'No test files found in archive'
+          };
+        }
+
+        // Check for existing files
+        const existingFiles = testEntries.filter(e => {
+          const fileName = path.basename(e.entryName);
+          return fs.existsSync(path.join(outputDir, fileName));
+        });
+
+        let overwriteChoice: 'all' | 'skip' | 'cancel' = 'all';
+
+        if (existingFiles.length > 0) {
+          const result = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Overwrite All', 'Skip Existing', 'Cancel'],
+            defaultId: 2,
+            title: 'Duplicate Tests Found',
+            message: `${existingFiles.length} test(s) already exist. What would you like to do?`
+          });
+
+          if (result.response === 0) {
+            overwriteChoice = 'all';
+          } else if (result.response === 1) {
+            overwriteChoice = 'skip';
+          } else {
+            return {
+              success: false,
+              error: 'Import canceled'
+            };
+          }
+        }
+
+        // Import test files
+        let imported = 0;
+        let skipped = 0;
+        const pathMapping: Record<string, string> = {}; // old path -> new path
+
+        for (const testEntry of testEntries) {
+          const fileName = path.basename(testEntry.entryName);
+          const targetPath = path.join(outputDir, fileName);
+
+          // Check if should skip
+          if (overwriteChoice === 'skip' && fs.existsSync(targetPath)) {
+            skipped++;
+            console.log(`⏭️ Skipped existing test: ${fileName}`);
+            continue;
+          }
+
+          // Extract file
+          const testContent = testEntry.getData().toString('utf-8');
+          fs.writeFileSync(targetPath, testContent, 'utf-8');
+
+          pathMapping[testEntry.entryName] = targetPath;
+          imported++;
+          console.log(`✅ Imported test: ${fileName}`);
+        }
+
+        // Restore download folders
+        let restoredDownloadFolders = 0;
+        const downloadsBaseDir = path.join(os.homedir(), 'Downloads', 'EGDesk-Browser');
+
+        if (metadata && metadata.downloads) {
+          const downloadEntries = zipEntries.filter(e =>
+            e.entryName.startsWith('downloads/') &&
+            !e.isDirectory
+          );
+
+          for (const [testName, downloadInfo] of Object.entries(metadata.downloads)) {
+            const testWasImported = pathMapping[`tests/${testName}`];
+
+            if (testWasImported) {
+              try {
+                // Extract new script name from imported test filename
+                const newTestName = path.basename(testWasImported);
+                const newScriptBaseName = newTestName.replace('.spec.js', '');
+                const newDownloadFolder = path.join(downloadsBaseDir, newScriptBaseName);
+
+                // Create download folder
+                if (!fs.existsSync(newDownloadFolder)) {
+                  fs.mkdirSync(newDownloadFolder, { recursive: true });
+                }
+
+                // Copy files from ZIP to new download folder
+                const oldFolderName = (downloadInfo as any).folderName;
+                const relevantEntries = downloadEntries.filter(e =>
+                  e.entryName.startsWith(`downloads/${oldFolderName}/`)
+                );
+
+                for (const entry of relevantEntries) {
+                  const fileName = path.basename(entry.entryName);
+                  const targetFilePath = path.join(newDownloadFolder, fileName);
+                  const fileContent = entry.getData();
+                  fs.writeFileSync(targetFilePath, fileContent);
+                }
+
+                restoredDownloadFolders++;
+                console.log(`✅ Restored download folder for ${newTestName}: ${(downloadInfo as any).files?.length || 0} files`);
+              } catch (err) {
+                console.warn(`⚠️ Failed to restore download folder for ${testName}:`, err);
+              }
+            }
+          }
+        }
+
+        // Restore chains
+        let restoredChains = 0;
+        const chainStore = getChainMetadataStore();
+
+        if (metadata && metadata.chains && Array.isArray(metadata.chains)) {
+          for (const chain of metadata.chains) {
+            try {
+              // Check if all chain scripts were imported
+              const allScriptsImported = chain.scripts.every((script: any) =>
+                pathMapping[script.scriptPath]
+              );
+
+              if (!allScriptsImported) {
+                console.warn(`⚠️ Skipping incomplete chain ${chain.chainId} - not all scripts were imported`);
+                continue;
+              }
+
+              // Generate new chain ID
+              const newChainId = `chain-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+              // Add chain with updated paths
+              for (const script of chain.scripts) {
+                const newScriptPath = pathMapping[script.scriptPath];
+
+                chainStore.addScriptToChain(
+                  newChainId,
+                  newScriptPath,
+                  script.order,
+                  script.hasDownloads,
+                  script.downloadedFile
+                );
+              }
+
+              restoredChains++;
+              console.log(`✅ Restored chain: ${newChainId} (${chain.scripts.length} scripts)`);
+            } catch (err) {
+              console.warn(`⚠️ Failed to restore chain ${chain.chainId}:`, err);
+            }
+          }
+        }
+
+        console.log(`✅ Import complete: ${imported} imported, ${skipped} skipped, ${restoredChains} chains, ${restoredDownloadFolders} download folders`);
+
+        return {
+          success: true,
+          data: {
+            imported,
+            skipped,
+            chains: restoredChains,
+            downloadFolders: restoredDownloadFolders
+          }
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Invalid file format (.spec.js or .zip only)'
+      };
+    } catch (error: any) {
+      console.error('Error importing tests:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to import tests'
       };
     }
   });
