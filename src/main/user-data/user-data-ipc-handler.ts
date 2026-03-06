@@ -1177,14 +1177,35 @@ export function registerUserDataIPCHandlers(): void {
             }
           }
 
+          // Check if this sheet has islands (e.g., 계정별원장 with multiple account tables)
+          // If so, merge them to get properly forward-filled pivot table data
+          let dataToImport = sheet.rows;
+          let headersToImport = sheet.headers;
+          let typesToImport = sheet.detectedTypes;
+
+          if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
+            console.log(`   🏝️  Found ${sheet.detectedIslands.length} data island(s) in sheet "${sheet.name}", merging...`);
+
+            const merged = mergeIslands(sheet.detectedIslands, {
+              addMetadataColumns: true,  // Add 회사명, 기간, 계정코드_메타, 계정명_메타
+              addIslandIndex: false,
+            });
+
+            dataToImport = merged.rows;
+            headersToImport = merged.headers;
+            typesToImport = merged.detectedTypes;
+
+            console.log(`      ✅ Merged ${merged.mergedIslandCount} islands: ${merged.rows.length} total rows`);
+          }
+
           // Build column schema from detected types
-          const schema: ColumnSchema[] = sheet.headers.map((header, idx) => ({
+          const schema: ColumnSchema[] = headersToImport.map((header, idx) => ({
             name: header,
-            type: sheet.detectedTypes[idx],
+            type: typesToImport[idx],
             notNull: false,
           }));
 
-          console.log(`   📄 Importing sheet "${sheet.name}" (${sheet.rows.length} rows, ${schema.length} columns)`);
+          console.log(`   📄 Importing sheet "${sheet.name}" (${dataToImport.length} rows, ${schema.length} columns)`);
 
           // Create table with explicit table name
           const table = userDataManager.createTableFromSchema(displayName, schema, {
@@ -1201,7 +1222,7 @@ export function registerUserDataIPCHandlers(): void {
 
           try {
             // Insert rows
-            const insertResult = userDataManager.insertRows(table.id, sheet.rows);
+            const insertResult = userDataManager.insertRows(table.id, dataToImport);
 
             console.log(`   ✅ Imported sheet "${sheet.name}": ${insertResult.inserted} rows inserted`);
 

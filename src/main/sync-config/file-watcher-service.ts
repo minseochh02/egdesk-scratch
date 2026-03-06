@@ -306,6 +306,27 @@ export class FileWatcherService {
         throw new Error(`Sheet index ${config.sheetIndex} not found in Excel file`);
       }
 
+      // Check if this sheet has islands (e.g., 계정별원장 with multiple account tables)
+      // If so, merge them to get properly forward-filled pivot table data
+      let dataToSync = sheet.rows;
+      let headersToSync = sheet.headers;
+
+      if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
+        console.log(`🏝️  Found ${sheet.detectedIslands.length} data island(s), merging with pivot table handling...`);
+
+        const { mergeIslands } = require('../user-data/excel-parser');
+        const merged = mergeIslands(sheet.detectedIslands, {
+          addMetadataColumns: true,  // Add 회사명, 기간, 계정코드_메타, 계정명_메타
+          addIslandIndex: false,
+        });
+
+        dataToSync = merged.rows;
+        headersToSync = merged.headers;
+
+        console.log(`   ✅ Merged ${merged.mergedIslandCount} islands: ${merged.rows.length} total rows`);
+        console.log(`   📋 Headers: ${headersToSync.slice(0, 5).join(', ')}...`);
+      }
+
       // Get user data manager
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
@@ -320,11 +341,11 @@ export class FileWatcherService {
       const importOp = userDataManager.createImportOperation({
         tableId: config.targetTableId,
         fileName: filename,
-        totalRows: sheet.rows.length,
+        totalRows: dataToSync.length,
       });
 
       // Map and insert rows
-      const mappedRows = sheet.rows.map((row) => {
+      const mappedRows = dataToSync.map((row) => {
         const mappedRow: Record<string, any> = {};
         for (const [excelCol, tableCol] of Object.entries(config.columnMappings)) {
           // Row is an object with column names as keys, not an array
