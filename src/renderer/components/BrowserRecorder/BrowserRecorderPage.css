@@ -145,6 +145,12 @@
   letter-spacing: -0.01em;
 }
 
+.browser-recorder-section-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 /* URL Input */
 .browser-recorder-url-input-container {
   margin-bottom: 10px;

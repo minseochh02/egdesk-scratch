@@ -114,8 +114,9 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
       const looksLikeDate = datePatterns.some(pattern => pattern.test(trimmedValue));
       if (looksLikeDate) {
         // Strip suffix if present (e.g., "26/02/02-1" → "26/02/02")
+        // Only match suffixes on slash-delimited dates, not ISO format (YYYY-MM-DD)
         let dateStr = trimmedValue;
-        const suffixMatch = trimmedValue.match(/^(.+)-\d+$/);
+        const suffixMatch = trimmedValue.match(/^(.+\/\d{2,4})-\d+$/);
         if (suffixMatch) {
           dateStr = suffixMatch[1];
         }
