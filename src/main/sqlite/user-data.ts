@@ -1067,8 +1067,9 @@ export class UserDataDbManager {
         dateObj = processedValue;
       } else if (typeof processedValue === 'string') {
         // Strip suffix if present (e.g., "26/02/02-1" → "26/02/02")
+        // Only match suffixes on slash-delimited dates, not ISO format (YYYY-MM-DD)
         let dateStr = processedValue;
-        const suffixMatch = processedValue.match(/^(.+)-\d+$/);
+        const suffixMatch = processedValue.match(/^(.+\/\d{2,4})-\d+$/);
         if (suffixMatch) {
           dateStr = suffixMatch[1];
         }
