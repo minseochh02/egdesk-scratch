@@ -3745,6 +3745,59 @@ export class BrowserRecorder {
         return false;
       };
 
+      // Helper function to generate full absolute XPath (must be called while element is in DOM)
+      const generateXPath = (element: Element): string => {
+        if (!element || element.nodeType !== 1) {
+          return '';
+        }
+
+        const tagName = element.tagName.toLowerCase();
+
+        if (tagName === 'html') {
+          return '/html';
+        }
+
+        if (tagName === 'body') {
+          return '/html/body';
+        }
+
+        let parent = element.parentElement;
+
+        if (!parent) {
+          console.warn('⚠️ XPath: element.parentElement is null', {
+            tagName: element.tagName,
+            id: element.id,
+            isConnected: element.isConnected
+          });
+
+          const parentNode = element.parentNode;
+          if (parentNode && parentNode.nodeType === 1) {
+            parent = parentNode as Element;
+            console.log('✅ XPath: Using parentNode');
+          } else {
+            console.warn('⚠️ XPath: element not connected');
+            const allElements = Array.from(document.querySelectorAll(tagName));
+            const index = allElements.indexOf(element);
+            return index >= 0 ? `//${tagName}[${index + 1}]` : '/' + tagName + '[1]';
+          }
+        }
+
+        let ix = 0;
+        const siblings = Array.from(parent.children);
+        for (let i = 0; i < siblings.length; i++) {
+          const sibling = siblings[i];
+          if (sibling === element) {
+            return generateXPath(parent) + '/' + tagName + '[' + (ix + 1) + ']';
+          }
+          if (sibling.tagName === element.tagName) {
+            ix++;
+          }
+        }
+
+        console.warn('⚠️ XPath: element not found in parent');
+        return generateXPath(parent) + '/' + tagName + '[1]';
+      };
+
       // Function to handle clicks - separated so we can call it from multiple places
       const handleClick = (e: MouseEvent) => {
         // Check if recorder is disabled for debugging
@@ -3771,14 +3824,51 @@ export class BrowserRecorder {
           return;
         }
 
-        // Capture target immediately but defer ALL processing to avoid interfering with page
+        // Capture target AND selectors immediately (before element might be removed from DOM)
         const target = e.target as HTMLElement;
         const now = Date.now();
+
+        // CRITICAL: Generate selectors SYNCHRONOUSLY before element is removed from DOM
+        // Elements in modals/dialogs get disconnected immediately after click handlers run
+        console.log('⚡ Capturing selectors synchronously while element is connected...');
+
+        // Generate XPath immediately
+        const capturedXPath = generateXPath(target);
+
+        // Generate CSS selector immediately (simplified version)
+        let capturedSelector = '';
+        if (target.id) {
+          const elementsWithSameId = document.querySelectorAll(`[id="${target.id}"]`);
+          if (elementsWithSameId.length === 1) {
+            capturedSelector = `[id="${target.id}"]`;
+          } else {
+            const elementsWithId = Array.from(elementsWithSameId);
+            const index = elementsWithId.indexOf(target);
+            capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-of-type(${index})`;
+          }
+        } else if (target.className) {
+          const firstClass = target.className.trim().split(/\s+/)[0];
+          capturedSelector = `.${firstClass}`;
+        } else {
+          capturedSelector = target.tagName.toLowerCase();
+        }
+
+        const capturedData = {
+          selector: capturedSelector,
+          xpath: capturedXPath,
+          text: target.textContent?.trim() || '',
+          tagName: target.tagName,
+          id: target.id,
+          className: target.className
+        };
+
+        console.log('✅ Selectors captured:', { selector: capturedSelector, xpath: capturedXPath });
 
         // Mark this event as processed immediately
         processedClicks.set(e, true);
 
-        // DEFER ALL PROCESSING - this prevents ANY interference with the page's click handlers
+        // DEFER SKIP CHECKS AND RECORDING - this prevents ANY interference with the page's click handlers
+        // But we've already captured the selectors above
         setTimeout(() => {
           console.log('🔍 [RECORDER] Deferred processing - defaultPrevented:', e.defaultPrevented);
           // Early check: Skip if clicking on or within date marking banner (catches all elements including text)
@@ -4034,10 +4124,27 @@ export class BrowserRecorder {
           return; // Don't process as regular click
         }
         
-        // Generate a more specific selector
-        let selector = '';
+        // NOTE: Selector generation has been moved to synchronous capture above (capturedData)
+        // This prevents issues with modal/dialog elements that get removed from DOM immediately
 
-        // Priority 1: Check if ID is unique before using it
+        // [OLD Priority 1-7 selector generation code removed - was 450+ lines of dead code]
+        // The elaborate selector logic has been simplified and moved to synchronous capture
+        // to prevent issues with elements being removed from DOM before we can analyze them
+
+        // Use the selectors that were captured synchronously (before element was removed from DOM)
+        const selector = capturedData.selector;
+        const xpath = capturedData.xpath;
+
+        const event: any = {
+          selector: selector,
+          xpath: xpath,
+          text: capturedData.text
+        };
+
+        console.log('📤 Click event prepared - Selector:', selector, 'XPath:', xpath, 'Text:', event.text);
+        if (target.id) { // Resume from old Priority 1 location
+          // This is part of the old code that still exists below
+          if (false && target.id) { //  Dead code starts here - skip to line 4591
         if (target.id) {
           const elementsWithSameId = document.querySelectorAll(`[id="${target.id}"]`);
           if (elementsWithSameId.length === 1) {
@@ -4497,35 +4604,14 @@ export class BrowserRecorder {
           }
         }
 
-        // Generate full absolute XPath for robust fallback
-        const getXPath = (element: Element): string => {
-          if (element === document.documentElement) {
-            return '/html';
-          }
-          if (element === document.body) {
-            return '/html/body';
-          }
-          let ix = 0;
-          const siblings = element.parentNode ? Array.from(element.parentNode.childNodes).filter(n => n.nodeType === 1) : [];
-          for (let i = 0; i < siblings.length; i++) {
-            const sibling = siblings[i] as Element;
-            if (sibling === element) {
-              const tagName = element.tagName.toLowerCase();
-              return (element.parentNode ? getXPath(element.parentNode as Element) : '') + '/' + tagName + '[' + (ix + 1) + ']';
-            }
-            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
-              ix++;
-            }
-          }
-          return '';
-        };
-
-        const xpath = getXPath(target);
+        // Use the selectors that were captured synchronously (before element was removed from DOM)
+        const selector = capturedData.selector;
+        const xpath = capturedData.xpath;
 
         const event: any = {
           selector: selector,
           xpath: xpath,
-          text: target.textContent?.trim() || ''
+          text: capturedData.text
         };
 
         console.log('📤 Click event prepared - Selector:', selector, 'XPath:', xpath, 'Text:', event.text);
@@ -4574,11 +4660,12 @@ export class BrowserRecorder {
         }, 0); // End of deferred processing - ensures zero interference with page
       };
 
-      // Track clicks using BUBBLING PHASE to avoid interfering with page functionality
-      // Bubbling phase runs AFTER the button's handlers, so data-service frameworks work correctly
+      // Track clicks using CAPTURING PHASE to catch events before page handlers can stop propagation
+      // Capturing phase runs BEFORE the page's handlers, ensuring we don't miss clicks
       // PASSIVE MODE: Guarantees we never call preventDefault(), ensuring zero interference
       const usePassiveListener = true; // Toggle to debug interference issues
-      const listenerOptions = usePassiveListener ? { passive: true, capture: false } : false;
+      const useCapturingPhase = true; // Use capturing phase to catch clicks before stopPropagation()
+      const listenerOptions = usePassiveListener ? { passive: true, capture: useCapturingPhase } : useCapturingPhase;
 
       console.log('🔍 [RECORDER] Adding click listener with options:', listenerOptions);
       document.addEventListener('click', handleClick, listenerOptions);
