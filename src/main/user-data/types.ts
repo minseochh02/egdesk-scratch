@@ -198,6 +198,10 @@ export interface ParsedExcelData {
     detectedTypes: ColumnType[];
     splitSuggestions?: ColumnSplitSuggestion[]; // Suggested column splits
     detectedIslands?: DataIsland[]; // Detected data islands
+    // Row processing metadata
+    originalRowCount?: number; // Total rows in Excel before skipping
+    headerRowNumber?: number; // Which row was used for headers (1-based)
+    skippedBottomRowNumbers?: number[]; // Which rows were skipped at bottom (1-based)
   }>;
   selectedSheet: number;
   suggestedTableName: string;

@@ -92,9 +92,30 @@ export const PreviewStep: React.FC<BaseStepProps> = ({
     <div className="preview-section">
       <div style={{ background: '#e8f5e9', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h4 style={{ margin: '0 0 8px 0' }}>{summaryLabel}</h4>
-        <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
+        <p style={{ margin: 0, fontSize: '14px', color: '#666', lineHeight: '1.8' }}>
           <strong>{tableLabel}:</strong> {tableDisplayName} ({tableNameValue})<br />
-          <strong>Total Rows:</strong> {currentSheet.rows.length.toLocaleString()}<br />
+          {currentSheet.originalRowCount && (
+            <>
+              <strong>Original File:</strong> {currentSheet.originalRowCount.toLocaleString()} total rows
+              {currentSheet.headerRowNumber && ` (headers in row ${currentSheet.headerRowNumber})`}
+              <br />
+            </>
+          )}
+          {currentSheet.skippedBottomRowNumbers && currentSheet.skippedBottomRowNumbers.length > 0 && (
+            <>
+              <strong style={{ color: '#f57c00' }}>Skipped Bottom Rows:</strong>{' '}
+              <span style={{ color: '#f57c00' }}>
+                {currentSheet.skippedBottomRowNumbers.length === 1
+                  ? `Row ${currentSheet.skippedBottomRowNumbers[0]}`
+                  : currentSheet.skippedBottomRowNumbers.length <= 5
+                  ? `Rows ${currentSheet.skippedBottomRowNumbers.join(', ')}`
+                  : `Rows ${currentSheet.skippedBottomRowNumbers[0]}-${currentSheet.skippedBottomRowNumbers[currentSheet.skippedBottomRowNumbers.length - 1]} (${currentSheet.skippedBottomRowNumbers.length} rows)`
+                }
+              </span>
+              <br />
+            </>
+          )}
+          <strong>Data Rows to Import:</strong> {currentSheet.rows.length.toLocaleString()}<br />
           <strong>{mode === 'import' ? 'Columns' : 'Mapped Columns'}:</strong> {uniqueDbColumns.length}
         </p>
       </div>

@@ -32,6 +32,68 @@ export function registerUserDataIPCHandlers(): void {
   // Register duplicate settings update handler
   registerUpdateTableDuplicateSettingsHandler();
   /**
+   * Get specific rows from Excel file for preview
+   */
+  ipcMain.handle('user-data:get-excel-rows-preview', async (event, filePath: string, options: {
+    sheetIndex?: number;
+    headerRow?: number; // Get this specific row for header preview
+    bottomRowCount?: number; // Get last N rows for skip preview
+  }) => {
+    try {
+      const buffer = await fs.readFile(filePath);
+      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+
+      const sheetIndex = options.sheetIndex || 0;
+      const sheetName = workbook.SheetNames[sheetIndex];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Convert to array of arrays
+      const allRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+      const totalRows = allRows.length;
+
+      const result: any = {
+        totalRows,
+        sheetName,
+      };
+
+      // Get header row preview if requested
+      if (options.headerRow && options.headerRow > 0 && options.headerRow <= totalRows) {
+        const headerRowIndex = options.headerRow - 1; // Convert to 0-based
+        const headerRowData = allRows[headerRowIndex];
+
+        result.headerRow = {
+          rowNumber: options.headerRow,
+          content: headerRowData.filter((cell: any) => cell !== null && cell !== ''),
+          rawRow: headerRowData,
+        };
+      }
+
+      // Get bottom rows preview if requested
+      if (options.bottomRowCount && options.bottomRowCount > 0) {
+        const startIndex = Math.max(0, totalRows - options.bottomRowCount);
+        const bottomRows = allRows.slice(startIndex);
+
+        result.bottomRows = bottomRows.map((row, idx) => ({
+          rowNumber: startIndex + idx + 1, // 1-based row number
+          content: row.filter((cell: any) => cell !== null && cell !== ''),
+          rawRow: row,
+        }));
+      }
+
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error) {
+      console.error('Error reading Excel rows:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to read Excel file',
+      };
+    }
+  });
+
+  /**
    * Parse Excel file and return preview data
    */
   ipcMain.handle('user-data:parse-excel', async (event, filePath: string, options?: {
@@ -246,6 +308,7 @@ export function registerUserDataIPCHandlers(): void {
           createdFromFile: fileName,
           uniqueKeyColumns: uniqueKeyColumns.length > 0 ? uniqueKeyColumns : undefined,
           duplicateAction: uniqueKeyColumns.length > 0 ? duplicateAction : undefined,
+          hasImportedAtColumn: config.addTimestamp,
         });
         tableId = table.id;
         console.log('Table created successfully:', tableId, 'Name:', table.tableName);
@@ -759,15 +822,22 @@ export function registerUserDataIPCHandlers(): void {
     addTimestamp?: boolean;
   }) => {
     try {
+      console.log('🔄 Sync to existing table request:', {
+        tableId: config.tableId,
+        filePath: config.filePath,
+        addTimestamp: config.addTimestamp,
+      });
+
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
 
       // Get the existing table
       const table = userDataManager.getTable(config.tableId);
       if (!table) {
+        console.error('❌ Table not found:', config.tableId);
         return {
           success: false,
-          error: 'Table not found',
+          error: `Table not found: ${config.tableId}`,
         };
       }
 
@@ -799,7 +869,7 @@ export function registerUserDataIPCHandlers(): void {
 
           // Update table metadata
           const newSchema = [...table.schema, { name: 'imported_at', type: 'TEXT' as any, notNull: false }];
-          db.prepare(`UPDATE user_tables SET schema_json = ?, column_count = ? WHERE id = ?`)
+          db.prepare(`UPDATE user_tables SET schema_json = ?, column_count = ?, has_imported_at_column = 1 WHERE id = ?`)
             .run(JSON.stringify(newSchema), newSchema.length, config.tableId);
 
           console.log('✅ imported_at column added successfully');

@@ -78,12 +78,18 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
   ) => {
     setColumnMappings(mappings);
     setMergeConfig(mergeConfiguration);
-    
+
     if (syncMode === 'create-new') {
       setCurrentStep('preview-new');
     } else {
       setCurrentStep('preview-existing');
     }
+  };
+
+  // Handler for ExistingTableMapper (different signature)
+  const handleExistingTableMappingComplete = (tableId: string, mappings: Record<string, string>) => {
+    setColumnMappings(mappings);
+    setCurrentStep('preview-existing');
   };
 
   const handleTableSelection = (table: UserTable) => {
@@ -327,13 +333,12 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
     } else if (syncMode === 'sync-existing' && selectedTable) {
       return (
         <ExistingTableMapper
-          excelColumns={currentSheet.headers.map((header: string, idx: number) => ({
-            name: header,
-            type: currentSheet.detectedTypes[idx],
-          }))}
+          excelColumns={currentSheet.headers}
+          excelTypes={currentSheet.detectedTypes}
           sampleRows={currentSheet.rows.slice(0, 3)}
-          targetTable={selectedTable}
-          onMappingComplete={handleColumnMappingComplete}
+          availableTables={[selectedTable]}
+          selectedTableId={selectedTable.id}
+          onMappingComplete={handleExistingTableMappingComplete}
           onBack={handleBack}
         />
       );

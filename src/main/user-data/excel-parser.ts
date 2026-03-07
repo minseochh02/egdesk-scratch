@@ -1229,6 +1229,14 @@ export async function parseExcelFile(
         });
       }
 
+      // Calculate skipped row numbers for display
+      const skippedBottomRowNumbers: number[] = [];
+      if (skipBottomRows > 0) {
+        for (let i = dataEndIndex; i < totalRows; i++) {
+          skippedBottomRowNumbers.push(i + 1); // Convert to 1-based
+        }
+      }
+
       sheets.push({
         name: sheetName,
         headers,
@@ -1236,6 +1244,10 @@ export async function parseExcelFile(
         detectedTypes,
         splitSuggestions: splitSuggestions.length > 0 ? splitSuggestions : undefined,
         detectedIslands: detectedIslands.length > 0 ? detectedIslands : undefined,
+        // Row processing metadata
+        originalRowCount: totalRows,
+        headerRowNumber: headerRow,
+        skippedBottomRowNumbers: skippedBottomRowNumbers.length > 0 ? skippedBottomRowNumbers : undefined,
       });
     }
   });

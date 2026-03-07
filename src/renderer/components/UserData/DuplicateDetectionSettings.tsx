@@ -290,6 +290,31 @@ export function DuplicateDetectionSettings({
             </div>
           </div>
 
+          <div className="setting-section">
+            <label className="setting-label">
+              <strong>Additional Options</strong>
+            </label>
+
+            <div style={{ padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={addTimestamp}
+                  onChange={(e) => setAddTimestamp(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '14px' }}>
+                    ⏰ Add "imported_at" timestamp column
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
+                    Automatically adds a timestamp to each row showing when it was imported into the database
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div className="info-box">
             <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
               <strong>💡 Tips:</strong>
