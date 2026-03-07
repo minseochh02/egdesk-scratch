@@ -82,5 +82,33 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
   //   console.log('✅ Added replace_column column to user_tables');
   // }
 
+  if (!columnNames.includes('has_imported_at_column')) {
+    db.exec(`ALTER TABLE user_tables ADD COLUMN has_imported_at_column INTEGER DEFAULT 0`);
+    console.log('✅ Added has_imported_at_column column to user_tables');
+
+    // Auto-detect existing tables that have imported_at column
+    const tables = db.prepare(`SELECT id, table_name, schema_json FROM user_tables`).all() as Array<{
+      id: string;
+      table_name: string;
+      schema_json: string;
+    }>;
+
+    const updateStmt = db.prepare(`UPDATE user_tables SET has_imported_at_column = 1 WHERE id = ?`);
+
+    for (const table of tables) {
+      try {
+        const schema = JSON.parse(table.schema_json);
+        const hasImportedAt = schema.some((col: any) => col.name === 'imported_at');
+
+        if (hasImportedAt) {
+          updateStmt.run(table.id);
+          console.log(`  ✅ Detected imported_at column in table "${table.table_name}"`);
+        }
+      } catch (err) {
+        console.error(`  ❌ Failed to parse schema for table ${table.table_name}:`, err);
+      }
+    }
+  }
+
   console.log('✅ User Data database schema initialized');
 }

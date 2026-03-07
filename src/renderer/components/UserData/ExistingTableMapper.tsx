@@ -6,6 +6,7 @@ interface ExistingTableMapperProps {
   excelTypes: string[];
   sampleRows: any[];
   availableTables: UserTable[];
+  selectedTableId?: string; // Optional: pre-select a table
   onMappingComplete: (tableId: string, mappings: Record<string, string>) => void;
   onBack: () => void;
 }
@@ -15,10 +16,11 @@ export const ExistingTableMapper: React.FC<ExistingTableMapperProps> = ({
   excelTypes,
   sampleRows,
   availableTables,
+  selectedTableId: initialSelectedTableId,
   onMappingComplete,
   onBack,
 }) => {
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(initialSelectedTableId || null);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 

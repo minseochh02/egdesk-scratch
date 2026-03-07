@@ -2432,6 +2432,40 @@ export class BrowserRecorder {
         }
       };
 
+      // ========================================
+      // DEBUGGING TOOLS FOR SPA INTERFERENCE
+      // ========================================
+
+      // Flag to completely disable recorder for comparison testing
+      // Set this to true in console to test page behavior without recorder
+      (window as any).__playwrightRecorderDisabled = false;
+
+      // Debug flag to monitor event listener execution order
+      (window as any).__playwrightRecorderDebugEvents = true;
+
+      // Event listener monitoring - wrap addEventListener to track page handlers
+      if ((window as any).__playwrightRecorderDebugEvents) {
+        const originalAddEventListener = EventTarget.prototype.addEventListener;
+        let clickListenerCount = 0;
+
+        EventTarget.prototype.addEventListener = function(type: string, listener: any, options?: any) {
+          if (type === 'click') {
+            clickListenerCount++;
+            const targetInfo = this === document ? 'document' :
+                              this === window ? 'window' :
+                              (this as any).tagName || 'unknown';
+            console.log(`🔍 [PAGE] Click listener #${clickListenerCount} added to ${targetInfo}`, {
+              capture: options?.capture || false,
+              passive: options?.passive || false,
+              once: options?.once || false
+            });
+          }
+          return originalAddEventListener.call(this, type, listener, options);
+        };
+
+        console.log('🔍 [RECORDER] Event listener monitoring enabled');
+      }
+
       // Initialize global state if not exists
       if ((window as any).__playwrightRecorderCoordinateModeActive === undefined) {
         (window as any).__playwrightRecorderCoordinateModeActive = false;
@@ -3713,6 +3747,24 @@ export class BrowserRecorder {
 
       // Function to handle clicks - separated so we can call it from multiple places
       const handleClick = (e: MouseEvent) => {
+        // Check if recorder is disabled for debugging
+        if ((window as any).__playwrightRecorderDisabled) {
+          console.log('🔍 [RECORDER] DISABLED - Skipping all recording');
+          return;
+        }
+
+        // DEBUG: Log event flow to detect interference
+        const debugInfo = {
+          timestamp: Date.now(),
+          eventPhase: e.eventPhase, // 1=CAPTURING, 2=AT_TARGET, 3=BUBBLING
+          defaultPrevented: e.defaultPrevented,
+          cancelable: e.cancelable,
+          propagationStopped: false, // Will check in deferred callback
+          target: (e.target as HTMLElement)?.tagName,
+          currentTarget: (e.currentTarget as HTMLElement)?.tagName
+        };
+        console.log('🔍 [RECORDER] Click event received:', debugInfo);
+
         // Check if we've already processed this event
         if (processedClicks.has(e)) {
           console.log('⏭️ Click already processed, skipping');
@@ -3728,6 +3780,7 @@ export class BrowserRecorder {
 
         // DEFER ALL PROCESSING - this prevents ANY interference with the page's click handlers
         setTimeout(() => {
+          console.log('🔍 [RECORDER] Deferred processing - defaultPrevented:', e.defaultPrevented);
           // Early check: Skip if clicking on or within date marking banner (catches all elements including text)
           if (isWithinDateMarkingBanner(target)) {
             console.log('⏭️ Skipping click on date marking banner or its children');
@@ -4444,10 +4497,10 @@ export class BrowserRecorder {
           }
         }
 
-        // Generate XPath for robust fallback
+        // Generate full absolute XPath for robust fallback
         const getXPath = (element: Element): string => {
-          if (element.id) {
-            return `//*[@id="${element.id}"]`;
+          if (element === document.documentElement) {
+            return '/html';
           }
           if (element === document.body) {
             return '/html/body';
@@ -4523,7 +4576,12 @@ export class BrowserRecorder {
 
       // Track clicks using BUBBLING PHASE to avoid interfering with page functionality
       // Bubbling phase runs AFTER the button's handlers, so data-service frameworks work correctly
-      document.addEventListener('click', handleClick, false);
+      // PASSIVE MODE: Guarantees we never call preventDefault(), ensuring zero interference
+      const usePassiveListener = true; // Toggle to debug interference issues
+      const listenerOptions = usePassiveListener ? { passive: true, capture: false } : false;
+
+      console.log('🔍 [RECORDER] Adding click listener with options:', listenerOptions);
+      document.addEventListener('click', handleClick, listenerOptions);
       
       // 4. Override dispatchEvent to intercept all click events
       // TESTING: Disabled to isolate issue

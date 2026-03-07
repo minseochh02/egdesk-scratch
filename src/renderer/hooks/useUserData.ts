@@ -16,6 +16,7 @@ export interface UserTable {
   columnCount: number;
   createdAt: string;
   updatedAt: string;
+  hasImportedAtColumn?: boolean; // Whether this table has an imported_at column
   schema: Array<{
     name: string;
     type: 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB' | 'DATE';
@@ -171,6 +172,27 @@ export function useUserData() {
     },
     []
   );
+
+  /**
+   * Get specific rows from Excel file for preview (header row and/or bottom rows)
+   */
+  const getExcelRowsPreview = useCallback(async (filePath: string, options: {
+    sheetIndex?: number;
+    headerRow?: number;
+    bottomRowCount?: number;
+  }) => {
+    try {
+      const result = await window.electron.invoke('user-data:get-excel-rows-preview', filePath, options);
+
+      if (result.success) {
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to read Excel file');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, []);
 
   /**
    * Parse Excel file
@@ -520,6 +542,7 @@ export function useUserData() {
     deleteTable,
     queryTable,
     searchTable,
+    getExcelRowsPreview,
     parseExcel,
     importExcel,
     importIsland,

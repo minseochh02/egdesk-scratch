@@ -36,7 +36,7 @@ function createInitialState(mode: WizardMode, suggestedTableName?: string): Wiza
     duplicateDetectionSettings: {
       uniqueKeyColumns: [],
       duplicateAction: 'skip',
-      addTimestamp: mode === 'import' ? false : undefined,
+      addTimestamp: mode === 'import' ? false : true, // Default true for upload mode
     },
 
     // Progress and results

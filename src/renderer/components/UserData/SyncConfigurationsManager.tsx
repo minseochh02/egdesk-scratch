@@ -204,7 +204,12 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                       <div className="sync-config-info-item">
                         <div className="sync-config-info-label">Parsing</div>
                         <div className="sync-config-info-value">
-                          Row {config.headerRow} → Skip {config.skipBottomRows}
+                          Headers: Row {config.headerRow}
+                          {config.skipBottomRows > 0 && (
+                            <span style={{ color: '#f57c00', marginLeft: '8px' }}>
+                              | Skip: Last {config.skipBottomRows} row{config.skipBottomRows > 1 ? 's' : ''}
+                            </span>
+                          )}
                         </div>
                       </div>
 

@@ -50,6 +50,18 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     }
   }, [preSelectedFile, state.selectedFile, updateState, currentStep]);
 
+  // Auto-enable addTimestamp checkbox if target table has imported_at column
+  React.useEffect(() => {
+    if (mode === 'upload' && targetTable?.hasImportedAtColumn) {
+      updateState({
+        duplicateDetectionSettings: {
+          ...state.duplicateDetectionSettings,
+          addTimestamp: true,
+        },
+      });
+    }
+  }, [mode, targetTable?.hasImportedAtColumn]);
+
   // File selection handler
   const handleFileSelect = async () => {
     try {
@@ -376,7 +388,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       } else {
         // Upload mode
         const result = await syncToExistingTable({
-          tableName: targetTable!.tableName,
+          tableId: targetTable!.id,
           filePath: state.selectedFile!,
           sheetIndex: state.selectedSheet,
           columnMappings: state.columnMappings!,
@@ -386,6 +398,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           appliedSplits: state.appliedSplits.length > 0 ? state.appliedSplits : undefined,
           uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns,
           duplicateAction: state.duplicateDetectionSettings.duplicateAction,
+          addTimestamp: state.duplicateDetectionSettings.addTimestamp,
         });
 
         updateState({

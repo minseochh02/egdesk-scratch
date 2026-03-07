@@ -54,6 +54,7 @@ export class UserDataDbManager {
       createdFromFile?: string;
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+      hasImportedAtColumn?: boolean; // Whether this table has imported_at column
     }
   ): UserTableWithSchema {
     // Validate input schema
@@ -162,16 +163,22 @@ export class UserDataDbManager {
       const uniqueKeyColumnsJson = options?.uniqueKeyColumns && options.uniqueKeyColumns.length > 0
         ? JSON.stringify(options.uniqueKeyColumns)
         : null;
-      
+
+      // Detect if this table has imported_at column
+      const hasImportedAtColumn = options?.hasImportedAtColumn !== undefined
+        ? options.hasImportedAtColumn
+        : schema.some(col => col.name === 'imported_at');
+
       const insertMetadata = this.database.prepare(`
         INSERT INTO user_tables (
           id, table_name, display_name, description, created_from_file,
           row_count, column_count, created_at, updated_at, schema_json,
-          unique_key_columns, duplicate_action
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          unique_key_columns, duplicate_action, has_imported_at_column
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       console.log('Storing schema JSON:', schemaJson);
+      console.log('has_imported_at_column:', hasImportedAtColumn);
 
       insertMetadata.run(
         id,
@@ -185,7 +192,8 @@ export class UserDataDbManager {
         now,
         schemaJson, // Use pre-validated JSON string
         uniqueKeyColumnsJson,
-        options?.duplicateAction || 'skip'
+        options?.duplicateAction || 'skip',
+        hasImportedAtColumn ? 1 : 0
       );
 
       // Verify insertion
@@ -260,6 +268,7 @@ export class UserDataDbManager {
       updatedAt: row.updated_at || row.updatedAt,
       uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
       duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
+      hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
       schema,
     };
   }
@@ -303,6 +312,7 @@ export class UserDataDbManager {
       updatedAt: row.updated_at || row.updatedAt,
       uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
       duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
+      hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
       schema,
     };
   }
@@ -341,6 +351,7 @@ export class UserDataDbManager {
             uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
             duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
             replaceColumn: row.replace_column || row.replaceColumn,
+            hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
             schema,
           };
         } catch (error) {
