@@ -17,6 +17,7 @@ interface RecordedAction {
   timestamp: number;
   coordinates?: { x: number; y: number }; // For coordinate-based clicks
   frameSelector?: string; // CSS selector or name/id to locate the iframe
+  inputType?: string; // Input element type (radio, checkbox, text, etc.)
   // Date picker fields
   dateComponents?: {
     year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
@@ -3081,12 +3082,18 @@ export class BrowserRecorder {
 
             // Only record if value actually changed
             if (currentValue !== lastValue) {
+              // Generate XPath for radio buttons (they can be fragile with dynamic IDs)
+              const inputType = (target as HTMLInputElement).type;
+              const xpath = (inputType === 'radio' || inputType === 'checkbox') ? generateXPath(target) : '';
+
               const event = {
                 selector: target.id ? `[id="${target.id}"]` :
                          target.name ? `[name="${target.name}"]` :
                          target.className ? `.${target.className.split(' ')[0]}` :
                          target.tagName.toLowerCase(),
-                value: currentValue
+                value: currentValue,
+                xpath: xpath,
+                inputType: inputType
               };
 
               (window as any).__recordedEvents.push({type: 'fill', data: event});
@@ -3144,12 +3151,18 @@ export class BrowserRecorder {
 
           // Record final value on blur if it changed
           if (currentValue !== lastValue && currentValue !== '') {
+            // Generate XPath for radio buttons (they can be fragile with dynamic IDs)
+            const inputType = (target as HTMLInputElement).type;
+            const xpath = (inputType === 'radio' || inputType === 'checkbox') ? generateXPath(target) : '';
+
             const event = {
               selector: target.id ? `[id="${target.id}"]` :
                        target.name ? `[name="${target.name}"]` :
                        target.className ? `.${target.className.split(' ')[0]}` :
                        target.tagName.toLowerCase(),
-              value: currentValue
+              value: currentValue,
+              xpath: xpath,
+              inputType: inputType
             };
 
             (window as any).__recordedEvents.push({type: 'fill', data: event});
@@ -3745,6 +3758,48 @@ export class BrowserRecorder {
         return false;
       };
 
+      // Helper function to check if element is part of recorder UI
+      const isRecorderElement = (el: Element): boolean => {
+        // List of all IDs we add to document.body
+        const recorderIds = [
+          'browser-recorder-controller',
+          'coord-notification',
+          'wait-instructions',
+          'date-marking-instructions',
+          'click-until-gone-instructions',
+          'playwright-recorder-notification',
+          'browser-recorder-styles',
+          'playwright-date-offset-modal',
+          'playwright-wait-modal',
+          'upload-notification-styles'
+        ];
+
+        // Check if element itself has recorder ID
+        if (el.id && recorderIds.includes(el.id)) return true;
+
+        // Check if element has recorder-specific classes
+        if (el.classList && (
+          el.classList.contains('browser-recorder-tooltip') ||
+          el.classList.contains('browser-recorder-coord-indicator') ||
+          el.classList.contains('browser-recorder-modal') ||
+          el.classList.contains('browser-recorder-modal-content')
+        )) {
+          return true;
+        }
+
+        // Check if it's a temporary notification (no ID but has specific styles)
+        // These are temporary divs we create for notifications
+        if (el.tagName === 'DIV' || el.tagName === 'STYLE') {
+          const style = window.getComputedStyle(el);
+          // Recorder notifications have z-index >= 100000
+          if (style.position === 'fixed' && style.zIndex && parseInt(style.zIndex) >= 100000) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
       // Helper function to generate full absolute XPath (must be called while element is in DOM)
       const generateXPath = (element: Element): string => {
         if (!element || element.nodeType !== 1) {
@@ -3782,20 +3837,47 @@ export class BrowserRecorder {
           }
         }
 
-        let ix = 0;
-        const siblings = Array.from(parent.children);
-        for (let i = 0; i < siblings.length; i++) {
-          const sibling = siblings[i];
-          if (sibling === element) {
-            return generateXPath(parent) + '/' + tagName + '[' + (ix + 1) + ']';
-          }
-          if (sibling.tagName === element.tagName) {
-            ix++;
-          }
+        // Filter out recorder UI elements from siblings
+        const allSiblings = Array.from(parent.children);
+        const siblings = allSiblings.filter(s => !isRecorderElement(s));
+
+        // Debug: Log filtering if we're at body level
+        if (parent.tagName === 'BODY') {
+          console.log('🔍 XPath: Filtering body children');
+          console.log('  Total children:', allSiblings.length);
+          console.log('  After filtering recorder UI:', siblings.length);
+          console.log('  Filtered out:', allSiblings.length - siblings.length);
+          allSiblings.forEach((s, i) => {
+            const isRecorder = isRecorderElement(s);
+            if (isRecorder) {
+              console.log(`  [${i}] ${s.tagName} id="${s.id}" class="${s.className}" - FILTERED (recorder UI)`);
+            }
+          });
         }
 
-        console.warn('⚠️ XPath: element not found in parent');
-        return generateXPath(parent) + '/' + tagName + '[1]';
+        // Count siblings with same tag name (excluding recorder elements)
+        const sameTagSiblings = siblings.filter(s => s.tagName === element.tagName);
+
+        // Only add index if there are multiple siblings with same tag
+        if (sameTagSiblings.length === 1) {
+          // Only one element with this tag - no index needed
+          return generateXPath(parent) + '/' + tagName;
+        } else {
+          // Multiple elements with same tag - add index
+          let ix = 0;
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i];
+            if (sibling === element) {
+              return generateXPath(parent) + '/' + tagName + '[' + (ix + 1) + ']';
+            }
+            if (sibling.tagName === element.tagName) {
+              ix++;
+            }
+          }
+
+          console.warn('⚠️ XPath: element not found in parent');
+          return generateXPath(parent) + '/' + tagName + '[1]';
+        }
       };
 
       // Function to handle clicks - separated so we can call it from multiple places
@@ -3842,9 +3924,36 @@ export class BrowserRecorder {
           if (elementsWithSameId.length === 1) {
             capturedSelector = `[id="${target.id}"]`;
           } else {
-            const elementsWithId = Array.from(elementsWithSameId);
-            const index = elementsWithId.indexOf(target);
-            capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-of-type(${index})`;
+            // Duplicate IDs! Try to find a distinguishing class
+            const classes = Array.from(target.classList);
+            let uniqueClass = null;
+
+            // Look for a class that's unique among elements with same ID
+            for (const cls of classes) {
+              const withThisClass = Array.from(elementsWithSameId).filter(el => el.classList.contains(cls));
+              if (withThisClass.length === 1) {
+                uniqueClass = cls;
+                break;
+              }
+            }
+
+            if (uniqueClass) {
+              capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"].${uniqueClass}`;
+            } else if (target.getAttribute('data-layer-controller')) {
+              // Use data attribute if available
+              const dataAttr = target.getAttribute('data-layer-controller');
+              capturedSelector = `${target.tagName.toLowerCase()}[data-layer-controller="${dataAttr}"]`;
+            } else {
+              // Last resort: use nth-child (position among all siblings, not just same type)
+              const parent = target.parentElement;
+              if (parent) {
+                const siblings = Array.from(parent.children);
+                const index = siblings.indexOf(target) + 1;
+                capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-child(${index})`;
+              } else {
+                capturedSelector = `[id="${target.id}"]`;
+              }
+            }
           }
         } else if (target.className) {
           const firstClass = target.className.trim().split(/\s+/)[0];
@@ -4142,10 +4251,61 @@ export class BrowserRecorder {
         };
 
         console.log('📤 Click event prepared - Selector:', selector, 'XPath:', xpath, 'Text:', event.text);
-        if (target.id) { // Resume from old Priority 1 location
-          // This is part of the old code that still exists below
-          if (false && target.id) { //  Dead code starts here - skip to line 4591
-        if (target.id) {
+        console.log('📍 Checking coordinate mode... isCoordinateMode =', isCoordinateMode);
+        console.log('📍 Checking global state... __playwrightRecorderCoordinateModeActive =', (window as any).__playwrightRecorderCoordinateModeActive);
+
+        // Add coordinates if in coordinate mode (check both variable and global state)
+        const shouldUseCoordinates = isCoordinateMode || (window as any).__playwrightRecorderCoordinateModeActive;
+        console.log('📍 Final decision - shouldUseCoordinates:', shouldUseCoordinates);
+
+        if (shouldUseCoordinates) {
+          // Use pageX/pageY for absolute document coordinates
+          const x = e.pageX || (e.clientX + window.pageXOffset);
+          const y = e.pageY || (e.clientY + window.pageYOffset);
+
+          event.coordinates = { x, y };
+          console.log(`📍✅ COORDINATES ADDED: X=${x}, Y=${y}`);
+          console.log(`📍 Event now includes coordinates:`, event.coordinates);
+        } else {
+          console.log('📍❌ Coordinate mode is OFF, not adding coordinates');
+        }
+
+        // Store in global array for debugging
+        (window as any).__recordedEvents = (window as any).__recordedEvents || [];
+        (window as any).__recordedEvents.push({
+          type: 'click',
+          data: event,
+          timestamp: Date.now()
+        });
+
+        // Check if in click until gone mode
+        if (isClickUntilGoneMode && (window as any).__playwrightRecorderOnClickUntilGone) {
+          console.log('🔄 Sending click until gone event to recorder:', event);
+          const cleanedEvent = cleanForPlaywright(event);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnClickUntilGone, cleanedEvent);
+          // Turn off mode after recording one action
+          isClickUntilGoneMode = false;
+          document.dispatchEvent(new CustomEvent('browser-recorder-click-until-gone-toggle', {
+            detail: { enabled: false }
+          }));
+        } else if ((window as any).__playwrightRecorderOnClick) {
+          console.log('📤 Sending click event to recorder:', event);
+          const cleanedEvent = cleanForPlaywright(event);
+          callPlaywrightFunction((window as any).__playwrightRecorderOnClick, cleanedEvent);
+        } else {
+          console.error('❌ __playwrightRecorderOnClick not available!');
+        }
+        }, 0); // End of deferred processing - ensures zero interference with page
+      }; // End of handleClick function
+
+      // DEAD CODE REMOVED: 450+ lines of old Priority 1-7 selector generation logic
+      // was here but has been deleted since selectors are now generated synchronously
+      // before the setTimeout to prevent issues with elements being removed from DOM
+
+      /*
+      // OLD DEAD CODE WAS HERE - REMOVED TO FIX SYNTAX ERRORS
+      // The elaborate selector generation has been moved to synchronous capture
+      if (false && target.id) {
           const elementsWithSameId = document.querySelectorAll(`[id="${target.id}"]`);
           if (elementsWithSameId.length === 1) {
             // ID is unique, use it
@@ -4658,7 +4818,8 @@ export class BrowserRecorder {
           console.error('❌ __playwrightRecorderOnClick not available!');
         }
         }, 0); // End of deferred processing - ensures zero interference with page
-      };
+      }; // END OF DEAD CODE BLOCK
+      */
 
       // Track clicks using CAPTURING PHASE to catch events before page handlers can stop propagation
       // Capturing phase runs BEFORE the page's handlers, ensuring we don't miss clicks
@@ -5110,7 +5271,9 @@ export class BrowserRecorder {
         type: 'fill',
         selector: data.selector,
         value: data.value,
-        timestamp: Date.now() - this.startTime
+        timestamp: Date.now() - this.startTime,
+        xpath: data.xpath,
+        inputType: data.inputType
       };
 
       // Add frame selector if provided (for iframe fills)
@@ -6496,7 +6659,17 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           if (action.frameSelector) {
             lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').fill('${escapedValue}'); // Fill in iframe`);
           } else {
-            lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
+            // Add XPath fallback for radio buttons (they often have fragile/dynamic IDs)
+            if (action.inputType === 'radio' && action.xpath) {
+              lines.push(`    try {`);
+              lines.push(`      await page.fill('${action.selector}', '${escapedValue}');`);
+              lines.push(`    } catch (error) {`);
+              lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
+              lines.push(`      await page.locator('xpath=${action.xpath}').fill('${escapedValue}');`);
+              lines.push(`    }`);
+            } else {
+              lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
+            }
           }
           break;
         case 'keypress':
@@ -6691,6 +6864,38 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               }
             }
           }
+
+          // IMPORTANT: Blur the last input to trigger change handlers
+          // This ensures dropdowns and other UI elements appear after date is filled
+          lines.push(``);
+          lines.push(`    // Blur the last filled input to trigger change handlers`);
+          if (hasDay && action.dateComponents!.day.elementType === 'input') {
+            const daySelector = action.dateComponents!.day.selector;
+            const dayXPath = action.dateComponents!.day.xpath;
+            lines.push(`    try {`);
+            lines.push(`      await page.locator('${daySelector}').blur();`);
+            lines.push(`    } catch (e) {`);
+            lines.push(`      await page.locator('xpath=${dayXPath}').blur();`);
+            lines.push(`    }`);
+          } else if (hasMonth && action.dateComponents!.month.elementType === 'input') {
+            const monthSelector = action.dateComponents!.month.selector;
+            const monthXPath = action.dateComponents!.month.xpath;
+            lines.push(`    try {`);
+            lines.push(`      await page.locator('${monthSelector}').blur();`);
+            lines.push(`    } catch (e) {`);
+            lines.push(`      await page.locator('xpath=${monthXPath}').blur();`);
+            lines.push(`    }`);
+          } else if (hasYear && action.dateComponents!.year.elementType === 'input') {
+            const yearSelector = action.dateComponents!.year.selector;
+            const yearXPath = action.dateComponents!.year.xpath;
+            lines.push(`    try {`);
+            lines.push(`      await page.locator('${yearSelector}').blur();`);
+            lines.push(`    } catch (e) {`);
+            lines.push(`      await page.locator('xpath=${yearXPath}').blur();`);
+            lines.push(`    }`);
+          }
+          lines.push(`    await page.waitForTimeout(500); // Wait for change handlers to process`);
+
           break;
         case 'captureTable':
           if (action.tables && action.tables.length > 0) {
@@ -7148,6 +7353,34 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 }
               }
             });
+
+            // IMPORTANT: Blur the last input to trigger change handlers
+            lines.push(``);
+            lines.push(`      // Blur the last filled input to trigger change handlers`);
+            const hasDay = !!action.dateComponents.day;
+            const hasMonth = !!action.dateComponents.month;
+            const hasYear = !!action.dateComponents.year;
+
+            if (hasDay && action.dateComponents.day.elementType === 'input') {
+              lines.push(`      try {`);
+              lines.push(`        await page.locator('${action.dateComponents.day.selector}').blur();`);
+              lines.push(`      } catch (e) {`);
+              lines.push(`        await page.locator('xpath=${action.dateComponents.day.xpath}').blur();`);
+              lines.push(`      }`);
+            } else if (hasMonth && action.dateComponents.month.elementType === 'input') {
+              lines.push(`      try {`);
+              lines.push(`        await page.locator('${action.dateComponents.month.selector}').blur();`);
+              lines.push(`      } catch (e) {`);
+              lines.push(`        await page.locator('xpath=${action.dateComponents.month.xpath}').blur();`);
+              lines.push(`      }`);
+            } else if (hasYear && action.dateComponents.year.elementType === 'input') {
+              lines.push(`      try {`);
+              lines.push(`        await page.locator('${action.dateComponents.year.selector}').blur();`);
+              lines.push(`      } catch (e) {`);
+              lines.push(`        await page.locator('xpath=${action.dateComponents.year.xpath}').blur();`);
+              lines.push(`      }`);
+            }
+            lines.push(`      await page.waitForTimeout(500); // Wait for change handlers to process`);
 
             lines.push(`    }`);
           }
