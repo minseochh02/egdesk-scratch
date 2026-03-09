@@ -38,6 +38,8 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
   const [selectedConfig, setSelectedConfig] = useState<SyncConfiguration | null>(null);
   const [editingConfig, setEditingConfig] = useState<SyncConfiguration | null>(null);
   const [watcherStatus, setWatcherStatus] = useState<Array<{ configId: string; processedFilesCount: number }>>([]);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     fetchConfigurations();
@@ -129,15 +131,90 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
     return '❓';
   };
 
+  const handleExportAll = async () => {
+    try {
+      setExporting(true);
+
+      const result = await (window as any).electron.invoke('sync-config:export-all');
+
+      if (result.success) {
+        alert(
+          `Export successful!\n\n` +
+          `Configurations: ${result.data.configCount}\n\n` +
+          `Location: ${result.data.filePath}`
+        );
+      } else {
+        alert(`Export failed: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Error exporting configurations:', err);
+      alert(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      setImporting(true);
+
+      const result = await (window as any).electron.invoke('sync-config:import');
+
+      if (result.success) {
+        const { imported, skipped, errors } = result.data;
+
+        let message = `Import complete!\n\nImported: ${imported}\nSkipped: ${skipped}`;
+
+        if (errors && errors.length > 0) {
+          message += '\n\nNotes:\n' + errors.slice(0, 5).join('\n');
+          if (errors.length > 5) {
+            message += `\n...and ${errors.length - 5} more (see console for details)`;
+            console.log('All import errors:', errors);
+          }
+        }
+
+        alert(message);
+        await fetchConfigurations();
+      } else {
+        if (result.error !== 'Import canceled') {
+          alert(`Import failed: ${result.error}`);
+        }
+      }
+    } catch (err) {
+      console.error('Error importing configurations:', err);
+      alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (loading && configurations.length === 0) {
     return (
       <div className="import-wizard">
         <div className="import-wizard-dialog">
           <div className="import-wizard-header">
             <h2>⚙️ Sync Configurations</h2>
-            <button className="btn-icon" onClick={onClose}>
-              ✕
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleImport}
+                disabled={importing}
+                title="Import sync configurations"
+              >
+                {importing ? '⏳ Importing...' : '📥 Import'}
+              </button>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleExportAll}
+                disabled={true}
+                title="Export all sync configurations"
+              >
+                📤 Export All
+              </button>
+              <button className="btn-icon" onClick={onClose}>
+                ✕
+              </button>
+            </div>
           </div>
           <div className="import-wizard-body">
             <div className="progress-section">
@@ -155,9 +232,27 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
       <div className="import-wizard-dialog" style={{ maxWidth: '1000px' }}>
         <div className="import-wizard-header">
           <h2>⚙️ Sync Configurations</h2>
-          <button className="btn-icon" onClick={onClose}>
-            ✕
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={handleImport}
+              disabled={importing}
+              title="Import sync configurations"
+            >
+              {importing ? '⏳ Importing...' : '📥 Import'}
+            </button>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={handleExportAll}
+              disabled={exporting || configurations.length === 0}
+              title="Export all sync configurations"
+            >
+              {exporting ? '⏳ Exporting...' : '📤 Export All'}
+            </button>
+            <button className="btn-icon" onClick={onClose}>
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="import-wizard-body">

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserTable } from '../../hooks/useUserData';
+import { useSyncConfig } from '../../hooks/useSyncConfig';
 
 interface TableListProps {
   tables: UserTable[];
@@ -16,6 +17,7 @@ export const TableList: React.FC<TableListProps> = ({
   onRenameTable,
   onImportClick,
 }) => {
+  const { configurations, fetchConfigurations } = useSyncConfig();
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -25,6 +27,16 @@ export const TableList: React.FC<TableListProps> = ({
   const [renamingTableId, setRenamingTableId] = useState<string | null>(null);
   const [newTableName, setNewTableName] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
+
+  // Fetch sync configurations on mount
+  useEffect(() => {
+    fetchConfigurations();
+  }, [fetchConfigurations]);
+
+  // Check if a table has browser sync configured
+  const hasSyncConfig = (tableId: string): boolean => {
+    return configurations.some(config => config.targetTableId === tableId && config.enabled);
+  };
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return 'N/A';
@@ -259,9 +271,31 @@ function testConnection() {
                 </form>
               ) : (
                 <>
-                  <div>
-                    <h3 className="table-card-title">{table.displayName}</h3>
-                    <div className="table-card-subtitle">{table.tableName}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div>
+                      <h3 className="table-card-title">{table.displayName}</h3>
+                      <div className="table-card-subtitle">{table.tableName}</div>
+                    </div>
+                    {hasSyncConfig(table.id) && (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '4px 8px',
+                          backgroundColor: '#4CAF50',
+                          color: 'white',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Browser sync configured for this table"
+                      >
+                        <span>🔄</span>
+                        <span>AUTO-SYNC</span>
+                      </div>
+                    )}
                   </div>
                   <div className="table-card-actions">
                     {onRenameTable && (

@@ -110,5 +110,45 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
     }
   }
 
-  console.log('✅ User Data database schema initialized');
+  // Create user_data_files table for file storage
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_data_files (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      row_id INTEGER NOT NULL,
+      column_name TEXT NOT NULL,
+
+      -- File metadata
+      filename TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER NOT NULL,
+
+      -- Storage details
+      storage_type TEXT CHECK(storage_type IN ('blob', 'filesystem')) NOT NULL,
+      file_data BLOB,
+      file_path TEXT,
+
+      -- Compression
+      is_compressed INTEGER DEFAULT 0,
+      compression_type TEXT DEFAULT 'none',
+      original_size INTEGER,
+
+      -- Metadata
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+      FOREIGN KEY (table_id) REFERENCES user_tables(id) ON DELETE CASCADE,
+      UNIQUE(table_id, row_id, column_name)
+    )
+  `);
+
+  // Create indexes for file storage
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_user_data_files_table_row
+      ON user_data_files(table_id, row_id);
+    CREATE INDEX IF NOT EXISTS idx_user_data_files_storage_type
+      ON user_data_files(storage_type);
+  `);
+
+  console.log('✅ User Data database schema initialized (including file storage)');
 }
