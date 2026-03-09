@@ -279,8 +279,9 @@ export class DevServerManager {
       cleanEnv.CI = 'true';  // Tells create-next-app we're in CI mode (no prompts)
       cleanEnv.DISABLE_PROMPTS = 'true';  // Additional safety
 
-      // Use system npx
-      const initProcess = spawn('npx', ['create-next-app@latest', ...args.slice(1)], {
+      // Use system npx (on Windows, use npx.cmd explicitly)
+      const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      const initProcess = spawn(npxCommand, ['create-next-app@latest', ...args.slice(1)], {
         cwd: folderPath,
         env: cleanEnv,
         shell: true,
@@ -409,8 +410,9 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Use system package manager
-      const installProcess = spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
+      // Use system package manager (on Windows, use .cmd explicitly)
+      const command = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
+      const installProcess = spawn(command, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -472,8 +474,9 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Use system package manager
-      const installProcess = spawn(packageManager, args, { cwd: folderPath, shell: true, env: cleanEnv });
+      // Use system package manager (on Windows, use .cmd explicitly)
+      const command = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
+      const installProcess = spawn(command, args, { cwd: folderPath, shell: true, env: cleanEnv });
 
       let stdoutOutput = '';
       let errorOutput = '';
@@ -628,8 +631,9 @@ export class DevServerManager {
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
 
-      // Run the CLI via system npx
-      const setupProcess = spawn('npx', args, {
+      // Run the CLI via system npx (on Windows, use npx.cmd explicitly)
+      const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      const setupProcess = spawn(npxCommand, args, {
         cwd: folderPath,
         shell: true,
         env: cleanEnv
@@ -1168,13 +1172,18 @@ export default nextConfig;
     let args: string[];
     const projectName = path.basename(folderPath);
 
+    // On Windows, npm/yarn/pnpm are .cmd files
+    const packageManagerCommand = process.platform === 'win32'
+      ? `${projectInfo.packageManager}.cmd`
+      : projectInfo.packageManager;
+
     switch (projectInfo.type) {
       case 'nextjs':
-        command = projectInfo.packageManager;
+        command = packageManagerCommand;
         args = ['run', 'dev', '--', '-p', port.toString()];
         break;
       case 'vite':
-        command = projectInfo.packageManager;
+        command = packageManagerCommand;
         args = ['run', 'dev', '--', '--port', port.toString()];
 
         // Add --base flag for tunneling if tunnel ID is set
@@ -1185,11 +1194,11 @@ export default nextConfig;
         }
         break;
       case 'react':
-        command = projectInfo.packageManager;
+        command = packageManagerCommand;
         args = ['start'];
         break;
       default:
-        command = projectInfo.packageManager;
+        command = packageManagerCommand;
         args = ['run', 'dev'];
     }
 
