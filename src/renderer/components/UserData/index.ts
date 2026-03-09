@@ -6,6 +6,7 @@ export { ExcelUploadDialog } from './ExcelUploadDialog';
 export { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
 export { ExistingTableMapper } from './ExistingTableMapper';
 export { SyncConfigurationsManager } from './SyncConfigurationsManager';
+export { SyncConfigEditDialog } from './SyncConfigEditDialog';
 export { DuplicateDetectionSettings } from './DuplicateDetectionSettings';
 export { ColumnMapper } from './ColumnMapper';
 export { VisualColumnMapper } from './VisualColumnMapper';
