@@ -44,6 +44,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateProxy = generateProxy;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 /**
  * Detect if project uses src/ directory structure
  */
@@ -131,6 +132,6 @@ export const config = {
   ],
 };
 `;
-    fs.writeFileSync(proxyPath, proxyContent, 'utf-8');
+    fs.writeFileSync(proxyPath, proxyContent.replace(/\r?\n/g, os.EOL), 'utf-8');
     console.log(`✅ Generated ${proxyPath}`);
 }
