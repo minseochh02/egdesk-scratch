@@ -10,29 +10,30 @@ export interface SyncConfiguration {
   scriptFolderPath: string;
   scriptName: string;
   folderName: string;
-  
+
   // Target SQL table
   targetTableId: string;
-  
+
   // Parsing configuration
   headerRow: number;
   skipBottomRows: number;
   sheetIndex: number;
-  
-  // Column mappings
+
+  // Column mappings and transformations
   columnMappings: Record<string, string>; // excelCol: tableCol
-  
+  appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>; // Column splits to apply
+
   // Duplicate detection
   uniqueKeyColumns?: string[]; // Columns that form unique key
   duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
-  
+
   // File handling
   fileAction: FileAction;
-  
+
   // Auto-sync settings
   enabled: boolean;
   autoSyncEnabled: boolean;
-  
+
   // Status tracking
   lastSyncAt?: string;
   lastSyncStatus?: SyncStatus;
@@ -40,7 +41,7 @@ export interface SyncConfiguration {
   lastSyncRowsSkipped: number;
   lastSyncDuplicates: number;
   lastSyncError?: string;
-  
+
   // Metadata
   createdAt: string;
   updatedAt: string;
@@ -55,6 +56,7 @@ export interface CreateSyncConfigurationData {
   skipBottomRows?: number;
   sheetIndex?: number;
   columnMappings: Record<string, string>;
+  appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>; // Column splits to apply
   uniqueKeyColumns?: string[]; // Columns that form unique key
   duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range'; // How to handle duplicates
   fileAction?: FileAction;
@@ -67,6 +69,7 @@ export interface UpdateSyncConfigurationData {
   skipBottomRows?: number;
   sheetIndex?: number;
   columnMappings?: Record<string, string>;
+  appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>; // Column splits to apply
   uniqueKeyColumns?: string[];
   duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
   fileAction?: FileAction;

@@ -10,6 +10,7 @@ interface ColumnMapping {
 interface VisualColumnMapperProps {
   excelColumns: Array<{ name: string; type: string }>;
   sampleRows: any[];
+  targetTable?: { schema: Array<{ name: string; type: string }> }; // For upload mode: map to existing table
   onMappingComplete: (mappings: Record<string, string>, mergeConfig: Record<string, { sources: string[]; separator: string }>) => void;
   onBack: () => void;
 }
@@ -17,21 +18,86 @@ interface VisualColumnMapperProps {
 export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
   excelColumns,
   sampleRows,
+  targetTable,
   onMappingComplete,
   onBack,
 }) => {
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
 
   useEffect(() => {
-    // Initialize with exact Excel names (no sanitization yet)
-    const initialMappings = excelColumns.map((col) => ({
-      excelName: col.name,
-      sqlName: col.name, // Start with exact same name
-      type: col.type,
-      included: true,
-    }));
-    setMappings(initialMappings);
-  }, [excelColumns]);
+    if (targetTable) {
+      // UPLOAD MODE: Map Excel columns to existing table columns
+      console.log('🔄 VisualColumnMapper: Upload mode - mapping to existing table');
+      console.log('   Target table columns:', targetTable.schema.map(c => c.name));
+      console.log('   Excel columns:', excelColumns.map(c => c.name));
+
+      // Try to auto-match columns by name similarity
+      const initialMappings = excelColumns.map((excelCol) => {
+        // Find exact match in target table (case-insensitive)
+        const exactMatch = targetTable.schema.find(
+          tableCol => tableCol.name.toLowerCase() === excelCol.name.toLowerCase()
+        );
+
+        // Find partial match (contains)
+        const partialMatch = !exactMatch ? targetTable.schema.find(
+          tableCol => tableCol.name.toLowerCase().includes(excelCol.name.toLowerCase()) ||
+                      excelCol.name.toLowerCase().includes(tableCol.name.toLowerCase())
+        ) : null;
+
+        // Special matching for split columns (e.g., "월_일" → "일자", "월_일_번호" → "일자_번호")
+        // If the Excel column ends with "_번호", look for a table column with same ending AND matching type (INTEGER)
+        // If the Excel column is DATE type, look for a DATE column in the table
+        let typeBasedMatch = null;
+        if (!exactMatch && !partialMatch) {
+          if (excelCol.name.endsWith('_번호') && excelCol.type === 'INTEGER') {
+            // Look for INTEGER column ending with "_번호"
+            typeBasedMatch = targetTable.schema.find(
+              tableCol => tableCol.type === 'INTEGER' && tableCol.name.endsWith('_번호')
+            );
+          } else if (excelCol.type === 'DATE') {
+            // Look for DATE column (but not imported_at)
+            typeBasedMatch = targetTable.schema.find(
+              tableCol => tableCol.type === 'DATE' && tableCol.name !== 'imported_at'
+            );
+          }
+        }
+
+        const matchedColumn = exactMatch || partialMatch || typeBasedMatch;
+
+        // In upload mode: if we can't find a match in the target table, exclude this column by default
+        // (User can manually include it and select a target column if needed)
+        if (!matchedColumn) {
+          // Get first available non-id column as default
+          const firstAvailableColumn = targetTable.schema.find(col => col.name !== 'id' && col.name !== 'imported_at');
+          return {
+            excelName: excelCol.name,
+            sqlName: firstAvailableColumn ? firstAvailableColumn.name : excelCol.name,
+            type: firstAvailableColumn ? firstAvailableColumn.type : excelCol.type,
+            included: false, // Exclude unmapped columns by default
+          };
+        }
+
+        return {
+          excelName: excelCol.name,
+          sqlName: matchedColumn.name,
+          type: matchedColumn.type,
+          included: true,
+        };
+      });
+
+      console.log('   Auto-matched mappings:', initialMappings.map(m => `${m.excelName} → ${m.sqlName}`));
+      setMappings(initialMappings);
+    } else {
+      // IMPORT MODE: Initialize with exact Excel names (no sanitization yet)
+      const initialMappings = excelColumns.map((col) => ({
+        excelName: col.name,
+        sqlName: col.name, // Start with exact same name
+        type: col.type,
+        included: true,
+      }));
+      setMappings(initialMappings);
+    }
+  }, [excelColumns, targetTable]);
 
   const handleSqlNameChange = (index: number, newName: string) => {
     const updated = [...mappings];
@@ -107,10 +173,16 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
       <div className="visual-mapper-header">
         <h3>Column Mapping</h3>
         <p style={{ color: '#666', fontSize: '14px', margin: '8px 0' }}>
-          Review and edit the SQL column names. They start with the exact same names as your Excel headers.
+          {targetTable
+            ? 'Map your Excel columns to the target table columns. Use the dropdown to select which table column each Excel column should map to.'
+            : 'Review and edit the SQL column names. They start with the exact same names as your Excel headers.'
+          }
         </p>
         <div style={{ background: '#e3f2fd', padding: '12px', borderRadius: '6px', fontSize: '13px' }}>
-          💡 <strong>Tip:</strong> Edit the "SQL Name" row to rename columns. Uncheck to exclude columns from import.
+          💡 <strong>Tip:</strong> {targetTable
+            ? 'Select the matching table column from the dropdown, or uncheck to exclude columns.'
+            : 'Edit the "SQL Name" row to rename columns. Uncheck to exclude columns from import.'
+          }
         </div>
       </div>
 
@@ -201,22 +273,45 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
                     }}
                   >
                     {mapping.included ? (
-                      <input
-                        type="text"
-                        value={mapping.sqlName}
-                        onChange={(e) => handleSqlNameChange(idx, e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '6px 8px',
-                          border: isDuplicate ? '2px solid #f44336' : '1px solid #ddd',
-                          borderRadius: '4px',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          fontFamily: "'Courier New', monospace",
-                          textAlign: 'center',
-                          background: isDuplicate ? '#ffebee' : 'white',
-                        }}
-                      />
+                      targetTable ? (
+                        // Upload mode: dropdown of target table columns
+                        <select
+                          value={mapping.sqlName}
+                          onChange={(e) => handleSqlNameChange(idx, e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '4px 8px',
+                            border: isDuplicate ? '2px solid #f44336' : '1px solid #ccc',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            background: '#fff',
+                          }}
+                        >
+                          {targetTable.schema.filter(col => col.name !== 'id').map(col => (
+                            <option key={col.name} value={col.name}>
+                              {col.name} ({col.type})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        // Import mode: text input
+                        <input
+                          type="text"
+                          value={mapping.sqlName}
+                          onChange={(e) => handleSqlNameChange(idx, e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            border: isDuplicate ? '2px solid #f44336' : '1px solid #ddd',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            fontFamily: "'Courier New', monospace",
+                            textAlign: 'center',
+                            background: isDuplicate ? '#ffebee' : 'white',
+                          }}
+                        />
+                      )
                     ) : (
                       <span style={{ fontStyle: 'italic', color: '#999' }}>—</span>
                     )}

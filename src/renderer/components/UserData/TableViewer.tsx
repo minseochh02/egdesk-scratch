@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { UserTable, useUserData, QueryOptions } from '../../hooks/useUserData';
 import { DataTable } from './shared/DataTable';
 import { ExcelUploadDialog } from './ExcelUploadDialog';
+import { VectorEmbeddingDialog } from './VectorEmbeddingDialog';
+import { VectorStatsPanel } from './VectorStatsPanel';
 
 interface TableViewerProps {
   table: UserTable;
@@ -9,7 +11,15 @@ interface TableViewerProps {
 }
 
 export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
-  const { queryTable, searchTable } = useUserData();
+  const {
+    queryTable,
+    searchTable,
+    embedTableColumns,
+    vectorSearchTable,
+    getEmbeddingStats,
+    deleteEmbeddings,
+    getEmbeddedColumns,
+  } = useUserData();
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -21,6 +31,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showEmbeddingDialog, setShowEmbeddingDialog] = useState(false);
+  const [searchMode, setSearchMode] = useState<'keyword' | 'semantic'>('keyword');
+  const [vectorThreshold, setVectorThreshold] = useState(0.7);
+  const [statsKey, setStatsKey] = useState(0); // Force stats panel refresh
 
   const fetchData = async () => {
     setLoading(true);
@@ -30,9 +44,18 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
       let result;
 
       if (searchQuery.trim()) {
-        // Search mode
-        result = await searchTable(table.id, searchQuery, limit);
-        setPage(0); // Reset to first page in search mode
+        if (searchMode === 'semantic') {
+          // Semantic search mode
+          result = await vectorSearchTable(table.id, searchQuery, {
+            limit,
+            threshold: vectorThreshold,
+          });
+          setPage(0); // Reset to first page in search mode
+        } else {
+          // Keyword search mode
+          result = await searchTable(table.id, searchQuery, limit);
+          setPage(0); // Reset to first page in search mode
+        }
       } else {
         // Query mode with pagination and sorting
         const options: QueryOptions = {
@@ -60,7 +83,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
 
   useEffect(() => {
     fetchData();
-  }, [table.id, page, searchQuery, sortColumn, sortDirection]);
+  }, [table.id, page, searchQuery, sortColumn, sortDirection, searchMode, vectorThreshold]);
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -75,6 +98,17 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
 
   const handleUploadComplete = () => {
     fetchData(); // Refresh the table data after upload
+  };
+
+  const handleEmbeddingComplete = () => {
+    setStatsKey((prev) => prev + 1); // Force stats panel refresh
+    fetchData(); // Refresh table data
+  };
+
+  const handleEmbeddingsDeleted = () => {
+    setStatsKey((prev) => prev + 1); // Force stats panel refresh
+    setSearchMode('keyword'); // Reset to keyword search
+    fetchData(); // Refresh table data
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -102,12 +136,24 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
           </div>
         )}
 
+        <VectorStatsPanel
+          key={statsKey}
+          tableId={table.id}
+          getEmbeddingStats={getEmbeddingStats}
+          deleteEmbeddings={deleteEmbeddings}
+          onEmbeddingsDeleted={handleEmbeddingsDeleted}
+        />
+
         <div className="table-viewer-controls">
           <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', flex: 1 }}>
             <input
               type="text"
               className="table-viewer-search"
-              placeholder="Search across all columns..."
+              placeholder={
+                searchMode === 'semantic'
+                  ? 'Semantic search (e.g., "find gaming laptops")...'
+                  : 'Search across all columns...'
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -126,12 +172,79 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
           </form>
           <button
             className="btn btn-primary"
+            onClick={() => setShowEmbeddingDialog(true)}
+            style={{ marginLeft: '8px' }}
+          >
+            🧠 Embed Table
+          </button>
+          <button
+            className="btn btn-primary"
             onClick={() => setShowUploadDialog(true)}
             style={{ marginLeft: '8px' }}
           >
             📤 Upload Excel
           </button>
         </div>
+
+        {searchQuery && (
+          <div
+            style={{
+              marginTop: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              padding: '12px',
+              backgroundColor: '#f5f5f5',
+              borderRadius: '4px',
+            }}
+          >
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <label style={{ fontSize: '14px', fontWeight: 500 }}>Search Mode:</label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="searchMode"
+                  value="keyword"
+                  checked={searchMode === 'keyword'}
+                  onChange={() => setSearchMode('keyword')}
+                  style={{ marginRight: '4px' }}
+                />
+                Keyword
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="searchMode"
+                  value="semantic"
+                  checked={searchMode === 'semantic'}
+                  onChange={() => setSearchMode('semantic')}
+                  style={{ marginRight: '4px' }}
+                />
+                Semantic
+              </label>
+            </div>
+
+            {searchMode === 'semantic' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                <label style={{ fontSize: '14px', fontWeight: 500 }}>
+                  Similarity Threshold:
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="0.95"
+                  step="0.05"
+                  value={vectorThreshold}
+                  onChange={(e) => setVectorThreshold(parseFloat(e.target.value))}
+                  style={{ flex: 1, maxWidth: '200px' }}
+                />
+                <span style={{ fontSize: '14px', fontWeight: 500, minWidth: '40px' }}>
+                  {vectorThreshold.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="table-viewer-body" style={{ position: 'relative' }}>
@@ -161,10 +274,21 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
               </div>
             )}
             <DataTable
-              columns={table.schema.map((col) => ({
-                name: col.name,
-                type: col.type,
-              }))}
+              columns={
+                searchMode === 'semantic' && searchQuery
+                  ? [
+                      { name: '_similarity', type: 'REAL' as const },
+                      { name: '_matchedColumns', type: 'TEXT' as const },
+                      ...table.schema.map((col) => ({
+                        name: col.name,
+                        type: col.type,
+                      })),
+                    ]
+                  : table.schema.map((col) => ({
+                      name: col.name,
+                      type: col.type,
+                    }))
+              }
               rows={rows}
               maxHeight="calc(100vh - 300px)"
               onSort={handleSort}
@@ -218,6 +342,16 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
           table={table}
           onClose={() => setShowUploadDialog(false)}
           onComplete={handleUploadComplete}
+        />
+      )}
+
+      {showEmbeddingDialog && (
+        <VectorEmbeddingDialog
+          table={table}
+          onClose={() => setShowEmbeddingDialog(false)}
+          onComplete={handleEmbeddingComplete}
+          embedTableColumns={embedTableColumns}
+          getEmbeddedColumns={getEmbeddedColumns}
         />
       )}
     </div>

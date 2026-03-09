@@ -293,6 +293,10 @@ export class FileWatcherService {
     console.log(`🔄 Auto-importing: ${filename}`);
     console.log(`   📊 Target table: ${config.targetTableId}`);
     console.log(`   ⚙️ Settings: header=${config.headerRow}, skip=${config.skipBottomRows}`);
+    console.log(`\n📋 [SYNC CONFIG] Configuration loaded from database:`);
+    console.log(`   Column mappings (${Object.keys(config.columnMappings).length} entries):`, JSON.stringify(config.columnMappings, null, 2));
+    console.log(`   Duplicate action: ${config.duplicateAction}`);
+    console.log(`   Unique key columns:`, config.uniqueKeyColumns);
 
     try {
       // Parse Excel file
@@ -310,12 +314,70 @@ export class FileWatcherService {
       // If so, merge them to get properly forward-filled pivot table data
       let dataToSync = sheet.rows;
       let headersToSync = sheet.headers;
+      const { applySplitColumn } = require('../user-data/excel-parser');
 
-      if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
+      // First, check if configuration has saved column splits to apply
+      if (config.appliedSplits && config.appliedSplits.length > 0) {
+        console.log(`✂️  Applying ${config.appliedSplits.length} saved column split(s) from configuration...`);
+
+        let modifiedSheet: any = sheet;
+        for (const split of config.appliedSplits) {
+          console.log(`   "${split.originalColumn}" → ["${split.dateColumn}", "${split.numberColumn}"]`);
+          modifiedSheet = applySplitColumn(
+            modifiedSheet,
+            split.originalColumn,
+            { date: split.dateColumn, number: split.numberColumn }
+          );
+        }
+
+        dataToSync = modifiedSheet.rows;
+        headersToSync = modifiedSheet.headers;
+        console.log(`✅ Saved splits applied: ${headersToSync.length} columns total`);
+      } else if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
         console.log(`🏝️  Found ${sheet.detectedIslands.length} data island(s), merging with pivot table handling...`);
 
         const { mergeIslands } = require('../user-data/excel-parser');
-        const merged = mergeIslands(sheet.detectedIslands, {
+
+        // STEP 1: Apply column splits to each island BEFORE merging
+        const islandsWithSplitsApplied = sheet.detectedIslands.map((island) => {
+          console.log(`\n🔍 DEBUG Island "${island.title}":`, {
+            hasSplitSuggestions: !!island.splitSuggestions,
+            splitSuggestionsType: typeof island.splitSuggestions,
+            splitSuggestionsLength: island.splitSuggestions?.length,
+            splitSuggestions: island.splitSuggestions,
+          });
+
+          if (!island.splitSuggestions || island.splitSuggestions.length === 0) {
+            console.log(`   ⏭️  Skipping island "${island.title}" - no split suggestions`);
+            return island;
+          }
+
+          console.log(`   ✂️  Applying ${island.splitSuggestions.length} column split(s) to island "${island.title}"`);
+
+          // Apply each split suggestion
+          let modifiedIsland = island;
+          for (const suggestion of island.splitSuggestions) {
+            if (suggestion.pattern === 'date-with-number' && suggestion.suggestedColumns.length === 2) {
+              // Auto-apply date-with-number splits
+              const dateCol = suggestion.suggestedColumns[0];
+              const numberCol = suggestion.suggestedColumns[1];
+
+              console.log(`      "${suggestion.originalColumn}" → ["${dateCol.name}" (${dateCol.type}), "${numberCol.name}" (${numberCol.type})]`);
+
+              // applySplitColumn expects a sheet-like structure, island has same structure
+              modifiedIsland = applySplitColumn(
+                modifiedIsland as any,
+                suggestion.originalColumn,
+                { date: dateCol.name, number: numberCol.name }
+              );
+            }
+          }
+
+          return modifiedIsland;
+        });
+
+        // STEP 2: Merge the islands (now with splits applied)
+        const merged = mergeIslands(islandsWithSplitsApplied, {
           addMetadataColumns: true,  // Add 회사명, 기간, 계정코드_메타, 계정명_메타
           addIslandIndex: false,
         });
@@ -325,6 +387,28 @@ export class FileWatcherService {
 
         console.log(`   ✅ Merged ${merged.mergedIslandCount} islands: ${merged.rows.length} total rows`);
         console.log(`   📋 Headers: ${headersToSync.slice(0, 5).join(', ')}...`);
+      } else if (sheet.splitSuggestions && sheet.splitSuggestions.length > 0) {
+        // No islands, but sheet itself has split suggestions
+        console.log(`✂️  Applying ${sheet.splitSuggestions.length} column split(s) to sheet...`);
+
+        let modifiedSheet: any = sheet;
+        for (const suggestion of sheet.splitSuggestions) {
+          if (suggestion.pattern === 'date-with-number' && suggestion.suggestedColumns.length === 2) {
+            const dateCol = suggestion.suggestedColumns[0];
+            const numberCol = suggestion.suggestedColumns[1];
+
+            console.log(`   "${suggestion.originalColumn}" → ["${dateCol.name}" (${dateCol.type}), "${numberCol.name}" (${numberCol.type})]`);
+
+            modifiedSheet = applySplitColumn(
+              modifiedSheet,
+              suggestion.originalColumn,
+              { date: dateCol.name, number: numberCol.name }
+            );
+          }
+        }
+
+        dataToSync = modifiedSheet.rows;
+        headersToSync = modifiedSheet.headers;
       }
 
       // Get user data manager
@@ -344,6 +428,25 @@ export class FileWatcherService {
         totalRows: dataToSync.length,
       });
 
+      // Debug: Log data structure before mapping
+      const firstRowKeys = Object.keys(dataToSync[0] || {});
+      console.log(`\n🔍 ===== COLUMN MAPPING DEBUG =====`);
+      console.log(`🔍 Data before mapping - first row keys (${firstRowKeys.length}):`, JSON.stringify(firstRowKeys));
+      console.log(`🔍 Headers to sync (${headersToSync.length}):`, JSON.stringify(headersToSync));
+      console.log(`🔍 Column mappings (${Object.keys(config.columnMappings).length} entries):`, JSON.stringify(config.columnMappings, null, 2));
+
+      // Check for columns in data that are NOT in mappings
+      const unmappedColumns = firstRowKeys.filter(key => !(key in config.columnMappings));
+      if (unmappedColumns.length > 0) {
+        console.log(`⚠️  WARNING: Columns in data but NOT in mappings (will be dropped):`, JSON.stringify(unmappedColumns));
+      }
+
+      // Check for mappings that reference columns NOT in data
+      const missingDataColumns = Object.keys(config.columnMappings).filter(key => !firstRowKeys.includes(key));
+      if (missingDataColumns.length > 0) {
+        console.log(`⚠️  WARNING: Mappings reference columns NOT in data:`, JSON.stringify(missingDataColumns));
+      }
+
       // Map and insert rows
       const mappedRows = dataToSync.map((row) => {
         const mappedRow: Record<string, any> = {};
@@ -353,6 +456,13 @@ export class FileWatcherService {
         }
         return mappedRow;
       });
+
+      // Debug: Log data structure after mapping
+      const mappedRowKeys = Object.keys(mappedRows[0] || {});
+      console.log(`🔍 Data after mapping - first row keys (${mappedRowKeys.length}):`, JSON.stringify(mappedRowKeys));
+      console.log(`🔍 First mapped row sample:`, mappedRows[0]);
+      console.log(`   Column count change: ${firstRowKeys.length} → ${mappedRowKeys.length} (diff: ${mappedRowKeys.length - firstRowKeys.length})`);
+      console.log(`🔍 ===== END MAPPING DEBUG =====\n`);
 
       // Insert rows with duplicate handling settings from config
       const { inserted, skipped, duplicates } = userDataManager.insertRowsWithSettings(

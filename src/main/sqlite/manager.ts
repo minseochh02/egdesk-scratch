@@ -69,6 +69,7 @@ export class SQLiteManager {
   private financeHubManager: FinanceHubDbManager | null = null;
   private userDataManager: UserDataDbManager | null = null;
   private syncConfigManager: SyncConfigManager | null = null;
+  private vectorManager: any | null = null; // VectorDbManager - loaded dynamically
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -117,6 +118,24 @@ export class SQLiteManager {
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
       this.userDataManager = new UserDataDbManager(this.userDataDb);
       this.syncConfigManager = new SyncConfigManager(this.userDataDb);
+
+      // Initialize vector manager if extension is loaded
+      try {
+        const { loadVectorExtension } = await import('./vector-extension');
+        const { isVectorSupported } = await import('./vector-extension');
+
+        if (isVectorSupported(this.conversationsDb)) {
+          const { VectorDbManager } = await import('./vector-manager');
+          this.vectorManager = new VectorDbManager(this.conversationsDb);
+          console.log('✅ Vector manager initialized');
+        } else {
+          console.log('ℹ️ Vector extension not loaded - vector features unavailable');
+        }
+      } catch (vectorError: any) {
+        console.warn('⚠️ Vector manager initialization failed:', vectorError.message);
+        // Don't fail initialization if vector support unavailable
+      }
+
       this.isInitialized = true;
 
       // Run cleanup migration for deleted Playwright tests
@@ -687,6 +706,7 @@ export class SQLiteManager {
     this.registerCompanyResearchHandlers();
     this.registerFinanceHubHandlers();
     this.registerUserDataHandlers();
+    this.registerVectorHandlers();
     
     // Register Finance Hub scheduler handlers
     try {
@@ -2511,6 +2531,252 @@ export class SQLiteManager {
       try {
         const operations = this.getUserDataManager().getRecentImportOperations(limit);
         return { success: true, data: operations };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+  }
+
+  /**
+   * Register Vector Database IPC handlers
+   */
+  private registerVectorHandlers(): void {
+    // Search for similar messages using vector similarity
+    ipcMain.handle('vector:search', async (event, options: {
+      embedding: number[];
+      limit?: number;
+      threshold?: number;
+      conversationId?: string;
+    }) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector search not available - extension not loaded'
+          };
+        }
+        const results = this.vectorManager.searchSimilar(options);
+        return { success: true, data: results };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Embed a message (store its vector embedding)
+    ipcMain.handle('vector:embed-message', async (event, data: {
+      messageId: string;
+      conversationId: string;
+      embedding: number[];
+      model: string;
+    }) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector operations not available - extension not loaded'
+          };
+        }
+        const id = this.vectorManager.insertEmbedding(data);
+        return { success: true, data: { id } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Bulk embed messages
+    ipcMain.handle('vector:embed-messages', async (event, embeddings: Array<{
+      messageId: string;
+      conversationId: string;
+      embedding: number[];
+      model: string;
+    }>) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector operations not available - extension not loaded'
+          };
+        }
+        const count = this.vectorManager.bulkInsertEmbeddings(embeddings);
+        return { success: true, data: { count } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get embedding for a message
+    ipcMain.handle('vector:get-embedding', async (event, messageId: string) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector operations not available - extension not loaded'
+          };
+        }
+        const embedding = this.vectorManager.getEmbedding(messageId);
+        return { success: true, data: embedding };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete embedding for a message
+    ipcMain.handle('vector:delete-embedding', async (event, messageId: string) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector operations not available - extension not loaded'
+          };
+        }
+        const deleted = this.vectorManager.deleteEmbedding(messageId);
+        return { success: true, data: { deleted } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Delete all embeddings for a conversation
+    ipcMain.handle('vector:delete-conversation-embeddings', async (event, conversationId: string) => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: false,
+            error: 'Vector operations not available - extension not loaded'
+          };
+        }
+        const count = this.vectorManager.deleteConversationEmbeddings(conversationId);
+        return { success: true, data: { count } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Get vector database statistics
+    ipcMain.handle('vector:stats', async () => {
+      try {
+        if (!this.vectorManager) {
+          return {
+            success: true,
+            data: {
+              available: false,
+              totalEmbeddings: 0,
+              model: null,
+              dimensions: null,
+              lastUpdated: null
+            }
+          };
+        }
+        const stats = this.vectorManager.getStats();
+        return {
+          success: true,
+          data: {
+            available: true,
+            ...stats
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Check if a message has an embedding
+    ipcMain.handle('vector:has-embedding', async (event, messageId: string) => {
+      try {
+        if (!this.vectorManager) {
+          return { success: true, data: { hasEmbedding: false } };
+        }
+        const hasEmbedding = this.vectorManager.hasEmbedding(messageId);
+        return { success: true, data: { hasEmbedding } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Generate embedding for text using Gemini
+    ipcMain.handle('vector:generate-embedding', async (event, text: string, options?: {
+      model?: string;
+      taskType?: 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT' | 'SEMANTIC_SIMILARITY';
+      title?: string;
+    }) => {
+      try {
+        const { getEmbeddingService } = await import('../embeddings/gemini-embedding-service');
+        const service = getEmbeddingService();
+        const result = await service.embedText(text, options);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Generate embeddings for multiple texts using Gemini
+    ipcMain.handle('vector:generate-embeddings-batch', async (event, texts: string[], options?: {
+      model?: string;
+      taskType?: 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT' | 'SEMANTIC_SIMILARITY';
+      title?: string;
+    }) => {
+      try {
+        const { getEmbeddingService } = await import('../embeddings/gemini-embedding-service');
+        const service = getEmbeddingService();
+        const results = await service.embedBatch(texts, options);
+        return { success: true, data: results };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    });
+
+    // Generate and store embedding for a message (convenience method)
+    ipcMain.handle('vector:embed-and-store-message', async (event, messageId: string, conversationId: string, text: string) => {
+      try {
+        if (!this.vectorManager) {
+          return { success: false, error: 'Vector operations not available - extension not loaded' };
+        }
+
+        const { getEmbeddingService } = await import('../embeddings/gemini-embedding-service');
+        const service = getEmbeddingService();
+        const result = await service.embedText(text);
+
+        const id = this.vectorManager.insertEmbedding({
+          messageId,
+          conversationId,
+          embedding: result.embedding,
+          model: result.model
+        });
+
+        return { success: true, data: { id, model: result.model, dimensions: result.dimensions } };
       } catch (error) {
         return {
           success: false,

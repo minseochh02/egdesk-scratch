@@ -39,7 +39,7 @@ export class SyncConfigManager {
     }
 
     const columnMappingsJson = JSON.stringify(data.columnMappings);
-
+    const appliedSplitsJson = data.appliedSplits ? JSON.stringify(data.appliedSplits) : null;
     const uniqueKeyColumnsJson = data.uniqueKeyColumns ? JSON.stringify(data.uniqueKeyColumns) : null;
 
     console.log('💾 Preparing to insert sync configuration:', {
@@ -53,11 +53,11 @@ export class SyncConfigManager {
       INSERT INTO sync_configurations (
         id, script_folder_path, script_name, folder_name,
         target_table_id, header_row, skip_bottom_rows, sheet_index,
-        column_mappings, unique_key_columns, duplicate_action,
+        column_mappings, applied_splits, unique_key_columns, duplicate_action,
         file_action, enabled, auto_sync_enabled,
         last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
@@ -71,6 +71,7 @@ export class SyncConfigManager {
         data.skipBottomRows || 0,
         data.sheetIndex || 0,
         columnMappingsJson,
+        appliedSplitsJson,
         uniqueKeyColumnsJson,
         data.duplicateAction || 'skip',
         data.fileAction || 'archive',
@@ -196,6 +197,10 @@ export class SyncConfigManager {
     if (data.columnMappings !== undefined) {
       updates.push('column_mappings = ?');
       params.push(JSON.stringify(data.columnMappings));
+    }
+    if (data.appliedSplits !== undefined) {
+      updates.push('applied_splits = ?');
+      params.push(data.appliedSplits ? JSON.stringify(data.appliedSplits) : null);
     }
     if (data.uniqueKeyColumns !== undefined) {
       updates.push('unique_key_columns = ?');
@@ -397,6 +402,14 @@ export class SyncConfigManager {
       columnMappings = {};
     }
 
+    let appliedSplits: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }> | undefined;
+    try {
+      appliedSplits = row.applied_splits ? JSON.parse(row.applied_splits) : undefined;
+    } catch (error) {
+      console.error('Failed to parse applied splits:', error);
+      appliedSplits = undefined;
+    }
+
     let uniqueKeyColumns: string[] | undefined;
     try {
       uniqueKeyColumns = row.unique_key_columns ? JSON.parse(row.unique_key_columns) : undefined;
@@ -415,6 +428,7 @@ export class SyncConfigManager {
       skipBottomRows: row.skip_bottom_rows,
       sheetIndex: row.sheet_index,
       columnMappings,
+      appliedSplits,
       uniqueKeyColumns,
       duplicateAction: row.duplicate_action,
       fileAction: row.file_action,
