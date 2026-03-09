@@ -45,6 +45,7 @@ exports.updateEnvLocal = updateEnvLocal;
 exports.generateConfigFile = generateConfigFile;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 /**
  * Fetch available tables from EGDesk
  */
@@ -165,7 +166,7 @@ function updateEnvLocal(projectPath, config) {
         ...config.tables.map((table, index) => `# ${index + 1}. ${table.displayName} (${table.tableName}) - ${table.rowCount} rows, ${table.columnCount} columns`),
         ''
     ].join('\n');
-    fs.writeFileSync(envPath, envContent, 'utf-8');
+    fs.writeFileSync(envPath, envContent.replace(/\r?\n/g, os.EOL), 'utf-8');
     console.log(`✅ Updated ${envPath}`);
 }
 /**
@@ -220,6 +221,6 @@ export const TABLE_NAMES = {
 ${config.tables.map((table, index) => `  table${index + 1}: '${table.tableName}'`).join(',\n')}
 } as const;
 `;
-    fs.writeFileSync(configPath, configContent, 'utf-8');
+    fs.writeFileSync(configPath, configContent.replace(/\r?\n/g, os.EOL), 'utf-8');
     console.log(`✅ Generated ${configPath}`);
 }

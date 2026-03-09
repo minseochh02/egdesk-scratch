@@ -42,6 +42,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateApiWrapper = generateApiWrapper;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 /**
  * Detect if project uses src/ directory structure
  */
@@ -112,6 +113,6 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
   return fetch(url, options);
 }
 `;
-    fs.writeFileSync(apiPath, apiContent, 'utf-8');
+    fs.writeFileSync(apiPath, apiContent.replace(/\r?\n/g, os.EOL), 'utf-8');
     console.log(`✅ Generated ${apiPath}`);
 }

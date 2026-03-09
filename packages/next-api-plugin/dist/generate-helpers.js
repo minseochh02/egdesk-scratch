@@ -41,6 +41,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateHelpers = generateHelpers;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 /**
  * Generate egdesk-helpers.ts file
  */
@@ -286,6 +287,6 @@ export async function renameTable(
   });
 }
 `;
-    fs.writeFileSync(helperPath, helperContent, 'utf-8');
+    fs.writeFileSync(helperPath, helperContent.replace(/\r?\n/g, os.EOL), 'utf-8');
     console.log(`✅ Generated ${helperPath}`);
 }
