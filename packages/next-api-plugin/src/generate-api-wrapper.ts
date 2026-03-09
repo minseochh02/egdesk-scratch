@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Detect if project uses src/ directory structure
@@ -86,6 +87,6 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
 }
 `;
 
-  fs.writeFileSync(apiPath, apiContent, 'utf-8');
+  fs.writeFileSync(apiPath, apiContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${apiPath}`);
 }

@@ -10,6 +10,7 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import * as os from 'os';
 
 interface RuntimeInfo {
   nodePath: string;
@@ -265,7 +266,7 @@ console.error('ERROR: npm is not available.');
 console.error('Please install Node.js and npm from https://nodejs.org/');
 process.exit(1);
 `;
-      fs.writeFileSync(errorWrapperPath, errorContent, 'utf-8');
+      fs.writeFileSync(errorWrapperPath, errorContent.replace(/\r?\n/g, os.EOL), 'utf-8');
       return errorWrapperPath;
     }
   }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSyncConfig } from '../../hooks/useSyncConfig';
 import { UserTable } from '../../hooks/useUserData';
+import { SyncConfigEditDialog } from './SyncConfigEditDialog';
 
 interface SyncConfiguration {
   id: string;
@@ -27,16 +28,15 @@ interface SyncConfiguration {
 interface SyncConfigurationsManagerProps {
   userTables: UserTable[];
   onClose: () => void;
-  onEditConfig: (config: SyncConfiguration) => void;
 }
 
 export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps> = ({
   userTables,
   onClose,
-  onEditConfig,
 }) => {
   const { configurations, loading, error, fetchConfigurations, deleteConfiguration, updateConfiguration } = useSyncConfig();
   const [selectedConfig, setSelectedConfig] = useState<SyncConfiguration | null>(null);
+  const [editingConfig, setEditingConfig] = useState<SyncConfiguration | null>(null);
   const [watcherStatus, setWatcherStatus] = useState<Array<{ configId: string; processedFilesCount: number }>>([]);
 
   useEffect(() => {
@@ -320,14 +320,8 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
 
                   <div className="sync-config-footer">
                     <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => setSelectedConfig(config)}
-                    >
-                      📋 View Details
-                    </button>
-                    <button
                       className="btn btn-sm btn-primary"
-                      onClick={() => onEditConfig(config)}
+                      onClick={() => setEditingConfig(config)}
                     >
                       ✏️ Edit
                     </button>
@@ -356,6 +350,17 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
           </button>
         </div>
       </div>
+
+      {editingConfig && (
+        <SyncConfigEditDialog
+          config={editingConfig}
+          onClose={() => setEditingConfig(null)}
+          onSave={() => {
+            fetchConfigurations();
+            loadWatcherStatus();
+          }}
+        />
+      )}
     </div>
   );
 };

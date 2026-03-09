@@ -6,6 +6,7 @@ import { BaseStepProps } from '../types';
  * Features: Separate/merged mode selection, island selection
  */
 export const IslandSelectionStep: React.FC<BaseStepProps> = ({
+  mode,
   wizardState,
   onStateChange,
   error,
@@ -28,6 +29,21 @@ export const IslandSelectionStep: React.FC<BaseStepProps> = ({
   if (islands.length === 0) {
     return null;
   }
+
+  // For upload mode (browser sync), force merged mode since we sync to ONE existing table
+  React.useEffect(() => {
+    if (mode === 'upload' && islandImportMode !== 'merged') {
+      const allIslands = new Set(islands.map((_, idx) => idx));
+      const suggestedName = parsedData.suggestedTableName;
+      onStateChange({
+        islandImportMode: 'merged',
+        selectedIslands: allIslands,
+        mergedTableName: mergedTableName || suggestedName,
+        mergedDisplayName: mergedDisplayName || suggestedName.replace(/_/g, ' '),
+        addMetadataColumns: true, // Always add metadata for merged islands
+      });
+    }
+  }, [mode, islandImportMode]);
 
   const toggleIsland = (idx: number) => {
     const newSelected = new Set(selectedIslands);
@@ -64,39 +80,42 @@ export const IslandSelectionStep: React.FC<BaseStepProps> = ({
         <h4 style={{ margin: '0 0 4px 0' }}>🏝️ Multiple Data Tables Detected</h4>
         <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
           This spreadsheet contains {islands.length} separate data table{islands.length > 1 ? 's' : ''}.
-          Choose how you'd like to import them.
+          {mode === 'upload'
+            ? ' They will be merged and synced to your target table.'
+            : ' Choose how you\'d like to import them.'}
         </p>
       </div>
 
       {/* Import Mode Selection */}
-      <div style={{ marginBottom: '24px', background: '#f5f5f5', padding: '16px', borderRadius: '8px' }}>
-        <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Import Mode</h4>
+      {mode === 'import' && (
+        <div style={{ marginBottom: '24px', background: '#f5f5f5', padding: '16px', borderRadius: '8px' }}>
+          <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Import Mode</h4>
 
-        <div style={{ marginBottom: '12px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '8px' }}>
-            <input
-              type="radio"
-              value="separate"
-              checked={islandImportMode === 'separate'}
-              onChange={() => setImportMode('separate')}
-              style={{ marginRight: '8px' }}
-            />
-            <span><strong>Create separate tables</strong> (one table per island)</span>
-          </label>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '8px' }}>
+              <input
+                type="radio"
+                value="separate"
+                checked={islandImportMode === 'separate'}
+                onChange={() => setImportMode('separate')}
+                style={{ marginRight: '8px' }}
+              />
+              <span><strong>Create separate tables</strong> (one table per island)</span>
+            </label>
 
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-            <input
-              type="radio"
-              value="merged"
-              checked={islandImportMode === 'merged'}
-              onChange={() => setImportMode('merged')}
-              style={{ marginRight: '8px' }}
-            />
-            <span><strong>Merge into one table</strong> (combine all islands)</span>
-          </label>
-        </div>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                value="merged"
+                checked={islandImportMode === 'merged'}
+                onChange={() => setImportMode('merged')}
+                style={{ marginRight: '8px' }}
+              />
+              <span><strong>Merge into one table</strong> (combine all islands)</span>
+            </label>
+          </div>
 
-        {islandImportMode === 'merged' && (
+        {islandImportMode === 'merged' && mode === 'import' && (
           <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #ddd' }}>
             <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: '8px' }}>
               <input
@@ -151,6 +170,16 @@ export const IslandSelectionStep: React.FC<BaseStepProps> = ({
           </div>
         )}
       </div>
+      )}
+
+      {/* Upload mode info */}
+      {mode === 'upload' && (
+        <div style={{ marginBottom: '24px', background: '#f0f7ff', padding: '16px', borderRadius: '8px', border: '1px solid #2196F3' }}>
+          <p style={{ margin: 0, fontSize: '14px' }}>
+            <strong>✅ Auto-merge enabled:</strong> All {islands.length} island tables will be automatically merged with metadata columns (회사명, 기간, 계정코드_메타, 계정명_메타) and synced to your target table.
+          </p>
+        </div>
+      )}
 
       <h3 style={{ marginTop: 0 }}>
         {islandImportMode === 'separate' ? 'Select Islands to Import' : 'Islands to Merge'}
