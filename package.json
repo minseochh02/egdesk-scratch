@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.0.78",
+  "version": "1.0.79",
   "description": "EGDesk - WordPress Management Desktop Application",
   "keywords": [
     "egdesk",
@@ -244,6 +244,7 @@
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": [
       "scripts/**",
+      "packages/**",
       "**\\*.{node,dll,js}",
       "node_modules/@google/genai/**",
       "node_modules/mime-types/**"
@@ -253,7 +254,8 @@
       "node_modules",
       "package.json",
       "scripts/**",
-      "resources/**"
+      "resources/**",
+      "packages/**"
     ],
     "mac": {
       "notarize": false,

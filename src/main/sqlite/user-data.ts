@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
+import { app } from 'electron';
+import path from 'path';
 import {
   UserTable,
   UserTableWithSchema,
@@ -20,6 +22,7 @@ import {
   UserDataEmbeddingData,
   UserDataEmbeddingStats,
 } from './user-data-vector-manager';
+import { FileStorageManager } from '../user-data/file-storage-manager';
 
 /**
  * User Data Database Manager
@@ -27,7 +30,20 @@ import {
  * Manages user-created database tables, data operations, and import tracking
  */
 export class UserDataDbManager {
+  private fileStorageManager: FileStorageManager | null = null;
+
   constructor(public database: Database.Database) {}
+
+  /**
+   * Get or create file storage manager instance
+   */
+  public getFileStorageManager(): FileStorageManager {
+    if (!this.fileStorageManager) {
+      const userDataDir = app.getPath('userData');
+      this.fileStorageManager = new FileStorageManager(this.database, userDataDir);
+    }
+    return this.fileStorageManager;
+  }
 
   /**
    * Sanitize table name for SQL safety

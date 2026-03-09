@@ -953,28 +953,37 @@ export function registerUserDataIPCHandlers(): void {
         console.log('🔍 DEBUG: First mapped row sample:', rowsToInsert[0]);
 
         // Filter out rows where date columns are empty/null (summary rows like 이월잔액, 합계, etc.)
+        // BUT only if table has date columns - tables without dates should import all rows
         const dateColumns = table.schema.filter(
           col => col.type === 'DATE' && col.name !== 'imported_at'
         ).map(col => col.name);
 
-        const filteredRows = rowsToInsert.filter((row, idx) => {
-          // Keep row if ANY date column has a non-empty value
-          const hasValidDate = dateColumns.some(dateCol => {
-            const value = row[dateCol];
-            return value !== null && value !== undefined && value !== '';
+        let filteredRows = rowsToInsert;
+
+        if (dateColumns.length > 0) {
+          // Table has date columns - filter out rows where ALL date columns are null
+          filteredRows = rowsToInsert.filter((row, idx) => {
+            // Keep row if ANY date column has a non-empty value
+            const hasValidDate = dateColumns.some(dateCol => {
+              const value = row[dateCol];
+              return value !== null && value !== undefined && value !== '';
+            });
+
+            // Log filtered rows
+            if (!hasValidDate && idx < 5) {
+              console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+            }
+
+            return hasValidDate;
           });
 
-          // Log filtered rows
-          if (!hasValidDate && idx < 5) {
-            console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+          const skippedCount = rowsToInsert.length - filteredRows.length;
+          if (skippedCount > 0) {
+            console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
           }
-
-          return hasValidDate;
-        });
-
-        const skippedCount = rowsToInsert.length - filteredRows.length;
-        if (skippedCount > 0) {
-          console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
+        } else {
+          // Table has no date columns - import all rows without filtering
+          console.log(`ℹ️  Table has no date columns - importing all ${rowsToInsert.length} row(s) without date filtering`);
         }
 
         // Handle different duplicate actions
@@ -2125,6 +2134,164 @@ export function registerUserDataIPCHandlers(): void {
         success: false,
         error:
           error instanceof Error ? error.message : 'Failed to get embedded columns',
+      };
+    }
+  });
+
+  /**
+   * Upload a file to user data storage
+   */
+  ipcMain.handle('user-data:upload-file', async (event, options: {
+    tableId: string;
+    rowId: number;
+    columnName: string;
+    filename: string;
+    mimeType?: string;
+    data: Buffer;
+    forceStorageType?: 'blob' | 'filesystem';
+    compress?: boolean;
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const result = await fileManager.storeFile(options);
+
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to upload file',
+      };
+    }
+  });
+
+  /**
+   * Download a file from user data storage
+   */
+  ipcMain.handle('user-data:download-file', async (event, options: {
+    fileId?: string;
+    tableId?: string;
+    rowId?: number;
+    columnName?: string;
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const file = await fileManager.getFile(options);
+
+      if (!file) {
+        return {
+          success: false,
+          error: 'File not found',
+        };
+      }
+
+      return { success: true, data: file };
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to download file',
+      };
+    }
+  });
+
+  /**
+   * Delete a file from user data storage
+   */
+  ipcMain.handle('user-data:delete-file', async (event, options: {
+    fileId?: string;
+    tableId?: string;
+    rowId?: number;
+    columnName?: string;
+  }) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const deleted = await fileManager.deleteFile(options);
+
+      return { success: deleted, data: { deleted } };
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete file',
+      };
+    }
+  });
+
+  /**
+   * List files for a table row
+   */
+  ipcMain.handle('user-data:list-files', async (event, tableId: string, rowId: number) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const files = fileManager.listFilesForRow(tableId, rowId);
+
+      return { success: true, data: files };
+    } catch (error) {
+      console.error('Error listing files:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list files',
+      };
+    }
+  });
+
+  /**
+   * Get file storage statistics
+   */
+  ipcMain.handle('user-data:get-file-stats', async (event, tableId?: string) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const stats = fileManager.getStats(tableId);
+
+      return { success: true, data: stats };
+    } catch (error) {
+      console.error('Error getting file stats:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get file stats',
+      };
+    }
+  });
+
+  /**
+   * Clean up orphaned files from filesystem
+   */
+  ipcMain.handle('user-data:cleanup-orphaned-files', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const fileManager = userDataManager.getFileStorageManager();
+      await fileManager.initialize();
+
+      const cleanedCount = await fileManager.cleanupOrphanedFiles();
+
+      return { success: true, data: { cleanedCount } };
+    } catch (error) {
+      console.error('Error cleaning up orphaned files:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to cleanup orphaned files',
       };
     }
   });
