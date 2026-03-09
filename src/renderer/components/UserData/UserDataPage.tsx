@@ -13,6 +13,7 @@ export const UserDataPage: React.FC = () => {
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
   const [showSyncConfigManager, setShowSyncConfigManager] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<any | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -59,6 +60,12 @@ export const UserDataPage: React.FC = () => {
 
   const handleImportComplete = () => {
     fetchTables();
+  };
+
+  const handleEditConfig = (config: any) => {
+    setEditingConfig(config);
+    setShowSyncConfigManager(false);
+    setShowBrowserSyncWizard(true);
   };
 
   const handleExportAll = async () => {
@@ -374,8 +381,15 @@ export const UserDataPage: React.FC = () => {
 
       {showBrowserSyncWizard && (
         <BrowserDownloadsSyncWizard
-          onClose={() => setShowBrowserSyncWizard(false)}
-          onComplete={handleImportComplete}
+          onClose={() => {
+            setShowBrowserSyncWizard(false);
+            setEditingConfig(null);
+          }}
+          onComplete={() => {
+            handleImportComplete();
+            setEditingConfig(null);
+          }}
+          editingConfig={editingConfig}
         />
       )}
 
@@ -383,6 +397,7 @@ export const UserDataPage: React.FC = () => {
         <SyncConfigurationsManager
           userTables={tables}
           onClose={() => setShowSyncConfigManager(false)}
+          onEditConfig={handleEditConfig}
         />
       )}
     </div>

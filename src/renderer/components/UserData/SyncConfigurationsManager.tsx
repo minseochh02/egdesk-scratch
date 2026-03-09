@@ -27,11 +27,13 @@ interface SyncConfiguration {
 interface SyncConfigurationsManagerProps {
   userTables: UserTable[];
   onClose: () => void;
+  onEditConfig: (config: SyncConfiguration) => void;
 }
 
 export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps> = ({
   userTables,
   onClose,
+  onEditConfig,
 }) => {
   const { configurations, loading, error, fetchConfigurations, deleteConfiguration, updateConfiguration } = useSyncConfig();
   const [selectedConfig, setSelectedConfig] = useState<SyncConfiguration | null>(null);
@@ -226,9 +228,42 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                         <div className="sync-config-info-label">Columns Mapped</div>
                         <div className="sync-config-info-value">
                           {Object.keys(config.columnMappings).length} columns
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '11px' }}
+                            onClick={() => setSelectedConfig(selectedConfig?.id === config.id ? null : config)}
+                          >
+                            {selectedConfig?.id === config.id ? 'Hide' : 'View'}
+                          </button>
                         </div>
                       </div>
                     </div>
+
+                    {selectedConfig?.id === config.id && (
+                      <div style={{ marginTop: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '12px' }}>
+                        <strong style={{ display: 'block', marginBottom: '8px', color: '#1976d2' }}>📋 Column Mappings:</strong>
+                        <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+                          <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '2px solid #ddd' }}>
+                                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600 }}>Excel Column</th>
+                                <th style={{ padding: '4px 8px', textAlign: 'center' }}>→</th>
+                                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600 }}>Table Column</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.entries(config.columnMappings).map(([excelCol, tableCol]) => (
+                                <tr key={excelCol} style={{ borderBottom: '1px solid #eee' }}>
+                                  <td style={{ padding: '4px 8px', fontFamily: 'monospace' }}>{excelCol}</td>
+                                  <td style={{ padding: '4px 8px', textAlign: 'center', color: '#999' }}>→</td>
+                                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: '#1976d2' }}>{tableCol}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="sync-config-status">
                       <div className="sync-config-status-row">
@@ -289,6 +324,12 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                       onClick={() => setSelectedConfig(config)}
                     >
                       📋 View Details
+                    </button>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => onEditConfig(config)}
+                    >
+                      ✏️ Edit
                     </button>
                     <button
                       className="btn btn-sm btn-danger"

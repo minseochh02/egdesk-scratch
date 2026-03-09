@@ -282,7 +282,56 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
         console.error('⚠️ Migration 006 error:', migrationError.message);
       }
     }
-    
+
+    // =============================================
+    // Migration 009: Add vector embeddings support
+    // =============================================
+    try {
+      const { loadVectorExtension } = await import('./vector-extension');
+      const vectorLoaded = loadVectorExtension(conversationsDb);
+
+      if (vectorLoaded) {
+        const { migrate009AddVectorEmbeddings } = await import('./migrations/009-add-vector-embeddings');
+        migrate009AddVectorEmbeddings(conversationsDb);
+      } else {
+        console.warn('⚠️ Vector extension not available - skipping vector embeddings migration');
+      }
+    } catch (vectorError: any) {
+      console.error('⚠️ Vector setup error:', vectorError.message);
+      // Don't fail initialization if vector support unavailable
+    }
+
+    // =============================================
+    // Migration 010: Add user data vector embeddings support
+    // =============================================
+    try {
+      const { loadVectorExtension } = await import('./vector-extension');
+      const vectorLoaded = loadVectorExtension(userDataDb);
+
+      if (vectorLoaded) {
+        const { migrate010AddUserDataVectorEmbeddings } = await import(
+          './migrations/010-add-userdata-vector-embeddings'
+        );
+        migrate010AddUserDataVectorEmbeddings(userDataDb);
+        console.log('✅ User Data vector embeddings enabled');
+      } else {
+        console.warn('⚠️ Vector extension not available - skipping user data vector embeddings migration');
+      }
+    } catch (vectorError: any) {
+      console.error('⚠️ User Data vector setup error:', vectorError.message);
+      // Don't fail initialization if vector support unavailable
+    }
+
+    // =============================================
+    // Migration 011: Add applied_splits to sync_configurations
+    // =============================================
+    try {
+      const { migrate011AddAppliedSplitsToSyncConfig } = await import('./migrations/011-add-applied-splits-to-sync-config');
+      migrate011AddAppliedSplitsToSyncConfig(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 011 error:', migrationError.message);
+    }
+
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
     

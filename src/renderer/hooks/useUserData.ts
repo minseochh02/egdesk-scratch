@@ -385,9 +385,11 @@ export function useUserData() {
       sheetIndex: number;
       tableId: string;
       columnMappings: Record<string, string>;
+      mergeConfig?: Record<string, { sources: string[]; separator: string }>;
       headerRow?: number;
       skipRows?: number;
       skipBottomRows?: number;
+      appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>;
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
       addTimestamp?: boolean;
@@ -527,6 +529,181 @@ export function useUserData() {
     }
   }, [fetchTables]);
 
+  // ==================== Vector Embedding Methods ====================
+
+  /**
+   * Embed table columns with progress tracking
+   */
+  const embedTableColumns = useCallback(
+    async (
+      tableId: string,
+      columnNames: string[],
+      onProgress?: (progress: {
+        progress: number;
+        total: number;
+        message: string;
+        estimatedCost?: number;
+      }) => void
+    ) => {
+      try {
+        // Set up progress listener
+        const progressListener = (progress: any) => {
+          if (onProgress) {
+            onProgress(progress);
+          }
+        };
+
+        // on() returns a cleanup function
+        const removeListener = window.electron.ipcRenderer.on(
+          'user-data:embedding-progress',
+          progressListener
+        );
+
+        try {
+          const result = await window.electron.invoke(
+            'user-data:embed-table-columns',
+            tableId,
+            columnNames
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to embed columns');
+          }
+
+          return result;
+        } finally {
+          // Clean up listener using the cleanup function
+          if (removeListener) {
+            removeListener();
+          }
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    []
+  );
+
+  /**
+   * Perform semantic search on a table
+   */
+  const vectorSearchTable = useCallback(
+    async (
+      tableId: string,
+      queryText: string,
+      options?: {
+        limit?: number;
+        threshold?: number;
+        columnNames?: string[];
+      }
+    ): Promise<{
+      rows: any[];
+      total: number;
+      searchResults: Array<{
+        rowId: number;
+        similarity: number;
+        matchedColumns: string[];
+      }>;
+    }> => {
+      try {
+        const result = await window.electron.invoke(
+          'user-data:vector-search-table',
+          tableId,
+          queryText,
+          options
+        );
+
+        if (result.success) {
+          return result.data;
+        } else {
+          throw new Error(result.error || 'Failed to perform vector search');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    []
+  );
+
+  /**
+   * Get embedding statistics for a table
+   */
+  const getEmbeddingStats = useCallback(
+    async (
+      tableId: string
+    ): Promise<{
+      columnStats: Array<{
+        columnName: string;
+        totalEmbeddings: number;
+        model: string;
+        dimensions: number;
+        lastUpdated: string;
+      }>;
+      totalEmbeddings: number;
+      totalEstimatedCost: number;
+    }> => {
+      try {
+        const result = await window.electron.invoke(
+          'user-data:get-embedding-stats',
+          tableId
+        );
+
+        if (result.success) {
+          return result.data;
+        } else {
+          throw new Error(result.error || 'Failed to get embedding stats');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    []
+  );
+
+  /**
+   * Delete embeddings for a table
+   */
+  const deleteEmbeddings = useCallback(
+    async (tableId: string, columnNames?: string[]): Promise<number> => {
+      try {
+        const result = await window.electron.invoke(
+          'user-data:delete-embeddings',
+          tableId,
+          columnNames
+        );
+
+        if (result.success) {
+          return result.data.deletedCount;
+        } else {
+          throw new Error(result.error || 'Failed to delete embeddings');
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+    []
+  );
+
+  /**
+   * Get list of embedded columns for a table
+   */
+  const getEmbeddedColumns = useCallback(async (tableId: string): Promise<string[]> => {
+    try {
+      const result = await window.electron.invoke(
+        'user-data:get-embedded-columns',
+        tableId
+      );
+
+      if (result.success) {
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to get embedded columns');
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, []);
+
   // Fetch tables on mount
   useEffect(() => {
     fetchTables();
@@ -557,5 +734,11 @@ export function useUserData() {
     exportSQL,
     importSQL,
     forceDropAllTables,
+    // Vector embedding methods
+    embedTableColumns,
+    vectorSearchTable,
+    getEmbeddingStats,
+    deleteEmbeddings,
+    getEmbeddedColumns,
   };
 }

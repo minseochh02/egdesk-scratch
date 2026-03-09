@@ -4,7 +4,11 @@ import { WizardState, WizardMode } from '../types';
 /**
  * Initial wizard state factory
  */
-function createInitialState(mode: WizardMode, suggestedTableName?: string): WizardState {
+function createInitialState(
+  mode: WizardMode,
+  suggestedTableName?: string,
+  isBrowserSync?: boolean
+): WizardState {
   return {
     // File and parsing
     selectedFile: null,
@@ -59,18 +63,18 @@ function createInitialState(mode: WizardMode, suggestedTableName?: string): Wiza
     selectedTableId: null,
     existingTableColumnMappings: null,
     deleteAfterImport: false,
-    archiveAfterImport: mode === 'browser-sync',
-    saveAsConfiguration: mode === 'browser-sync',
-    enableAutoSync: mode === 'browser-sync',
-    loadingBrowserFiles: mode === 'browser-sync',
+    archiveAfterImport: isBrowserSync || false,
+    saveAsConfiguration: isBrowserSync || false,
+    enableAutoSync: isBrowserSync || false,
+    loadingBrowserFiles: isBrowserSync || false,
   };
 }
 
 /**
  * Hook for managing wizard state
  */
-export function useWizardState(mode: WizardMode) {
-  const [state, setState] = useState<WizardState>(() => createInitialState(mode));
+export function useWizardState(mode: WizardMode, isBrowserSync?: boolean) {
+  const [state, setState] = useState<WizardState>(() => createInitialState(mode, undefined, isBrowserSync));
 
   /**
    * Update wizard state with partial updates
@@ -83,8 +87,8 @@ export function useWizardState(mode: WizardMode) {
    * Reset wizard state
    */
   const resetState = useCallback((suggestedTableName?: string) => {
-    setState(createInitialState(mode, suggestedTableName));
-  }, [mode]);
+    setState(createInitialState(mode, suggestedTableName, isBrowserSync));
+  }, [mode, isBrowserSync]);
 
   return {
     state,

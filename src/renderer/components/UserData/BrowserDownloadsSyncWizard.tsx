@@ -5,6 +5,7 @@ import { ExcelDataWizard } from './wizards/ExcelDataWizard';
 interface BrowserDownloadsSyncWizardProps {
   onClose: () => void;
   onComplete: () => void;
+  editingConfig?: any; // Sync configuration being edited
 }
 
 type Phase = 'browser-select' | 'excel-wizard';
@@ -32,27 +33,46 @@ interface BrowserDownloadFile {
  * BrowserDownloadsSyncWizard - Orchestrator that handles browser-specific steps
  * then delegates to ExcelDataWizard
  */
-export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProps> = ({ onClose, onComplete }) => {
+export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProps> = ({ onClose, onComplete, editingConfig }) => {
   const { tables } = useUserData();
 
-  const [phase, setPhase] = useState<Phase>('browser-select');
+  // If editing an existing config, start directly in excel-wizard phase
+  const [phase, setPhase] = useState<Phase>(editingConfig ? 'excel-wizard' : 'browser-select');
   const [browserStep, setBrowserStep] = useState<BrowserStep>('folder-selection');
 
   // Browser-specific state
   const [downloadFolders, setDownloadFolders] = useState<BrowserDownloadFolder[]>([]);
   const [downloadFiles, setDownloadFiles] = useState<BrowserDownloadFile[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<BrowserDownloadFolder | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<BrowserDownloadFolder | null>(
+    editingConfig ? {
+      scriptName: editingConfig.scriptName,
+      folderName: editingConfig.folderName,
+      path: editingConfig.scriptFolderPath,
+      fileCount: 0,
+      excelFileCount: 0,
+      lastModified: new Date(),
+      size: 0,
+    } : null
+  );
   const [selectedFile, setSelectedFile] = useState<BrowserDownloadFile | null>(null);
-  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [loadingFiles, setLoadingFiles] = useState(!editingConfig);
   const [error, setError] = useState<string | null>(null);
 
   // Import configuration
-  const [importMode, setImportMode] = useState<'import' | 'upload' | null>(null);
-  const [targetTable, setTargetTable] = useState<UserTable | null>(null);
+  const [importMode, setImportMode] = useState<'import' | 'upload' | null>(editingConfig ? 'upload' : null);
+  const [targetTable, setTargetTable] = useState<UserTable | null>(() => {
+    if (editingConfig) {
+      return tables.find(t => t.id === editingConfig.targetTableId) || null;
+    }
+    return null;
+  });
 
   useEffect(() => {
-    loadBrowserDownloadFolders();
-  }, []);
+    // Only load folders if not in edit mode
+    if (!editingConfig) {
+      loadBrowserDownloadFolders();
+    }
+  }, [editingConfig]);
 
   const loadBrowserDownloadFolders = async () => {
     try {
@@ -142,14 +162,19 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   };
 
   // Phase 2: Delegate to ExcelDataWizard
-  if (phase === 'excel-wizard' && importMode && selectedFile) {
+  if (phase === 'excel-wizard' && importMode && selectedFolder && (selectedFile || editingConfig)) {
     return (
       <ExcelDataWizard
         mode={importMode}
-        preSelectedFile={selectedFile.path}
+        preSelectedFile={selectedFile?.path}
         targetTable={targetTable || undefined}
         onClose={onClose}
         onComplete={onComplete}
+        isBrowserSync={true}
+        scriptFolderPath={selectedFolder.path}
+        scriptName={selectedFolder.scriptName}
+        folderName={selectedFolder.folderName}
+        editingConfig={editingConfig}
       />
     );
   }

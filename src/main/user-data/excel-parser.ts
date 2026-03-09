@@ -1331,18 +1331,24 @@ export function applySplitColumn(
 
   // Create new headers (replace original with two new columns)
   const newHeaders = [...sheetData.headers];
+  console.log(`\n🔍 ===== COLUMN SPLIT DEBUG =====`);
+  console.log(`🔍 Original headers (${sheetData.headers.length}):`, JSON.stringify(sheetData.headers));
+  console.log(`   Splitting column "${originalColumn}" at index ${originalIndex}`);
+  console.log(`   New column names: date="${newColumnNames.date}", number="${newColumnNames.number}"`);
   newHeaders.splice(originalIndex, 1, newColumnNames.date, newColumnNames.number);
+  console.log(`🔍 New headers after split (${newHeaders.length}):`, JSON.stringify(newHeaders));
+  console.log(`   Difference: ${newHeaders.length} - ${sheetData.headers.length} = ${newHeaders.length - sheetData.headers.length} (should be +1)`);
 
   // Create new rows with split data
   let splitSuccessCount = 0;
   let splitFailCount = 0;
 
   const newRows = sheetData.rows.map((row, idx) => {
-    const newRow = { ...row };
     const originalValue = row[originalColumn];
 
-    // Remove original column
-    delete newRow[originalColumn];
+    // Calculate split values
+    let dateValue: any;
+    let numberValue: any;
 
     if (typeof originalValue === 'string') {
       const trimmed = originalValue.trim();
@@ -1357,8 +1363,8 @@ export function applySplitColumn(
 
       if (match) {
         // Successfully split - parse as positive number
-        newRow[newColumnNames.date] = match[1]; // Date part
-        newRow[newColumnNames.number] = parseInt(match[2], 10); // Number part (always positive)
+        dateValue = match[1]; // Date part
+        numberValue = parseInt(match[2], 10); // Number part (always positive)
         splitSuccessCount++;
 
         // Debug first few splits
@@ -1367,8 +1373,8 @@ export function applySplitColumn(
         }
       } else {
         // Fallback if pattern doesn't match
-        newRow[newColumnNames.date] = originalValue;
-        newRow[newColumnNames.number] = null;
+        dateValue = originalValue;
+        numberValue = null;
         splitFailCount++;
 
         // Debug first few failures
@@ -1378,9 +1384,51 @@ export function applySplitColumn(
       }
     } else {
       // Non-string value, keep as-is in date column
-      newRow[newColumnNames.date] = originalValue;
-      newRow[newColumnNames.number] = null;
+      dateValue = originalValue;
+      numberValue = null;
       splitFailCount++;
+    }
+
+    // Rebuild row in the correct column order based on newHeaders
+    const newRow: Record<string, any> = {};
+    newHeaders.forEach((header) => {
+      if (header === newColumnNames.date) {
+        newRow[header] = dateValue;
+        if (idx === 0) console.log(`     → Header "${header}" matched date column, adding dateValue`);
+      } else if (header === newColumnNames.number) {
+        newRow[header] = numberValue;
+        if (idx === 0) console.log(`     → Header "${header}" matched number column, adding numberValue`);
+      } else if (header !== originalColumn) {
+        newRow[header] = row[header];
+        if (idx === 0) {
+          const valueExists = header in row;
+          console.log(`     → Header "${header}" is other column, copying from row. Value exists: ${valueExists}, value: ${valueExists ? JSON.stringify(row[header]) : 'N/A'}`);
+        }
+      } else {
+        if (idx === 0) console.log(`     → Header "${header}" === originalColumn "${originalColumn}", SKIPPING (should not happen!)`);
+      }
+    });
+
+    // Debug first row
+    if (idx === 0) {
+      console.log(`\n🔍 ROW TRANSFORMATION (first row):`);
+      console.log(`   Original row keys (${Object.keys(row).length}):`, JSON.stringify(Object.keys(row)));
+      console.log(`   New row keys (${Object.keys(newRow).length}):`, JSON.stringify(Object.keys(newRow)));
+      console.log(`   Difference: ${Object.keys(newRow).length} - ${Object.keys(row).length} = ${Object.keys(newRow).length - Object.keys(row).length} (should be +1)`);
+
+      // Check which columns are in newHeaders but not in newRow
+      const missingInNewRow = newHeaders.filter(h => !(h in newRow));
+      if (missingInNewRow.length > 0) {
+        console.log(`   ⚠️  WARNING: Headers in newHeaders but NOT in newRow:`, JSON.stringify(missingInNewRow));
+      }
+
+      // Check which columns are in original row but not in newRow
+      const missingFromOriginal = Object.keys(row).filter(k => !(k in newRow) && k !== originalColumn);
+      if (missingFromOriginal.length > 0) {
+        console.log(`   ⚠️  WARNING: Columns in original row but NOT in newRow (excluding "${originalColumn}"):`, JSON.stringify(missingFromOriginal));
+      }
+
+      console.log(`🔍 ===== END SPLIT DEBUG =====\n`);
     }
 
     return newRow;
