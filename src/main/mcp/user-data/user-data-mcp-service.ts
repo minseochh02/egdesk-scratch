@@ -9,6 +9,8 @@
 import Database from 'better-sqlite3';
 import { IMCPService, MCPTool, MCPServerInfo, MCPCapabilities, MCPToolResult } from '../types/mcp-service';
 import { UserDataDbManager } from '../../sqlite/user-data';
+import { GeminiEmbeddingService } from '../../embeddings/gemini-embedding-service';
+import { getGoogleApiKey } from '../../gemini';
 
 /**
  * User Data MCP Service
@@ -206,7 +208,7 @@ export class UserDataMCPService implements IMCPService {
                 type: 'object',
                 properties: {
                   name: { type: 'string', description: 'Column name' },
-                  type: { type: 'string', enum: ['TEXT', 'INTEGER', 'REAL', 'DATE'], description: 'Column data type' },
+                  type: { type: 'string', enum: ['TEXT', 'INTEGER', 'REAL', 'BLOB', 'DATE'], description: 'Column data type (use BLOB for file references)' },
                   notNull: { type: 'boolean', description: 'Whether column is NOT NULL' },
                   defaultValue: { description: 'Default value for the column' }
                 },
@@ -341,6 +343,242 @@ export class UserDataMCPService implements IMCPService {
             }
           },
           required: ['tableName', 'updates']
+        }
+      },
+      {
+        name: 'user_data_embed_table_columns',
+        description: 'Generate embeddings for specified text columns using Google Gemini API',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            columnNames: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of column names to embed (must be TEXT type)'
+            },
+            apiKey: {
+              type: 'string',
+              description: 'Optional Google Gemini API key (uses configured key if not provided)'
+            },
+            batchSize: {
+              type: 'number',
+              description: 'Number of rows to process per batch (default: 100)',
+              default: 100
+            }
+          },
+          required: ['tableName', 'columnNames']
+        }
+      },
+      {
+        name: 'user_data_vector_search',
+        description: 'Perform semantic search on embedded columns using vector similarity',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table to search'
+            },
+            queryText: {
+              type: 'string',
+              description: 'The search query text'
+            },
+            apiKey: {
+              type: 'string',
+              description: 'Optional Google Gemini API key (uses configured key if not provided)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results to return (default: 50, max: 1000)',
+              default: 50
+            },
+            threshold: {
+              type: 'number',
+              description: 'Minimum similarity score (0-1, default: 0.7)',
+              default: 0.7
+            },
+            columnNames: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: filter search to specific columns'
+            }
+          },
+          required: ['tableName', 'queryText']
+        }
+      },
+      {
+        name: 'user_data_get_embedding_stats',
+        description: 'Get embedding statistics for a table including counts and metadata',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            }
+          },
+          required: ['tableName']
+        }
+      },
+      {
+        name: 'user_data_delete_embeddings',
+        description: 'Delete embeddings for a table or specific columns',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            columnNames: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: specific columns to delete embeddings for (deletes all if not provided)'
+            }
+          },
+          required: ['tableName']
+        }
+      },
+      {
+        name: 'user_data_get_embedded_columns',
+        description: 'List all columns that have embeddings for a table',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            }
+          },
+          required: ['tableName']
+        }
+      },
+      {
+        name: 'user_data_upload_file',
+        description: 'Upload and store a file for a user data table row',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            rowId: {
+              type: 'number',
+              description: 'The ID of the row'
+            },
+            columnName: {
+              type: 'string',
+              description: 'The name of the column to store the file in'
+            },
+            filename: {
+              type: 'string',
+              description: 'The filename (with extension)'
+            },
+            mimeType: {
+              type: 'string',
+              description: 'MIME type of the file (e.g., image/png, application/pdf)'
+            },
+            data: {
+              type: 'string',
+              description: 'Base64-encoded file data'
+            },
+            forceStorageType: {
+              type: 'string',
+              enum: ['blob', 'filesystem'],
+              description: 'Optional: force specific storage type (auto-decided if not provided)'
+            },
+            compress: {
+              type: 'boolean',
+              description: 'Optional: whether to compress the file (auto-decided if not provided)'
+            }
+          },
+          required: ['tableName', 'rowId', 'columnName', 'filename', 'data']
+        }
+      },
+      {
+        name: 'user_data_download_file',
+        description: 'Download a file from a user data table row',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            fileId: {
+              type: 'string',
+              description: 'Optional: The file ID to download'
+            },
+            tableName: {
+              type: 'string',
+              description: 'Optional: The table name (required if fileId not provided)'
+            },
+            rowId: {
+              type: 'number',
+              description: 'Optional: The row ID (required if fileId not provided)'
+            },
+            columnName: {
+              type: 'string',
+              description: 'Optional: The column name (required if fileId not provided)'
+            }
+          }
+        }
+      },
+      {
+        name: 'user_data_delete_file',
+        description: 'Delete a file from a user data table row',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            fileId: {
+              type: 'string',
+              description: 'Optional: The file ID to delete'
+            },
+            tableName: {
+              type: 'string',
+              description: 'Optional: The table name (required if fileId not provided)'
+            },
+            rowId: {
+              type: 'number',
+              description: 'Optional: The row ID (required if fileId not provided)'
+            },
+            columnName: {
+              type: 'string',
+              description: 'Optional: The column name (required if fileId not provided)'
+            }
+          }
+        }
+      },
+      {
+        name: 'user_data_list_files',
+        description: 'List all files for a specific table row',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'The name of the table'
+            },
+            rowId: {
+              type: 'number',
+              description: 'The ID of the row'
+            }
+          },
+          required: ['tableName', 'rowId']
+        }
+      },
+      {
+        name: 'user_data_get_file_stats',
+        description: 'Get file storage statistics for all tables or a specific table',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableName: {
+              type: 'string',
+              description: 'Optional: table name to get stats for (all tables if not provided)'
+            }
+          }
         }
       }
     ];
@@ -661,6 +899,340 @@ export class UserDataMCPService implements IMCPService {
             success: true,
             tableName,
             updated: updateResult.updated
+          };
+          break;
+        }
+
+        case 'user_data_embed_table_columns': {
+          const { tableName, columnNames, apiKey: providedApiKey, batchSize } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+          if (!columnNames || !Array.isArray(columnNames) || columnNames.length === 0) {
+            throw new Error('Missing required parameter: columnNames (must be a non-empty array)');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          // Get API key (hybrid approach)
+          const apiKey = providedApiKey || getGoogleApiKey().apiKey;
+          if (!apiKey) {
+            throw new Error('Google API key required. Provide via apiKey parameter or configure in AI Keys Manager.');
+          }
+
+          // Create embedding service
+          const embeddingService = new GeminiEmbeddingService(apiKey);
+
+          // Run embedding (consume async generator)
+          const generator = this.manager.embedTableColumns(
+            table.id,
+            columnNames,
+            embeddingService,
+            { batchSize }
+          );
+
+          let lastProgress = null;
+          for await (const progress of generator) {
+            lastProgress = progress;
+          }
+
+          // Return final result
+          result = {
+            success: true,
+            tableName,
+            columnsEmbedded: columnNames,
+            totalOperations: lastProgress?.total || 0,
+            estimatedCost: lastProgress?.estimatedCost || 0,
+            message: lastProgress?.message || 'Embedding complete'
+          };
+          break;
+        }
+
+        case 'user_data_vector_search': {
+          const { tableName, queryText, apiKey: providedApiKey, limit = 50, threshold = 0.7, columnNames } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+          if (!queryText) {
+            throw new Error('Missing required parameter: queryText');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          // Get API key (hybrid approach)
+          const apiKey = providedApiKey || getGoogleApiKey().apiKey;
+          if (!apiKey) {
+            throw new Error('Google API key required. Provide via apiKey parameter or configure in AI Keys Manager.');
+          }
+
+          // Create embedding service
+          const embeddingService = new GeminiEmbeddingService(apiKey);
+
+          // Perform vector search
+          const searchResults = await this.manager.vectorSearch(
+            table.id,
+            queryText,
+            embeddingService,
+            {
+              limit: Math.min(limit, 1000),
+              threshold,
+              columnNames
+            }
+          );
+
+          result = {
+            tableName,
+            queryText,
+            rows: searchResults.rows,
+            total: searchResults.total,
+            searchResults: searchResults.searchResults
+          };
+          break;
+        }
+
+        case 'user_data_get_embedding_stats': {
+          const { tableName } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const stats = this.manager.getEmbeddingStats(table.id);
+
+          result = {
+            tableName,
+            columnStats: stats.columnStats,
+            totalEmbeddings: stats.totalEmbeddings,
+            totalEstimatedCost: stats.totalEstimatedCost
+          };
+          break;
+        }
+
+        case 'user_data_delete_embeddings': {
+          const { tableName, columnNames } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const deletedCount = this.manager.deleteEmbeddings(table.id, columnNames);
+
+          result = {
+            success: true,
+            tableName,
+            deletedCount,
+            columnsDeleted: columnNames || 'all'
+          };
+          break;
+        }
+
+        case 'user_data_get_embedded_columns': {
+          const { tableName } = args;
+          if (!tableName) {
+            throw new Error('Missing required parameter: tableName');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          const columns = this.manager.getEmbeddedColumns(table.id);
+
+          result = {
+            tableName,
+            embeddedColumns: columns,
+            totalColumns: columns.length
+          };
+          break;
+        }
+
+        case 'user_data_upload_file': {
+          const { tableName, rowId, columnName, filename, mimeType, data, forceStorageType, compress } = args;
+          if (!tableName || rowId === undefined || !columnName || !filename || !data) {
+            throw new Error('Missing required parameters: tableName, rowId, columnName, filename, and data');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          // Decode base64 data
+          const fileBuffer = Buffer.from(data, 'base64');
+
+          // Get file storage manager
+          const fileManager = this.manager.getFileStorageManager();
+          await fileManager.initialize();
+
+          // Store file
+          const storeResult = await fileManager.storeFile({
+            tableId: table.id,
+            rowId,
+            columnName,
+            filename,
+            mimeType,
+            data: fileBuffer,
+            forceStorageType,
+            compress
+          });
+
+          result = {
+            success: true,
+            fileId: storeResult.fileId,
+            storageType: storeResult.storageType,
+            isCompressed: storeResult.isCompressed,
+            storedSize: storeResult.storedSize,
+            originalSize: storeResult.originalSize,
+            filename,
+            tableName,
+            rowId,
+            columnName
+          };
+          break;
+        }
+
+        case 'user_data_download_file': {
+          const { fileId, tableName, rowId, columnName } = args;
+
+          let tableId: string | undefined;
+          if (tableName) {
+            const table = this.manager.getTableByName(tableName);
+            if (!table) {
+              throw new Error(`Table not found: ${tableName}`);
+            }
+            tableId = table.id;
+          }
+
+          // Get file storage manager
+          const fileManager = this.manager.getFileStorageManager();
+          await fileManager.initialize();
+
+          // Get file
+          const file = await fileManager.getFile({
+            fileId,
+            tableId,
+            rowId,
+            columnName
+          });
+
+          if (!file) {
+            throw new Error('File not found');
+          }
+
+          result = {
+            fileId: file.fileId,
+            filename: file.filename,
+            mimeType: file.mimeType,
+            sizeBytes: file.sizeBytes,
+            data: file.data.toString('base64')
+          };
+          break;
+        }
+
+        case 'user_data_delete_file': {
+          const { fileId, tableName, rowId, columnName } = args;
+
+          let tableId: string | undefined;
+          if (tableName) {
+            const table = this.manager.getTableByName(tableName);
+            if (!table) {
+              throw new Error(`Table not found: ${tableName}`);
+            }
+            tableId = table.id;
+          }
+
+          // Get file storage manager
+          const fileManager = this.manager.getFileStorageManager();
+          await fileManager.initialize();
+
+          // Delete file
+          const deleted = await fileManager.deleteFile({
+            fileId,
+            tableId,
+            rowId,
+            columnName
+          });
+
+          result = {
+            success: deleted,
+            message: deleted ? 'File deleted successfully' : 'File not found'
+          };
+          break;
+        }
+
+        case 'user_data_list_files': {
+          const { tableName, rowId } = args;
+          if (!tableName || rowId === undefined) {
+            throw new Error('Missing required parameters: tableName and rowId');
+          }
+
+          const table = this.manager.getTableByName(tableName);
+          if (!table) {
+            throw new Error(`Table not found: ${tableName}`);
+          }
+
+          // Get file storage manager
+          const fileManager = this.manager.getFileStorageManager();
+          await fileManager.initialize();
+
+          // List files
+          const files = fileManager.listFilesForRow(table.id, rowId);
+
+          result = {
+            tableName,
+            rowId,
+            files: files.map(f => ({
+              fileId: f.id,
+              filename: f.filename,
+              mimeType: f.mimeType,
+              sizeBytes: f.sizeBytes,
+              storageType: f.storageType,
+              isCompressed: f.isCompressed,
+              columnName: f.columnName,
+              createdAt: f.createdAt
+            })),
+            totalFiles: files.length
+          };
+          break;
+        }
+
+        case 'user_data_get_file_stats': {
+          const { tableName } = args;
+
+          let tableId: string | undefined;
+          if (tableName) {
+            const table = this.manager.getTableByName(tableName);
+            if (!table) {
+              throw new Error(`Table not found: ${tableName}`);
+            }
+            tableId = table.id;
+          }
+
+          // Get file storage manager
+          const fileManager = this.manager.getFileStorageManager();
+          await fileManager.initialize();
+
+          // Get stats
+          const stats = fileManager.getStats(tableId);
+
+          result = {
+            ...stats,
+            tableName: tableName || 'all tables'
           };
           break;
         }

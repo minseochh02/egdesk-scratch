@@ -1,5 +1,5 @@
 import { ChildProcess, spawn, execSync } from 'child_process';
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -38,6 +38,45 @@ export class DevServerManager {
   private normalizeLineEndings(content: string): string {
     // Replace all line endings with platform-specific ones
     return content.replace(/\r?\n/g, os.EOL);
+  }
+
+  /**
+   * Get the plugin path that works in both dev and production
+   * In production (ASAR), we need to use app.getAppPath() and handle unpacked resources
+   */
+  private getPluginPath(pluginName: string): string {
+    const isProduction = app.isPackaged;
+
+    if (isProduction) {
+      // In production, plugins should be in resources/app.asar.unpacked/packages
+      // or resources/app/packages (depending on build config)
+      const appPath = app.getAppPath();
+
+      // Try multiple possible locations
+      const possiblePaths = [
+        // Unpacked resources (preferred for node_modules and native modules)
+        path.join(path.dirname(appPath), 'app.asar.unpacked', 'packages', pluginName),
+        // Regular app path
+        path.join(appPath, 'packages', pluginName),
+        // One level up from app.asar
+        path.join(path.dirname(appPath), 'packages', pluginName),
+        // Resources folder directly
+        path.join(process.resourcesPath, 'packages', pluginName),
+      ];
+
+      for (const testPath of possiblePaths) {
+        if (fs.existsSync(testPath)) {
+          console.log(`✓ Found plugin at: ${testPath}`);
+          return testPath;
+        }
+      }
+
+      console.error(`⚠️ Plugin ${pluginName} not found in production. Tried:`, possiblePaths);
+      return possiblePaths[0]; // Return first path as fallback
+    } else {
+      // In development, use __dirname
+      return path.join(__dirname, '../../packages', pluginName);
+    }
   }
 
   /**
@@ -535,8 +574,8 @@ export class DevServerManager {
 
       console.log('📦 Installing @egdesk/vite-api-plugin for API route support...');
 
-      // Use local package (link to packages/vite-api-plugin)
-      const pluginPath = path.join(__dirname, '../../packages/vite-api-plugin');
+      // Get plugin path (works in both dev and production)
+      const pluginPath = this.getPluginPath('vite-api-plugin');
 
       if (fs.existsSync(pluginPath)) {
         // Install from local path
@@ -583,8 +622,8 @@ export class DevServerManager {
 
       console.log('📦 Installing @egdesk/next-api-plugin for database proxy support...');
 
-      // Use local package (link to packages/next-api-plugin)
-      const pluginPath = path.join(__dirname, '../../packages/next-api-plugin');
+      // Get plugin path (works in both dev and production)
+      const pluginPath = this.getPluginPath('next-api-plugin');
 
       if (fs.existsSync(pluginPath)) {
         // Install from local path

@@ -472,28 +472,37 @@ export class FileWatcherService {
       console.log(`🔍 ===== END MAPPING DEBUG =====\n`);
 
       // Filter out rows where date columns are empty/null (summary rows like 이월잔액, 합계, etc.)
+      // BUT only if table has date columns - tables without dates should import all rows
       const dateColumns = targetTable.schema.filter(
         col => col.type === 'DATE' && col.name !== 'imported_at'
       ).map(col => col.name);
 
-      const filteredRows = mappedRows.filter((row, idx) => {
-        // Keep row if ANY date column has a non-empty value
-        const hasValidDate = dateColumns.some(dateCol => {
-          const value = row[dateCol];
-          return value !== null && value !== undefined && value !== '';
+      let filteredRows = mappedRows;
+
+      if (dateColumns.length > 0) {
+        // Table has date columns - filter out rows where ALL date columns are null
+        filteredRows = mappedRows.filter((row, idx) => {
+          // Keep row if ANY date column has a non-empty value
+          const hasValidDate = dateColumns.some(dateCol => {
+            const value = row[dateCol];
+            return value !== null && value !== undefined && value !== '';
+          });
+
+          // Log filtered rows
+          if (!hasValidDate && idx < 5) {
+            console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+          }
+
+          return hasValidDate;
         });
 
-        // Log filtered rows
-        if (!hasValidDate && idx < 5) {
-          console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+        const skippedCount = mappedRows.length - filteredRows.length;
+        if (skippedCount > 0) {
+          console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
         }
-
-        return hasValidDate;
-      });
-
-      const skippedCount = mappedRows.length - filteredRows.length;
-      if (skippedCount > 0) {
-        console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
+      } else {
+        // Table has no date columns - import all rows without filtering
+        console.log(`ℹ️  Table has no date columns - importing all ${mappedRows.length} row(s) without date filtering`);
       }
 
       // Insert rows with duplicate handling settings from config
