@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 export interface UserDataTable {
   id: string;
@@ -156,7 +157,7 @@ export function generateEnvFile(
     ''
   ].join('\n');
 
-  fs.writeFileSync(envPath, envContent, 'utf-8');
+  fs.writeFileSync(envPath, envContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${envPath}`);
 }
 
@@ -217,7 +218,7 @@ ${config.tables.map((table, index) => `  table${index + 1}: '${table.tableName}'
 } as const;
 `;
 
-  fs.writeFileSync(configPath, configContent, 'utf-8');
+  fs.writeFileSync(configPath, configContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${configPath}`);
 }
 
@@ -426,7 +427,7 @@ export async function renameTable(
 }
 `;
 
-  fs.writeFileSync(helperPath, helperContent, 'utf-8');
+  fs.writeFileSync(helperPath, helperContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${helperPath}`);
 }
 

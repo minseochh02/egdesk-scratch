@@ -6711,6 +6711,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                            action.dateOffset! > 0 ? `today + ${action.dateOffset} days` :
                            `today - ${Math.abs(action.dateOffset!)} days`;
           lines.push(`    // Date picker (${markedComponents}): ${offsetText}`);
+          lines.push(`    {`);
           lines.push(`    const targetDate = new Date();`);
 
           if (action.dateOffset && action.dateOffset !== 0) {
@@ -6895,6 +6896,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`    }`);
           }
           lines.push(`    await page.waitForTimeout(500); // Wait for change handlers to process`);
+          lines.push(`    }`);
 
           break;
         case 'captureTable':

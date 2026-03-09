@@ -310,45 +310,35 @@ export class FileWatcherService {
         throw new Error(`Sheet index ${config.sheetIndex} not found in Excel file`);
       }
 
-      // Check if this sheet has islands (e.g., 계정별원장 with multiple account tables)
-      // If so, merge them to get properly forward-filled pivot table data
+      // ========================================
+      // DATA TRANSFORMATION PIPELINE
+      // ========================================
+      // This section transforms raw Excel data into the format expected by the target table.
+      // The order is CRITICAL:
+      //   1. Islands → Merge first (each island has its own split suggestions already applied)
+      //   2. Config Splits → Apply saved splits from browser sync config (for non-island sheets)
+      //   3. Auto-detected Splits → Fall back to auto-detected splits (for non-island sheets)
+      //
+      // IMPORTANT: Islands MUST be checked first, because:
+      //   - Island sheets have multiple tables within one sheet
+      //   - Each island gets splits applied individually BEFORE merging
+      //   - If we apply config.appliedSplits to the raw sheet, we skip island detection
+      //   - This causes column mapping failures because the data structure is wrong
+      // ========================================
+
       let dataToSync = sheet.rows;
       let headersToSync = sheet.headers;
       const { applySplitColumn } = require('../user-data/excel-parser');
 
-      // First, check if configuration has saved column splits to apply
-      if (config.appliedSplits && config.appliedSplits.length > 0) {
-        console.log(`✂️  Applying ${config.appliedSplits.length} saved column split(s) from configuration...`);
-
-        let modifiedSheet: any = sheet;
-        for (const split of config.appliedSplits) {
-          console.log(`   "${split.originalColumn}" → ["${split.dateColumn}", "${split.numberColumn}"]`);
-          modifiedSheet = applySplitColumn(
-            modifiedSheet,
-            split.originalColumn,
-            { date: split.dateColumn, number: split.numberColumn }
-          );
-        }
-
-        dataToSync = modifiedSheet.rows;
-        headersToSync = modifiedSheet.headers;
-        console.log(`✅ Saved splits applied: ${headersToSync.length} columns total`);
-      } else if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
+      // PRIORITY 1: Always check for islands FIRST (islands already have their splits applied per-island)
+      if (sheet.detectedIslands && sheet.detectedIslands.length > 0) {
         console.log(`🏝️  Found ${sheet.detectedIslands.length} data island(s), merging with pivot table handling...`);
 
         const { mergeIslands } = require('../user-data/excel-parser');
 
         // STEP 1: Apply column splits to each island BEFORE merging
         const islandsWithSplitsApplied = sheet.detectedIslands.map((island) => {
-          console.log(`\n🔍 DEBUG Island "${island.title}":`, {
-            hasSplitSuggestions: !!island.splitSuggestions,
-            splitSuggestionsType: typeof island.splitSuggestions,
-            splitSuggestionsLength: island.splitSuggestions?.length,
-            splitSuggestions: island.splitSuggestions,
-          });
-
           if (!island.splitSuggestions || island.splitSuggestions.length === 0) {
-            console.log(`   ⏭️  Skipping island "${island.title}" - no split suggestions`);
             return island;
           }
 
@@ -387,9 +377,26 @@ export class FileWatcherService {
 
         console.log(`   ✅ Merged ${merged.mergedIslandCount} islands: ${merged.rows.length} total rows`);
         console.log(`   📋 Headers: ${headersToSync.slice(0, 5).join(', ')}...`);
+      } else if (config.appliedSplits && config.appliedSplits.length > 0) {
+        // PRIORITY 2: For non-island sheets, apply saved column splits from configuration
+        console.log(`✂️  Applying ${config.appliedSplits.length} saved column split(s) from configuration...`);
+
+        let modifiedSheet: any = sheet;
+        for (const split of config.appliedSplits) {
+          console.log(`   "${split.originalColumn}" → ["${split.dateColumn}", "${split.numberColumn}"]`);
+          modifiedSheet = applySplitColumn(
+            modifiedSheet,
+            split.originalColumn,
+            { date: split.dateColumn, number: split.numberColumn }
+          );
+        }
+
+        dataToSync = modifiedSheet.rows;
+        headersToSync = modifiedSheet.headers;
+        console.log(`✅ Saved splits applied: ${headersToSync.length} columns total`);
       } else if (sheet.splitSuggestions && sheet.splitSuggestions.length > 0) {
-        // No islands, but sheet itself has split suggestions
-        console.log(`✂️  Applying ${sheet.splitSuggestions.length} column split(s) to sheet...`);
+        // PRIORITY 3: For non-island sheets with no saved splits, apply auto-detected split suggestions
+        console.log(`✂️  Applying ${sheet.splitSuggestions.length} auto-detected column split(s) to sheet...`);
 
         let modifiedSheet: any = sheet;
         for (const suggestion of sheet.splitSuggestions) {
@@ -464,10 +471,35 @@ export class FileWatcherService {
       console.log(`   Column count change: ${firstRowKeys.length} → ${mappedRowKeys.length} (diff: ${mappedRowKeys.length - firstRowKeys.length})`);
       console.log(`🔍 ===== END MAPPING DEBUG =====\n`);
 
+      // Filter out rows where date columns are empty/null (summary rows like 이월잔액, 합계, etc.)
+      const dateColumns = targetTable.schema.filter(
+        col => col.type === 'DATE' && col.name !== 'imported_at'
+      ).map(col => col.name);
+
+      const filteredRows = mappedRows.filter((row, idx) => {
+        // Keep row if ANY date column has a non-empty value
+        const hasValidDate = dateColumns.some(dateCol => {
+          const value = row[dateCol];
+          return value !== null && value !== undefined && value !== '';
+        });
+
+        // Log filtered rows
+        if (!hasValidDate && idx < 5) {
+          console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+        }
+
+        return hasValidDate;
+      });
+
+      const skippedCount = mappedRows.length - filteredRows.length;
+      if (skippedCount > 0) {
+        console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
+      }
+
       // Insert rows with duplicate handling settings from config
       const { inserted, skipped, duplicates } = userDataManager.insertRowsWithSettings(
         config.targetTableId,
-        mappedRows,
+        filteredRows,
         {
           uniqueKeyColumns: config.uniqueKeyColumns || [],
           duplicateAction: config.duplicateAction || 'skip',

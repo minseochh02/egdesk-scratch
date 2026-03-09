@@ -952,13 +952,38 @@ export function registerUserDataIPCHandlers(): void {
         console.log('🔍 DEBUG: First mapped row keys:', Object.keys(rowsToInsert[0] || {}));
         console.log('🔍 DEBUG: First mapped row sample:', rowsToInsert[0]);
 
+        // Filter out rows where date columns are empty/null (summary rows like 이월잔액, 합계, etc.)
+        const dateColumns = table.schema.filter(
+          col => col.type === 'DATE' && col.name !== 'imported_at'
+        ).map(col => col.name);
+
+        const filteredRows = rowsToInsert.filter((row, idx) => {
+          // Keep row if ANY date column has a non-empty value
+          const hasValidDate = dateColumns.some(dateCol => {
+            const value = row[dateCol];
+            return value !== null && value !== undefined && value !== '';
+          });
+
+          // Log filtered rows
+          if (!hasValidDate && idx < 5) {
+            console.log(`⏭️  Skipping row ${idx + 1} (empty date columns):`, row);
+          }
+
+          return hasValidDate;
+        });
+
+        const skippedCount = rowsToInsert.length - filteredRows.length;
+        if (skippedCount > 0) {
+          console.log(`⏭️  Filtered out ${skippedCount} row(s) with empty date columns (summary/subtotal rows)`);
+        }
+
         // Handle different duplicate actions
         let insertResult;
-        
+
         if (config.duplicateAction === 'replace-date-range') {
           console.log('🔄 Sync operation using REPLACE DATE RANGE mode');
           // For replace-date-range, use the special method
-          insertResult = userDataManager.replaceByDateRange(config.tableId, rowsToInsert);
+          insertResult = userDataManager.replaceByDateRange(config.tableId, filteredRows);
         } else if (config.uniqueKeyColumns !== undefined) {
           console.log('🔄 Sync operation using temporary duplicate detection settings');
           console.log('  uniqueKeyColumns:', config.uniqueKeyColumns);
@@ -982,7 +1007,7 @@ export function registerUserDataIPCHandlers(): void {
             updateStmt.run(tempUniqueKeyColumns, tempDuplicateAction, config.tableId);
             
             // Insert with temporary settings
-            insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+            insertResult = userDataManager.insertRows(config.tableId, filteredRows);
             
           } finally {
             // Always restore original settings
@@ -994,7 +1019,7 @@ export function registerUserDataIPCHandlers(): void {
         } else {
           console.log('🔄 Sync operation using table\'s existing duplicate detection settings');
           // Use existing table settings
-          insertResult = userDataManager.insertRows(config.tableId, rowsToInsert);
+          insertResult = userDataManager.insertRows(config.tableId, filteredRows);
         }
 
         // Complete import operation

@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Detect if project uses src/ directory structure
@@ -102,6 +103,6 @@ export const config = {
 };
 `;
 
-  fs.writeFileSync(proxyPath, proxyContent, 'utf-8');
+  fs.writeFileSync(proxyPath, proxyContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${proxyPath}`);
 }

@@ -27,7 +27,6 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
   scriptFolderPath,
   scriptName,
   folderName,
-  editingConfig,
 }) => {
   const {
     parseExcel,
@@ -66,32 +65,6 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       });
     }
   }, [mode, targetTable?.hasImportedAtColumn]);
-
-  // Initialize state from editingConfig when editing an existing configuration
-  React.useEffect(() => {
-    if (editingConfig && !state.isEditModeInitialized) {
-      console.log('🔧 Initializing wizard state from editing config:', editingConfig);
-      updateState({
-        parseConfig: {
-          headerRow: editingConfig.headerRow,
-          skipBottomRows: editingConfig.skipBottomRows || 0,
-        },
-        selectedSheet: editingConfig.sheetIndex,
-        columnMappings: editingConfig.columnMappings,
-        duplicateDetectionSettings: {
-          uniqueKeyColumns: editingConfig.uniqueKeyColumns || [],
-          duplicateAction: editingConfig.duplicateAction || 'skip',
-          addTimestamp: false, // Will be set based on table column check
-        },
-        browserSyncSettings: {
-          enabled: editingConfig.enabled,
-          fileAction: editingConfig.fileAction || 'archive',
-          autoSyncEnabled: editingConfig.autoSyncEnabled || false,
-        },
-        isEditModeInitialized: true, // Flag to prevent re-initialization
-      });
-    }
-  }, [editingConfig, state.isEditModeInitialized, updateState]);
 
   // File selection handler
   const handleFileSelect = async () => {
@@ -140,8 +113,10 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           setCurrentStep('table-info');
         }
       } else {
-        // Upload mode: check splits → column-mapping
-        if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+        // Upload mode: check islands → splits → column-mapping
+        if (currentSheet.detectedIslands && currentSheet.detectedIslands.length > 0) {
+          setCurrentStep('island-selection');
+        } else if (currentSheet.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
           setCurrentStep('column-split');
         } else {
           setCurrentStep('column-mapping');
@@ -314,7 +289,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       setCurrentStep('parse-config');
     } else if (currentStep === 'column-split') {
       const currentSheet = state.parsedData?.sheets[state.selectedSheet];
-      if (mode === 'import' && currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+      if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
         setCurrentStep('island-selection');
       } else {
         setCurrentStep('parse-config');
@@ -335,6 +310,8 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
         const currentSheet = state.parsedData?.sheets[state.selectedSheet];
         if (currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
           setCurrentStep('column-split');
+        } else if (currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0) {
+          setCurrentStep('island-selection');
         } else {
           setCurrentStep('parse-config');
         }
@@ -354,13 +331,128 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     }
 
     if (currentStep === 'island-selection') {
-      // Handle island selection completion
-      // This will be handled by the wizard based on selected islands
+      // Handle island selection completion - merge islands if merge mode is enabled
       const currentSheet = state.parsedData?.sheets[state.selectedSheet];
-      if (currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0) {
+      let sheetToCheck = currentSheet; // Will be updated if merge happens
+
+      if (state.islandImportMode === 'merged' && state.selectedIslands.size > 0) {
+        console.log(`🔀 Merging ${state.selectedIslands.size} selected islands...`);
+
+        // Get selected islands
+        const islands = currentSheet?.detectedIslands || [];
+        const selectedIslandObjects = Array.from(state.selectedIslands)
+          .map(idx => islands[idx])
+          .filter(island => island !== undefined);
+
+        if (selectedIslandObjects.length === 0) {
+          setError('No islands selected for merging');
+          return;
+        }
+
+        // Validate: all islands must have identical headers
+        const firstHeaders = selectedIslandObjects[0].headers;
+        const headerMismatch = selectedIslandObjects.find(
+          (island, idx) => {
+            if (island.headers.length !== firstHeaders.length) {
+              console.error(`Island ${idx} has ${island.headers.length} columns, expected ${firstHeaders.length}`);
+              return true;
+            }
+            const mismatch = island.headers.some((h, i) => h !== firstHeaders[i]);
+            if (mismatch) {
+              console.error(`Island ${idx} has different header names:`, island.headers);
+            }
+            return mismatch;
+          }
+        );
+
+        if (headerMismatch) {
+          setError('Cannot merge islands with different column structures. All islands must have identical columns.');
+          return;
+        }
+
+        // Merge islands
+        let mergedHeaders = [...firstHeaders];
+        const metadataColumnNames: string[] = [];
+
+        if (state.addMetadataColumns) {
+          // Check if any island has metadata
+          const hasMetadata = selectedIslandObjects.some(island => island.metadata);
+
+          if (hasMetadata) {
+            metadataColumnNames.push('회사명', '기간', '계정코드_메타', '계정명_메타');
+            mergedHeaders = [...mergedHeaders, ...metadataColumnNames];
+            console.log(`   📋 Adding metadata columns: ${metadataColumnNames.join(', ')}`);
+          }
+        }
+
+        // Merge all rows
+        const mergedRows: any[] = [];
+        selectedIslandObjects.forEach((island, islandIndex) => {
+          island.rows.forEach(row => {
+            const mergedRow = { ...row };
+
+            // Add metadata columns if requested
+            if (state.addMetadataColumns && metadataColumnNames.length > 0) {
+              if (island.metadata) {
+                mergedRow['회사명'] = island.metadata.company || null;
+                mergedRow['기간'] = island.metadata.dateRange || null;
+                mergedRow['계정코드_메타'] = island.metadata.accountCode || null;
+                mergedRow['계정명_메타'] = island.metadata.accountName || null;
+              } else {
+                mergedRow['회사명'] = null;
+                mergedRow['기간'] = null;
+                mergedRow['계정코드_메타'] = null;
+                mergedRow['계정명_메타'] = null;
+              }
+            }
+
+            mergedRows.push(mergedRow);
+          });
+
+          console.log(`   ✅ Merged island ${islandIndex + 1}/${selectedIslandObjects.length}: "${island.title}" (${island.rows.length} rows)`);
+        });
+
+        // Detect column types for merged dataset
+        const detectedTypes: any[] = [...selectedIslandObjects[0].detectedTypes];
+
+        // Add types for metadata columns
+        if (state.addMetadataColumns && metadataColumnNames.length > 0) {
+          detectedTypes.push('TEXT', 'TEXT', 'TEXT', 'TEXT'); // 회사명, 기간, 계정코드, 계정명
+        }
+
+        console.log(`✅ Merged ${selectedIslandObjects.length} islands: ${mergedRows.length} total rows, ${mergedHeaders.length} columns`);
+        console.log(`   Headers: ${mergedHeaders.join(', ')}`);
+
+        // Preserve split suggestions from first island (all islands should have identical structure)
+        const splitSuggestions = selectedIslandObjects[0].splitSuggestions;
+
+        // Update parsed data with merged result
+        const updatedSheet = {
+          ...currentSheet!,
+          headers: mergedHeaders,
+          rows: mergedRows,
+          detectedTypes: detectedTypes,
+          splitSuggestions: splitSuggestions || undefined,
+        };
+
+        const newParsedData = { ...state.parsedData! };
+        newParsedData.sheets[state.selectedSheet] = updatedSheet;
+
+        updateState({ parsedData: newParsedData });
+
+        // Use the updated sheet to determine next step
+        sheetToCheck = updatedSheet;
+
+        console.log(`🔀 Island merge complete. Sheet now has ${mergedHeaders.length} columns and ${mergedRows.length} rows.`);
+      }
+
+      // Proceed to next step using the potentially updated sheet
+      if (sheetToCheck?.splitSuggestions && sheetToCheck.splitSuggestions.length > 0) {
         setCurrentStep('column-split');
-      } else {
+      } else if (mode === 'import') {
         setCurrentStep('table-info');
+      } else {
+        setCurrentStep('column-mapping');
       }
       return;
     }
@@ -412,65 +504,6 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
 
   // Final import/upload action
   const handleFinalAction = async () => {
-    // In edit mode, skip the import and just update the configuration
-    if (editingConfig && isBrowserSync) {
-      console.log('📝 Edit mode: Skipping data import, updating configuration only');
-      setCurrentStep('importing');
-      updateState({ isImporting: true, importError: null });
-
-      try {
-        // Update the sync configuration
-        const targetTableId = targetTable?.id;
-        if (!targetTableId) {
-          throw new Error('Target table not found');
-        }
-
-        const configData = {
-          targetTableId,
-          headerRow: state.headerRow,
-          skipBottomRows: state.skipBottomRows,
-          sheetIndex: state.selectedSheet,
-          columnMappings: state.columnMappings!,
-          uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0
-            ? state.duplicateDetectionSettings.uniqueKeyColumns
-            : undefined,
-          duplicateAction: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
-            state.duplicateDetectionSettings.duplicateAction === 'replace-date-range'
-            ? state.duplicateDetectionSettings.duplicateAction
-            : 'skip',
-          fileAction: state.browserSyncSettings?.fileAction || (state.archiveAfterImport ? 'archive' : 'keep'),
-          autoSyncEnabled: state.browserSyncSettings?.autoSyncEnabled ?? state.enableAutoSync,
-        };
-
-        const configResult = await (window as any).electron.invoke('sync-config:update', editingConfig.id, configData);
-
-        if (!configResult.success) {
-          throw new Error(configResult.error || 'Failed to update configuration');
-        }
-
-        console.log('✅ Sync configuration updated successfully');
-
-        // Mark as complete without importing data
-        updateState({
-          importProgress: {
-            rowsImported: 0,
-            rowsSkipped: 0,
-            duplicatesSkipped: 0,
-            duplicateDetails: [],
-            errorDetails: [],
-          },
-        });
-        setCurrentStep('complete');
-        return;
-      } catch (error) {
-        console.error('Error updating configuration:', error);
-        updateState({
-          importError: error instanceof Error ? error.message : 'Failed to update configuration',
-        });
-        return;
-      }
-    }
-
     setCurrentStep('importing');
     updateState({ isImporting: true, importError: null });
 
@@ -548,14 +581,16 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
             ? result.table.id
             : targetTable!.id;
 
-          // Create or update sync configuration
-          const isEditMode = !!editingConfig;
-          console.log(`📋 [SYNC CONFIG] ${isEditMode ? 'Updating' : 'Creating'} sync configuration...`);
+          // Create sync configuration
+          console.log('📋 [SYNC CONFIG] Creating sync configuration...');
           console.log('   Column mappings being saved:', state.columnMappings);
           console.log('   Applied splits:', state.appliedSplits);
           console.log('   Number of mappings:', Object.keys(state.columnMappings || {}).length);
 
-          const configData = {
+          const configResult = await (window as any).electron.invoke('sync-config:create', {
+            scriptFolderPath,
+            scriptName,
+            folderName,
             targetTableId,
             headerRow: state.headerRow,
             skipBottomRows: state.skipBottomRows,
@@ -569,28 +604,14 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
               state.duplicateDetectionSettings.duplicateAction === 'replace-date-range'
               ? state.duplicateDetectionSettings.duplicateAction
               : 'skip',
-            fileAction: state.browserSyncSettings?.fileAction || (state.archiveAfterImport ? 'archive' : 'keep'),
-            autoSyncEnabled: state.browserSyncSettings?.autoSyncEnabled ?? state.enableAutoSync,
-          };
-
-          let configResult;
-          if (isEditMode) {
-            // Update existing configuration
-            configResult = await (window as any).electron.invoke('sync-config:update', editingConfig.id, configData);
-          } else {
-            // Create new configuration
-            configResult = await (window as any).electron.invoke('sync-config:create', {
-              scriptFolderPath,
-              scriptName,
-              folderName,
-              ...configData,
-            });
-          }
+            fileAction: state.archiveAfterImport ? 'archive' : 'keep',
+            autoSyncEnabled: state.enableAutoSync,
+          });
 
           if (configResult.success) {
-            console.log(`✅ Sync configuration ${isEditMode ? 'updated' : 'created'} successfully`);
+            console.log('✅ Sync configuration created successfully');
           } else {
-            console.error(`❌ Failed to ${isEditMode ? 'update' : 'create'} sync configuration:`, configResult.error);
+            console.error('❌ Failed to create sync configuration:', configResult.error);
             // Don't fail the whole import, just log the error
           }
         } catch (err) {
@@ -629,7 +650,8 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       if (step.isConditional) {
         const currentSheet = state.parsedData?.sheets[state.selectedSheet];
         if (step.id === 'island-selection') {
-          return mode === 'import' && currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0;
+          // Show island selection for BOTH import and upload modes when islands detected
+          return currentSheet?.detectedIslands && currentSheet.detectedIslands.length > 0;
         }
         if (step.id === 'column-split') {
           return currentSheet?.splitSuggestions && currentSheet.splitSuggestions.length > 0;
@@ -757,11 +779,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     );
   };
 
-  const title = editingConfig
-    ? `✏️ Edit Sync Configuration: ${editingConfig.scriptName}`
-    : mode === 'import'
-    ? 'Import Excel Data'
-    : `Upload Data to ${targetTable?.displayName}`;
+  const title = mode === 'import' ? 'Import Excel Data' : `Upload Data to ${targetTable?.displayName}`;
 
   return (
     <div className="import-wizard">

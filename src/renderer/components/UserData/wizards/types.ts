@@ -199,14 +199,6 @@ export interface WizardState {
   saveAsConfiguration: boolean;
   enableAutoSync: boolean;
   loadingBrowserFiles: boolean;
-
-  // Edit mode flag
-  isEditModeInitialized?: boolean;  // Tracks if state has been initialized from editingConfig
-  browserSyncSettings?: {           // Browser sync settings for save/edit
-    enabled: boolean;
-    fileAction: 'keep' | 'archive' | 'delete';
-    autoSyncEnabled: boolean;
-  };
 }
 
 /**
@@ -238,7 +230,6 @@ export interface ExcelDataWizardProps {
   scriptFolderPath?: string;  // Path to browser automation script folder
   scriptName?: string;        // Name of the browser script
   folderName?: string;        // Name of the download folder
-  editingConfig?: any;        // Existing sync configuration being edited
 }
 
 /**

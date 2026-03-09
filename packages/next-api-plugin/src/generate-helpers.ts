@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Generate egdesk-helpers.ts file
@@ -254,6 +255,6 @@ export async function renameTable(
 }
 `;
 
-  fs.writeFileSync(helperPath, helperContent, 'utf-8');
+  fs.writeFileSync(helperPath, helperContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${helperPath}`);
 }

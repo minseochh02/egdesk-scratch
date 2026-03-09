@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Detect if project uses src/ directory structure
@@ -103,6 +104,6 @@ export const config = {
 };
 `;
 
-  fs.writeFileSync(middlewarePath, middlewareContent, 'utf-8');
+  fs.writeFileSync(middlewarePath, middlewareContent.replace(/\r?\n/g, os.EOL), 'utf-8');
   console.log(`✅ Generated ${middlewarePath}`);
 }

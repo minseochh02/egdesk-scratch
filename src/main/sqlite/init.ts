@@ -332,6 +332,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       console.error('⚠️ Migration 011 error:', migrationError.message);
     }
 
+    // =============================================
+    // Migration 012: Fix date column types (DEV ONLY)
+    // =============================================
+    try {
+      const { migrate012FixDateColumnTypesDev } = await import('./migrations/012-fix-date-column-types-dev-only');
+      migrate012FixDateColumnTypesDev(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 012 error:', migrationError.message);
+    }
+
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
     
