@@ -23,6 +23,11 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
   targetTable,
   onClose,
   onComplete,
+  isBrowserSync,
+  scriptFolderPath,
+  scriptName,
+  folderName,
+  editingConfig,
 }) => {
   const {
     parseExcel,
@@ -32,7 +37,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     validateTableName,
   } = useUserData();
 
-  const { state, updateState } = useWizardState(mode);
+  const { state, updateState } = useWizardState(mode, isBrowserSync);
   const [currentStep, setCurrentStep] = useState<WizardStep>(
     preSelectedFile ? 'parse-config' : 'file-selection'
   );
@@ -61,6 +66,32 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       });
     }
   }, [mode, targetTable?.hasImportedAtColumn]);
+
+  // Initialize state from editingConfig when editing an existing configuration
+  React.useEffect(() => {
+    if (editingConfig && !state.isEditModeInitialized) {
+      console.log('🔧 Initializing wizard state from editing config:', editingConfig);
+      updateState({
+        parseConfig: {
+          headerRow: editingConfig.headerRow,
+          skipBottomRows: editingConfig.skipBottomRows || 0,
+        },
+        selectedSheet: editingConfig.sheetIndex,
+        columnMappings: editingConfig.columnMappings,
+        duplicateDetectionSettings: {
+          uniqueKeyColumns: editingConfig.uniqueKeyColumns || [],
+          duplicateAction: editingConfig.duplicateAction || 'skip',
+          addTimestamp: false, // Will be set based on table column check
+        },
+        browserSyncSettings: {
+          enabled: editingConfig.enabled,
+          fileAction: editingConfig.fileAction || 'archive',
+          autoSyncEnabled: editingConfig.autoSyncEnabled || false,
+        },
+        isEditModeInitialized: true, // Flag to prevent re-initialization
+      });
+    }
+  }, [editingConfig, state.isEditModeInitialized, updateState]);
 
   // File selection handler
   const handleFileSelect = async () => {
@@ -155,16 +186,36 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
             numberColumn: numberColName,
           });
 
+          console.log(`\n🔍 [FRONTEND SPLIT] ===== SPLITTING COLUMN "${originalColumn}" =====`);
+          console.log(`🔍 [FRONTEND SPLIT] Original headers:`, updatedSheet.headers);
+          console.log(`   Splitting at index ${originalIndex} into: "${dateColName}", "${numberColName}"`);
+
           newHeaders.splice(originalIndex, 1, dateColName, numberColName);
+
+          console.log(`🔍 [FRONTEND SPLIT] New headers:`, newHeaders);
+          console.log(`   Column count: ${updatedSheet.headers.length} → ${newHeaders.length} (${newHeaders.length - updatedSheet.headers.length})`);
 
           const dateWithNumberPattern4Digit = /^(\d{4}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
           const dateWithNumberPattern2Digit = /^(\d{2}[-/]\d{2}[-/]\d{2})\s*-?(\d+)$/;
 
-          const newRows = updatedSheet.rows.map((row: any) => {
+          const newRows = updatedSheet.rows.map((row: any, rowIdx: number) => {
+            if (rowIdx === 0) {
+              console.log(`\n🔍 [FRONTEND SPLIT] Before split - row keys:`, Object.keys(row));
+              console.log(`🔍 [FRONTEND SPLIT] Before split - row data:`, row);
+            }
+
             const newRow = { ...row };
             const originalValue = row[originalColumn];
 
+            if (rowIdx === 0) {
+              console.log(`🔍 [FRONTEND SPLIT] After spread - newRow keys:`, Object.keys(newRow));
+            }
+
             delete newRow[originalColumn];
+
+            if (rowIdx === 0) {
+              console.log(`🔍 [FRONTEND SPLIT] After delete "${originalColumn}" - newRow keys:`, Object.keys(newRow));
+            }
 
             if (typeof originalValue === 'string') {
               const trimmed = originalValue.trim();
@@ -185,6 +236,13 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
               newRow[numberColName] = null;
             }
 
+            if (rowIdx === 0) {
+              console.log(`🔍 [FRONTEND SPLIT] After adding "${dateColName}" and "${numberColName}" - newRow keys:`, Object.keys(newRow));
+              console.log(`🔍 [FRONTEND SPLIT] Final newRow data:`, newRow);
+              console.log(`   Original had ${Object.keys(row).length} columns, new has ${Object.keys(newRow).length} columns`);
+              console.log(`   Difference: ${Object.keys(newRow).length - Object.keys(row).length} (should be +1)\n`);
+            }
+
             return newRow;
           });
 
@@ -197,6 +255,12 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
             rows: newRows,
             detectedTypes: newDetectedTypes,
           };
+
+          console.log(`🔍 [FRONTEND SPLIT] ===== SPLIT COMPLETE =====`);
+          console.log(`   Sheet now has ${updatedSheet.headers.length} headers:`, updatedSheet.headers);
+          console.log(`   First row has ${Object.keys(updatedSheet.rows[0]).length} keys:`, Object.keys(updatedSheet.rows[0]));
+          console.log(`   First row data:`, updatedSheet.rows[0]);
+          console.log(`🔍 [FRONTEND SPLIT] ===========================\n`);
         }
       }
     });
@@ -348,6 +412,65 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
 
   // Final import/upload action
   const handleFinalAction = async () => {
+    // In edit mode, skip the import and just update the configuration
+    if (editingConfig && isBrowserSync) {
+      console.log('📝 Edit mode: Skipping data import, updating configuration only');
+      setCurrentStep('importing');
+      updateState({ isImporting: true, importError: null });
+
+      try {
+        // Update the sync configuration
+        const targetTableId = targetTable?.id;
+        if (!targetTableId) {
+          throw new Error('Target table not found');
+        }
+
+        const configData = {
+          targetTableId,
+          headerRow: state.headerRow,
+          skipBottomRows: state.skipBottomRows,
+          sheetIndex: state.selectedSheet,
+          columnMappings: state.columnMappings!,
+          uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0
+            ? state.duplicateDetectionSettings.uniqueKeyColumns
+            : undefined,
+          duplicateAction: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
+            state.duplicateDetectionSettings.duplicateAction === 'replace-date-range'
+            ? state.duplicateDetectionSettings.duplicateAction
+            : 'skip',
+          fileAction: state.browserSyncSettings?.fileAction || (state.archiveAfterImport ? 'archive' : 'keep'),
+          autoSyncEnabled: state.browserSyncSettings?.autoSyncEnabled ?? state.enableAutoSync,
+        };
+
+        const configResult = await (window as any).electron.invoke('sync-config:update', editingConfig.id, configData);
+
+        if (!configResult.success) {
+          throw new Error(configResult.error || 'Failed to update configuration');
+        }
+
+        console.log('✅ Sync configuration updated successfully');
+
+        // Mark as complete without importing data
+        updateState({
+          importProgress: {
+            rowsImported: 0,
+            rowsSkipped: 0,
+            duplicatesSkipped: 0,
+            duplicateDetails: [],
+            errorDetails: [],
+          },
+        });
+        setCurrentStep('complete');
+        return;
+      } catch (error) {
+        console.error('Error updating configuration:', error);
+        updateState({
+          importError: error instanceof Error ? error.message : 'Failed to update configuration',
+        });
+        return;
+      }
+    }
+
     setCurrentStep('importing');
     updateState({ isImporting: true, importError: null });
 
@@ -410,6 +533,70 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
             errorDetails: result.errorDetails,
           },
         });
+      }
+
+      // Create sync configuration for browser-sync mode
+      if (state.saveAsConfiguration && state.selectedFile && scriptFolderPath && scriptName && folderName) {
+        try {
+          console.log('📝 Creating sync configuration for browser downloads...');
+          console.log('   Script folder:', scriptFolderPath);
+          console.log('   Script name:', scriptName);
+          console.log('   Folder name:', folderName);
+
+          // Get target table ID
+          const targetTableId = mode === 'import'
+            ? result.table.id
+            : targetTable!.id;
+
+          // Create or update sync configuration
+          const isEditMode = !!editingConfig;
+          console.log(`📋 [SYNC CONFIG] ${isEditMode ? 'Updating' : 'Creating'} sync configuration...`);
+          console.log('   Column mappings being saved:', state.columnMappings);
+          console.log('   Applied splits:', state.appliedSplits);
+          console.log('   Number of mappings:', Object.keys(state.columnMappings || {}).length);
+
+          const configData = {
+            targetTableId,
+            headerRow: state.headerRow,
+            skipBottomRows: state.skipBottomRows,
+            sheetIndex: state.selectedSheet,
+            columnMappings: state.columnMappings!,
+            appliedSplits: state.appliedSplits.length > 0 ? state.appliedSplits : undefined,
+            uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0
+              ? state.duplicateDetectionSettings.uniqueKeyColumns
+              : undefined,
+            duplicateAction: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
+              state.duplicateDetectionSettings.duplicateAction === 'replace-date-range'
+              ? state.duplicateDetectionSettings.duplicateAction
+              : 'skip',
+            fileAction: state.browserSyncSettings?.fileAction || (state.archiveAfterImport ? 'archive' : 'keep'),
+            autoSyncEnabled: state.browserSyncSettings?.autoSyncEnabled ?? state.enableAutoSync,
+          };
+
+          let configResult;
+          if (isEditMode) {
+            // Update existing configuration
+            configResult = await (window as any).electron.invoke('sync-config:update', editingConfig.id, configData);
+          } else {
+            // Create new configuration
+            configResult = await (window as any).electron.invoke('sync-config:create', {
+              scriptFolderPath,
+              scriptName,
+              folderName,
+              ...configData,
+            });
+          }
+
+          if (configResult.success) {
+            console.log(`✅ Sync configuration ${isEditMode ? 'updated' : 'created'} successfully`);
+          } else {
+            console.error(`❌ Failed to ${isEditMode ? 'update' : 'create'} sync configuration:`, configResult.error);
+            // Don't fail the whole import, just log the error
+          }
+        } catch (err) {
+          console.error('❌ Error creating sync configuration:', err);
+          // Don't fail the whole import
+        }
       }
 
       updateState({ isImporting: false });
@@ -514,6 +701,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           <VisualColumnMapper
             excelColumns={excelColumns}
             sampleRows={sampleRows}
+            targetTable={mode === 'upload' && targetTable ? targetTable : undefined}
             onMappingComplete={handleColumnMappingComplete}
             onBack={handleBack}
           />
@@ -569,7 +757,11 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     );
   };
 
-  const title = mode === 'import' ? 'Import Excel Data' : `Upload Data to ${targetTable?.displayName}`;
+  const title = editingConfig
+    ? `✏️ Edit Sync Configuration: ${editingConfig.scriptName}`
+    : mode === 'import'
+    ? 'Import Excel Data'
+    : `Upload Data to ${targetTable?.displayName}`;
 
   return (
     <div className="import-wizard">

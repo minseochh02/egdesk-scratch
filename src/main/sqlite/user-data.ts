@@ -14,6 +14,12 @@ import {
   AggregationResult,
   ColumnType,
 } from '../user-data/types';
+import { GeminiEmbeddingService } from '../embeddings/gemini-embedding-service';
+import {
+  UserDataVectorManager,
+  UserDataEmbeddingData,
+  UserDataEmbeddingStats,
+} from './user-data-vector-manager';
 
 /**
  * User Data Database Manager
@@ -884,11 +890,13 @@ export class UserDataDbManager {
       throw new Error(`Table not found: ${tableId}`);
     }
 
-    // Find date columns in the schema
-    const dateColumns = table.schema.filter(col => col.type === 'DATE' && col.name !== 'id');
-    
+    // Find date columns in the schema (exclude id and imported_at)
+    const dateColumns = table.schema.filter(
+      col => col.type === 'DATE' && col.name !== 'id' && col.name !== 'imported_at'
+    );
+
     if (dateColumns.length === 0) {
-      throw new Error('No date columns found in table. Replace-date-range mode requires at least one date column.');
+      throw new Error('No date columns found in table. Replace-date-range mode requires at least one date column (excluding imported_at).');
     }
 
     // Use the first date column as the primary date column for range calculation
@@ -1613,5 +1621,270 @@ export class UserDataDbManager {
     `);
 
     return stmt.all(limit) as ImportOperation[];
+  }
+
+  // ==================== Vector Embedding Methods ====================
+
+  /**
+   * Embed table columns with progress tracking
+   * Async generator that yields progress updates
+   */
+  async *embedTableColumns(
+    tableId: string,
+    columnNames: string[],
+    embeddingService: GeminiEmbeddingService,
+    options?: { batchSize?: number }
+  ): AsyncGenerator<{
+    progress: number;
+    total: number;
+    message: string;
+    estimatedCost?: number;
+  }> {
+    const batchSize = options?.batchSize || 100;
+    const vectorManager = new UserDataVectorManager(this.database);
+
+    // Get table info
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    // Validate columns are TEXT type
+    const validColumns = columnNames.filter((colName) => {
+      const col = table.schema.find((c) => c.name === colName);
+      return col && col.type === 'TEXT';
+    });
+
+    if (validColumns.length === 0) {
+      throw new Error('No valid TEXT columns to embed');
+    }
+
+    // Count total rows
+    const countStmt = this.database.prepare(
+      `SELECT COUNT(*) as count FROM "${table.tableName}"`
+    );
+    const countRow = countStmt.get() as any;
+    const totalRows = countRow.count;
+
+    if (totalRows === 0) {
+      throw new Error('Table is empty, nothing to embed');
+    }
+
+    const totalOperations = totalRows * validColumns.length;
+    let processedOperations = 0;
+    let totalChars = 0;
+
+    // Process each column
+    for (const columnName of validColumns) {
+      yield {
+        progress: processedOperations,
+        total: totalOperations,
+        message: `Embedding column: ${columnName}`,
+      };
+
+      // Fetch all rows for this column in batches
+      let offset = 0;
+      while (offset < totalRows) {
+        const dataStmt = this.database.prepare(
+          `SELECT id as rowId, "${columnName}" as value FROM "${table.tableName}" LIMIT ? OFFSET ?`
+        );
+        const rows = dataStmt.all(batchSize, offset) as any[];
+
+        if (rows.length === 0) break;
+
+        // Filter out null/empty values
+        const validRows = rows.filter(
+          (row) => row.value && typeof row.value === 'string' && row.value.trim()
+        );
+
+        if (validRows.length > 0) {
+          // Generate embeddings for this batch
+          const texts = validRows.map((row) => row.value.trim());
+          const embeddings = await embeddingService.embedBatch(texts, {
+            taskType: 'RETRIEVAL_DOCUMENT',
+          });
+
+          // Count characters for cost estimation
+          const batchChars = texts.reduce((sum, text) => sum + text.length, 0);
+          totalChars += batchChars;
+
+          // Prepare embedding data
+          const embeddingData: UserDataEmbeddingData[] = validRows.map(
+            (row, idx) => ({
+              tableId,
+              rowId: row.rowId,
+              columnName,
+              embedding: embeddings[idx].embedding,
+              model: embeddings[idx].model,
+              dimensions: embeddings[idx].dimensions,
+            })
+          );
+
+          // Bulk insert embeddings
+          vectorManager.bulkInsertEmbeddings(embeddingData);
+        }
+
+        processedOperations += rows.length;
+        offset += batchSize;
+
+        // Yield progress
+        const estimatedCost = (totalChars / 1000) * 0.00001;
+        yield {
+          progress: processedOperations,
+          total: totalOperations,
+          message: `Embedding column: ${columnName} (${offset}/${totalRows})`,
+          estimatedCost,
+        };
+      }
+
+      // Update metadata for this column
+      const estimatedCostForColumn = (totalChars / 1000) * 0.00001;
+      const firstEmbedding = await embeddingService.embedText('test', {
+        taskType: 'RETRIEVAL_DOCUMENT',
+      });
+      vectorManager.updateMetadata(
+        tableId,
+        columnName,
+        firstEmbedding.model,
+        firstEmbedding.dimensions,
+        estimatedCostForColumn
+      );
+    }
+
+    // Final progress
+    const finalCost = (totalChars / 1000) * 0.00001;
+    yield {
+      progress: totalOperations,
+      total: totalOperations,
+      message: 'Embedding complete',
+      estimatedCost: finalCost,
+    };
+  }
+
+  /**
+   * Perform semantic search on a table
+   */
+  async vectorSearch(
+    tableId: string,
+    queryText: string,
+    embeddingService: GeminiEmbeddingService,
+    options?: {
+      limit?: number;
+      threshold?: number;
+      columnNames?: string[];
+    }
+  ): Promise<{
+    rows: any[];
+    total: number;
+    searchResults: Array<{
+      rowId: number;
+      similarity: number;
+      matchedColumns: string[];
+    }>;
+  }> {
+    const limit = options?.limit || 50;
+    const threshold = options?.threshold || 0.7;
+    const columnNames = options?.columnNames;
+
+    // Get table info
+    const table = this.getTable(tableId);
+    if (!table) {
+      throw new Error(`Table not found: ${tableId}`);
+    }
+
+    // Generate query embedding
+    const queryEmbedding = await embeddingService.embedQuery(queryText);
+
+    // Search for similar embeddings
+    const vectorManager = new UserDataVectorManager(this.database);
+    const searchResults = vectorManager.searchSimilar(tableId, {
+      embedding: queryEmbedding.embedding,
+      limit: limit * 10, // Get more results to group by row
+      threshold,
+      columnNames,
+    });
+
+    // Group results by row_id and take max similarity
+    const rowMap = new Map<
+      number,
+      { similarity: number; matchedColumns: string[] }
+    >();
+
+    for (const result of searchResults) {
+      const existing = rowMap.get(result.rowId);
+      if (!existing || result.similarity > existing.similarity) {
+        const matchedColumns = existing
+          ? [...existing.matchedColumns, result.columnName]
+          : [result.columnName];
+        rowMap.set(result.rowId, {
+          similarity: result.similarity,
+          matchedColumns: Array.from(new Set(matchedColumns)),
+        });
+      }
+    }
+
+    // Sort by similarity and take top results
+    const sortedRows = Array.from(rowMap.entries())
+      .sort((a, b) => b[1].similarity - a[1].similarity)
+      .slice(0, limit);
+
+    // Fetch full rows
+    if (sortedRows.length === 0) {
+      return { rows: [], total: 0, searchResults: [] };
+    }
+
+    const rowIds = sortedRows.map(([rowId]) => rowId);
+    const placeholders = rowIds.map(() => '?').join(',');
+    const dataStmt = this.database.prepare(
+      `SELECT rowid, * FROM "${table.tableName}" WHERE rowid IN (${placeholders})`
+    );
+    const rows = dataStmt.all(...rowIds) as any[];
+
+    // Add similarity and matched columns to rows
+    const enrichedRows = rows.map((row) => {
+      const rowData = rowMap.get(row.rowid);
+      return {
+        ...row,
+        _similarity: rowData?.similarity,
+        _matchedColumns: rowData?.matchedColumns,
+      };
+    });
+
+    // Sort by similarity
+    enrichedRows.sort((a, b) => (b._similarity || 0) - (a._similarity || 0));
+
+    return {
+      rows: enrichedRows,
+      total: enrichedRows.length,
+      searchResults: sortedRows.map(([rowId, data]) => ({
+        rowId,
+        similarity: data.similarity,
+        matchedColumns: data.matchedColumns,
+      })),
+    };
+  }
+
+  /**
+   * Get embedding statistics for a table
+   */
+  getEmbeddingStats(tableId: string): UserDataEmbeddingStats {
+    const vectorManager = new UserDataVectorManager(this.database);
+    return vectorManager.getEmbeddingStats(tableId);
+  }
+
+  /**
+   * Delete embeddings for a table
+   */
+  deleteEmbeddings(tableId: string, columnNames?: string[]): number {
+    const vectorManager = new UserDataVectorManager(this.database);
+    return vectorManager.deleteEmbeddings(tableId, columnNames);
+  }
+
+  /**
+   * Get list of embedded columns for a table
+   */
+  getEmbeddedColumns(tableId: string): string[] {
+    const vectorManager = new UserDataVectorManager(this.database);
+    return vectorManager.getEmbeddedColumns(tableId);
   }
 }

@@ -16,6 +16,7 @@ import {
   autoDetectUniqueKeyColumns,
   getRecommendedDuplicateAction,
 } from './duplicate-detection-helper';
+import { GeminiEmbeddingService } from '../embeddings/gemini-embedding-service';
 
 /**
  * User Data IPC Handlers
@@ -814,9 +815,11 @@ export function registerUserDataIPCHandlers(): void {
     sheetIndex: number;
     tableId: string;
     columnMappings: Record<string, string>;
+    mergeConfig?: Record<string, { sources: string[]; separator: string }>;
     headerRow?: number;
     skipRows?: number;
     skipBottomRows?: number;
+    appliedSplits?: Array<{ originalColumn: string; dateColumn: string; numberColumn: string }>;
     uniqueKeyColumns?: string[];
     duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
     addTimestamp?: boolean;
@@ -856,8 +859,25 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      const selectedSheet = parsedData.sheets[config.sheetIndex];
+      let selectedSheet = parsedData.sheets[config.sheetIndex];
       const fileName = path.basename(config.filePath);
+
+      // Apply column splits if provided (date-with-number splits from UI)
+      if (config.appliedSplits && config.appliedSplits.length > 0) {
+        console.log(`✂️  Applying ${config.appliedSplits.length} column split(s) from UI...`);
+        const { applySplitColumn } = require('./excel-parser');
+
+        for (const split of config.appliedSplits) {
+          console.log(`   "${split.originalColumn}" → ["${split.dateColumn}", "${split.numberColumn}"]`);
+          selectedSheet = applySplitColumn(
+            selectedSheet as any,
+            split.originalColumn,
+            { date: split.dateColumn, number: split.numberColumn }
+          );
+        }
+
+        console.log(`✅ Column splits applied successfully`);
+      }
 
       // Add imported_at column if requested and it doesn't exist
       if (config.addTimestamp) {
@@ -885,7 +905,12 @@ export function registerUserDataIPCHandlers(): void {
       try {
         // Map Excel rows to table columns using the same robust logic as regular import
         const currentTimestamp = new Date().toISOString();
-        const rowsToInsert = selectedSheet.rows.map((row) => {
+
+        // Debug: Log first row structure before mapping
+        console.log('🔍 DEBUG: First row keys from Excel:', Object.keys(selectedSheet.rows[0] || {}));
+        console.log('🔍 DEBUG: Column mappings config:', JSON.stringify(config.columnMappings, null, 2));
+
+        const rowsToInsert = selectedSheet.rows.map((row, idx) => {
           const mappedRow: any = {};
 
           if (config.columnMappings) {
@@ -901,6 +926,11 @@ export function registerUserDataIPCHandlers(): void {
               if (sourceExcelColumn) {
                 const [originalName] = sourceExcelColumn;
                 mappedRow[dbColumnName] = row[originalName];
+
+                // Debug first row
+                if (idx === 0) {
+                  console.log(`   Mapping: "${originalName}" (Excel) → "${dbColumnName}" (Table), value:`, row[originalName]);
+                }
               }
             });
           } else {
@@ -917,6 +947,10 @@ export function registerUserDataIPCHandlers(): void {
 
           return mappedRow;
         });
+
+        // Debug: Log first mapped row
+        console.log('🔍 DEBUG: First mapped row keys:', Object.keys(rowsToInsert[0] || {}));
+        console.log('🔍 DEBUG: First mapped row sample:', rowsToInsert[0]);
 
         // Handle different duplicate actions
         let insertResult;
@@ -1923,6 +1957,149 @@ export function registerUserDataIPCHandlers(): void {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to import SQL',
+      };
+    }
+  });
+
+  // ==================== Vector Embedding IPC Handlers ====================
+
+  /**
+   * Embed table columns with progress tracking
+   */
+  ipcMain.handle(
+    'user-data:embed-table-columns',
+    async (
+      event,
+      tableId: string,
+      columnNames: string[],
+      options?: { batchSize?: number }
+    ) => {
+      try {
+        const manager = getSQLiteManager();
+        const userDataManager = manager.getUserDataManager();
+        const embeddingService = new GeminiEmbeddingService();
+
+        // Start embedding process with progress tracking
+        const generator = userDataManager.embedTableColumns(
+          tableId,
+          columnNames,
+          embeddingService,
+          options
+        );
+
+        for await (const progress of generator) {
+          // Send progress updates to renderer
+          event.sender.send('user-data:embedding-progress', progress);
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('Error embedding table columns:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to embed columns',
+        };
+      }
+    }
+  );
+
+  /**
+   * Perform semantic search on a table
+   */
+  ipcMain.handle(
+    'user-data:vector-search-table',
+    async (
+      event,
+      tableId: string,
+      queryText: string,
+      options?: {
+        limit?: number;
+        threshold?: number;
+        columnNames?: string[];
+      }
+    ) => {
+      try {
+        const manager = getSQLiteManager();
+        const userDataManager = manager.getUserDataManager();
+        const embeddingService = new GeminiEmbeddingService();
+
+        const result = await userDataManager.vectorSearch(
+          tableId,
+          queryText,
+          embeddingService,
+          options
+        );
+
+        return { success: true, data: result };
+      } catch (error) {
+        console.error('Error performing vector search:', error);
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : 'Failed to perform search',
+        };
+      }
+    }
+  );
+
+  /**
+   * Get embedding statistics for a table
+   */
+  ipcMain.handle('user-data:get-embedding-stats', async (event, tableId: string) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const stats = userDataManager.getEmbeddingStats(tableId);
+
+      return { success: true, data: stats };
+    } catch (error) {
+      console.error('Error getting embedding stats:', error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : 'Failed to get embedding stats',
+      };
+    }
+  });
+
+  /**
+   * Delete embeddings for a table
+   */
+  ipcMain.handle(
+    'user-data:delete-embeddings',
+    async (event, tableId: string, columnNames?: string[]) => {
+      try {
+        const manager = getSQLiteManager();
+        const userDataManager = manager.getUserDataManager();
+        const deletedCount = userDataManager.deleteEmbeddings(tableId, columnNames);
+
+        return { success: true, data: { deletedCount } };
+      } catch (error) {
+        console.error('Error deleting embeddings:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to delete embeddings',
+        };
+      }
+    }
+  );
+
+  /**
+   * Get list of embedded columns for a table
+   */
+  ipcMain.handle('user-data:get-embedded-columns', async (event, tableId: string) => {
+    try {
+      const manager = getSQLiteManager();
+      const userDataManager = manager.getUserDataManager();
+      const columns = userDataManager.getEmbeddedColumns(tableId);
+
+      return { success: true, data: columns };
+    } catch (error) {
+      console.error('Error getting embedded columns:', error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : 'Failed to get embedded columns',
       };
     }
   });
