@@ -615,7 +615,7 @@ export class PlaywrightSchedulerService {
 
       let testFunction;
       try {
-        testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', testBody);
+        testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', 'fs', 'os', testBody);
       } catch (syntaxError: any) {
         // If there's a syntax error creating the function, provide detailed feedback
         const errorMsg = `Failed to create test function: ${syntaxError.message}`;
@@ -645,7 +645,7 @@ export class PlaywrightSchedulerService {
       });
 
       // Execute the test
-      await testFunction(page, expect, path, downloadsPath);
+      await testFunction(page, expect, path, downloadsPath, fs, os);
 
       console.log('✅ Test execution completed successfully');
 
