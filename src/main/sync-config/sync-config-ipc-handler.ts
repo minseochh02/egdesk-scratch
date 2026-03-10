@@ -368,38 +368,46 @@ export function registerSyncConfigIPCHandlers(): void {
         };
       }
 
+      // Get table names for each config
+      const userDataManager = manager.getUserDataManager();
+
       // Create export data
       const exportData = {
         exportVersion: '1.0',
         exportedAt: new Date().toISOString(),
         configCount: configs.length,
-        configurations: configs.map(config => ({
-          // Core configuration
-          scriptName: config.scriptName,
-          folderName: config.folderName,
-          targetTableId: config.targetTableId,
+        configurations: configs.map(config => {
+          const table = userDataManager.getTable(config.targetTableId);
 
-          // Parsing configuration
-          headerRow: config.headerRow,
-          skipBottomRows: config.skipBottomRows,
-          sheetIndex: config.sheetIndex,
+          return {
+            // Core configuration
+            scriptName: config.scriptName,
+            folderName: config.folderName,
+            targetTableDisplayName: table?.displayName || 'Unknown',
+            targetTableName: table?.tableName || null,
 
-          // Column mappings and transformations
-          columnMappings: config.columnMappings,
-          appliedSplits: config.appliedSplits,
+            // Parsing configuration
+            headerRow: config.headerRow,
+            skipBottomRows: config.skipBottomRows,
+            sheetIndex: config.sheetIndex,
 
-          // Duplicate detection
-          uniqueKeyColumns: config.uniqueKeyColumns,
-          duplicateAction: config.duplicateAction,
+            // Column mappings and transformations
+            columnMappings: config.columnMappings,
+            appliedSplits: config.appliedSplits,
 
-          // File handling
-          fileAction: config.fileAction,
+            // Duplicate detection
+            uniqueKeyColumns: config.uniqueKeyColumns,
+            duplicateAction: config.duplicateAction,
 
-          // Auto-sync settings
-          autoSyncEnabled: config.autoSyncEnabled,
+            // File handling
+            fileAction: config.fileAction,
 
-          // Note: scriptFolderPath is excluded as it's system-specific
-        }))
+            // Auto-sync settings
+            autoSyncEnabled: config.autoSyncEnabled,
+
+            // Note: scriptFolderPath is excluded as it's system-specific
+          };
+        })
       };
 
       // Write to file
@@ -478,26 +486,81 @@ export function registerSyncConfigIPCHandlers(): void {
       let skipped = 0;
       const errors: string[] = [];
 
+      // Ask user if they want to select folders for each config
+      const proceedResult = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Import with Folder Selection', 'Cancel'],
+        defaultId: 0,
+        title: 'Import Sync Configurations',
+        message: `Found ${importData.configurations.length} configuration(s) to import.\n\nYou will need to select the folder path for each configuration.\n\nProceed?`
+      });
+
+      if (proceedResult.response !== 0) {
+        return {
+          success: false,
+          error: 'Import canceled',
+        };
+      }
+
       for (const configData of importData.configurations) {
         try {
-          // Check if table exists
-          const targetTable = userDataManager.getTable(configData.targetTableId);
+          // Find target table by displayName or tableName
+          const allTables = userDataManager.getAllTables();
+          let targetTable = allTables.find(t => t.displayName === configData.targetTableDisplayName);
+
+          // Fallback: try by tableName if displayName didn't match
+          if (!targetTable && configData.targetTableName) {
+            targetTable = userDataManager.getTableByName(configData.targetTableName);
+          }
+
           if (!targetTable) {
-            errors.push(`Skipped "${configData.scriptName}": Target table not found`);
+            errors.push(`Skipped "${configData.scriptName}": Target table "${configData.targetTableDisplayName}" not found`);
             skipped++;
             continue;
           }
 
-          // Since scriptFolderPath is system-specific, we need to ask user or skip
-          // For now, we'll skip configs that would need folder selection
-          errors.push(`Skipped "${configData.scriptName}": Manual folder selection required (import feature limitation)`);
-          skipped++;
+          // Ask user to select folder for this configuration
+          const folderResult = await dialog.showOpenDialog({
+            title: `Select folder for "${configData.scriptName}"`,
+            message: `Select the browser download folder to watch for files matching:\n"${configData.folderName}"`,
+            properties: ['openDirectory']
+          });
 
-          // Future enhancement: Could show a folder picker dialog for each config
-          // const folderResult = await dialog.showOpenDialog({
-          //   title: `Select folder for "${configData.scriptName}"`,
-          //   properties: ['openDirectory']
-          // });
+          if (folderResult.canceled || folderResult.filePaths.length === 0) {
+            errors.push(`Skipped "${configData.scriptName}": Folder selection canceled`);
+            skipped++;
+            continue;
+          }
+
+          const scriptFolderPath = folderResult.filePaths[0];
+
+          // Check if configuration already exists for this folder
+          const existing = syncConfigManager.getConfigurationByFolder(scriptFolderPath);
+          if (existing) {
+            errors.push(`Skipped "${configData.scriptName}": Configuration already exists for this folder`);
+            skipped++;
+            continue;
+          }
+
+          // Create configuration
+          const newConfig: CreateSyncConfigurationData = {
+            scriptFolderPath,
+            scriptName: configData.scriptName,
+            folderName: configData.folderName,
+            targetTableId: targetTable.id,
+            headerRow: configData.headerRow,
+            skipBottomRows: configData.skipBottomRows,
+            sheetIndex: configData.sheetIndex,
+            columnMappings: configData.columnMappings,
+            appliedSplits: configData.appliedSplits,
+            uniqueKeyColumns: configData.uniqueKeyColumns,
+            duplicateAction: configData.duplicateAction,
+            fileAction: configData.fileAction,
+            autoSyncEnabled: configData.autoSyncEnabled,
+          };
+
+          syncConfigManager.createConfiguration(newConfig);
+          imported++;
 
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
