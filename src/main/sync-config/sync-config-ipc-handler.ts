@@ -1,4 +1,4 @@
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, app } from 'electron';
 import { getSQLiteManager } from '../sqlite/manager';
 import { FileWatcherService } from './file-watcher-service';
 import {
@@ -8,6 +8,7 @@ import {
 import AdmZip from 'adm-zip';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Sync Configuration IPC Handlers
@@ -486,21 +487,8 @@ export function registerSyncConfigIPCHandlers(): void {
       let skipped = 0;
       const errors: string[] = [];
 
-      // Ask user if they want to select folders for each config
-      const proceedResult = await dialog.showMessageBox({
-        type: 'question',
-        buttons: ['Import with Folder Selection', 'Cancel'],
-        defaultId: 0,
-        title: 'Import Sync Configurations',
-        message: `Found ${importData.configurations.length} configuration(s) to import.\n\nYou will need to select the folder path for each configuration.\n\nProceed?`
-      });
-
-      if (proceedResult.response !== 0) {
-        return {
-          success: false,
-          error: 'Import canceled',
-        };
-      }
+      // Base path for browser downloads
+      const browserDownloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser');
 
       for (const configData of importData.configurations) {
         try {
@@ -519,20 +507,15 @@ export function registerSyncConfigIPCHandlers(): void {
             continue;
           }
 
-          // Ask user to select folder for this configuration
-          const folderResult = await dialog.showOpenDialog({
-            title: `Select folder for "${configData.scriptName}"`,
-            message: `Select the browser download folder to watch for files matching:\n"${configData.folderName}"`,
-            properties: ['openDirectory']
-          });
+          // Auto-match folder by folderName
+          const scriptFolderPath = path.join(browserDownloadsPath, configData.folderName);
 
-          if (folderResult.canceled || folderResult.filePaths.length === 0) {
-            errors.push(`Skipped "${configData.scriptName}": Folder selection canceled`);
+          // Check if folder exists
+          if (!fs.existsSync(scriptFolderPath)) {
+            errors.push(`Skipped "${configData.scriptName}": Browser download folder "${configData.folderName}" not found at ${scriptFolderPath}`);
             skipped++;
             continue;
           }
-
-          const scriptFolderPath = folderResult.filePaths[0];
 
           // Check if configuration already exists for this folder
           const existing = syncConfigManager.getConfigurationByFolder(scriptFolderPath);
@@ -561,6 +544,7 @@ export function registerSyncConfigIPCHandlers(): void {
 
           syncConfigManager.createConfiguration(newConfig);
           imported++;
+          console.log(`✅ Imported sync config: ${configData.scriptName} -> ${targetTable.displayName}`);
 
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
