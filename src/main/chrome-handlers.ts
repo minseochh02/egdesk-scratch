@@ -2174,7 +2174,7 @@ test('recorded test', async ({ page }) => {
 
           let testFunction;
           try {
-            testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', 'fs', testBody);
+            testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', testBody);
           } catch (syntaxError: any) {
             // If there's a syntax error creating the function, provide detailed feedback
             const errorMsg = `Failed to create test function: ${syntaxError.message}`;
@@ -2203,7 +2203,7 @@ test('recorded test', async ({ page }) => {
             }
           });
 
-          await testFunction(page, expect, path, downloadsPath, fs);
+          await testFunction(page, expect, path, downloadsPath);
 
           console.log('✅ Test completed successfully');
 
