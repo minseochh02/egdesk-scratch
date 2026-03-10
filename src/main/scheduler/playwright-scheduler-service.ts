@@ -557,8 +557,12 @@ export class PlaywrightSchedulerService {
     // Import playwright-core (available in the main process)
     const { chromium } = require('playwright-core');
 
-    // Create downloads directory in system Downloads folder
-    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+    // Get script name for downloads folder
+    const scriptName = path.basename(testPath, '.spec.js');
+    console.log(`📁 Using script name for downloads: ${scriptName}`);
+
+    // Create downloads directory using script name: Downloads/EGDesk-Browser/scriptname
+    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName);
     if (!fs.existsSync(downloadsPath)) {
       fs.mkdirSync(downloadsPath, { recursive: true });
     }
