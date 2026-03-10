@@ -2115,8 +2115,8 @@ test('recorded test', async ({ page }) => {
           testFile
         });
 
-        // Create downloads directory in system Downloads folder
-        const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+        // Create downloads directory using script name: Downloads/EGDesk-Browser/scriptname
+        const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser', currentScriptName);
         if (!fs.existsSync(downloadsPath)) {
           fs.mkdirSync(downloadsPath, { recursive: true });
         }
