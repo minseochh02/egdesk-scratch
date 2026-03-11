@@ -2047,6 +2047,17 @@ export function registerUserDataIPCHandlers(): void {
 
       if (syncConfigCount > 0) {
         console.log(`✅ Restored ${syncConfigCount} sync configuration(s)`);
+
+        // Reload file watcher service to start watchers for restored configs
+        try {
+          const { FileWatcherService } = await import('../sync-config/file-watcher-service');
+          const fileWatcherService = FileWatcherService.getInstance();
+          await fileWatcherService.reload();
+          console.log(`✅ File watcher service reloaded for restored sync configurations`);
+        } catch (watcherError) {
+          console.warn('Failed to reload file watcher service:', watcherError);
+          // Don't fail the import if watcher reload fails
+        }
       }
 
       return {

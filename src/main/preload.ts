@@ -2119,6 +2119,7 @@ const electronHandler = {
     // File Watcher Service
     fileWatcher: {
       initialize: () => ipcRenderer.invoke('file-watcher:initialize'),
+      reload: () => ipcRenderer.invoke('file-watcher:reload'),
       start: (configId: string) => ipcRenderer.invoke('file-watcher:start', configId),
       stop: (configId: string) => ipcRenderer.invoke('file-watcher:stop', configId),
       getStatus: () => ipcRenderer.invoke('file-watcher:get-status'),
