@@ -138,7 +138,7 @@ export class SchedulerRecoveryService {
           intended_time = excluded.intended_time,
           execution_window_start = excluded.execution_window_start,
           execution_window_end = excluded.execution_window_end,
-          updated_at = datetime('now')
+          updated_at = datetime('now', 'localtime')
       `).run(
         id,
         intent.schedulerType,
@@ -210,8 +210,8 @@ export class SchedulerRecoveryService {
       UPDATE scheduler_execution_intents
       SET status = 'running',
           actual_execution_id = ?,
-          actual_started_at = datetime('now'),
-          updated_at = datetime('now')
+          actual_started_at = datetime('now', 'localtime'),
+          updated_at = datetime('now', 'localtime')
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -233,8 +233,8 @@ export class SchedulerRecoveryService {
       UPDATE scheduler_execution_intents
       SET status = 'completed',
           actual_execution_id = ?,
-          actual_completed_at = datetime('now'),
-          updated_at = datetime('now')
+          actual_completed_at = datetime('now', 'localtime'),
+          updated_at = datetime('now', 'localtime')
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -261,7 +261,7 @@ export class SchedulerRecoveryService {
           error_message = ?,
           skip_reason = ?,
           retry_count = COALESCE(retry_count, 0) + 1,
-          updated_at = datetime('now')
+          updated_at = datetime('now', 'localtime')
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -283,7 +283,7 @@ export class SchedulerRecoveryService {
       UPDATE scheduler_execution_intents
       SET status = 'skipped',
           skip_reason = ?,
-          updated_at = datetime('now')
+          updated_at = datetime('now', 'localtime')
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -305,7 +305,7 @@ export class SchedulerRecoveryService {
       UPDATE scheduler_execution_intents
       SET status = 'cancelled',
           skip_reason = ?,
-          updated_at = datetime('now')
+          updated_at = datetime('now', 'localtime')
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -416,7 +416,7 @@ export class SchedulerRecoveryService {
       UPDATE scheduler_execution_intents
       SET status = 'failed',
           error_message = 'Task stuck in running state (app crashed mid-execution)',
-          updated_at = datetime('now')
+          updated_at = datetime('now', 'localtime')
       WHERE status = 'running'
         AND actual_started_at < ?
     `).run(oneHourAgo);
