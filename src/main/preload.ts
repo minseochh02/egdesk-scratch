@@ -2124,6 +2124,7 @@ const electronHandler = {
       stop: (configId: string) => ipcRenderer.invoke('file-watcher:stop', configId),
       getStatus: () => ipcRenderer.invoke('file-watcher:get-status'),
       stopAll: () => ipcRenderer.invoke('file-watcher:stop-all'),
+      refreshAfterImport: () => ipcRenderer.invoke('file-watcher:refresh-after-import'),
     },
     // Playwright Scheduler API
     getPlaywrightSchedules: () => ipcRenderer.invoke('sqlite-playwright-scheduler-get-all'),

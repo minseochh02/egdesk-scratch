@@ -175,6 +175,7 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
 
         alert(message);
         await fetchConfigurations();
+        await loadWatcherStatus(); // Refresh watcher status after import
       } else {
         if (result.error !== 'Import canceled') {
           alert(`Import failed: ${result.error}`);
