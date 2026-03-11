@@ -24,7 +24,8 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
       
       -- Column mappings (JSON)
       column_mappings TEXT NOT NULL,
-      
+      applied_splits TEXT,
+
       -- File handling
       file_action TEXT DEFAULT 'archive' CHECK(file_action IN ('keep', 'archive', 'delete')),
       
