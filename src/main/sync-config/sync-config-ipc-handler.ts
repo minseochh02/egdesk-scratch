@@ -555,6 +555,19 @@ export function registerSyncConfigIPCHandlers(): void {
 
       console.log(`📥 Import complete: ${imported} imported, ${skipped} skipped`);
 
+      // Reload file watcher service to start watchers for imported configs
+      if (imported > 0) {
+        try {
+          const { FileWatcherService } = await import('./file-watcher-service');
+          const fileWatcherService = FileWatcherService.getInstance();
+          await fileWatcherService.reload();
+          console.log(`✅ File watcher service reloaded for ${imported} imported sync configuration(s)`);
+        } catch (watcherError) {
+          console.warn('Failed to reload file watcher service:', watcherError);
+          // Don't fail the import if watcher reload fails
+        }
+      }
+
       return {
         success: true,
         data: {

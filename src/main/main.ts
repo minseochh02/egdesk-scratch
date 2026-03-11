@@ -4490,9 +4490,14 @@ const createWindow = async () => {
     registerFileWatcherIPCHandlers();
 
     // Initialize File Watcher Service
-    const { FileWatcherService } = await import('./sync-config/file-watcher-service');
-    const fileWatcherService = FileWatcherService.getInstance();
-    await fileWatcherService.initialize();
+    try {
+      const { FileWatcherService } = await import('./sync-config/file-watcher-service');
+      const fileWatcherService = FileWatcherService.getInstance();
+      await fileWatcherService.initialize();
+    } catch (fileWatcherError) {
+      console.error('❌ Failed to initialize File Watcher Service:', fileWatcherError);
+      // Don't fail app startup if file watcher fails - it's a non-critical feature
+    }
 
     // Register shell utility handlers
     ipcMain.handle('shell:open-path', async (_event, filePath: string) => {
