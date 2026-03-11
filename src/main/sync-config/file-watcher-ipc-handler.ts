@@ -30,6 +30,27 @@ export function registerFileWatcherIPCHandlers(): void {
   });
 
   /**
+   * Reload file watcher service (starts watchers for new configs)
+   */
+  ipcMain.handle('file-watcher:reload', async () => {
+    try {
+      const service = FileWatcherService.getInstance();
+      await service.reload();
+
+      return {
+        success: true,
+        message: 'File watcher service reloaded',
+      };
+    } catch (error) {
+      console.error('Error reloading file watcher:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to reload file watcher',
+      };
+    }
+  });
+
+  /**
    * Start watching a specific configuration
    */
   ipcMain.handle('file-watcher:start', async (event, configId: string) => {
