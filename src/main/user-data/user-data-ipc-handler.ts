@@ -1618,7 +1618,67 @@ export function registerUserDataIPCHandlers(): void {
 -- Tables: ${tables.length}
 -- Total Rows: ${tables.reduce((sum, t) => sum + t.rowCount, 0)}
 
+-- IMPORTANT: This export includes metadata for table display names and settings.
+-- Import this file to restore tables with their original names and configurations.
+
 `;
+
+      // First, export all table metadata as INSERT statements
+      sqlContent += `\n-- ============================================\n`;
+      sqlContent += `-- TABLE METADATA\n`;
+      sqlContent += `-- ============================================\n\n`;
+
+      for (const table of tables) {
+        const uniqueKeyColumns = table.uniqueKeyColumns
+          ? `'${table.uniqueKeyColumns.replace(/'/g, "''")}'`
+          : 'NULL';
+
+        const description = table.description
+          ? `'${table.description.replace(/'/g, "''")}'`
+          : 'NULL';
+
+        const createdFromFile = table.createdFromFile
+          ? `'${table.createdFromFile.replace(/'/g, "''")}'`
+          : 'NULL';
+
+        const schemaJson = `'${JSON.stringify(table.schema).replace(/'/g, "''")}'`;
+
+        sqlContent += `INSERT INTO user_tables (id, table_name, display_name, description, created_from_file, row_count, column_count, created_at, updated_at, schema_json, unique_key_columns, duplicate_action, has_imported_at_column) VALUES ('${table.id}', '${table.tableName}', '${table.displayName.replace(/'/g, "''")}', ${description}, ${createdFromFile}, ${table.rowCount}, ${table.columnCount}, '${table.createdAt}', '${table.updatedAt}', ${schemaJson}, ${uniqueKeyColumns}, '${table.duplicateAction || 'skip'}', ${table.hasImportedAtColumn ? 1 : 0});\n`;
+      }
+
+      sqlContent += `\n`;
+
+      // Export sync configurations
+      sqlContent += `\n-- ============================================\n`;
+      sqlContent += `-- SYNC CONFIGURATIONS\n`;
+      sqlContent += `-- ============================================\n\n`;
+
+      const syncConfigManager = manager.getSyncConfigManager();
+      const allSyncConfigs = syncConfigManager.getAllConfigurations();
+
+      if (allSyncConfigs.length > 0) {
+        console.log(`📦 Exporting ${allSyncConfigs.length} sync configuration(s)...`);
+
+        for (const config of allSyncConfigs) {
+          const columnMappings = `'${JSON.stringify(config.columnMappings).replace(/'/g, "''")}'`;
+          const appliedSplits = config.appliedSplits
+            ? `'${JSON.stringify(config.appliedSplits).replace(/'/g, "''")}'`
+            : 'NULL';
+          const uniqueKeyColumns = config.uniqueKeyColumns
+            ? `'${JSON.stringify(config.uniqueKeyColumns).replace(/'/g, "''")}'`
+            : 'NULL';
+          const lastSyncAt = config.lastSyncAt ? `'${config.lastSyncAt}'` : 'NULL';
+          const lastSyncStatus = config.lastSyncStatus ? `'${config.lastSyncStatus}'` : 'NULL';
+          const lastSyncError = config.lastSyncError ? `'${config.lastSyncError.replace(/'/g, "''")}'` : 'NULL';
+
+          sqlContent += `INSERT INTO sync_configurations (id, script_folder_path, script_name, folder_name, target_table_id, header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits, file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action, last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates, last_sync_error, created_at, updated_at) VALUES ('${config.id}', '${config.scriptFolderPath.replace(/'/g, "''")}', '${config.scriptName.replace(/'/g, "''")}', '${config.folderName.replace(/'/g, "''")}', '${config.targetTableId}', ${config.headerRow}, ${config.skipBottomRows}, ${config.sheetIndex}, ${columnMappings}, ${appliedSplits}, '${config.fileAction}', ${config.enabled ? 1 : 0}, ${config.autoSyncEnabled ? 1 : 0}, ${uniqueKeyColumns}, '${config.duplicateAction || 'skip'}', ${lastSyncAt}, ${lastSyncStatus}, ${config.lastSyncRowsImported}, ${config.lastSyncRowsSkipped}, ${config.lastSyncDuplicates}, ${lastSyncError}, '${config.createdAt}', '${config.updatedAt}');\n`;
+        }
+
+        sqlContent += `\n`;
+        console.log(`   ✅ Exported ${allSyncConfigs.length} sync configuration(s)`);
+      } else {
+        sqlContent += `-- No sync configurations to export\n\n`;
+      }
 
       // Export each table
       for (const table of tables) {
@@ -1733,7 +1793,7 @@ export function registerUserDataIPCHandlers(): void {
       // Write SQL content to file
       await fs.writeFile(result.filePath, sqlContent, 'utf-8');
 
-      console.log(`✅ Successfully exported ${tables.length} table(s) as SQL to: ${result.filePath}`);
+      console.log(`✅ Successfully exported ${tables.length} table(s) and ${allSyncConfigs.length} sync config(s) as SQL to: ${result.filePath}`);
 
       return {
         success: true,
@@ -1741,6 +1801,7 @@ export function registerUserDataIPCHandlers(): void {
           filePath: result.filePath,
           tablesExported: tables.length,
           totalRows: tables.reduce((sum, t) => sum + t.rowCount, 0),
+          syncConfigsExported: allSyncConfigs.length,
         },
       };
     } catch (error) {
@@ -1905,17 +1966,21 @@ export function registerUserDataIPCHandlers(): void {
         SELECT name FROM sqlite_master
         WHERE type='table'
         AND name NOT LIKE 'sqlite_%'
-        AND name NOT IN ('user_tables', 'user_imports')
+        AND name NOT IN ('user_tables', 'user_imports', 'import_operations')
       `).all() as Array<{ name: string }>;
 
       let metadataCreatedCount = 0;
+      let metadataFoundCount = 0;
 
       for (const { name: tableName } of allTables) {
         // Check if metadata exists
         const existingMetadata = userDataManager.getTableByName(tableName);
 
-        if (!existingMetadata) {
-          console.log(`   📝 Creating metadata for table "${tableName}"`);
+        if (existingMetadata) {
+          metadataFoundCount++;
+          console.log(`   ✅ Found existing metadata for "${tableName}" (display name: "${existingMetadata.displayName}")`);
+        } else {
+          console.log(`   📝 Creating metadata for table "${tableName}" (no metadata found in import)`);
 
           try {
             // Get table schema from database
@@ -1953,7 +2018,7 @@ export function registerUserDataIPCHandlers(): void {
             `).run(
               tableId,
               tableName,
-              tableName, // Use table name as display name
+              tableName, // Use table name as display name (fallback only)
               `Imported from ${fileName}`,
               fileName,
               rowCount,
@@ -1973,7 +2038,16 @@ export function registerUserDataIPCHandlers(): void {
         }
       }
 
-      console.log(`✅ Metadata scan complete: ${metadataCreatedCount} new table(s) registered`);
+      console.log(`✅ Metadata scan complete: ${metadataFoundCount} existing, ${metadataCreatedCount} new table(s) registered`);
+
+      // Count restored sync configurations
+      const syncConfigManager = manager.getSyncConfigManager();
+      const restoredSyncConfigs = syncConfigManager.getAllConfigurations();
+      const syncConfigCount = restoredSyncConfigs.length;
+
+      if (syncConfigCount > 0) {
+        console.log(`✅ Restored ${syncConfigCount} sync configuration(s)`);
+      }
 
       return {
         success: true,
@@ -1983,7 +2057,9 @@ export function registerUserDataIPCHandlers(): void {
           statementsExecuted: executedCount,
           errorCount,
           errors: errors.slice(0, 10), // Return first 10 errors
-          tablesRegistered: metadataCreatedCount,
+          tablesWithMetadata: metadataFoundCount,
+          tablesCreated: metadataCreatedCount,
+          syncConfigsRestored: syncConfigCount,
         },
       };
     } catch (error) {
