@@ -69,6 +69,33 @@ export class FileWatcherService {
   }
 
   /**
+   * Reload and start watchers for any new configurations
+   * Useful after importing sync configs from SQL
+   */
+  public async reload(): Promise<void> {
+    console.log('🔄 Reloading File Watcher Service...');
+
+    // Get all auto-sync enabled configurations
+    const configs = this.syncConfigManager.getAutoSyncConfigurations();
+    let newWatchersStarted = 0;
+
+    for (const config of configs) {
+      // Only start watcher if not already watching
+      if (!this.watchers.has(config.id)) {
+        try {
+          await this.startWatcher(config.id);
+          newWatchersStarted++;
+        } catch (error) {
+          console.error(`Failed to start watcher for config ${config.id}:`, error);
+        }
+      }
+    }
+
+    this.isInitialized = true;
+    console.log(`✅ File Watcher Service reloaded: ${newWatchersStarted} new watcher(s) started, ${this.watchers.size} total active`);
+  }
+
+  /**
    * Start watching a folder for a specific configuration
    */
   public async startWatcher(configId: string): Promise<void> {
