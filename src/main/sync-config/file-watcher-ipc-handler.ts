@@ -133,4 +133,32 @@ export function registerFileWatcherIPCHandlers(): void {
       };
     }
   });
+
+  /**
+   * Refresh file watchers after SQL import
+   * This reloads sync configurations and starts watchers for any new configs
+   */
+  ipcMain.handle('file-watcher:refresh-after-import', async () => {
+    try {
+      const service = FileWatcherService.getInstance();
+      await service.reload();
+
+      const status = service.getWatcherStatus();
+
+      return {
+        success: true,
+        message: 'File watchers refreshed after SQL import',
+        data: {
+          activeWatchers: status.length,
+          watchers: status,
+        },
+      };
+    } catch (error) {
+      console.error('Error refreshing file watchers after import:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to refresh file watchers',
+      };
+    }
+  });
 }

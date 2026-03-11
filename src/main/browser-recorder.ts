@@ -6551,16 +6551,32 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
 
             if (hasRole && action.ariaLabel) {
               // Strategy 1: getByRole with aria-label
+              const escapedAriaLabel = action.ariaLabel
+                .replace(/\\/g, '\\\\')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t')
+                .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with aria-label (most reliable)`);
-              lines.push(`      await ${framePrefix}.getByRole('${action.role}', { name: '${action.ariaLabel}' }).click({ timeout: 5000 });`);
+              lines.push(`      await ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' }).click({ timeout: 5000 });`);
             } else if (hasRole && hasText) {
               // Strategy 2: getByRole with text
-              const escapedText = action.innerText.replace(/'/g, "\\'");
+              const escapedText = action.innerText
+                .replace(/\\/g, '\\\\')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t')
+                .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with text (most reliable)`);
               lines.push(`      await ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' }).click({ timeout: 5000 });`);
             } else if (hasText) {
               // Strategy 3: getByText
-              const escapedText = action.innerText.replace(/'/g, "\\'");
+              const escapedText = action.innerText
+                .replace(/\\/g, '\\\\')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t')
+                .replace(/'/g, "\\'");
               lines.push(`      // Try getByText (reliable for text elements)`);
               lines.push(`      await ${framePrefix}.getByText('${escapedText}').click({ timeout: 5000 });`);
             } else {
@@ -6611,19 +6627,19 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           lines.push(``);
           lines.push(`          // If element is gone, hidden, or disabled, stop clicking`);
           lines.push(`          if (!isVisible || !isEnabled) {`);
-          lines.push(`            console.log(\`✓ Element is no longer clickable after \${iteration} clicks\`);`);
+          lines.push(`            console.log('✓ Element is no longer clickable after ' + iteration + ' clicks');`);
           lines.push(`            break;`);
           lines.push(`          }`);
           lines.push(``);
           lines.push(`          // Click the element`);
           lines.push(`          await element.click();`);
-          lines.push(`          console.log(\`Clicked element (iteration \${iteration + 1})\`);`);
+          lines.push(`          console.log('Clicked element (iteration ' + (iteration + 1) + ')');`);
           lines.push(`          iteration++;`);
           lines.push(``);
           lines.push(`          // Wait before next click (allows time for loading/processing)`);
           lines.push(`          await page.waitForTimeout(waitBetweenClicks);`);
           lines.push(`        } catch (error) {`);
-          lines.push(`          console.log(\`Element no longer found or clickable after \${iteration} clicks\`);`);
+          lines.push(`          console.log('Element no longer found or clickable after ' + iteration + ' clicks');`);
           lines.push(`          break;`);
           lines.push(`        }`);
           lines.push(`      }`);
@@ -6663,7 +6679,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(``);
             lines.push(`      // Verify temp file exists`);
             lines.push(`      if (!fs.existsSync(tempPath)) {`);
-            lines.push(`        throw new Error(\\\`Temp file not found: \\\${tempPath}\\\`);`);
+            lines.push(`        throw new Error('Temp file not found: ' + tempPath);`);
             lines.push(`      }`);
             lines.push(``);
             lines.push(`      const tempStats = fs.statSync(tempPath);`);
@@ -6674,7 +6690,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`      let lastError = null;`);
             lines.push(`      for (let attempt = 1; attempt <= 3; attempt++) {`);
             lines.push(`        try {`);
-            lines.push(`          console.log(\\\`📋 Copy attempt \\\${attempt} of 3...\\\`);`);
+            lines.push(`          console.log('📋 Copy attempt ' + attempt + ' of 3...');`);
             lines.push(``);
             lines.push(`          // Use fs.copyFileSync for more reliable Windows support`);
             lines.push(`          fs.copyFileSync(tempPath, finalPath);`);
@@ -6696,7 +6712,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`          }`);
             lines.push(`        } catch (err) {`);
             lines.push(`          lastError = err;`);
-            lines.push(`          console.log(\\\`⚠️ Copy attempt \\\${attempt} failed:\\\`, err.message);`);
+            lines.push(`          console.log('⚠️ Copy attempt ' + attempt + ' failed:', err.message);`);
             lines.push(`          if (attempt < 3) {`);
             lines.push(`            await page.waitForTimeout(1000);`);
             lines.push(`          }`);
@@ -6704,7 +6720,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             lines.push(`      }`);
             lines.push(``);
             lines.push(`      if (!copySuccess) {`);
-            lines.push(`        throw new Error(\\\`File copy failed after 3 attempts: \\\${lastError?.message}\\\`);`);
+            lines.push(`        throw new Error('File copy failed after 3 attempts: ' + (lastError?.message || 'Unknown error'));`);
             lines.push(`      }`);
             lines.push(`    } catch (error) {`);
             lines.push(`      console.error('⚠️ Download wait timed out or failed:', error.message);`);
