@@ -509,22 +509,49 @@ class NHCardAutomator extends BaseBankAutomator {
           continue;
         }
 
-        // Map row to object using headers
-        const transaction = {};
+        // Map row to base object using headers
+        const baseTransaction = {};
         headers.forEach((header, index) => {
           const value = row[index];
-          transaction[header] = value !== undefined && value !== null ? value : '';
+          baseTransaction[header] = value !== undefined && value !== null ? value : '';
         });
 
-        transactions.push(transaction);
+        // Extract amounts
+        const domesticAmount = baseTransaction['국내이용금액(원)'];
+        const cancellationAmount = baseTransaction['취소금액'];
 
-        // Extract amount for total - use "국내이용금액(원)" column
-        const amountValue = transaction['국내이용금액(원)'];
-        if (amountValue !== undefined && amountValue !== null && amountValue !== '') {
-          const amount = parseFloat(String(amountValue).replace(/[^\d.-]/g, ''));
-          if (!isNaN(amount)) {
-            totalAmount += amount;
-          }
+        // Parse domestic usage amount
+        let domesticAmountValue = 0;
+        if (domesticAmount !== undefined && domesticAmount !== null && domesticAmount !== '') {
+          domesticAmountValue = parseFloat(String(domesticAmount).replace(/[^\d.-]/g, ''));
+        }
+
+        // Parse cancellation amount
+        let cancellationAmountValue = 0;
+        if (cancellationAmount !== undefined && cancellationAmount !== null && cancellationAmount !== '') {
+          cancellationAmountValue = parseFloat(String(cancellationAmount).replace(/[^\d.-]/g, ''));
+        }
+
+        // Create transaction for domestic usage amount
+        if (!isNaN(domesticAmountValue) && domesticAmountValue !== 0) {
+          const domesticTransaction = {
+            ...baseTransaction,
+            transactionType: 'usage',
+            amount: domesticAmountValue
+          };
+          transactions.push(domesticTransaction);
+          totalAmount += domesticAmountValue;
+        }
+
+        // Create separate transaction for cancellation amount
+        if (!isNaN(cancellationAmountValue) && cancellationAmountValue !== 0) {
+          const cancellationTransaction = {
+            ...baseTransaction,
+            transactionType: 'cancellation',
+            amount: -cancellationAmountValue // Negative to indicate refund
+          };
+          transactions.push(cancellationTransaction);
+          totalAmount += -cancellationAmountValue;
         }
       }
 

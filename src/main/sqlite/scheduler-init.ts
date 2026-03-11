@@ -60,8 +60,8 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
       skip_reason TEXT,
       error_message TEXT,
       retry_count INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime')),
 
       UNIQUE(scheduler_type, task_id, intended_date)
     )
@@ -81,7 +81,7 @@ export function initializeSchedulerDatabaseSchema(db: Database.Database): void {
     CREATE TRIGGER IF NOT EXISTS update_intents_timestamp
     AFTER UPDATE ON scheduler_execution_intents
     BEGIN
-      UPDATE scheduler_execution_intents SET updated_at = datetime('now') WHERE id = NEW.id;
+      UPDATE scheduler_execution_intents SET updated_at = datetime('now', 'localtime') WHERE id = NEW.id;
     END
   `);
 

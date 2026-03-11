@@ -179,7 +179,7 @@ export function registerSchedulerRecoveryHandlers(): void {
             actual_execution_id = NULL,
             actual_started_at = NULL,
             actual_completed_at = NULL,
-            updated_at = datetime('now')
+            updated_at = datetime('now', 'localtime')
         WHERE intended_date >= ?
           AND status IN ('completed', 'failed')
           ${options?.schedulerType ? 'AND scheduler_type = ?' : ''}

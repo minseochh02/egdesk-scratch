@@ -149,7 +149,7 @@ export class SyncConfigManager {
    */
   getEnabledConfigurations(): SyncConfiguration[] {
     const stmt = this.database.prepare(`
-      SELECT * FROM sync_configurations WHERE enabled = true ORDER BY created_at DESC
+      SELECT * FROM sync_configurations WHERE enabled = 1 ORDER BY created_at DESC
     `);
     const rows = stmt.all() as any[];
 
@@ -161,7 +161,7 @@ export class SyncConfigManager {
    */
   getAutoSyncConfigurations(): SyncConfiguration[] {
     const stmt = this.database.prepare(`
-      SELECT * FROM sync_configurations WHERE enabled = true AND auto_sync_enabled = true
+      SELECT * FROM sync_configurations WHERE enabled = 1 AND auto_sync_enabled = 1
     `);
     const rows = stmt.all() as any[];
 
