@@ -3918,10 +3918,13 @@ export class BrowserRecorder {
         // Elements in modals/dialogs get disconnected immediately after click handlers run
         console.log('⚡ Capturing selectors synchronously while element is connected...');
 
-        // Generate XPath immediately
-        const capturedXPath = generateXPath(target);
+        // Capture accessibility attributes for getByRole/getByText (Priority 1)
+        const role = target.getAttribute('role') || target.tagName.toLowerCase();
+        const ariaLabel = target.getAttribute('aria-label') || '';
+        const innerText = target.innerText?.trim() || '';
+        const textContent = target.textContent?.trim() || '';
 
-        // Generate CSS selector immediately (simplified version)
+        // Generate CSS selector (Priority 2)
         let capturedSelector = '';
         if (target.id) {
           const elementsWithSameId = document.querySelectorAll(`[id="${target.id}"]`);
@@ -3966,11 +3969,8 @@ export class BrowserRecorder {
           capturedSelector = target.tagName.toLowerCase();
         }
 
-        // Capture accessibility attributes for getByRole/getByText fallbacks
-        const role = target.getAttribute('role') || target.tagName.toLowerCase();
-        const ariaLabel = target.getAttribute('aria-label') || '';
-        const innerText = target.innerText?.trim() || '';
-        const textContent = target.textContent?.trim() || '';
+        // Generate XPath (Priority 3 - last resort fallback)
+        const capturedXPath = generateXPath(target);
 
         const capturedData = {
           selector: capturedSelector,
@@ -3984,7 +3984,7 @@ export class BrowserRecorder {
           ariaLabel: ariaLabel
         };
 
-        console.log('✅ Selectors captured:', { selector: capturedSelector, xpath: capturedXPath, role, ariaLabel, text: innerText });
+        console.log('✅ Selectors captured (priority order):', { role, ariaLabel, text: innerText, selector: capturedSelector, xpath: capturedXPath });
 
         // Mark this event as processed immediately
         processedClicks.set(e, true);
@@ -6558,7 +6558,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/\t/g, '\\t')
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with aria-label (most reliable)`);
-              lines.push(`      await ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' }).click({ timeout: 5000 });`);
+              lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' });`);
+              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.click({ timeout: 5000 });`);
             } else if (hasRole && hasText) {
               // Strategy 2: getByRole with text
               const escapedText = action.innerText
@@ -6568,7 +6570,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/\t/g, '\\t')
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with text (most reliable)`);
-              lines.push(`      await ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' }).click({ timeout: 5000 });`);
+              lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' });`);
+              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.click({ timeout: 5000 });`);
             } else if (hasText) {
               // Strategy 3: getByText
               const escapedText = action.innerText
@@ -6578,11 +6582,15 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/\t/g, '\\t')
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByText (reliable for text elements)`);
-              lines.push(`      await ${framePrefix}.getByText('${escapedText}').click({ timeout: 5000 });`);
+              lines.push(`      const locator = ${framePrefix}.getByText('${escapedText}');`);
+              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.click({ timeout: 5000 });`);
             } else {
               // Strategy 4: CSS Selector
               lines.push(`      // Try CSS selector`);
-              lines.push(`      await ${framePrefix}.locator('${action.selector}').click({ timeout: 5000 });`);
+              lines.push(`      const locator = ${framePrefix}.locator('${action.selector}');`);
+              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.click({ timeout: 5000 });`);
             }
 
             lines.push(`    } catch (error) {`);
@@ -6591,17 +6599,23 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               // If we tried semantic selectors, fallback to CSS
               lines.push(`      console.log('⚠️ Semantic selector failed, trying CSS selector...');`);
               lines.push(`      try {`);
-              lines.push(`        await ${framePrefix}.locator('${action.selector}').click({ timeout: 5000 });`);
+              lines.push(`        const fallbackLocator = ${framePrefix}.locator('${action.selector}');`);
+              lines.push(`        await fallbackLocator.hover();`);
+              lines.push(`        await fallbackLocator.click({ timeout: 5000 });`);
               if (hasXPath) {
                 lines.push(`      } catch (error2) {`);
                 lines.push(`        console.log('⚠️ CSS selector also failed, trying XPath...');`);
-                lines.push(`        await ${framePrefix}.locator('xpath=${action.xpath}').click(); // XPath last resort`);
+                lines.push(`        const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
+                lines.push(`        await xpathLocator.hover();`);
+                lines.push(`        await xpathLocator.click(); // XPath last resort`);
               }
               lines.push(`      }`);
             } else if (hasXPath) {
               // If we started with CSS, fallback to XPath
               lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
-              lines.push(`      await ${framePrefix}.locator('xpath=${action.xpath}').click();`);
+              lines.push(`      const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
+              lines.push(`      await xpathLocator.hover();`);
+              lines.push(`      await xpathLocator.click();`);
             } else {
               // No fallback available, re-throw
               lines.push(`      throw error; // No fallback available`);
@@ -6739,13 +6753,19 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             if (action.xpath) {
               lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
               lines.push(`      try {`);
-              lines.push(`        await page.locator('${action.selector}').click({ timeout: 10000 });`);
+              lines.push(`        const uploadLocator = page.locator('${action.selector}');`);
+              lines.push(`        await uploadLocator.hover();`);
+              lines.push(`        await uploadLocator.click({ timeout: 10000 });`);
               lines.push(`      } catch (error) {`);
               lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
-              lines.push(`        await page.locator('xpath=${action.xpath}').click();`);
+              lines.push(`        const xpathUploadLocator = page.locator('xpath=${action.xpath}');`);
+              lines.push(`        await xpathUploadLocator.hover();`);
+              lines.push(`        await xpathUploadLocator.click();`);
               lines.push(`      }`);
             } else {
-              lines.push(`      await page.locator('${action.selector}').click();`);
+              lines.push(`      const uploadLocator = page.locator('${action.selector}');`);
+              lines.push(`      await uploadLocator.hover();`);
+              lines.push(`      await uploadLocator.click();`);
             }
             lines.push(`      await page.waitForTimeout(1000);`);
             lines.push(`    }`);
@@ -6772,13 +6792,19 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             if (action.xpath) {
               lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
               lines.push(`      try {`);
-              lines.push(`        await page.locator('${action.selector}').click({ timeout: 10000 });`);
+              lines.push(`        const uploadLocator = page.locator('${action.selector}');`);
+              lines.push(`        await uploadLocator.hover();`);
+              lines.push(`        await uploadLocator.click({ timeout: 10000 });`);
               lines.push(`      } catch (error) {`);
               lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
-              lines.push(`        await page.locator('xpath=${action.xpath}').click();`);
+              lines.push(`        const xpathUploadLocator = page.locator('xpath=${action.xpath}');`);
+              lines.push(`        await xpathUploadLocator.hover();`);
+              lines.push(`        await xpathUploadLocator.click();`);
               lines.push(`      }`);
             } else {
-              lines.push(`      await page.locator('${action.selector}').click();`);
+              lines.push(`      const uploadLocator = page.locator('${action.selector}');`);
+              lines.push(`      await uploadLocator.hover();`);
+              lines.push(`      await uploadLocator.click();`);
             }
             lines.push(`      `);
             lines.push(`      // Wait for file chooser to be handled`);

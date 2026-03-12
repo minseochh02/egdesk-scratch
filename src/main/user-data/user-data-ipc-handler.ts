@@ -2,6 +2,7 @@ import { ipcMain, dialog, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
+import os from 'os';
 import * as XLSX from 'xlsx';
 import { getSQLiteManager } from '../sqlite/manager';
 import {
@@ -25,6 +26,32 @@ import { GeminiEmbeddingService } from '../embeddings/gemini-embedding-service';
  */
 
 import { registerUpdateTableDuplicateSettingsHandler } from './update-table-duplicate-settings-ipc';
+
+/**
+ * Convert absolute path to relative path with ~ for portability
+ * @param absolutePath - Absolute file path
+ * @returns Relative path with ~ (e.g., ~/Downloads/EGDesk-Browser/...)
+ */
+function makePathPortable(absolutePath: string): string {
+  const homeDir = os.homedir();
+  if (absolutePath.startsWith(homeDir)) {
+    return absolutePath.replace(homeDir, '~');
+  }
+  return absolutePath;
+}
+
+/**
+ * Expand ~ in path to OS-specific home directory
+ * @param portablePath - Path with ~ (e.g., ~/Downloads/EGDesk-Browser/...)
+ * @returns Absolute path for current OS and user
+ */
+function expandPortablePath(portablePath: string): string {
+  if (portablePath.startsWith('~')) {
+    const homeDir = os.homedir();
+    return portablePath.replace('~', homeDir);
+  }
+  return portablePath;
+}
 
 /**
  * Register User Data IPC Handlers
@@ -1602,7 +1629,19 @@ export function registerUserDataIPCHandlers(): void {
       const db = manager.getUserDataDatabase();
 
       // Get all user tables
-      const tables = userDataManager.getAllTables();
+      const allTables = userDataManager.getAllTables();
+
+      // Filter out system tables that should not be exported
+      const systemTables = [
+        'sync_configurations',
+        'sync_activity_log',
+        'user_data_embeddings',
+        'user_data_embedding_metadata',
+        'import_operations',
+        'user_tables'
+      ];
+
+      const tables = allTables.filter(table => !systemTables.includes(table.tableName));
 
       if (tables.length === 0) {
         return {
@@ -1616,7 +1655,7 @@ export function registerUserDataIPCHandlers(): void {
       let sqlContent = `-- User Database SQL Export
 -- Generated: ${new Date().toISOString()}
 -- Tables: ${tables.length}
--- Total Rows: ${tables.reduce((sum, t) => sum + t.rowCount, 0)}
+-- Total Rows: ${tables.reduce((sum, t) => sum + (t.rowCount || 0), 0)}
 
 -- IMPORTANT: This export includes metadata for table display names and settings.
 -- Import this file to restore tables with their original names and configurations.
@@ -1642,8 +1681,10 @@ export function registerUserDataIPCHandlers(): void {
           : 'NULL';
 
         const schemaJson = `'${JSON.stringify(table.schema).replace(/'/g, "''")}'`;
+        const rowCount = table.rowCount !== undefined && table.rowCount !== null ? table.rowCount : 0;
+        const columnCount = table.columnCount !== undefined && table.columnCount !== null ? table.columnCount : 0;
 
-        sqlContent += `INSERT INTO user_tables (id, table_name, display_name, description, created_from_file, row_count, column_count, created_at, updated_at, schema_json, unique_key_columns, duplicate_action, has_imported_at_column) VALUES ('${table.id}', '${table.tableName}', '${table.displayName.replace(/'/g, "''")}', ${description}, ${createdFromFile}, ${table.rowCount}, ${table.columnCount}, '${table.createdAt}', '${table.updatedAt}', ${schemaJson}, ${uniqueKeyColumns}, '${table.duplicateAction || 'skip'}', ${table.hasImportedAtColumn ? 1 : 0});\n`;
+        sqlContent += `INSERT INTO user_tables (id, table_name, display_name, description, created_from_file, row_count, column_count, created_at, updated_at, schema_json, unique_key_columns, duplicate_action, has_imported_at_column) VALUES ('${table.id}', '${table.tableName}', '${table.displayName.replace(/'/g, "''")}', ${description}, ${createdFromFile}, ${rowCount}, ${columnCount}, '${table.createdAt}', '${table.updatedAt}', ${schemaJson}, ${uniqueKeyColumns}, '${table.duplicateAction || 'skip'}', ${table.hasImportedAtColumn ? 1 : 0});\n`;
       }
 
       sqlContent += `\n`;
@@ -1671,7 +1712,10 @@ export function registerUserDataIPCHandlers(): void {
           const lastSyncStatus = config.lastSyncStatus ? `'${config.lastSyncStatus}'` : 'NULL';
           const lastSyncError = config.lastSyncError ? `'${config.lastSyncError.replace(/'/g, "''")}'` : 'NULL';
 
-          sqlContent += `INSERT INTO sync_configurations (id, script_folder_path, script_name, folder_name, target_table_id, header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits, file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action, last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates, last_sync_error, created_at, updated_at) VALUES ('${config.id}', '${config.scriptFolderPath.replace(/'/g, "''")}', '${config.scriptName.replace(/'/g, "''")}', '${config.folderName.replace(/'/g, "''")}', '${config.targetTableId}', ${config.headerRow}, ${config.skipBottomRows}, ${config.sheetIndex}, ${columnMappings}, ${appliedSplits}, '${config.fileAction}', ${config.enabled ? 1 : 0}, ${config.autoSyncEnabled ? 1 : 0}, ${uniqueKeyColumns}, '${config.duplicateAction || 'skip'}', ${lastSyncAt}, ${lastSyncStatus}, ${config.lastSyncRowsImported}, ${config.lastSyncRowsSkipped}, ${config.lastSyncDuplicates}, ${lastSyncError}, '${config.createdAt}', '${config.updatedAt}');\n`;
+          // Convert absolute path to portable path with ~ for cross-platform compatibility
+          const portablePath = makePathPortable(config.scriptFolderPath);
+
+          sqlContent += `INSERT INTO sync_configurations (id, script_folder_path, script_name, folder_name, target_table_id, header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits, file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action, last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates, last_sync_error, created_at, updated_at) VALUES ('${config.id}', '${portablePath.replace(/'/g, "''")}', '${config.scriptName.replace(/'/g, "''")}', '${config.folderName.replace(/'/g, "''")}', '${config.targetTableId}', ${config.headerRow}, ${config.skipBottomRows}, ${config.sheetIndex}, ${columnMappings}, ${appliedSplits}, '${config.fileAction}', ${config.enabled ? 1 : 0}, ${config.autoSyncEnabled ? 1 : 0}, ${uniqueKeyColumns}, '${config.duplicateAction || 'skip'}', ${lastSyncAt}, ${lastSyncStatus}, ${config.lastSyncRowsImported}, ${config.lastSyncRowsSkipped}, ${config.lastSyncDuplicates}, ${lastSyncError}, '${config.createdAt}', '${config.updatedAt}');\n`;
         }
 
         sqlContent += `\n`;
@@ -1924,13 +1968,33 @@ export function registerUserDataIPCHandlers(): void {
 
       console.log(`   📝 Found ${statements.length} SQL statement(s)`);
 
+      // Preprocess statements to expand portable paths (~) in sync_configurations
+      const processedStatements = statements.map(statement => {
+        // Check if this is an INSERT into sync_configurations
+        if (statement.toUpperCase().includes('INSERT INTO SYNC_CONFIGURATIONS') ||
+            statement.toUpperCase().includes('INSERT INTO "SYNC_CONFIGURATIONS"')) {
+          // Extract script_folder_path value and expand portable path
+          // Match pattern: script_folder_path, ... VALUES ('...', '~/...', ...)
+          const pathMatch = statement.match(/VALUES\s*\([^)]*?'([^']*)',\s*'(~[^']*)',/);
+          if (pathMatch && pathMatch[2]) {
+            const portablePath = pathMatch[2];
+            const expandedPath = expandPortablePath(portablePath);
+            // Replace the portable path with expanded path
+            const processedStatement = statement.replace(portablePath, expandedPath.replace(/\\/g, '\\\\'));
+            console.log(`   🔄 Expanded path: ${portablePath} → ${expandedPath}`);
+            return processedStatement;
+          }
+        }
+        return statement;
+      });
+
       let executedCount = 0;
       let errorCount = 0;
       const errors: string[] = [];
 
       // Execute statements in a transaction
       const transaction = db.transaction(() => {
-        for (const statement of statements) {
+        for (const statement of processedStatements) {
           try {
             db.exec(statement);
             executedCount++;
@@ -2047,6 +2111,33 @@ export function registerUserDataIPCHandlers(): void {
 
       if (syncConfigCount > 0) {
         console.log(`✅ Restored ${syncConfigCount} sync configuration(s)`);
+
+        // Ensure folders exist for all sync configurations
+        console.log(`📁 Checking sync configuration folders...`);
+        const fsSync = await import('fs');
+        let foldersCreated = 0;
+        let foldersExisting = 0;
+        const missingFolders: string[] = [];
+
+        for (const config of restoredSyncConfigs) {
+          const folderPath = config.scriptFolderPath;
+          try {
+            if (fsSync.existsSync(folderPath)) {
+              foldersExisting++;
+              console.log(`   ✅ Folder exists: ${folderPath}`);
+            } else {
+              // Create folder
+              fsSync.mkdirSync(folderPath, { recursive: true });
+              foldersCreated++;
+              console.log(`   📁 Created folder: ${folderPath}`);
+            }
+          } catch (folderError) {
+            missingFolders.push(folderPath);
+            console.error(`   ❌ Could not create folder: ${folderPath}`, folderError);
+          }
+        }
+
+        console.log(`📁 Folders: ${foldersExisting} existing, ${foldersCreated} created${missingFolders.length > 0 ? `, ${missingFolders.length} failed` : ''}`);
 
         // Reload file watcher service to start watchers for restored configs
         try {
