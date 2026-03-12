@@ -30,8 +30,8 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
       file_action TEXT DEFAULT 'archive' CHECK(file_action IN ('keep', 'archive', 'delete')),
       
       -- Auto-sync settings
-      enabled BOOLEAN DEFAULT true,
-      auto_sync_enabled BOOLEAN DEFAULT true,
+      enabled BOOLEAN DEFAULT 1,
+      auto_sync_enabled BOOLEAN DEFAULT 1,
       
       -- Duplicate detection
       unique_key_columns TEXT,
