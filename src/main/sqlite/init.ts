@@ -232,6 +232,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     }
 
     // =============================================
+    // Migration 013: Fix BOOLEAN DEFAULT values
+    // =============================================
+    try {
+      const { migrate013FixBooleanDefaults } = await import('./migrations/013-fix-boolean-defaults');
+      migrate013FixBooleanDefaults(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 013 error:', migrationError.message);
+    }
+
+    // =============================================
     // NOTE: transaction_datetime migration handled by migration 006
     // =============================================
     // Migration 006 (006-combine-datetime.ts) handles:
