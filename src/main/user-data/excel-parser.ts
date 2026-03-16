@@ -1300,6 +1300,26 @@ export function validateExcelFile(filePath: string): { valid: boolean; error?: s
 }
 
 /**
+ * Validate file (Excel or CSV) before parsing
+ */
+export function validateFile(filePath: string): { valid: boolean; error?: string; fileType?: 'excel' | 'csv' } {
+  const ext = path.extname(filePath).toLowerCase();
+
+  if (['.xlsx', '.xls', '.xlsm'].includes(ext)) {
+    return { valid: true, fileType: 'excel' };
+  }
+
+  if (ext === '.csv') {
+    return { valid: true, fileType: 'csv' };
+  }
+
+  return {
+    valid: false,
+    error: 'Invalid file format. Only .xlsx, .xls, .xlsm, and .csv files are supported.',
+  };
+}
+
+/**
  * Get sheet names from Excel file
  */
 export async function getSheetNames(filePath: string): Promise<string[]> {

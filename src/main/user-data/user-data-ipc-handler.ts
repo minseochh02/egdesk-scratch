@@ -8,10 +8,12 @@ import { getSQLiteManager } from '../sqlite/manager';
 import {
   parseExcelFile,
   validateExcelFile,
+  validateFile,
   sanitizeTableName,
   sanitizeColumnName,
   mergeIslands,
 } from './excel-parser';
+import { parseCSVFile, validateCSVFile } from './csv-parser';
 import { ExcelImportConfig, ColumnSchema, DataIsland } from './types';
 import {
   autoDetectUniqueKeyColumns,
@@ -122,16 +124,17 @@ export function registerUserDataIPCHandlers(): void {
   });
 
   /**
-   * Parse Excel file and return preview data
+   * Parse Excel or CSV file and return preview data
    */
   ipcMain.handle('user-data:parse-excel', async (event, filePath: string, options?: {
     headerRow?: number;
     skipRows?: number;
     skipBottomRows?: number;
+    delimiter?: string; // For CSV files
   }) => {
     try {
-      // Validate file
-      const validation = validateExcelFile(filePath);
+      // Validate file (supports both Excel and CSV)
+      const validation = validateFile(filePath);
       if (!validation.valid) {
         return {
           success: false,
@@ -139,36 +142,59 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Parse Excel file with options
-      const parsedData = await parseExcelFile(filePath, options);
+      // Parse file based on type
+      let parsedData;
+      if (validation.fileType === 'csv') {
+        parsedData = await parseCSVFile(filePath, options);
+      } else {
+        parsedData = await parseExcelFile(filePath, options);
+      }
 
       return {
         success: true,
         data: parsedData,
       };
     } catch (error) {
-      console.error('Error parsing Excel file:', error);
+      console.error('Error parsing file:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to parse Excel file',
+        error: error instanceof Error ? error.message : 'Failed to parse file',
       };
     }
   });
 
   /**
-   * Import Excel data to create a new table
+   * Import Excel or CSV data to create a new table
    */
   ipcMain.handle('user-data:import-excel', async (event, config: ExcelImportConfig) => {
     try {
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
 
-      // Parse Excel file again to get the data (with any parsing options)
-      const parsedData = await parseExcelFile(config.filePath, {
-        headerRow: config.headerRow,
-        skipRows: config.skipRows,
-        skipBottomRows: config.skipBottomRows,
-      });
+      // Validate file type
+      const validation = validateFile(config.filePath);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+        };
+      }
+
+      // Parse file again to get the data (with any parsing options)
+      let parsedData;
+      if (validation.fileType === 'csv') {
+        parsedData = await parseCSVFile(config.filePath, {
+          headerRow: config.headerRow,
+          skipRows: config.skipRows,
+          skipBottomRows: config.skipBottomRows,
+        });
+      } else {
+        parsedData = await parseExcelFile(config.filePath, {
+          headerRow: config.headerRow,
+          skipRows: config.skipRows,
+          skipBottomRows: config.skipBottomRows,
+        });
+      }
 
       if (config.sheetIndex < 0 || config.sheetIndex >= parsedData.sheets.length) {
         return {
@@ -1252,8 +1278,8 @@ export function registerUserDataIPCHandlers(): void {
         properties: ['openFile'],
         filters: [
           {
-            name: 'Excel Files',
-            extensions: ['xlsx', 'xls', 'xlsm'],
+            name: 'Excel and CSV Files',
+            extensions: ['xlsx', 'xls', 'xlsm', 'csv'],
           },
         ],
       });
@@ -1269,7 +1295,7 @@ export function registerUserDataIPCHandlers(): void {
       const fileName = path.basename(filePath);
 
       // Validate file
-      const validation = validateExcelFile(filePath);
+      const validation = validateFile(filePath);
       if (!validation.valid) {
         return {
           success: false,
@@ -1277,8 +1303,13 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      // Parse Excel file
-      const parsedData = await parseExcelFile(filePath);
+      // Parse file based on type
+      let parsedData;
+      if (validation.fileType === 'csv') {
+        parsedData = await parseCSVFile(filePath);
+      } else {
+        parsedData = await parseExcelFile(filePath);
+      }
 
       console.log(`📦 Importing ${parsedData.sheets.length} sheet(s) from "${fileName}"...`);
 
