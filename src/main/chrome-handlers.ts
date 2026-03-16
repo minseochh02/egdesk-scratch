@@ -3833,7 +3833,7 @@ const { chromium } = require('playwright-core');
             const files = fs.readdirSync(scriptFolderPath);
             const stats = fs.statSync(scriptFolderPath);
             
-            // Count Excel files
+            // Count Excel and CSV files
             let excelFileCount = 0;
             let totalSize = 0;
             let latestModified = stats.mtime;
@@ -3847,7 +3847,7 @@ const { chromium } = require('playwright-core');
                   if (fileStats.mtime > latestModified) {
                     latestModified = fileStats.mtime;
                   }
-                  if (/\.(xlsx?|xlsm|xls)$/i.test(filename)) {
+                  if (/\.(xlsx?|xlsm|xls|csv)$/i.test(filename)) {
                     excelFileCount++;
                   }
                 }
@@ -3872,7 +3872,7 @@ const { chromium } = require('playwright-core');
               .map(word => word.charAt(0).toUpperCase() + word.slice(1))
               .join(' ');
 
-            // Only include folders that have at least one Excel file
+            // Only include folders that have at least one Excel or CSV file
             if (excelFileCount > 0) {
               folderList.push({
                 scriptName: scriptName,

@@ -139,6 +139,7 @@ export class TunnelClient {
   private registrationId: string | null = null;
   private activeStreamRequests: Map<string, http.ClientRequest> = new Map();
   private authToken: string | null = null;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(config: TunnelConfig) {
     this.config = {
@@ -196,6 +197,11 @@ export class TunnelClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
 
     if (this.ws) {
@@ -587,6 +593,9 @@ export class TunnelClient {
         this.connectionLog.push(`[open] WebSocket connected successfully`);
         console.log(`✅ [tunnel-client] WebSocket connected to ${wsUrl}`);
         this.lastError = null;
+        
+        // Start client-side heartbeat to keep the connection alive
+        this.startHeartbeat();
       });
 
       // Handle incoming messages
@@ -625,14 +634,17 @@ export class TunnelClient {
             console.log(`📨 Received request: ${request.method} ${request.path}`);
             await this.handleRequest(request);
           } else if (message.type === 'ping') {
-            // Respond to heartbeat ping
-            console.log(`💓 Received heartbeat ping`);
+            // Respond to heartbeat ping from server
+            console.log(`💓 Received heartbeat ping from server`);
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
               this.ws.send(JSON.stringify({
                 type: 'pong',
-                timestamp: message.timestamp
+                timestamp: message.timestamp || new Date().toISOString()
               }));
             }
+          } else if (message.type === 'pong') {
+            // Received response to our ping
+            console.log(`💓 Heartbeat acknowledged by server`);
           } else if (message.type === 'stream_cancel') {
             // Client disconnected from SSE stream - cancel the request
             const requestId = message.request_id;
@@ -657,6 +669,10 @@ export class TunnelClient {
         if (!this.lastError) {
           this.lastError = `WebSocket closed: code=${code}, reason=${reasonStr}`;
         }
+        
+        // Stop heartbeats
+        this.stopHeartbeat();
+        
         this.ws = null;
         this.publicUrl = null;
         this.tunnelId = null;
@@ -687,15 +703,47 @@ export class TunnelClient {
         console.error(`❌ [tunnel-client] WebSocket error: ${errorMsg}`);
         this.lastError = errorMsg;
         this.isConnecting = false;
+        
+        // Stop heartbeats on error
+        this.stopHeartbeat();
       });
 
     } catch (error) {
       console.error('Error connecting to tunnel:', error);
       this.ws = null;
       this.isConnecting = false;
+      this.stopHeartbeat();
       if (this.shouldReconnect) {
         this.scheduleReconnect();
       }
+    }
+  }
+
+  /**
+   * Start periodic heartbeat to keep the connection alive
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat(); // Clear any existing timer
+    
+    console.log(`💓 Starting client-side heartbeat (25s interval)`);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        console.log(`💓 Sending heartbeat ping to server...`);
+        this.ws.send(JSON.stringify({
+          type: 'ping',
+          timestamp: new Date().toISOString()
+        }));
+      }
+    }, 25000); // 25 seconds (slightly less than the server's 30s)
+  }
+
+  /**
+   * Stop the heartbeat timer
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 

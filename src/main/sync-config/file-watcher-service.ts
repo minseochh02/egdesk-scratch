@@ -2,14 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { FSWatcher } from 'fs';
 import { SyncConfigManager } from './sync-config-manager';
-import { parseExcelFile } from '../user-data/excel-parser';
+import { parseExcelFile, validateFile } from '../user-data/excel-parser';
+import { parseCSVFile } from '../user-data/csv-parser';
 import { getSQLiteManager } from '../sqlite/manager';
 
 /**
  * File Watcher Service for Auto-Sync
  *
  * Monitors browser automation download folders and automatically imports
- * new Excel files based on saved sync configurations.
+ * new Excel and CSV files based on saved sync configurations.
  */
 
 interface WatcherInstance {
@@ -128,7 +129,7 @@ export class FileWatcherService {
     try {
       const existingFiles = fs.readdirSync(config.scriptFolderPath);
       existingFiles.forEach((file) => {
-        if (this.isExcelFile(file)) {
+        if (this.isSupportedFile(file)) {
           processedFiles.add(file);
         }
       });
@@ -143,9 +144,10 @@ export class FileWatcherService {
       (eventType, filename) => {
         if (!filename) return;
 
-        // Only process on 'rename' events (file creation/deletion)
-        // 'change' events fire during file write, we want to wait until complete
-        if (eventType === 'rename') {
+        // Process both 'rename' (file creation/deletion) and 'change' (file modification) events
+        // Note: fs.copyFileSync() may trigger 'change' instead of 'rename' on some systems
+        // waitForFileStability() will ensure the file is completely written before processing
+        if (eventType === 'rename' || eventType === 'change') {
           this.handleFileEvent(configId, filename);
         }
       }
@@ -221,8 +223,8 @@ export class FileWatcherService {
       return;
     }
 
-    // Only process Excel files
-    if (!this.isExcelFile(filename)) {
+    // Only process supported files (Excel and CSV)
+    if (!this.isSupportedFile(filename)) {
       return;
     }
 
@@ -326,15 +328,29 @@ export class FileWatcherService {
     console.log(`   Unique key columns:`, config.uniqueKeyColumns);
 
     try {
-      // Parse Excel file
-      const parsedData = await parseExcelFile(filePath, {
-        headerRow: config.headerRow,
-        skipBottomRows: config.skipBottomRows,
-      });
+      // Validate and parse file based on type
+      const validation = validateFile(filePath);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Invalid file format');
+      }
+
+      // Parse file based on type
+      let parsedData;
+      if (validation.fileType === 'csv') {
+        parsedData = await parseCSVFile(filePath, {
+          headerRow: config.headerRow,
+          skipBottomRows: config.skipBottomRows,
+        });
+      } else {
+        parsedData = await parseExcelFile(filePath, {
+          headerRow: config.headerRow,
+          skipBottomRows: config.skipBottomRows,
+        });
+      }
 
       const sheet = parsedData.sheets[config.sheetIndex];
       if (!sheet) {
-        throw new Error(`Sheet index ${config.sheetIndex} not found in Excel file`);
+        throw new Error(`Sheet index ${config.sheetIndex} not found in file`);
       }
 
       // ========================================
@@ -703,11 +719,11 @@ export class FileWatcherService {
   }
 
   /**
-   * Check if file is an Excel file
+   * Check if file is a supported file type (Excel or CSV)
    */
-  private isExcelFile(filename: string): boolean {
+  private isSupportedFile(filename: string): boolean {
     const ext = path.extname(filename).toLowerCase();
-    return ['.xlsx', '.xls', '.xlsm'].includes(ext);
+    return ['.xlsx', '.xls', '.xlsm', '.csv'].includes(ext);
   }
 
   /**

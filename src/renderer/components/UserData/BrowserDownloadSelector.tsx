@@ -35,10 +35,10 @@ export const BrowserDownloadSelector: React.FC<BrowserDownloadSelectorProps> = (
       const result = await (window as any).electron.debug.getPlaywrightDownloads();
 
       if (result.success) {
-        // Filter for Excel files only
+        // Filter for Excel and CSV files
         const excelFiles = result.files.filter((file: BrowserDownloadFile) => {
           const ext = file.name.toLowerCase();
-          return ext.endsWith('.xlsx') || ext.endsWith('.xls') || ext.endsWith('.xlsm');
+          return ext.endsWith('.xlsx') || ext.endsWith('.xls') || ext.endsWith('.xlsm') || ext.endsWith('.csv');
         });
         setFiles(excelFiles);
       } else {
@@ -86,7 +86,7 @@ export const BrowserDownloadSelector: React.FC<BrowserDownloadSelectorProps> = (
         <div className="import-wizard-body">
           <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
-              Select an Excel file downloaded by Browser Recorder
+              Select an Excel or CSV file downloaded by Browser Recorder
             </p>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
@@ -122,9 +122,9 @@ export const BrowserDownloadSelector: React.FC<BrowserDownloadSelectorProps> = (
           {!loading && files.length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-              <p>No Excel files found in Browser Recorder downloads</p>
+              <p>No Excel or CSV files found in Browser Recorder downloads</p>
               <p style={{ fontSize: '14px' }}>
-                Use Browser Recorder to download Excel files, then they'll appear here
+                Use Browser Recorder to download Excel or CSV files, then they'll appear here
               </p>
             </div>
           )}

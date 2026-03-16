@@ -15,7 +15,7 @@ interface BrowserDownloadFolder {
   folderName: string;
   path: string;
   fileCount: number;
-  excelFileCount: number;
+  excelFileCount: number; // Includes both Excel and CSV files
   lastModified: Date;
   size: number;
 }
@@ -78,7 +78,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
       if (result.success) {
         const excelFiles = result.files.filter((file: BrowserDownloadFile) =>
-          /\.(xlsx?|xlsm|xls)$/i.test(file.name)
+          /\.(xlsx?|xlsm|xls|csv)$/i.test(file.name)
         );
         setDownloadFiles(excelFiles);
       } else {
@@ -201,7 +201,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                     <div>
                       <h3 style={{ margin: '0 0 4px 0' }}>🤖 Browser Automation Scripts</h3>
                       <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
-                        Select a browser automation to import its downloaded Excel files
+                        Select a browser automation to import its downloaded Excel or CSV files
                       </p>
                     </div>
                     <button onClick={loadBrowserDownloadFolders} className="btn btn-sm btn-secondary">
@@ -227,7 +227,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                           <div className="browser-download-folder-info">
                             <div className="browser-download-folder-name">{folder.scriptName}</div>
                             <div className="browser-download-folder-meta">
-                              {folder.excelFileCount} Excel file{folder.excelFileCount !== 1 ? 's' : ''} •
+                              {folder.excelFileCount} Excel/CSV file{folder.excelFileCount !== 1 ? 's' : ''} •
                               {folder.fileCount} total file{folder.fileCount !== 1 ? 's' : ''} •
                               {formatFileSize(folder.size)}
                             </div>
@@ -258,15 +258,15 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                   <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
                     <h4 style={{ margin: '0 0 4px 0' }}>🤖 {selectedFolder?.scriptName}</h4>
                     <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
-                      Select an Excel file from this automation's downloads
+                      Select an Excel or CSV file from this automation's downloads
                     </p>
                   </div>
 
                   {downloadFiles.length === 0 ? (
                     <div className="file-selection-zone" style={{ cursor: 'default' }}>
                       <div className="file-selection-icon">📭</div>
-                      <h3>No Excel files in this folder</h3>
-                      <p>This folder doesn't contain any Excel files yet</p>
+                      <h3>No Excel or CSV files in this folder</h3>
+                      <p>This folder doesn't contain any Excel or CSV files yet</p>
                     </div>
                   ) : (
                     <div className="browser-downloads-list">

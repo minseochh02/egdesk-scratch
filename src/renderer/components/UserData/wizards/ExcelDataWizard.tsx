@@ -569,6 +569,14 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       }
 
       // Create sync configuration for browser-sync mode
+      console.log('🔍 [SYNC CONFIG DEBUG] Checking conditions:');
+      console.log('   state.saveAsConfiguration:', state.saveAsConfiguration);
+      console.log('   state.selectedFile:', state.selectedFile);
+      console.log('   scriptFolderPath:', scriptFolderPath);
+      console.log('   scriptName:', scriptName);
+      console.log('   folderName:', folderName);
+      console.log('   isBrowserSync prop:', isBrowserSync);
+
       if (state.saveAsConfiguration && state.selectedFile && scriptFolderPath && scriptName && folderName) {
         try {
           console.log('📝 Creating sync configuration for browser downloads...');

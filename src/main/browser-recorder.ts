@@ -6559,7 +6559,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with aria-label (most reliable)`);
               lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' });`);
-              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.hover({ force: true });`);
               lines.push(`      await locator.click({ timeout: 5000 });`);
             } else if (hasRole && hasText) {
               // Strategy 2: getByRole with text
@@ -6571,7 +6571,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByRole with text (most reliable)`);
               lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' });`);
-              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.hover({ force: true });`);
               lines.push(`      await locator.click({ timeout: 5000 });`);
             } else if (hasText) {
               // Strategy 3: getByText
@@ -6583,13 +6583,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                 .replace(/'/g, "\\'");
               lines.push(`      // Try getByText (reliable for text elements)`);
               lines.push(`      const locator = ${framePrefix}.getByText('${escapedText}');`);
-              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.hover({ force: true });`);
               lines.push(`      await locator.click({ timeout: 5000 });`);
             } else {
               // Strategy 4: CSS Selector
               lines.push(`      // Try CSS selector`);
               lines.push(`      const locator = ${framePrefix}.locator('${action.selector}');`);
-              lines.push(`      await locator.hover();`);
+              lines.push(`      await locator.hover({ force: true });`);
               lines.push(`      await locator.click({ timeout: 5000 });`);
             }
 
@@ -6600,13 +6600,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               lines.push(`      console.log('⚠️ Semantic selector failed, trying CSS selector...');`);
               lines.push(`      try {`);
               lines.push(`        const fallbackLocator = ${framePrefix}.locator('${action.selector}');`);
-              lines.push(`        await fallbackLocator.hover();`);
+              lines.push(`        await fallbackLocator.hover({ force: true });`);
               lines.push(`        await fallbackLocator.click({ timeout: 5000 });`);
               if (hasXPath) {
                 lines.push(`      } catch (error2) {`);
                 lines.push(`        console.log('⚠️ CSS selector also failed, trying XPath...');`);
                 lines.push(`        const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
-                lines.push(`        await xpathLocator.hover();`);
+                lines.push(`        await xpathLocator.hover({ force: true });`);
                 lines.push(`        await xpathLocator.click(); // XPath last resort`);
               }
               lines.push(`      }`);
@@ -6614,7 +6614,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               // If we started with CSS, fallback to XPath
               lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
               lines.push(`      const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
-              lines.push(`      await xpathLocator.hover();`);
+              lines.push(`      await xpathLocator.hover({ force: true });`);
               lines.push(`      await xpathLocator.click();`);
             } else {
               // No fallback available, re-throw
@@ -6754,17 +6754,17 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
               lines.push(`      try {`);
               lines.push(`        const uploadLocator = page.locator('${action.selector}');`);
-              lines.push(`        await uploadLocator.hover();`);
+              lines.push(`        await uploadLocator.hover({ force: true });`);
               lines.push(`        await uploadLocator.click({ timeout: 10000 });`);
               lines.push(`      } catch (error) {`);
               lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
               lines.push(`        const xpathUploadLocator = page.locator('xpath=${action.xpath}');`);
-              lines.push(`        await xpathUploadLocator.hover();`);
+              lines.push(`        await xpathUploadLocator.hover({ force: true });`);
               lines.push(`        await xpathUploadLocator.click();`);
               lines.push(`      }`);
             } else {
               lines.push(`      const uploadLocator = page.locator('${action.selector}');`);
-              lines.push(`      await uploadLocator.hover();`);
+              lines.push(`      await uploadLocator.hover({ force: true });`);
               lines.push(`      await uploadLocator.click();`);
             }
             lines.push(`      await page.waitForTimeout(1000);`);
@@ -6793,17 +6793,17 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               lines.push(`      // Try CSS selector first, fallback to XPath if it fails`);
               lines.push(`      try {`);
               lines.push(`        const uploadLocator = page.locator('${action.selector}');`);
-              lines.push(`        await uploadLocator.hover();`);
+              lines.push(`        await uploadLocator.hover({ force: true });`);
               lines.push(`        await uploadLocator.click({ timeout: 10000 });`);
               lines.push(`      } catch (error) {`);
               lines.push(`        console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
               lines.push(`        const xpathUploadLocator = page.locator('xpath=${action.xpath}');`);
-              lines.push(`        await xpathUploadLocator.hover();`);
+              lines.push(`        await xpathUploadLocator.hover({ force: true });`);
               lines.push(`        await xpathUploadLocator.click();`);
               lines.push(`      }`);
             } else {
               lines.push(`      const uploadLocator = page.locator('${action.selector}');`);
-              lines.push(`      await uploadLocator.hover();`);
+              lines.push(`      await uploadLocator.hover({ force: true });`);
               lines.push(`      await uploadLocator.click();`);
             }
             lines.push(`      `);

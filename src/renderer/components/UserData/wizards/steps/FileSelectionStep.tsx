@@ -35,8 +35,8 @@ export const FileSelectionStep: React.FC<FileSelectionStepProps> = ({
         onClick={onFileSelect}
       >
         <div className="file-selection-icon">📁</div>
-        <h3>Select an Excel File</h3>
-        <p>Click to browse for .xlsx, .xls, or .xlsm files</p>
+        <h3>Select an Excel or CSV File</h3>
+        <p>Click to browse for .xlsx, .xls, .xlsm, or .csv files</p>
       </div>
 
       {selectedFile && parsedData && (
