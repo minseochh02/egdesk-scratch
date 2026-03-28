@@ -985,9 +985,9 @@ export class UserDataDbManager {
 
       // Execute in a transaction
       const transaction = this.database.transaction(() => {
-        // Delete existing data in the date range
+        // Delete existing data in the date range - use DATE() function to handle rows with time components
         const deleteStmt = this.database.prepare(
-          `DELETE FROM "${table.tableName}" WHERE "${primaryDateColumn}" >= ? AND "${primaryDateColumn}" <= ?`
+          `DELETE FROM "${table.tableName}" WHERE DATE("${primaryDateColumn}") >= ? AND DATE("${primaryDateColumn}") <= ?`
         );
         const deletedRows = deleteStmt.run(minDate.toISOString().split('T')[0], maxDate.toISOString().split('T')[0]);
         console.log(`🗑️ Deleted ${deletedRows.changes} existing rows in date range`);
@@ -1109,7 +1109,20 @@ export class UserDataDbManager {
           dateStr = suffixMatch[1];
         }
 
-        const normalized = dateStr.replace(/\//g, '-');
+        // Use slashes for normalization to ensure JS Date treats it as local time
+        // (YYYY-MM-DD is often treated as UTC, while YYYY/MM/DD is local)
+        let normalized = dateStr.replace(/-/g, '/');
+        if (normalized.includes('오전') || normalized.includes('오후')) {
+          const isPM = normalized.includes('오후');
+          const isAM = normalized.includes('오전');
+          // Remove day of week like (월)
+          normalized = normalized.replace(/\([^)]+\)/, '').trim();
+          // Remove Korean AM/PM
+          normalized = normalized.replace('오전', '').replace('오후', '').trim();
+          // Add standard AM/PM at the end for JS Date
+          normalized += isPM ? ' PM' : ' AM';
+        }
+
         dateObj = new Date(normalized);
 
         if (isNaN(dateObj.getTime())) {
@@ -1149,8 +1162,15 @@ export class UserDataDbManager {
       const year = dateObj.getFullYear();
       const month = String(dateObj.getMonth() + 1).padStart(2, '0');
       const day = String(dateObj.getDate()).padStart(2, '0');
+      const hours = String(dateObj.getHours()).padStart(2, '0');
+      const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+      const seconds = String(dateObj.getSeconds()).padStart(2, '0');
 
-      return `${year}-${month}-${day}`;
+      // If time is exactly midnight, store as date only, otherwise store full datetime
+      if (hours === '00' && minutes === '00' && seconds === '00') {
+        return `${year}-${month}-${day}`;
+      }
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     }
     
     // TEXT: convert everything to string and trim
