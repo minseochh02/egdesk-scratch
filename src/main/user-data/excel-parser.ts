@@ -67,16 +67,38 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
   const datePatterns = [
     /^\d{4}-\d{2}-\d{2}$/,          // YYYY-MM-DD
     /^\d{4}\/\d{2}\/\d{2}$/,        // YYYY/MM/DD
+    /^\d{4}\.\d{2}\.\d{2}$/,        // YYYY.MM.DD
     /^\d{2}-\d{2}-\d{4}$/,          // DD-MM-YYYY
     /^\d{2}\/\d{2}\/\d{4}$/,        // DD/MM/YYYY
     /^\d{2}\/\d{2}\/\d{2}$/,        // YY/MM/DD or DD/MM/YY
     /^\d{8}$/,                       // YYYYMMDD
+    // Korean style date/time: "2025/12/22 (월) 오전 9:56:02" or "2025.12.22 (월) 오전 9:56:02"
+    /^\d{4}[/.]\d{2}[/.]\d{2}\s*\([^)]+\)\s*(?:오전|오후)\s*\d{1,2}:\d{2}:\d{2}$/,
     // Date patterns with suffixes (e.g., "26/02/02-1", "2024/01/15-2")
     /^\d{2}\/\d{2}\/\d{2}-\d+$/,    // YY/MM/DD-N
     /^\d{4}\/\d{2}\/\d{2}-\d+$/,    // YYYY/MM/DD-N
     /^\d{2}\/\d{2}\/\d{4}-\d+$/,    // DD/MM/YYYY-N
     /^\d{4}-\d{2}-\d{2}-\d+$/,      // YYYY-MM-DD-N
   ];
+
+  /**
+   * Helper to normalize Korean date strings for JS Date constructor
+   */
+  const normalizeDateValue = (str: string): string => {
+    let normalized = str.trim();
+    // Handle "2025/12/22 (월) 오전 9:56:02"
+    if (normalized.includes('오전') || normalized.includes('오후')) {
+      const isPM = normalized.includes('오후');
+      const isAM = normalized.includes('오전');
+      // Remove day of week like (월)
+      normalized = normalized.replace(/\([^)]+\)/, '').trim();
+      // Remove Korean AM/PM
+      normalized = normalized.replace('오전', '').replace('오후', '').trim();
+      // Add standard AM/PM at the end for JS Date
+      normalized += isPM ? ' PM' : ' AM';
+    }
+    return normalized;
+  };
 
   for (const value of validValues) {
     // Check if it's a Date object (Excel dates)
@@ -136,8 +158,8 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
           const fullYear = year < 100 ? 2000 + year : year;
           date = new Date(fullYear, month - 1, day);
         } else {
-          // Standard date formats
-          date = new Date(dateStr);
+          // Standard date formats - normalize Korean if needed
+          date = new Date(normalizeDateValue(dateStr));
         }
 
         if (date && !isNaN(date.getTime())) {
