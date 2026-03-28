@@ -9,6 +9,37 @@ const XLSX = require('xlsx');
 const { BaseCardAutomator } = require('../../core');
 const { HANA_CARD_INFO, HANA_CARD_CONFIG } = require('./config');
 
+/**
+ * Clean card number by removing company name prefixes and extra whitespace
+ * @param {string} cardNumber - Raw card number from Excel
+ * @returns {string} Cleaned card number
+ */
+function cleanCardNumber(cardNumber) {
+  if (!cardNumber) return '';
+
+  // Remove common card company prefixes
+  const prefixes = [
+    'BC카드',
+    'KB국민카드', 'KB카드',
+    'NH농협카드', 'NH카드',
+    '신한카드',
+    '삼성카드',
+    '현대카드',
+    '롯데카드',
+    '하나카드'
+  ];
+
+  let cleaned = String(cardNumber);
+  for (const prefix of prefixes) {
+    cleaned = cleaned.replace(new RegExp(`^${prefix}\\s*`, 'g'), '');
+  }
+
+  // Remove extra whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
+}
+
 class HanaCardAutomator extends BaseCardAutomator {
   constructor(options = {}) {
     const config = {
@@ -1019,9 +1050,10 @@ class HanaCardAutomator extends BaseCardAutomator {
           // Basic transaction info
           no: row.no,
           dateTime: dateTime,                 // Combined: "2026.03.03 20:30" (for mapper)
+          approvalDate: row.usageDate,         // Alias for usageDate for consistency
           usageDate: row.usageDate,           // 이용일 = 접수일자/승인일자 (raw format)
           usageTime: row.usageTime,           // 이용시간 = 접수시간/승인시간
-          cardNumber: row.cardNumber,
+          cardNumber: cleanCardNumber(row.cardNumber),
           approvalNumber: row.approvalNumber,
 
           // Amounts
@@ -1186,6 +1218,39 @@ class HanaCardAutomator extends BaseCardAutomator {
 
     } catch (error) {
       this.log(`Failed to get transactions: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  /**
+   * Wrapper for manual Excel import for Hana Card
+   * @param {string} filePath - Path to Excel file
+   * @returns {Promise<Object>} Extracted data in standard format
+   */
+  async parseDownloadedExcel(filePath) {
+    this.log(`Parsing downloaded Excel for Hana Card: ${filePath}`);
+
+    try {
+      const transactions = this.parseExcelTransactions(filePath);
+
+      const totalAmount = transactions.reduce((sum, tx) => {
+        return sum + (tx.netAmount || 0);
+      }, 0);
+
+      return {
+        metadata: {
+          bankName: '하나카드',
+          cardName: '하나카드',
+          sourceFile: path.basename(filePath),
+        },
+        summary: {
+          totalCount: transactions.length,
+          totalAmount: totalAmount,
+        },
+        transactions: transactions
+      };
+    } catch (error) {
+      this.log(`Failed to parse Hana Card Excel: ${error.message}`, 'error');
       throw error;
     }
   }

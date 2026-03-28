@@ -37,6 +37,7 @@ class ShinhanCardAutomator extends BaseCardAutomator {
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this.arduino = null;
     this.manualPassword = options.manualPassword ?? false; // Debug mode for manual password entry
+    this.debugPopups = options.debugPopups ?? false; // Debug mode for popup detection
 
     // Ensure output directories exist
     if (!fs.existsSync(this.outputDir)) {
@@ -142,6 +143,21 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
+      // Check for popups after page load
+      // Shinhan Card shows a popup immediately on page load
+      this.log('Checking for initial popups...');
+
+      // Debug mode: show all visible elements
+      if (this.debugPopups) {
+        await this.debugPopupElements(this.page);
+      }
+
+      await this.detectAndHandlePopups(this.page, {
+        waitBeforeCheck: 2000, // Shinhan popup appears quickly
+        retries: 3, // More retries to catch it
+        retryDelay: 1000
+      });
+
       // Step 3: Click ID input field
       this.log('Clicking ID input field...');
       await this.clickElement(this.config.xpaths.idInput);
@@ -195,11 +211,25 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       await this.clickElement(this.config.xpaths.loginButton);
       await this.page.waitForTimeout(this.config.delays.afterLogin);
 
-      // Step 8: Handle post-login popups
-      await this.handlePostLoginPopups();
+      // Step 8: Handle post-login popups (enhanced detection with longer wait)
+      this.log('Checking for post-login popups...');
+
+      // Debug mode: show all visible elements after login
+      if (this.debugPopups) {
+        await this.debugPopupElements(this.page);
+      }
+
+      await this.detectAndHandlePopups(this.page, {
+        waitBeforeCheck: 3000, // Wait 3 seconds for post-login popups
+        retries: 3, // More retries after login
+        retryDelay: 1500
+      });
 
       // Step 9: Start session keep-alive
       this.startSessionKeepAlive();
+
+      // Step 10: Start popup monitoring for the session
+      await this.startPopupMonitoring(this.page);
 
       this.log('Login successful!');
       return {
@@ -230,37 +260,19 @@ class ShinhanCardAutomator extends BaseCardAutomator {
     }
   }
 
-  // ============================================================================
-  // POST-LOGIN POPUP HANDLING
-  // ============================================================================
-
   /**
-   * Handle various popups that may appear after login
+   * Override cleanup to stop popup monitoring
    */
-  async handlePostLoginPopups() {
-    this.log('Checking for post-login popups...');
-
-    const popupSelectors = [
-      '//button[contains(@class, "close")]',
-      '//button[text()="닫기"]',
-      '//a[text()="닫기"]',
-      '//div[@class="popup"]//button',
-      '//button[contains(text(), "확인")]',
-    ];
-
-    for (const selector of popupSelectors) {
-      try {
-        const locator = this.page.locator(`xpath=${selector}`);
-        if (await locator.isVisible({ timeout: 2000 })) {
-          await locator.click();
-          this.log('Closed popup');
-          await this.page.waitForTimeout(1000);
-        }
-      } catch (e) {
-        // Silent failure - popup may not exist
-      }
-    }
+  async cleanup() {
+    await this.stopPopupMonitoring();
+    await super.cleanup();
   }
+
+  // ============================================================================
+  // POST-LOGIN POPUP HANDLING (Legacy - now using enhanced base class method)
+  // ============================================================================
+  // Note: handlePostLoginPopups() has been replaced by detectAndHandlePopups()
+  // from BaseCardAutomator, which provides more comprehensive popup detection
 
   // ============================================================================
   // CARD DISCOVERY
@@ -274,6 +286,9 @@ class ShinhanCardAutomator extends BaseCardAutomator {
   async getCards() {
     try {
       this.log('Navigating to card list...');
+
+      // Check for popups before navigation
+      await this.detectAndHandlePopups(this.page);
 
       // Step 1: Click "보유카드" link (use first match to avoid strict mode violation)
       try {
@@ -407,6 +422,9 @@ class ShinhanCardAutomator extends BaseCardAutomator {
     try {
       this.log('Navigating to transaction history...');
 
+      // Check for popups before navigation
+      await this.detectAndHandlePopups(this.page);
+
       // Step 1: Click "사이트맵 열기" button
       await this.clickElement(this.config.xpaths.sitemapButton);
       await this.page.waitForTimeout(this.config.delays.afterNavigation);
@@ -414,6 +432,9 @@ class ShinhanCardAutomator extends BaseCardAutomator {
       // Step 2: Click "이용내역조회" link from sitemap
       await this.clickElement(this.config.xpaths.transactionHistoryLink);
       await this.page.waitForTimeout(this.config.delays.afterNavigation);
+
+      // Check for popups after navigation
+      await this.detectAndHandlePopups(this.page);
 
       // Step 3: Try to close datepicker popup (defensive - may not exist)
       try {
