@@ -398,6 +398,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 <option value="kb-card">KB국민카드</option>
                 <option value="nh-card">NH농협카드</option>
                 <option value="shinhan-card">신한카드</option>
+                <option value="hana-card">하나카드</option>
               </select>
               <button
                 className="txp-btn txp-btn--primary"

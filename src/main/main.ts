@@ -1013,6 +1013,8 @@ const createWindow = async () => {
             extractedData = automator.parseNHCardExcel(filePath);
           } else if (cardCompanyId === 'shinhan-card') {
             extractedData = await automator.parseDownloadedExcel(filePath);
+          } else if (cardCompanyId === 'hana-card') {
+            extractedData = await automator.parseDownloadedExcel(filePath);
           } else {
             throw new Error(`Unsupported card company: ${cardCompanyId}`);
           }
