@@ -168,6 +168,32 @@ const DesktopRecorderPage: React.FC = () => {
     }
   };
 
+  // Test Arduino by clicking center of screen
+  const handleTestArduino = async () => {
+    setError('');
+    setSuccessMessage('');
+    try {
+      if (!selectedArduinoPort) {
+        setError('Please select an Arduino port first');
+        return;
+      }
+
+      setSuccessMessage('Testing Arduino... Watch for click in center of screen in 2 seconds...');
+
+      const result = await (window as any).electron.invoke('desktop-recorder:test-arduino', {
+        port: selectedArduinoPort,
+      });
+
+      if (result.success) {
+        setSuccessMessage('✅ Arduino test successful! Did you see the click?');
+      } else {
+        setError(result.error || 'Arduino test failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to test Arduino');
+    }
+  };
+
   // Start recording
   const handleStartRecording = async () => {
     setError('');
@@ -452,9 +478,18 @@ const DesktopRecorderPage: React.FC = () => {
                   >
                     {loadingPorts ? '⟳' : '🔄'} Refresh
                   </button>
+                  <button
+                    onClick={handleTestArduino}
+                    disabled={!selectedArduinoPort}
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', background: '#22c55e', color: '#fff' }}
+                    title="Click center of screen to test Arduino"
+                  >
+                    🎯 Test
+                  </button>
                 </div>
                 <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
-                  Arduino Leonardo/Pro Micro required. <a href="#" style={{ color: '#4a90e2' }}>Setup guide</a>
+                  Arduino Leonardo/Pro Micro required. Use Test button to verify connection.
                 </p>
               </div>
             )}

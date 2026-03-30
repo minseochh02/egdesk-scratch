@@ -35,18 +35,14 @@ export class RecordingOverlayWindow {
       height: screenHeight,
       x: 0,
       y: 0,
-      transparent: true,
       frame: false,
+      transparent: true,
       alwaysOnTop: true,
-      skipTaskbar: false,
       resizable: false,
-      movable: false,
-      minimizable: true,
-      maximizable: false,
-      closable: true,
+      hasShadow: false,
+      skipTaskbar: false,
       show: false,
       title: 'Recording Overlay',
-      hasShadow: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -57,6 +53,7 @@ export class RecordingOverlayWindow {
 
     // Start in click-through mode (invisible and non-interactive)
     this.window.setIgnoreMouseEvents(true, { forward: true });
+    this.window.setFocusable(false);
 
     // Load HTML content
     const htmlContent = this.generateOverlayHTML();
@@ -123,8 +120,9 @@ export class RecordingOverlayWindow {
 
     this.isMarkMode = true;
 
-    // Make overlay interactive (capture clicks)
+    // Make overlay interactive (capture clicks and focus)
     this.window.setIgnoreMouseEvents(false);
+    this.window.setFocusable(true);
 
     // Make overlay visible with green tint and crosshair
     this.window.webContents.send('recording-overlay:set-mode', {
@@ -142,8 +140,9 @@ export class RecordingOverlayWindow {
 
     this.isMarkMode = false;
 
-    // Make overlay click-through again
+    // Make overlay click-through and non-focusable again
     this.window.setIgnoreMouseEvents(true, { forward: true });
+    this.window.setFocusable(false);
 
     // Make overlay invisible
     this.window.webContents.send('recording-overlay:set-mode', {
@@ -208,22 +207,11 @@ export class RecordingOverlayWindow {
   <meta charset="UTF-8">
   <title>Recording Overlay</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html, body {
-      width: 100%;
-      height: 100%;
+    body {
       margin: 0;
       padding: 0;
       background-color: rgba(0, 0, 0, 0);
       overflow: hidden;
-    }
-
-    body {
       cursor: default;
     }
 
@@ -231,8 +219,8 @@ export class RecordingOverlayWindow {
       position: fixed;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
       background-color: rgba(0, 0, 0, 0);
       transition: background-color 0.2s;
       pointer-events: none;

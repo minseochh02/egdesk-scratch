@@ -886,6 +886,71 @@ export function registerDesktopRecorderHandlers(): void {
   });
 
   /**
+   * Test Arduino by clicking center of screen
+   */
+  ipcMain.handle('desktop-recorder:test-arduino', async (event, { port }) => {
+    try {
+      console.log(`[DesktopRecorder] Testing Arduino on port ${port}...`);
+
+      // Create Arduino HID manager
+      const arduino = new ArduinoHIDManager(port);
+
+      // Connect to Arduino
+      await arduino.connect();
+      console.log('[DesktopRecorder] ✅ Arduino connected');
+
+      // Wait 2 seconds so user can see the message
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Get screen dimensions
+      const { screen } = require('electron');
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width, height } = primaryDisplay.bounds;
+
+      const centerX = Math.floor(width / 2);
+      const centerY = Math.floor(height / 2);
+
+      console.log(`[DesktopRecorder] Screen size: ${width}x${height}`);
+      console.log(`[DesktopRecorder] Center point: (${centerX}, ${centerY})`);
+
+      // Use DesktopAutomationManager to move cursor to center
+      const { DesktopAutomationManager } = require('./utils/desktop-automation-manager');
+      const automationManager = new DesktopAutomationManager();
+      await automationManager.initialize();
+
+      console.log('[DesktopRecorder] Moving cursor to center...');
+      await automationManager.moveMouse(centerX, centerY);
+
+      // Wait a moment
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Now use Arduino to click
+      console.log('[DesktopRecorder] Sending click command to Arduino...');
+      await arduino.clickMouse('left');
+
+      console.log('[DesktopRecorder] ✅ Arduino click command sent');
+
+      // Wait a moment to see the click
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Disconnect
+      await arduino.disconnect();
+      console.log('[DesktopRecorder] Arduino disconnected');
+
+      return {
+        success: true,
+        message: `Clicked at center of screen (${centerX}, ${centerY})`,
+      };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Arduino test failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  /**
    * Enable UAC detection with Arduino
    */
   ipcMain.handle('desktop-recorder:enable-uac-detection', async (event, { port }) => {
