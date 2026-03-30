@@ -516,9 +516,9 @@ const DesktopRecorderPage: React.FC = () => {
                 background: 'rgba(251, 191, 36, 0.2)',
                 borderColor: 'rgba(251, 191, 36, 0.4)',
                 color: '#fbbf24'
-              }}>⇧ Shift + F1</span>
+              }}>⇧ Shift + F2</span>
               <span className="hotkey-desc" style={{ color: '#fcd34d' }}>
-                Manually mark click (for banking/secure apps)
+                Toggle overlay mark mode (for banking/secure apps)
               </span>
             </div>
             {!simpleMode && (
@@ -547,7 +547,7 @@ const DesktopRecorderPage: React.FC = () => {
             borderRadius: '6px',
             border: '1px solid rgba(251, 191, 36, 0.3)'
           }}>
-            🛡️ <strong>For Banking/Secure Apps:</strong> If clicks aren't being recorded automatically, hover your mouse over the button and press <strong>Shift+F1</strong> to manually mark the position before clicking.
+            🛡️ <strong>For Banking/Secure Apps:</strong> If clicks aren't being recorded automatically, press <strong>Shift+F2</strong> to toggle the transparent overlay. When the overlay is active (green tint visible), click on it to mark positions. The overlay will capture your clicks even when the banking app blocks direct input.
           </p>
           {!simpleMode && (
             <p className="dev-mode-note" style={{

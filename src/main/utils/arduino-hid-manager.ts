@@ -211,6 +211,46 @@ export class ArduinoHIDManager {
   }
 
   /**
+   * Move mouse by relative coordinates
+   * @param dx - Horizontal movement (positive = right, negative = left)
+   * @param dy - Vertical movement (positive = down, negative = up)
+   */
+  async moveMouseRelative(dx: number, dy: number): Promise<void> {
+    if (!this.isConnected()) {
+      throw new Error('Arduino not connected. Call connect() first.');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.arduino!.write(`MOUSE_MOVE:${dx},${dy}\n`, (err) => {
+        if (err) return reject(err);
+        console.log(`[ArduinoHID] Moving mouse: (${dx}, ${dy})`);
+        // Wait for Arduino to finish smooth movement
+        const moveTime = Math.max(Math.abs(dx), Math.abs(dy)) / 5 * 5 + 100; // ~5px/step * 5ms + buffer
+        setTimeout(() => resolve(), moveTime);
+      });
+    });
+  }
+
+  /**
+   * Click mouse button
+   * @param button - 'left', 'right', or 'middle'
+   */
+  async clickMouse(button: 'left' | 'right' | 'middle' = 'left'): Promise<void> {
+    if (!this.isConnected()) {
+      throw new Error('Arduino not connected. Call connect() first.');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.arduino!.write(`MOUSE_CLICK:${button}\n`, (err) => {
+        if (err) return reject(err);
+        console.log(`[ArduinoHID] Mouse click: ${button}`);
+        // Wait for Arduino to finish click
+        setTimeout(() => resolve(), 200);
+      });
+    });
+  }
+
+  /**
    * Send raw command to Arduino
    */
   async sendRaw(command: string): Promise<void> {
