@@ -81,6 +81,7 @@ export {
   faChevronDown,
   faChevronLeft,
   faChevronRight,
+  faMousePointer,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Communication icons

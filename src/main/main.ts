@@ -88,6 +88,7 @@ import { setPlaywrightSchedulerService } from './scheduler/playwright-scheduler-
 import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
 import { registerDesktopRecorderHandlers } from './desktop-recorder-handlers';
+import { registerSimpleRecorderHandlers } from './simple-recorder-handlers';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
@@ -3432,6 +3433,9 @@ const createWindow = async () => {
 
     // Register Desktop recorder handlers
     registerDesktopRecorderHandlers();
+
+    // Register Simple recorder handlers
+    registerSimpleRecorderHandlers();
 
     // Register Rookie AI Excel Analysis handler (from buffer)
     ipcMain.handle('rookie:analyze-excel-from-buffer', async (_event, { buffer, fileName, forceRegenerate = false, availableSourceFiles = [] }) => {
