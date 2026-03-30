@@ -127,17 +127,18 @@ export function registerDesktopRecorderHandlers(): void {
 
       console.log(`[DesktopRecorder] Recording stopped. ${status.actionCount} actions recorded.`);
 
-      // If we created a virtual desktop for this recording, switch back and clean up
-      if (createdVirtualDesktop) {
-        console.log('[DesktopRecorder] Cleaning up virtual desktop...');
-        try {
-          await activeDesktopRecorder['desktopManager'].switchBackAndCleanup();
-          createdVirtualDesktop = false;
-        } catch (error: any) {
-          console.warn('[DesktopRecorder] Failed to clean up virtual desktop:', error.message);
-          // Don't fail the stop operation if cleanup fails
-        }
-      }
+      // COMMENTED OUT: Virtual desktop cleanup disabled
+      // // If we created a virtual desktop for this recording, switch back and clean up
+      // if (createdVirtualDesktop) {
+      //   console.log('[DesktopRecorder] Cleaning up virtual desktop...');
+      //   try {
+      //     await activeDesktopRecorder['desktopManager'].switchBackAndCleanup();
+      //     createdVirtualDesktop = false;
+      //   } catch (error: any) {
+      //     console.warn('[DesktopRecorder] Failed to clean up virtual desktop:', error.message);
+      //     // Don't fail the stop operation if cleanup fails
+      //   }
+      // }
 
       // Close control window if exists
       if (recorderControlWindow) {
@@ -631,10 +632,11 @@ export function registerDesktopRecorderHandlers(): void {
         });
       });
 
-      // Start recording with control window (creates desktop, shows control window, starts recording)
+      // Start recording with control window (shows control window, starts recording)
       await activeDesktopRecorder.startRecordingWithControlWindow();
 
-      createdVirtualDesktop = true; // Mark that we created a virtual desktop
+      // COMMENTED OUT: Virtual desktop feature disabled
+      // createdVirtualDesktop = true; // Mark that we created a virtual desktop
 
       console.log('[DesktopRecorder] Recording started with control window');
       return {
