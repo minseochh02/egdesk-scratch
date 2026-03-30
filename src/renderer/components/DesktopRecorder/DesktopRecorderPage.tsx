@@ -32,6 +32,12 @@ const DesktopRecorderPage: React.FC = () => {
   const [replaySpeed, setReplaySpeed] = useState<number>(1.0);
   const [selectedRecordingForDownloads, setSelectedRecordingForDownloads] = useState<string | null>(null);
 
+  // Arduino UAC detection
+  const [enableUAC, setEnableUAC] = useState<boolean>(false);
+  const [arduinoPorts, setArduinoPorts] = useState<Array<{ path: string; manufacturer?: string }>>([]);
+  const [selectedArduinoPort, setSelectedArduinoPort] = useState<string>('');
+  const [loadingPorts, setLoadingPorts] = useState<boolean>(false);
+
   // Check permissions on mount
   useEffect(() => {
     checkPermissions();
@@ -119,6 +125,25 @@ const DesktopRecorderPage: React.FC = () => {
     }
   };
 
+  // Load Arduino ports
+  const loadArduinoPorts = async () => {
+    setLoadingPorts(true);
+    try {
+      const result = await (window as any).electron.invoke('desktop-recorder:list-arduino-ports');
+      if (result.success) {
+        setArduinoPorts(result.ports || []);
+        // Auto-select first Arduino if available
+        if (result.ports && result.ports.length > 0) {
+          setSelectedArduinoPort(result.ports[0].path);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading Arduino ports:', err);
+    } finally {
+      setLoadingPorts(false);
+    }
+  };
+
   // Start recording
   const handleStartRecording = async () => {
     setError('');
@@ -126,13 +151,23 @@ const DesktopRecorderPage: React.FC = () => {
     try {
       const result = await (window as any).electron.invoke('desktop-recorder:start-with-control-window');
       if (result.success) {
+        // Enable UAC detection if configured
+        if (enableUAC && selectedArduinoPort) {
+          await (window as any).electron.invoke('desktop-recorder:enable-uac-detection', {
+            port: selectedArduinoPort,
+          });
+        }
+
         setStatus({
           isRecording: true,
           isPaused: false,
           actionCount: 0,
         });
         setGeneratedCode('');
-        setSuccessMessage('Recording started! Use hotkeys to control recording.');
+        const uacMessage = enableUAC && selectedArduinoPort
+          ? ` UAC detection enabled on ${selectedArduinoPort}.`
+          : '';
+        setSuccessMessage(`Recording started! Use hotkeys to control recording.${uacMessage}`);
       } else {
         setError(result.error || 'Failed to start recording');
       }
@@ -299,6 +334,63 @@ const DesktopRecorderPage: React.FC = () => {
           <div className="message success-message">
             {successMessage}
             <button onClick={() => setSuccessMessage('')} className="close-btn">×</button>
+          </div>
+        )}
+
+        {/* Arduino UAC Configuration (Windows only) */}
+        {!status.isRecording && process.platform === 'win32' && (
+          <div className="arduino-config">
+            <h3>🛡️ UAC Prompt Handling (Optional)</h3>
+            <p style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
+              Enable Arduino HID to automatically handle Windows UAC prompts during replay
+            </p>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={enableUAC}
+                  onChange={(e) => {
+                    setEnableUAC(e.target.checked);
+                    if (e.target.checked && arduinoPorts.length === 0) {
+                      loadArduinoPorts();
+                    }
+                  }}
+                />
+                <span>Enable UAC detection with Arduino</span>
+              </label>
+            </div>
+
+            {enableUAC && (
+              <div style={{ marginLeft: '28px', marginBottom: '12px' }}>
+                <div style={{ marginBottom: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <select
+                    value={selectedArduinoPort}
+                    onChange={(e) => setSelectedArduinoPort(e.target.value)}
+                    disabled={loadingPorts}
+                    style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  >
+                    {arduinoPorts.length === 0 && <option value="">No Arduino found</option>}
+                    {arduinoPorts.map((port) => (
+                      <option key={port.path} value={port.path}>
+                        {port.path} {port.manufacturer ? `(${port.manufacturer})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={loadArduinoPorts}
+                    disabled={loadingPorts}
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px' }}
+                  >
+                    {loadingPorts ? '⟳' : '🔄'} Refresh
+                  </button>
+                </div>
+                <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+                  Arduino Leonardo/Pro Micro required. <a href="#" style={{ color: '#4a90e2' }}>Setup guide</a>
+                </p>
+              </div>
+            )}
           </div>
         )}
 
