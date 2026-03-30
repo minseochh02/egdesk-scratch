@@ -52,12 +52,12 @@ export class SyncConfigManager {
     const stmt = this.database.prepare(`
       INSERT INTO sync_configurations (
         id, script_folder_path, script_name, folder_name,
-        target_table_id, header_row, skip_bottom_rows, sheet_index,
+        target_table_id, source, header_row, skip_bottom_rows, sheet_index,
         column_mappings, applied_splits, unique_key_columns, duplicate_action,
         file_action, enabled, auto_sync_enabled,
         last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
@@ -67,6 +67,7 @@ export class SyncConfigManager {
         data.scriptName,
         data.folderName,
         data.targetTableId,
+        data.source || 'browser', // Default to 'browser' for backwards compatibility
         data.headerRow || 1,
         data.skipBottomRows || 0,
         data.sheetIndex || 0,
@@ -423,6 +424,7 @@ export class SyncConfigManager {
       scriptFolderPath: row.script_folder_path,
       scriptName: row.script_name,
       folderName: row.folder_name,
+      source: row.source || 'browser', // Default to 'browser' for backwards compatibility
       targetTableId: row.target_table_id,
       headerRow: row.header_row,
       skipBottomRows: row.skip_bottom_rows,

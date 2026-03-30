@@ -508,9 +508,12 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     updateState({ isImporting: true, importError: null });
 
     try {
+      // Declare result variable outside if/else blocks so it's accessible for sync config creation
+      let result: any;
+
       if (mode === 'import') {
         console.log('[DEBUG] Importing with appliedSplits:', state.appliedSplits);
-        const result = await importExcel({
+        result = await importExcel({
           filePath: state.selectedFile!,
           sheetIndex: state.selectedSheet,
           tableName: state.tableName,
@@ -543,7 +546,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
         });
       } else {
         // Upload mode
-        const result = await syncToExistingTable({
+        result = await syncToExistingTable({
           tableId: targetTable!.id,
           filePath: state.selectedFile!,
           sheetIndex: state.selectedSheet,
@@ -595,11 +598,15 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           console.log('   Applied splits:', state.appliedSplits);
           console.log('   Number of mappings:', Object.keys(state.columnMappings || {}).length);
 
+          // Determine source based on folder path
+          const source = scriptFolderPath?.includes('EGDesk-Desktop') ? 'desktop' : 'browser';
+
           const configResult = await (window as any).electron.invoke('sync-config:create', {
             scriptFolderPath,
             scriptName,
             folderName,
             targetTableId,
+            source, // Add source field
             headerRow: state.headerRow,
             skipBottomRows: state.skipBottomRows,
             sheetIndex: state.selectedSheet,
