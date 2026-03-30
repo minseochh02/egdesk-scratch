@@ -283,6 +283,7 @@ export class DesktopRecorder {
       console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
       console.log('[DesktopRecorder] Hotkeys:');
       console.log('[DesktopRecorder]   Shift+F2       - Toggle overlay mark mode (for secure apps)');
+      console.log('[DesktopRecorder]   ESC            - Exit overlay mark mode');
       console.log('[DesktopRecorder]   Cmd+Shift+P    - Pause/Resume recording');
       console.log('[DesktopRecorder]   Cmd+Shift+S    - Stop recording');
       console.log('[DesktopRecorder] 💡 Use Shift+F2 to activate overlay, then click to mark positions in banking/secure apps');
@@ -1332,7 +1333,7 @@ export class DesktopRecorder {
       });
 
       console.log('[DesktopRecorder] ✅ Recording overlay created successfully');
-      console.log('[DesktopRecorder] 💡 Press Shift+F2 to toggle overlay mark mode');
+      console.log('[DesktopRecorder] 💡 Press Shift+F2 to toggle overlay mark mode (ESC to exit)');
     } catch (error: any) {
       console.warn('[DesktopRecorder] ⚠️  Failed to create recording overlay:', error.message);
       console.warn('[DesktopRecorder] Overlay features will not be available');
@@ -1352,7 +1353,7 @@ export class DesktopRecorder {
 
     const isMarkMode = this.recordingOverlay.isInMarkMode();
     if (isMarkMode) {
-      console.log('[DesktopRecorder] ✋ Overlay mark mode ENABLED - click on overlay to record position');
+      console.log('[DesktopRecorder] ✋ Overlay mark mode ENABLED - click on overlay to record position (ESC to exit)');
     } else {
       console.log('[DesktopRecorder] 👻 Overlay mark mode DISABLED - overlay is click-through');
     }

@@ -43,7 +43,7 @@ export class RecordingOverlayWindow {
       movable: false,
       minimizable: false,
       maximizable: false,
-      closable: false,
+      closable: true,
       show: false,
       backgroundColor: '#00000000',
       webPreferences: {
@@ -73,6 +73,7 @@ export class RecordingOverlayWindow {
 
     this.window.on('closed', () => {
       this.window = null;
+      this.isMarkMode = false;
       console.log('[RecordingOverlay] Overlay closed');
     });
   }
@@ -110,10 +111,9 @@ export class RecordingOverlayWindow {
     // Make overlay interactive (capture clicks)
     this.window.setIgnoreMouseEvents(false);
 
-    // Make overlay slightly visible and show crosshair
+    // Make overlay visible with green tint and crosshair
     this.window.webContents.send('recording-overlay:set-mode', {
-      mode: 'mark',
-      opacity: 0.05
+      mode: 'mark'
     });
 
     console.log('[RecordingOverlay] ✋ Mark mode ENABLED - click anywhere to record position');
@@ -132,8 +132,7 @@ export class RecordingOverlayWindow {
 
     // Make overlay invisible
     this.window.webContents.send('recording-overlay:set-mode', {
-      mode: 'transparent',
-      opacity: 0
+      mode: 'transparent'
     });
 
     console.log('[RecordingOverlay] 👻 Mark mode DISABLED - overlay is click-through');
@@ -200,10 +199,10 @@ export class RecordingOverlayWindow {
       box-sizing: border-box;
     }
 
-    body {
+    html, body {
       width: 100vw;
       height: 100vh;
-      background: transparent;
+      background: transparent !important;
       overflow: hidden;
       cursor: default;
       position: relative;
@@ -212,18 +211,20 @@ export class RecordingOverlayWindow {
     #overlay {
       width: 100%;
       height: 100%;
-      background: rgba(0, 255, 0, 0);
+      background: transparent;
       position: absolute;
       top: 0;
       left: 0;
       transition: background 0.2s, opacity 0.2s;
       pointer-events: none;
+      opacity: 0;
     }
 
     #overlay.mark-mode {
       background: rgba(74, 222, 128, 0.05);
       cursor: crosshair;
       pointer-events: auto;
+      opacity: 1;
     }
 
     /* Crosshair in mark mode */
@@ -348,21 +349,19 @@ export class RecordingOverlayWindow {
 </head>
 <body>
   <div id="overlay"></div>
-  <div id="mode-indicator">📍 Click to mark position</div>
+  <div id="mode-indicator">📍 Click to mark position • Press ESC to exit</div>
 
   <script>
     const overlay = document.getElementById('overlay');
     const modeIndicator = document.getElementById('mode-indicator');
 
     // Listen for mode changes
-    window.electron.ipcRenderer.on('recording-overlay:set-mode', ({ mode, opacity }) => {
+    window.electron.ipcRenderer.on('recording-overlay:set-mode', ({ mode }) => {
       if (mode === 'mark') {
         overlay.classList.add('mark-mode');
-        overlay.style.opacity = opacity || 0.05;
         modeIndicator.classList.add('visible');
       } else {
         overlay.classList.remove('mark-mode');
-        overlay.style.opacity = 0;
         modeIndicator.classList.remove('visible');
       }
     });
@@ -392,6 +391,16 @@ export class RecordingOverlayWindow {
 
       // Send to main process
       window.electron.ipcRenderer.send('recording-overlay:click', { x, y });
+    });
+
+    // ESC key to exit mark mode
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && overlay.classList.contains('mark-mode')) {
+        // Exit mark mode by removing the class and hiding indicator
+        overlay.classList.remove('mark-mode');
+        modeIndicator.classList.remove('visible');
+        showToast('Mark mode disabled');
+      }
     });
 
     // Show toast notification
