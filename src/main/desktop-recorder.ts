@@ -15,8 +15,9 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { clipboard, systemPreferences } from 'electron';
+import { clipboard, systemPreferences, ipcMain } from 'electron';
 import { ReplayOverlayWindow } from './replay-overlay-window';
+import { RecordingOverlayWindow } from './recording-overlay-window';
 
 const execAsync = promisify(exec);
 
@@ -179,6 +180,9 @@ export class DesktopRecorder {
   private uacDetectionEnabled: boolean = false;
   private lastUACDetection: number = 0;
 
+  // Recording overlay for secure apps
+  private recordingOverlay: RecordingOverlayWindow | null = null;
+
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
   }
@@ -271,14 +275,17 @@ export class DesktopRecorder {
     this.setupWindowMonitoring();
     this.setupDownloadMonitoring();
 
+    // Create recording overlay for secure app support
+    await this.setupRecordingOverlay();
+
     console.log('[DesktopRecorder] Recording started');
     if (this.uiohookStarted) {
       console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
       console.log('[DesktopRecorder] Hotkeys:');
-      console.log('[DesktopRecorder]   Shift+F1       - Manually mark click position (for secure apps)');
+      console.log('[DesktopRecorder]   Shift+F2       - Toggle overlay mark mode (for secure apps)');
       console.log('[DesktopRecorder]   Cmd+Shift+P    - Pause/Resume recording');
       console.log('[DesktopRecorder]   Cmd+Shift+S    - Stop recording');
-      console.log('[DesktopRecorder] 💡 Use Shift+F1 when automatic click detection fails in banking/secure apps');
+      console.log('[DesktopRecorder] 💡 Use Shift+F2 to activate overlay, then click to mark positions in banking/secure apps');
     } else {
       console.log('[DesktopRecorder] Recording clipboard and window changes (keyboard/mouse capture unavailable in dev mode)');
     }
@@ -377,6 +384,13 @@ export class DesktopRecorder {
       console.log('[DesktopRecorder] Closing control window...');
       this.controlWindow.close();
       this.controlWindow = null;
+    }
+
+    // Close recording overlay if it exists
+    if (this.recordingOverlay && this.recordingOverlay.exists()) {
+      console.log('[DesktopRecorder] Closing recording overlay...');
+      this.recordingOverlay.close();
+      this.recordingOverlay = null;
     }
 
     return this.outputFile;
@@ -942,9 +956,15 @@ export class DesktopRecorder {
         const hasCtrl = this.hasModifier(UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR);
         const hasAlt = this.hasModifier(UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR);
 
-        // Check for manual click recording hotkey (Shift+F1) - works in secure apps
+        // Check for manual click recording hotkey (Shift+F1) - DEPRECATED: use overlay instead
         if (hasShift && e.keycode === UiohookKey.F1) {
           void this.handleManualClickRecording();
+          return;
+        }
+
+        // Check for overlay toggle hotkey (Shift+F2) - toggle mark mode for secure apps
+        if (hasShift && e.keycode === UiohookKey.F2) {
+          this.toggleOverlayMarkMode();
           return;
         }
 
@@ -1281,6 +1301,61 @@ export class DesktopRecorder {
     }, 1000);
 
     console.log('[DesktopRecorder] Window monitoring setup initiated (requires accessibility permissions)');
+  }
+
+  /**
+   * Setup recording overlay for capturing clicks in secure applications
+   */
+  private async setupRecordingOverlay(): Promise<void> {
+    try {
+      console.log('[DesktopRecorder] Creating recording overlay for secure app support...');
+
+      this.recordingOverlay = new RecordingOverlayWindow();
+      await this.recordingOverlay.create();
+
+      // Setup IPC listener for overlay clicks
+      ipcMain.on('recording-overlay:position-marked', (event, { x, y }) => {
+        if (!this.isRecording || this.isPaused) return;
+
+        console.log(`[DesktopRecorder] 📍 Position marked via overlay at (${x}, ${y})`);
+
+        // Record the click at the marked position
+        const action: DesktopAction = {
+          type: 'mouseClick',
+          timestamp: Date.now() - this.startTime,
+          coordinates: { x, y },
+          button: 'left',
+        };
+
+        this.actions.push(action);
+        this.notifyUpdate();
+      });
+
+      console.log('[DesktopRecorder] ✅ Recording overlay created successfully');
+      console.log('[DesktopRecorder] 💡 Press Shift+F2 to toggle overlay mark mode');
+    } catch (error: any) {
+      console.warn('[DesktopRecorder] ⚠️  Failed to create recording overlay:', error.message);
+      console.warn('[DesktopRecorder] Overlay features will not be available');
+    }
+  }
+
+  /**
+   * Toggle overlay mark mode on/off
+   */
+  private toggleOverlayMarkMode(): void {
+    if (!this.recordingOverlay || !this.recordingOverlay.exists()) {
+      console.warn('[DesktopRecorder] Recording overlay not available');
+      return;
+    }
+
+    this.recordingOverlay.toggleMarkMode();
+
+    const isMarkMode = this.recordingOverlay.isInMarkMode();
+    if (isMarkMode) {
+      console.log('[DesktopRecorder] ✋ Overlay mark mode ENABLED - click on overlay to record position');
+    } else {
+      console.log('[DesktopRecorder] 👻 Overlay mark mode DISABLED - overlay is click-through');
+    }
   }
 
   /**

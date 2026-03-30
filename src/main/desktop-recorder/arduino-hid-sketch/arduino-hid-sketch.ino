@@ -1,26 +1,22 @@
 /**
- * Arduino HID Keyboard Sketch for Desktop Recorder
+ * Arduino HID Keyboard + Mouse Sketch for Desktop Recorder
  *
  * Flash this onto an Arduino Leonardo or Pro Micro (ATmega32U4).
- * It listens on serial and performs keyboard actions including special keys.
+ * It listens on serial and performs keyboard AND mouse actions.
  *
  * Board: Arduino Leonardo (or SparkFun Pro Micro)
  * Port:  Check Device Manager for COM port
  *
  * Commands:
  *   TYPE:<text>       - Type text with natural timing
- *   KEY:RIGHT_ARROW   - Press right arrow key
- *   KEY:LEFT_ARROW    - Press left arrow key
- *   KEY:UP_ARROW      - Press up arrow key
- *   KEY:DOWN_ARROW    - Press down arrow key
- *   KEY:ENTER         - Press Enter/Return key
- *   KEY:TAB           - Press Tab key
- *   KEY:ESC           - Press Escape key
- *   KEY:BACKSPACE     - Press Backspace key
+ *   KEY:RIGHT_ARROW   - Press right arrow key (and other special keys)
  *   COMBO:ALT+F4      - Press key combination (supports CTRL, ALT, SHIFT, WIN)
+ *   MOUSE_MOVE:x,y    - Move mouse by relative pixels (e.g., MOUSE_MOVE:100,-50)
+ *   MOUSE_CLICK:left  - Click mouse button (left/right/middle)
  */
 
 #include <Keyboard.h>
+#include <Mouse.h>
 
 // Randomized delay: returns base +/- jitter
 long randDelay(long base, long jitter) {
@@ -30,10 +26,11 @@ long randDelay(long base, long jitter) {
 void setup() {
   Serial.begin(9600);
   Keyboard.begin();
+  Mouse.begin();
   randomSeed(analogRead(0));
   delay(1000);
   Serial.println("READY");
-  Serial.println("Commands: TYPE:<text>, KEY:<key>, COMBO:<keys>");
+  Serial.println("Commands: TYPE:<text>, KEY:<key>, COMBO:<keys>, MOUSE_MOVE:<x>,<y>, MOUSE_CLICK:<button>");
 }
 
 void loop() {
@@ -52,6 +49,12 @@ void loop() {
       } else if (input.startsWith("COMBO:")) {
         String combo = input.substring(6);
         pressKeyCombo(combo);
+      } else if (input.startsWith("MOUSE_MOVE:")) {
+        String coords = input.substring(11);
+        moveMouse(coords);
+      } else if (input.startsWith("MOUSE_CLICK:")) {
+        String button = input.substring(12);
+        clickMouse(button);
       } else {
         // Legacy mode: just type the input
         typeText(input);
@@ -187,4 +190,72 @@ void pressKeyCombo(String combo) {
   delay(50);
 
   Serial.println("COMBO DONE");
+}
+
+/**
+ * Move mouse by relative coordinates
+ * Format: "x,y" where x and y are signed integers
+ * Example: "100,-50" moves right 100px and up 50px
+ */
+void moveMouse(String coords) {
+  int commaIndex = coords.indexOf(',');
+  if (commaIndex == -1) {
+    Serial.println("ERROR: Invalid MOUSE_MOVE format");
+    return;
+  }
+
+  int x = coords.substring(0, commaIndex).toInt();
+  int y = coords.substring(commaIndex + 1).toInt();
+
+  Serial.print("MOVING MOUSE: ");
+  Serial.print(x);
+  Serial.print(",");
+  Serial.println(y);
+
+  // Move in small increments for smoother movement
+  int steps = max(abs(x), abs(y)) / 5; // Move in ~5px increments
+  if (steps < 1) steps = 1;
+
+  float dx = (float)x / steps;
+  float dy = (float)y / steps;
+
+  for (int i = 0; i < steps; i++) {
+    Mouse.move((int)dx, (int)dy, 0);
+    delay(5); // Small delay between movements for natural feel
+  }
+
+  // Move any remaining pixels
+  int remainderX = x - ((int)dx * steps);
+  int remainderY = y - ((int)dy * steps);
+  if (remainderX != 0 || remainderY != 0) {
+    Mouse.move(remainderX, remainderY, 0);
+  }
+
+  delay(50);
+  Serial.println("MOUSE MOVED");
+}
+
+/**
+ * Click mouse button
+ * Supported: left, right, middle
+ */
+void clickMouse(String button) {
+  Serial.print("CLICKING: ");
+  Serial.println(button);
+
+  button.toLowerCase();
+
+  if (button == "left") {
+    Mouse.click(MOUSE_LEFT);
+  } else if (button == "right") {
+    Mouse.click(MOUSE_RIGHT);
+  } else if (button == "middle") {
+    Mouse.click(MOUSE_MIDDLE);
+  } else {
+    Serial.println("ERROR: Unknown mouse button");
+    return;
+  }
+
+  delay(100);
+  Serial.println("CLICK DONE");
 }
