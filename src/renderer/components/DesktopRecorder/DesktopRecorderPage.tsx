@@ -508,6 +508,19 @@ const DesktopRecorderPage: React.FC = () => {
               <span className="hotkey">🖱️ Mouse Clicks</span>
               <span className="hotkey-desc">Automatically captured (all buttons)</span>
             </div>
+            <div className="hotkey-item" style={{
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.3)'
+            }}>
+              <span className="hotkey" style={{
+                background: 'rgba(251, 191, 36, 0.2)',
+                borderColor: 'rgba(251, 191, 36, 0.4)',
+                color: '#fbbf24'
+              }}>⇧ Shift + F1</span>
+              <span className="hotkey-desc" style={{ color: '#fcd34d' }}>
+                Manually mark click (for banking/secure apps)
+              </span>
+            </div>
             {!simpleMode && (
               <>
                 <div className="hotkey-item">
@@ -525,11 +538,22 @@ const DesktopRecorderPage: React.FC = () => {
               </>
             )}
           </div>
+          <p className="dev-mode-note" style={{
+            marginTop: '1rem',
+            fontSize: '0.9rem',
+            color: '#fcd34d',
+            background: 'rgba(251, 191, 36, 0.1)',
+            padding: '0.75rem',
+            borderRadius: '6px',
+            border: '1px solid rgba(251, 191, 36, 0.3)'
+          }}>
+            🛡️ <strong>For Banking/Secure Apps:</strong> If clicks aren't being recorded automatically, hover your mouse over the button and press <strong>Shift+F1</strong> to manually mark the position before clicking.
+          </p>
           {!simpleMode && (
             <p className="dev-mode-note" style={{
               marginTop: '1rem',
               fontSize: '0.9rem',
-              color: '#fbbf24',
+              color: '#9ca3af',
               fontStyle: 'italic'
             }}>
               📝 Note: Window/app switching detection is disabled in development mode due to macOS permission limitations.

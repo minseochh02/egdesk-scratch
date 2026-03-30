@@ -274,7 +274,11 @@ export class DesktopRecorder {
     console.log('[DesktopRecorder] Recording started');
     if (this.uiohookStarted) {
       console.log('[DesktopRecorder] Mouse clicks and keyboard events are now being captured');
-      console.log('[DesktopRecorder] Hotkeys: Cmd+Shift+P to pause, Cmd+Shift+S to stop');
+      console.log('[DesktopRecorder] Hotkeys:');
+      console.log('[DesktopRecorder]   Shift+F1       - Manually mark click position (for secure apps)');
+      console.log('[DesktopRecorder]   Cmd+Shift+P    - Pause/Resume recording');
+      console.log('[DesktopRecorder]   Cmd+Shift+S    - Stop recording');
+      console.log('[DesktopRecorder] 💡 Use Shift+F1 when automatic click detection fails in banking/secure apps');
     } else {
       console.log('[DesktopRecorder] Recording clipboard and window changes (keyboard/mouse capture unavailable in dev mode)');
     }
@@ -938,6 +942,12 @@ export class DesktopRecorder {
         const hasCtrl = this.hasModifier(UiohookKey.Ctrl, UiohookKey.CtrlL, UiohookKey.CtrlR);
         const hasAlt = this.hasModifier(UiohookKey.Alt, UiohookKey.AltL, UiohookKey.AltR);
 
+        // Check for manual click recording hotkey (Shift+F1) - works in secure apps
+        if (hasShift && e.keycode === UiohookKey.F1) {
+          void this.handleManualClickRecording();
+          return;
+        }
+
         // Check for recording hotkeys (Cmd+Shift+key) - these work regardless of active app
         if (hasCmd && hasShift) {
           if (e.keycode === UiohookKey.C) {
@@ -1062,6 +1072,47 @@ export class DesktopRecorder {
    */
   private handleStopHotkey(): void {
     this.stopRecording();
+  }
+
+  /**
+   * Handle Shift+F1 hotkey - manually record click at current cursor position
+   * This works in secure applications where automatic click detection is blocked
+   */
+  private async handleManualClickRecording(): Promise<void> {
+    if (!this.isRecording || this.isPaused) {
+      console.log('[DesktopRecorder] 📍 Cannot record manual click - not currently recording');
+      return;
+    }
+
+    try {
+      // Get current cursor position
+      const position = await this.desktopManager.getMousePosition();
+
+      if (!position) {
+        console.warn('[DesktopRecorder] ⚠️  Could not get cursor position');
+        return;
+      }
+
+      // Record the click at current position
+      const action: DesktopAction = {
+        type: 'mouseClick',
+        timestamp: Date.now() - this.startTime,
+        coordinates: { x: position.x, y: position.y },
+        button: 'left', // Default to left click for manual recording
+      };
+
+      this.actions.push(action);
+      this.notifyUpdate();
+
+      console.log(`[DesktopRecorder] 📍 MANUAL CLICK recorded at (${position.x}, ${position.y})`);
+      console.log('[DesktopRecorder] 💡 User marked this position with Shift+F1');
+
+      // Visual/audio feedback (beep)
+      process.stdout.write('\x07'); // System beep
+
+    } catch (error: any) {
+      console.error('[DesktopRecorder] ❌ Failed to record manual click:', error.message);
+    }
   }
 
   /**
