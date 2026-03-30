@@ -188,12 +188,12 @@ export class ArduinoHIDManager {
   }
 
   /**
-   * Navigate UAC prompt (Right Arrow + Enter)
-   * This is a common pattern to accept UAC on Windows
+   * Navigate UAC prompt (Left Arrow + Enter)
+   * In Korean Windows UAC, "예" (Yes) button is on the left
    */
   async acceptUAC(delay: number = 500): Promise<void> {
-    console.log('[ArduinoHID] Navigating UAC prompt...');
-    await this.pressKey('RIGHT_ARROW');
+    console.log('[ArduinoHID] Navigating UAC prompt to accept (예)...');
+    await this.pressKey('LEFT_ARROW');
     await new Promise(resolve => setTimeout(resolve, delay));
     await this.pressKey('ENTER');
     console.log('[ArduinoHID] UAC accepted');

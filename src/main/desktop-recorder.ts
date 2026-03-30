@@ -233,7 +233,7 @@ export class DesktopRecorder {
   /**
    * Start recording desktop actions
    */
-  async startRecording(options?: { createVirtualDesktop?: boolean }): Promise<void> {
+  async startRecording(): Promise<void> {
     if (this.isRecording) {
       console.warn('Desktop recording already in progress');
       return;
@@ -249,18 +249,6 @@ export class DesktopRecorder {
     const initialized = await this.desktopManager.initialize();
     if (!initialized) {
       throw new Error('Failed to initialize desktop automation');
-    }
-
-    // Create and switch to new virtual desktop if requested (default: true)
-    const shouldCreateDesktop = options?.createVirtualDesktop !== false;
-    if (shouldCreateDesktop) {
-      console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
-      const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
-      if (desktopCreated) {
-        console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
-      } else {
-        console.log('[DesktopRecorder] ⚠️  Could not create virtual desktop, recording on current desktop');
-      }
     }
 
     this.isRecording = true;
@@ -291,24 +279,8 @@ export class DesktopRecorder {
    */
   async startRecordingWithControlWindow(): Promise<void> {
     console.log('[DesktopRecorder] ===== STARTING RECORDING WITH CONTROL WINDOW =====');
-    
-    // Create and switch to new virtual desktop first
-    console.log('[DesktopRecorder] Creating new virtual desktop for recording...');
-    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
-    if (desktopCreated) {
-      console.log('[DesktopRecorder] ✅ Switched to new virtual desktop');
-      // Wait for desktop switch to fully complete before creating window
-      console.log('[DesktopRecorder] Waiting for desktop switch to complete...');
-      await this.sleep(3000); // Increased to 3 seconds for better stability
-      
-      // Additional verification: try to trigger a focus event to ensure we're on the new desktop
-      console.log('[DesktopRecorder] Verifying desktop switch...');
-      await this.verifyDesktopSwitch();
-    } else {
-      console.log('[DesktopRecorder] ⚠️ Virtual desktop creation failed, continuing on current desktop');
-    }
 
-    // Import and create control window on the new desktop
+    // Import and create control window
     console.log('[DesktopRecorder] Creating control window...');
     try {
       const { RecorderControlWindow } = await import('./recorder-control-window');
@@ -322,9 +294,9 @@ export class DesktopRecorder {
       console.error(error.stack);
     }
 
-    // Start recording (skip virtual desktop creation since we already did it)
+    // Start recording
     console.log('[DesktopRecorder] Starting recording phase...');
-    await this.startRecording({ createVirtualDesktop: false });
+    await this.startRecording();
 
     console.log('[DesktopRecorder] ===== CONTROL WINDOW SETUP COMPLETE =====');
   }
@@ -347,8 +319,9 @@ export class DesktopRecorder {
     // Emergency key release to prevent stuck keys
     await this.emergencyKeyRelease();
 
-    // Post-process actions to correlate clicks with app launches
-    this.correlateAppLaunchClicks();
+    // COMMENTED OUT: App launch correlation disabled
+    // // Post-process actions to correlate clicks with app launches
+    // this.correlateAppLaunchClicks();
 
     // Generate code
     const code = this.generateTestCode();
@@ -394,23 +367,6 @@ export class DesktopRecorder {
       console.log('[DesktopRecorder] Closing control window...');
       this.controlWindow.close();
       this.controlWindow = null;
-    }
-
-    // Switch back to original desktop and clean up
-    console.log('[DesktopRecorder] Switching back to original desktop...');
-    try {
-      await this.desktopManager.switchBackAndCleanup();
-      console.log('[DesktopRecorder] ✅ Returned to original desktop');
-    } catch (error: any) {
-      console.warn('[DesktopRecorder] Failed to switch back:', error.message);
-      console.log('[DesktopRecorder] You can manually switch back using:');
-      if (process.platform === 'win32') {
-        console.log('[DesktopRecorder]   Win+Ctrl+Left (switch back)');
-        console.log('[DesktopRecorder]   Win+Ctrl+F4 (close recording desktop)');
-      } else if (process.platform === 'darwin') {
-        console.log('[DesktopRecorder]   Ctrl+Left (switch back)');
-        console.log('[DesktopRecorder]   Mission Control → hover → click X (close space)');
-      }
     }
 
     return this.outputFile;
@@ -466,19 +422,6 @@ export class DesktopRecorder {
 
     console.log(`[DesktopRecorder] Replaying ${recording.actions.length} actions...`);
 
-    // Create and switch to new virtual desktop for isolated replay
-    console.log('[DesktopRecorder] Creating new virtual desktop for replay...');
-    const desktopCreated = await this.desktopManager.createAndSwitchToNewDesktop();
-    if (desktopCreated) {
-      console.log('[DesktopRecorder] ✅ Switched to replay desktop');
-      console.log('[DesktopRecorder] You can switch back to EGDesk using:');
-      if (process.platform === 'win32') {
-        console.log('[DesktopRecorder]   Win+Ctrl+Left');
-      } else if (process.platform === 'darwin') {
-        console.log('[DesktopRecorder]   Ctrl+Left');
-      }
-    }
-
     // Create overlay window for visual feedback
     const overlay = new ReplayOverlayWindow();
     await overlay.create();
@@ -514,16 +457,6 @@ export class DesktopRecorder {
       // Always close overlay, even if replay fails
       await this.sleep(1000); // Show completion for 1 second
       overlay.close();
-
-      // Switch back to original desktop and clean up
-      console.log('[DesktopRecorder] Switching back to original desktop...');
-      try {
-        await this.desktopManager.switchBackAndCleanup();
-        console.log('[DesktopRecorder] ✅ Returned to original desktop');
-      } catch (error: any) {
-        console.warn('[DesktopRecorder] Failed to auto-switch back:', error.message);
-        console.log('[DesktopRecorder] Please manually switch back to EGDesk desktop');
-      }
     }
   }
 
@@ -532,24 +465,6 @@ export class DesktopRecorder {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Verify desktop switch by performing a small action to ensure we're on the correct desktop
-   */
-  private async verifyDesktopSwitch(): Promise<void> {
-    try {
-      // Perform a small mouse movement to trigger desktop focus
-      const currentPos = await this.desktopManager.getMousePosition();
-      if (currentPos) {
-        await this.desktopManager.moveMouse(currentPos.x + 1, currentPos.y);
-        await this.sleep(100);
-        await this.desktopManager.moveMouse(currentPos.x, currentPos.y);
-      }
-      console.log('[DesktopRecorder] Desktop switch verification completed');
-    } catch (error: any) {
-      console.warn('[DesktopRecorder] Desktop switch verification failed:', error.message);
-    }
   }
 
   /**
@@ -662,11 +577,11 @@ export class DesktopRecorder {
         console.log(`Clipboard action: ${action.clipboardContent?.substring(0, 50)}...`);
         break;
 
-      case 'appLaunch':
-        console.log(`App launch: ${action.appName}${action.windowTitle ? ` - ${action.windowTitle}` : ''}`);
-        await this.launchApp(action.appName, action.appPath, action.windowTitle);
-        await this.sleep(2000); // Give time for app to launch
-        break;
+      // case 'appLaunch':
+      //   console.log(`App launch: ${action.appName}${action.windowTitle ? ` - ${action.windowTitle}` : ''}`);
+      //   await this.launchApp(action.appName, action.appPath, action.windowTitle);
+      //   await this.sleep(2000); // Give time for app to launch
+      //   break;
 
       case 'appSwitch':
         console.log(`App switch to: ${action.appName}`);
@@ -823,32 +738,33 @@ export class DesktopRecorder {
         code += `  // Clipboard copy detected\n`;
         break;
 
-      case 'appLaunch':
-        if (action.appName) {
-          code += `  // App launched: ${action.appName}`;
-          if (action.windowTitle) {
-            code += ` - ${action.windowTitle}`;
-          }
-          code += '\n';
-
-          // Generate platform-specific launch code using full path when available
-          code += `  // Launch ${action.appName}\n`;
-          if (action.appPath) {
-            // Use full executable path for reliability
-            const escapedPath = action.appPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-            if (process.platform === 'win32') {
-              code += `  require('child_process').execSync('start "" "${escapedPath}"');\n`;
-            } else {
-              code += `  require('child_process').execSync('open "${escapedPath}"');\n`;
-            }
-          } else {
-            // Fallback to app name if no path
-            const appCmd = this.getWindowsAppCommand(action.appName);
-            code += `  require('child_process').execSync('${process.platform === 'win32' ? 'start ' + appCmd : 'open -a "' + action.appName + '"'}');\n`;
-          }
-          code += `  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for app to launch\n`;
-        }
-        break;
+      // COMMENTED OUT: App launching disabled for now
+      // case 'appLaunch':
+      //   if (action.appName) {
+      //     code += `  // App launched: ${action.appName}`;
+      //     if (action.windowTitle) {
+      //       code += ` - ${action.windowTitle}`;
+      //     }
+      //     code += '\n';
+      //
+      //     // Generate platform-specific launch code using full path when available
+      //     code += `  // Launch ${action.appName}\n`;
+      //     if (action.appPath) {
+      //       // Use full executable path for reliability
+      //       const escapedPath = action.appPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      //       if (process.platform === 'win32') {
+      //         code += `  require('child_process').execSync('start "" "${escapedPath}"');\n`;
+      //       } else {
+      //         code += `  require('child_process').execSync('open "${escapedPath}"');\n`;
+      //       }
+      //     } else {
+      //       // Fallback to app name if no path
+      //       const appCmd = this.getWindowsAppCommand(action.appName);
+      //       code += `  require('child_process').execSync('${process.platform === 'win32' ? 'start ' + appCmd : 'open -a "' + action.appName + '"'}');\n`;
+      //     }
+      //     code += `  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for app to launch\n`;
+      //   }
+      //   break;
 
       case 'appSwitch':
         if (action.appName) {
@@ -1251,14 +1167,22 @@ export class DesktopRecorder {
             this.currentlyInBrowser = false;
           }
 
-          if (!this.seenApps.has(appName)) {
-            // First time seeing this app - it's a launch
-            this.recordAppLaunch(appName, activeWindow.owner.path, activeWindow.title);
-            this.seenApps.add(appName);
-          } else if (this.lastActiveWindow !== '') {
+          // COMMENTED OUT: App launch recording disabled for now
+          // if (!this.seenApps.has(appName)) {
+          //   // First time seeing this app - it's a launch
+          //   this.recordAppLaunch(appName, activeWindow.owner.path, activeWindow.title);
+          //   this.seenApps.add(appName);
+          // } else if (this.lastActiveWindow !== '') {
+          //   // Already seen this app - it's a switch
+          //   this.recordAppSwitch(appName);
+          // }
+
+          // Still track app switches even if not recording launches
+          if (this.lastActiveWindow !== '' && this.seenApps.has(appName)) {
             // Already seen this app - it's a switch
             this.recordAppSwitch(appName);
           }
+          this.seenApps.add(appName);
         }
 
         this.lastActiveWindow = appName;
@@ -1648,27 +1572,28 @@ export class DesktopRecorder {
     this.notifyUpdate();
   }
 
-  /**
-   * Record app launch
-   */
-  private recordAppLaunch(appName: string, appPath: string, windowTitle?: string): void {
-    if (!this.isRecording || this.isPaused) return;
-
-    console.log(`[DesktopRecorder] 🚀 App launched: "${appName}" - ${windowTitle || 'untitled'}`);
-    console.log(`[DesktopRecorder]    Executable path: "${appPath}"`);
-    console.log(`[DesktopRecorder]    Path will be used for reliable replay`);
-
-    const action: DesktopAction = {
-      type: 'appLaunch',
-      timestamp: Date.now() - this.startTime,
-      appName,
-      appPath, // Store full executable path
-      windowTitle,
-    };
-
-    this.actions.push(action);
-    this.notifyUpdate();
-  }
+  // COMMENTED OUT: App launch recording disabled for now
+  // /**
+  //  * Record app launch
+  //  */
+  // private recordAppLaunch(appName: string, appPath: string, windowTitle?: string): void {
+  //   if (!this.isRecording || this.isPaused) return;
+  //
+  //   console.log(`[DesktopRecorder] 🚀 App launched: "${appName}" - ${windowTitle || 'untitled'}`);
+  //   console.log(`[DesktopRecorder]    Executable path: "${appPath}"`);
+  //   console.log(`[DesktopRecorder]    Path will be used for reliable replay`);
+  //
+  //   const action: DesktopAction = {
+  //     type: 'appLaunch',
+  //     timestamp: Date.now() - this.startTime,
+  //     appName,
+  //     appPath, // Store full executable path
+  //     windowTitle,
+  //   };
+  //
+  //   this.actions.push(action);
+  //   this.notifyUpdate();
+  // }
 
   /**
    * Record app switch
@@ -1880,40 +1805,41 @@ export class DesktopRecorder {
     }
   }
 
-  /**
-   * Correlate clicks with app launches
-   * Marks clicks that triggered app launches so they can be skipped during replay
-   */
-  private correlateAppLaunchClicks(): void {
-    console.log('[DesktopRecorder] Correlating app launch clicks...');
-
-    for (let i = 0; i < this.actions.length; i++) {
-      const action = this.actions[i];
-
-      // Look for appLaunch actions
-      if (action.type === 'appLaunch') {
-        // Look backwards up to 3 seconds for a click that might have triggered it
-        for (let j = i - 1; j >= 0; j--) {
-          const prevAction = this.actions[j];
-
-          // Stop searching if we go back more than 3 seconds
-          if (action.timestamp - prevAction.timestamp > 3000) {
-            break;
-          }
-
-          // If we find a mouse click within 3 seconds before the launch
-          if (prevAction.type === 'mouseClick') {
-            console.log(`[DesktopRecorder] Correlated click at (${prevAction.coordinates?.x}, ${prevAction.coordinates?.y}) with launch of ${action.appName}`);
-
-            // Mark this click as a launch trigger
-            (prevAction as any).isAppLaunchClick = true;
-            (prevAction as any).launchedApp = action.appName;
-            break; // Found the triggering click, stop looking
-          }
-        }
-      }
-    }
-  }
+  // COMMENTED OUT: App launch correlation disabled since app launching is disabled
+  // /**
+  //  * Correlate clicks with app launches
+  //  * Marks clicks that triggered app launches so they can be skipped during replay
+  //  */
+  // private correlateAppLaunchClicks(): void {
+  //   console.log('[DesktopRecorder] Correlating app launch clicks...');
+  //
+  //   for (let i = 0; i < this.actions.length; i++) {
+  //     const action = this.actions[i];
+  //
+  //     // Look for appLaunch actions
+  //     if (action.type === 'appLaunch') {
+  //       // Look backwards up to 3 seconds for a click that might have triggered it
+  //       for (let j = i - 1; j >= 0; j--) {
+  //         const prevAction = this.actions[j];
+  //
+  //         // Stop searching if we go back more than 3 seconds
+  //         if (action.timestamp - prevAction.timestamp > 3000) {
+  //           break;
+  //         }
+  //
+  //         // If we find a mouse click within 3 seconds before the launch
+  //         if (prevAction.type === 'mouseClick') {
+  //           console.log(`[DesktopRecorder] Correlated click at (${prevAction.coordinates?.x}, ${prevAction.coordinates?.y}) with launch of ${action.appName}`);
+  //
+  //           // Mark this click as a launch trigger
+  //           (prevAction as any).isAppLaunchClick = true;
+  //           (prevAction as any).launchedApp = action.appName;
+  //           break; // Found the triggering click, stop looking
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
   /**
    * Get Windows command for launching an app
@@ -1951,77 +1877,78 @@ export class DesktopRecorder {
     return command;
   }
 
-  /**
-   * Launch an application
-   */
-  private async launchApp(appName: string, appPath?: string, windowTitle?: string): Promise<void> {
-    try {
-      console.log(`[DesktopRecorder] Launching app: ${appName}${windowTitle ? ` (${windowTitle})` : ''}`);
-
-      // Platform-specific app launching
-      if (process.platform === 'win32') {
-        // Prefer full executable path if available (more reliable)
-        if (appPath) {
-          console.log(`[DesktopRecorder] Using full path: "${appPath}"`);
-          console.log(`[DesktopRecorder] Executing: start "" "${appPath}"`);
-
-          // Use spawn instead of execAsync for better handling of paths with spaces
-          // start "" ensures empty window title, then the path
-          const result = await execAsync(`start "" "${appPath}"`);
-
-          if (result.stderr) {
-            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
-          }
-          if (result.stdout) {
-            console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
-          }
-        } else {
-          // Fallback to app name if no path available
-          const command = this.getWindowsAppCommand(appName);
-          console.log(`[DesktopRecorder] No path available, using app name: ${command}`);
-          console.log(`[DesktopRecorder] Executing: start ${command}`);
-          const result = await execAsync(`start ${command}`);
-
-          if (result.stderr) {
-            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
-          }
-          if (result.stdout) {
-            console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
-          }
-        }
-
-      } else if (process.platform === 'darwin') {
-        // macOS - prefer path, fallback to name
-        if (appPath) {
-          console.log(`[DesktopRecorder] Executing: open "${appPath}"`);
-          const result = await execAsync(`open "${appPath}"`);
-
-          if (result.stderr) {
-            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
-          }
-        } else {
-          // Fallback to app name
-          console.log(`[DesktopRecorder] Executing: open -a "${appName}"`);
-          const result = await execAsync(`open -a "${appName}"`);
-
-          if (result.stderr) {
-            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
-          }
-        }
-
-      } else {
-        console.warn(`[DesktopRecorder] App launching not supported on ${process.platform}`);
-        return;
-      }
-
-      console.log(`[DesktopRecorder] ✅ App launched: ${appName}`);
-    } catch (error: any) {
-      console.error(`[DesktopRecorder] ❌ Failed to launch app "${appName}":`, error.message);
-      console.error(`[DesktopRecorder] Error details:`, error);
-      console.warn(`[DesktopRecorder] Continuing replay despite launch failure...`);
-      // Don't throw - continue with replay
-    }
-  }
+  // COMMENTED OUT: App launching disabled for now
+  // /**
+  //  * Launch an application
+  //  */
+  // private async launchApp(appName: string, appPath?: string, windowTitle?: string): Promise<void> {
+  //   try {
+  //     console.log(`[DesktopRecorder] Launching app: ${appName}${windowTitle ? ` (${windowTitle})` : ''}`);
+  //
+  //     // Platform-specific app launching
+  //     if (process.platform === 'win32') {
+  //       // Prefer full executable path if available (more reliable)
+  //       if (appPath) {
+  //         console.log(`[DesktopRecorder] Using full path: "${appPath}"`);
+  //         console.log(`[DesktopRecorder] Executing: start "" "${appPath}"`);
+  //
+  //         // Use spawn instead of execAsync for better handling of paths with spaces
+  //         // start "" ensures empty window title, then the path
+  //         const result = await execAsync(`start "" "${appPath}"`);
+  //
+  //         if (result.stderr) {
+  //           console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+  //         }
+  //         if (result.stdout) {
+  //           console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+  //         }
+  //       } else {
+  //         // Fallback to app name if no path available
+  //         const command = this.getWindowsAppCommand(appName);
+  //         console.log(`[DesktopRecorder] No path available, using app name: ${command}`);
+  //         console.log(`[DesktopRecorder] Executing: start ${command}`);
+  //         const result = await execAsync(`start ${command}`);
+  //
+  //         if (result.stderr) {
+  //           console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+  //         }
+  //         if (result.stdout) {
+  //           console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+  //         }
+  //       }
+  //
+  //     } else if (process.platform === 'darwin') {
+  //       // macOS - prefer path, fallback to name
+  //       if (appPath) {
+  //         console.log(`[DesktopRecorder] Executing: open "${appPath}"`);
+  //         const result = await execAsync(`open "${appPath}"`);
+  //
+  //         if (result.stderr) {
+  //           console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+  //         }
+  //       } else {
+  //         // Fallback to app name
+  //         console.log(`[DesktopRecorder] Executing: open -a "${appName}"`);
+  //         const result = await execAsync(`open -a "${appName}"`);
+  //
+  //         if (result.stderr) {
+  //           console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+  //         }
+  //       }
+  //
+  //     } else {
+  //       console.warn(`[DesktopRecorder] App launching not supported on ${process.platform}`);
+  //       return;
+  //     }
+  //
+  //     console.log(`[DesktopRecorder] ✅ App launched: ${appName}`);
+  //   } catch (error: any) {
+  //     console.error(`[DesktopRecorder] ❌ Failed to launch app "${appName}":`, error.message);
+  //     console.error(`[DesktopRecorder] Error details:`, error);
+  //     console.warn(`[DesktopRecorder] Continuing replay despite launch failure...`);
+  //     // Don't throw - continue with replay
+  //   }
+  // }
 
   /**
    * Focus/switch to an application
