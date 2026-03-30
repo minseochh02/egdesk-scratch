@@ -8,6 +8,10 @@ const XLSX = require('xlsx');
 const { SerialPort } = require('serialport');
 const { BaseCardAutomator } = require('../../core/BaseCardAutomator');
 const { SHINHAN_CARD_INFO, SHINHAN_CARD_CONFIG } = require('./config');
+const {
+  checkKoreanSecurityApps,
+  getSecurityStatusReport,
+} = require('../../utils/korean-security-checker');
 
 /**
  * Shinhan Card Automator
@@ -122,6 +126,25 @@ class ShinhanCardAutomator extends BaseCardAutomator {
     const proxy = this.buildProxyOption(proxyUrl);
 
     try {
+      // Step 0: Check Korean security apps
+      this.log('Checking Korean security applications...');
+      const securityStatus = await checkKoreanSecurityApps();
+
+      // Log security status report
+      const statusReport = await getSecurityStatusReport();
+      this.log(statusReport);
+
+      // Warning if required apps are not running
+      if (!securityStatus.allRequiredRunning) {
+        this.log('⚠ WARNING: Required security apps are not running!', 'warn');
+        this.log('The login may fail or be blocked by the website.', 'warn');
+        securityStatus.errors.forEach(error => {
+          this.log(`  - ${error}`, 'warn');
+        });
+      } else {
+        this.log('✓ All required security apps are running', 'info');
+      }
+
       // Step 1: Create browser
       this.log('Starting Shinhan Card automation...');
       const { browser, context } = await this.createBrowser(proxy);
@@ -236,6 +259,11 @@ class ShinhanCardAutomator extends BaseCardAutomator {
         success: true,
         isLoggedIn: true,
         message: 'Successfully logged into Shinhan Card',
+        securityApps: {
+          checked: true,
+          allRequiredRunning: securityStatus.allRequiredRunning,
+          details: securityStatus.results,
+        },
       };
     } catch (error) {
       this.log(`Login failed: ${error.message}`, 'error');

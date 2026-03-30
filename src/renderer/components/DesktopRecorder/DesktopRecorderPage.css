@@ -423,7 +423,8 @@
 }
 
 .btn-replay,
-.btn-delete {
+.btn-delete,
+.btn-downloads {
   padding: 0.5rem 1rem;
   font-size: 0.9rem;
   font-weight: 600;
@@ -459,6 +460,21 @@
 }
 
 .btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-downloads {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.btn-downloads:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+}
+
+.btn-downloads:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

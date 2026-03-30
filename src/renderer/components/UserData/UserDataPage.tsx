@@ -4,6 +4,7 @@ import { TableList } from './TableList';
 import { TableViewer } from './TableViewer';
 import { ImportWizard } from './ImportWizard';
 import { BrowserDownloadsSyncWizard } from './BrowserDownloadsSyncWizard';
+import { DesktopDownloadsSyncWizard } from './DesktopDownloadsSyncWizard';
 import { SyncConfigurationsManager } from './SyncConfigurationsManager';
 import './UserData.css';
 
@@ -12,6 +13,7 @@ export const UserDataPage: React.FC = () => {
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [showBrowserSyncWizard, setShowBrowserSyncWizard] = useState(false);
+  const [showDesktopSyncWizard, setShowDesktopSyncWizard] = useState(false);
   const [showSyncConfigManager, setShowSyncConfigManager] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -298,6 +300,9 @@ export const UserDataPage: React.FC = () => {
             <button className="btn btn-secondary" onClick={() => setShowBrowserSyncWizard(true)}>
               🔄 Sync Browser Downloads
             </button>
+            <button className="btn btn-secondary" onClick={() => setShowDesktopSyncWizard(true)}>
+              🔄 Sync Desktop Downloads
+            </button>
             <button className="btn btn-secondary" onClick={() => setShowSyncConfigManager(true)}>
               ⚙️ Configurations
             </button>
@@ -376,6 +381,13 @@ export const UserDataPage: React.FC = () => {
         <BrowserDownloadsSyncWizard
           onClose={() => setShowBrowserSyncWizard(false)}
           onComplete={handleImportComplete}
+        />
+      )}
+
+      {showDesktopSyncWizard && (
+        <DesktopDownloadsSyncWizard
+          onClose={() => setShowDesktopSyncWizard(false)}
+          userTables={tables}
         />
       )}
 

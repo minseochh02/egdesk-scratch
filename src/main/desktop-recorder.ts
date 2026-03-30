@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { clipboard, systemPreferences } from 'electron';
@@ -52,6 +53,17 @@ const IGNORED_APPS = new Set([
 import { DesktopAutomationManager } from './utils/desktop-automation-manager';
 
 /**
+ * Downloaded file information
+ */
+export interface DownloadedFileInfo {
+  filename: string;
+  filePath: string;
+  fileSize: number;
+  downloadedAt: string;
+  timestamp: number;
+}
+
+/**
  * Recording file format
  */
 export interface RecordingFile {
@@ -64,6 +76,8 @@ export interface RecordingFile {
   metadata: {
     scriptName: string;
     actionCount: number;
+    downloadedFiles?: DownloadedFileInfo[];
+    downloadsFolder?: string; // Path to recording-specific downloads folder
   };
 }
 
@@ -75,7 +89,8 @@ export interface DesktopAction {
         'keyPress' | 'keyType' | 'keyCombo' |
         'clipboardCopy' | 'clipboardPaste' | 'clipboardRead' |
         'appSwitch' | 'appLaunch' | 'windowFocus' | 'windowResize' |
-        'browserInteractionStart' | 'browserInteractionEnd';
+        'browserInteractionStart' | 'browserInteractionEnd' |
+        'fileDownload';
 
   timestamp: number;
 
@@ -99,6 +114,11 @@ export interface DesktopAction {
   windowTitle?: string;
   windowId?: number;
   windowBounds?: { x: number; y: number; width: number; height: number };
+
+  // File download-specific
+  filename?: string;
+  filePath?: string;
+  fileSize?: number;
 }
 
 /**
@@ -128,6 +148,15 @@ export class DesktopRecorder {
   private pressedKeys: Set<number> = new Set(); // Track currently pressed keys
   private currentlyInBrowser: boolean = false; // Track if user is currently in a browser
   private controlWindow: any = null; // Reference to control window (if using one)
+
+  // Download monitoring
+  private downloadWatcher: fs.FSWatcher | null = null;
+  private downloadedFiles: Map<string, DownloadedFileInfo> = new Map();
+  private downloadsPath: string = '';
+  private recordingDownloadsFolder: string = '';
+  private mouseCheckInterval: NodeJS.Timeout | null = null;
+  private mouseMonitoringFailed: boolean = false;
+  private mouseMonitoringFailCount: number = 0;
 
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
@@ -231,6 +260,7 @@ export class DesktopRecorder {
     this.setupGlobalKeyboardListener(); // This now also captures mouse clicks via uiohook
     this.setupClipboardMonitoring();
     this.setupWindowMonitoring();
+    this.setupDownloadMonitoring();
 
     console.log('[DesktopRecorder] Recording started');
     if (this.uiohookStarted) {
@@ -324,11 +354,22 @@ export class DesktopRecorder {
         metadata: {
           scriptName: path.basename(this.outputFile, '.js'),
           actionCount: this.actions.length,
+          downloadedFiles: Array.from(this.downloadedFiles.values()),
+          downloadsFolder: this.recordingDownloadsFolder || undefined,
         },
       };
 
       fs.writeFileSync(jsonPath, JSON.stringify(recordingData, null, 2), 'utf-8');
       console.log(`[DesktopRecorder] Recording data saved to ${jsonPath}`);
+
+      // Log downloaded files summary
+      if (this.downloadedFiles.size > 0) {
+        console.log(`[DesktopRecorder] 📥 Downloaded files tracked (${this.downloadedFiles.size}):`);
+        for (const [filename, info] of this.downloadedFiles) {
+          console.log(`[DesktopRecorder]    - ${filename} (${this.formatFileSize(info.fileSize)})`);
+        }
+        console.log(`[DesktopRecorder] 📂 Downloads folder: ${this.recordingDownloadsFolder}`);
+      }
     }
 
     console.log(`[DesktopRecorder] Recording stopped. ${this.actions.length} actions recorded.`);
@@ -544,6 +585,8 @@ export class DesktopRecorder {
         return `🌐 Close Browser`;
       case 'clipboardCopy':
         return `📋 Copy to clipboard`;
+      case 'fileDownload':
+        return `📥 Downloaded: ${action.filename}`;
       default:
         return `${action.type}`;
     }
@@ -760,6 +803,16 @@ export class DesktopRecorder {
         code += `  // ========================================\n`;
         code += `  // End of browser interaction\n`;
         code += `  // ========================================\n\n`;
+        break;
+
+      case 'fileDownload':
+        if (action.filename && action.filePath) {
+          code += `  // File downloaded: ${action.filename}\n`;
+          code += `  // Path: ${action.filePath}\n`;
+          if (action.fileSize) {
+            code += `  // Size: ${this.formatFileSize(action.fileSize)}\n`;
+          }
+        }
         break;
 
       default:
@@ -1149,6 +1202,200 @@ export class DesktopRecorder {
   }
 
   /**
+   * Setup download monitoring for Excel/CSV files
+   */
+  private setupDownloadMonitoring(): void {
+    // Create recording-specific downloads folder (similar to browser recorder)
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const scriptName = `egdesk-desktop-recorder-${timestamp}`;
+    const baseDownloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Desktop');
+    this.recordingDownloadsFolder = path.join(baseDownloadsPath, scriptName);
+
+    // Create the folder
+    try {
+      if (!fs.existsSync(baseDownloadsPath)) {
+        fs.mkdirSync(baseDownloadsPath, { recursive: true });
+      }
+      if (!fs.existsSync(this.recordingDownloadsFolder)) {
+        fs.mkdirSync(this.recordingDownloadsFolder, { recursive: true });
+      }
+      console.log(`[DesktopRecorder] Created downloads folder: ${this.recordingDownloadsFolder}`);
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to create downloads folder:', error.message);
+    }
+
+    // Monitor the user's Downloads folder
+    this.downloadsPath = path.join(os.homedir(), 'Downloads');
+
+    try {
+      console.log(`[DesktopRecorder] Setting up download monitoring on: ${this.downloadsPath}`);
+
+      this.downloadWatcher = fs.watch(this.downloadsPath, { recursive: false }, (eventType, filename) => {
+        if (!filename) return;
+        if (!this.isRecording || this.isPaused) return;
+
+        // Only process Excel/CSV files
+        if (this.isExcelOrCsvFile(filename)) {
+          this.handlePotentialDownload(filename);
+        }
+      });
+
+      console.log('[DesktopRecorder] Download monitoring setup complete');
+    } catch (error: any) {
+      console.warn('[DesktopRecorder] Failed to setup download monitoring:', error.message);
+    }
+  }
+
+  /**
+   * Handle a potential file download
+   */
+  private async handlePotentialDownload(filename: string): Promise<void> {
+    const sourceFilePath = path.join(this.downloadsPath, filename);
+
+    // Skip if we've already processed this file
+    if (this.downloadedFiles.has(filename)) {
+      return;
+    }
+
+    // Also check if there's already a pending check for this file
+    const pendingKey = `pending_${filename}`;
+    if ((this.downloadedFiles as any)[pendingKey]) {
+      return;
+    }
+
+    // Mark as pending to prevent duplicate processing
+    (this.downloadedFiles as any)[pendingKey] = true;
+
+    console.log(`[DesktopRecorder] Detected potential download: ${filename}`);
+
+    // Wait for file stability (same pattern as FileWatcherService)
+    const isStable = await this.waitForFileStability(sourceFilePath, 5000);
+
+    // Clear pending flag
+    delete (this.downloadedFiles as any)[pendingKey];
+
+    if (isStable) {
+      // Double-check we haven't processed this file while waiting
+      if (this.downloadedFiles.has(filename)) {
+        return;
+      }
+
+      try {
+        const stats = fs.statSync(sourceFilePath);
+
+        // Move file to recording-specific folder
+        const destinationFilePath = path.join(this.recordingDownloadsFolder, filename);
+
+        console.log(`[DesktopRecorder] Moving file from ${sourceFilePath} to ${destinationFilePath}`);
+        fs.renameSync(sourceFilePath, destinationFilePath);
+
+        const fileInfo: DownloadedFileInfo = {
+          filename,
+          filePath: destinationFilePath, // Use new location
+          fileSize: stats.size,
+          downloadedAt: new Date().toISOString(),
+          timestamp: Date.now() - this.startTime,
+        };
+
+        // Track this file
+        this.downloadedFiles.set(filename, fileInfo);
+
+        // Record the download action
+        this.recordFileDownload(fileInfo);
+
+        console.log(`[DesktopRecorder] 📥 Recorded and moved download: ${filename} (${this.formatFileSize(stats.size)})`);
+        console.log(`[DesktopRecorder]    New location: ${destinationFilePath}`);
+      } catch (error: any) {
+        console.warn(`[DesktopRecorder] Failed to process downloaded file ${filename}:`, error.message);
+      }
+    }
+  }
+
+  /**
+   * Wait for file to stabilize (file size consistent)
+   */
+  private async waitForFileStability(filePath: string, maxWaitMs: number = 5000): Promise<boolean> {
+    const checkInterval = 500; // Check every 500ms
+    const maxChecks = Math.floor(maxWaitMs / checkInterval);
+    let lastSize = -1;
+    let stableChecks = 0;
+    const requiredStableChecks = 2; // File size must be stable for 2 consecutive checks
+
+    for (let i = 0; i < maxChecks; i++) {
+      try {
+        if (!fs.existsSync(filePath)) {
+          return false;
+        }
+
+        const stats = fs.statSync(filePath);
+        const currentSize = stats.size;
+
+        if (currentSize === lastSize && currentSize > 0) {
+          stableChecks++;
+          if (stableChecks >= requiredStableChecks) {
+            return true;
+          }
+        } else {
+          stableChecks = 0;
+        }
+
+        lastSize = currentSize;
+        await this.sleep(checkInterval);
+      } catch (error) {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if file is Excel or CSV
+   */
+  private isExcelOrCsvFile(filename: string): boolean {
+    const ext = path.extname(filename).toLowerCase();
+    return ['.xlsx', '.xls', '.xlsm', '.csv'].includes(ext);
+  }
+
+  /**
+   * Format file size for display
+   */
+  private formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  /**
+   * Record file download action
+   */
+  private recordFileDownload(fileInfo: DownloadedFileInfo): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    const action: DesktopAction = {
+      type: 'fileDownload',
+      timestamp: fileInfo.timestamp,
+      filename: fileInfo.filename,
+      filePath: fileInfo.filePath,
+      fileSize: fileInfo.fileSize,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
+  }
+
+  /**
+   * Stop download monitoring
+   */
+  private stopDownloadMonitoring(): void {
+    if (this.downloadWatcher) {
+      this.downloadWatcher.close();
+      this.downloadWatcher = null;
+      console.log('[DesktopRecorder] Download monitoring stopped');
+    }
+  }
+
+  /**
    * Setup mouse monitoring (polling-based)
    */
   private setupMouseMonitoring(): void {
@@ -1259,6 +1506,9 @@ export class DesktopRecorder {
       clearInterval(this.windowCheckInterval);
       this.windowCheckInterval = null;
     }
+
+    // Stop download monitoring
+    this.stopDownloadMonitoring();
 
     // Clear pressed keys tracking
     this.pressedKeys.clear();
@@ -1400,6 +1650,20 @@ export class DesktopRecorder {
    */
   getActions(): DesktopAction[] {
     return [...this.actions];
+  }
+
+  /**
+   * Get all downloaded files during recording
+   */
+  getDownloadedFiles(): DownloadedFileInfo[] {
+    return Array.from(this.downloadedFiles.values());
+  }
+
+  /**
+   * Get the recording-specific downloads folder path
+   */
+  getDownloadsFolder(): string {
+    return this.recordingDownloadsFolder;
   }
 
   /**

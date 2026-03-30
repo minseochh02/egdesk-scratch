@@ -8,6 +8,7 @@ interface SyncConfiguration {
   scriptFolderPath: string;
   scriptName: string;
   folderName: string;
+  source?: 'browser' | 'desktop';
   targetTableId: string;
   headerRow: number;
   skipBottomRows: number;
@@ -40,6 +41,7 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
   const [watcherStatus, setWatcherStatus] = useState<Array<{ configId: string; processedFilesCount: number }>>([]);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'browser' | 'desktop'>('browser');
 
   useEffect(() => {
     fetchConfigurations();
@@ -189,6 +191,11 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
     }
   };
 
+  // Filter configurations by source
+  const browserConfigs = configurations.filter(c => !c.source || c.source === 'browser');
+  const desktopConfigs = configurations.filter(c => c.source === 'desktop');
+  const displayedConfigs = activeTab === 'browser' ? browserConfigs : desktopConfigs;
+
   if (loading && configurations.length === 0) {
     return (
       <div className="import-wizard">
@@ -259,24 +266,60 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
         <div className="import-wizard-body">
           {error && <div className="error-message">{error}</div>}
 
-          {configurations.length === 0 ? (
+          {/* Source Tabs */}
+          <div className="sync-source-tabs">
+            <button
+              className={`sync-tab ${activeTab === 'browser' ? 'active' : ''}`}
+              onClick={() => setActiveTab('browser')}
+            >
+              <span className="tab-icon">🌐</span>
+              <span className="tab-label">Browser Downloads</span>
+              <span className="tab-count">{browserConfigs.length}</span>
+            </button>
+            <button
+              className={`sync-tab ${activeTab === 'desktop' ? 'active' : ''}`}
+              onClick={() => setActiveTab('desktop')}
+            >
+              <span className="tab-icon">🖥️</span>
+              <span className="tab-label">Desktop Recordings</span>
+              <span className="tab-count">{desktopConfigs.length}</span>
+            </button>
+          </div>
+
+          {displayedConfigs.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">⚙️</div>
-              <h3 className="empty-state-title">No Sync Configurations Yet</h3>
+              <div className="empty-state-icon">{activeTab === 'browser' ? '🌐' : '🖥️'}</div>
+              <h3 className="empty-state-title">
+                No {activeTab === 'browser' ? 'Browser' : 'Desktop'} Sync Configurations
+              </h3>
               <p className="empty-state-message">
-                Import an Excel file using "Sync Browser Downloads" and enable "Remember this configuration"
-                to create your first auto-sync setup.
+                {activeTab === 'browser' ? (
+                  <>
+                    Import an Excel file using "Sync Browser Downloads" and enable "Remember this configuration"
+                    to create your first browser auto-sync setup.
+                  </>
+                ) : (
+                  <>
+                    Record a desktop session with downloads, then click "Set Up Auto-Sync for This Folder"
+                    to automatically import future Excel files from that recording location.
+                  </>
+                )}
               </p>
             </div>
           ) : (
             <div className="sync-configs-list">
-              {configurations.map((config) => (
+              {displayedConfigs.map((config) => (
                 <div key={config.id} className="sync-config-card">
                   <div className="sync-config-header">
                     <div className="sync-config-title-row">
                       <div className="sync-config-icon">🤖</div>
                       <div className="sync-config-title-info">
-                        <h4 className="sync-config-name">{config.scriptName}</h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h4 className="sync-config-name">{config.scriptName}</h4>
+                          <span className={`source-badge ${config.source || 'browser'}`}>
+                            {config.source === 'desktop' ? '🖥️ Desktop' : '🌐 Browser'}
+                          </span>
+                        </div>
                         <div className="sync-config-folder">{config.folderName}</div>
                       </div>
                       <div className="sync-config-actions">
@@ -436,7 +479,7 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
 
         <div className="import-wizard-footer">
           <div style={{ fontSize: '13px', color: '#666' }}>
-            {configurations.length} configuration{configurations.length !== 1 ? 's' : ''} · {' '}
+            {browserConfigs.length} browser · {desktopConfigs.length} desktop · {' '}
             <span style={{ color: '#4CAF50', fontWeight: 500 }}>
               {watcherStatus.length} active watcher{watcherStatus.length !== 1 ? 's' : ''}
             </span>

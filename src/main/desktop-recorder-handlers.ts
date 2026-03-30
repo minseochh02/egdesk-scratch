@@ -8,6 +8,7 @@
 import { ipcMain, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { DesktopRecorder } from './desktop-recorder';
 import { RecorderControlWindow } from './recorder-control-window';
 import { readExcelPreview, generateExcelHTML, getExcelFileInfo } from './rookie/thumbnail-handler';
@@ -663,6 +664,206 @@ export function registerDesktopRecorderHandlers(): void {
         success: false,
         error: error.message,
       };
+    }
+  });
+
+  // ==================== Downloaded Files Management ====================
+
+  /**
+   * Get list of downloaded files from the current/last recording
+   */
+  ipcMain.handle('desktop-recorder:get-downloaded-files', async (event, { recordingPath }) => {
+    try {
+      // If recording path provided, load from JSON
+      if (recordingPath) {
+        const jsonPath = recordingPath.replace('.js', '.json');
+        if (fs.existsSync(jsonPath)) {
+          const recordingData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+          return {
+            success: true,
+            files: recordingData.metadata?.downloadedFiles || [],
+          };
+        }
+      }
+
+      // Otherwise, get from active recorder
+      if (activeDesktopRecorder) {
+        const status = activeDesktopRecorder.getStatus();
+        if (status.isRecording) {
+          return {
+            success: true,
+            files: activeDesktopRecorder.getDownloadedFiles(),
+            message: 'Recording in progress',
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: 'No active recording or recording path provided',
+      };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to get downloaded files:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  /**
+   * Parse a downloaded Excel/CSV file with preview
+   */
+  ipcMain.handle('desktop-recorder:parse-downloaded-file', async (event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return {
+          success: false,
+          error: 'File not found',
+        };
+      }
+
+      // Use existing Excel parsing utilities
+      const previewData = await readExcelPreview(filePath, {
+        maxRows: 30,
+        maxColumns: 15,
+        includeHeaders: true,
+      });
+
+      const html = generateExcelHTML(previewData);
+      const fileInfo = getExcelFileInfo(filePath);
+
+      return {
+        success: true,
+        previewData,
+        html,
+        fileInfo,
+      };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to parse downloaded file:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  /**
+   * Get downloaded files from a specific recording JSON
+   */
+  ipcMain.handle('desktop-recorder:load-downloaded-files-from-json', async (event, { jsonPath }) => {
+    try {
+      if (!fs.existsSync(jsonPath)) {
+        return {
+          success: false,
+          error: 'Recording JSON file not found',
+        };
+      }
+
+      const recordingData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+
+      return {
+        success: true,
+        files: recordingData.metadata?.downloadedFiles || [],
+        recordingInfo: {
+          recordedAt: recordingData.recordedAt,
+          duration: recordingData.duration,
+          platform: recordingData.platform,
+          actionCount: recordingData.metadata.actionCount,
+        },
+      };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to load downloaded files from JSON:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
+
+  /**
+   * Get all desktop recording download folders (for sync setup)
+   */
+  ipcMain.handle('desktop-recorder:get-download-folders', async () => {
+    try {
+      const downloadsBasePath = path.join(os.homedir(), 'Downloads', 'EGDesk-Desktop');
+
+      if (!fs.existsSync(downloadsBasePath)) {
+        return { success: true, folders: [] };
+      }
+
+      const folders = fs.readdirSync(downloadsBasePath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => {
+          const folderPath = path.join(downloadsBasePath, dirent.name);
+          const stats = fs.statSync(folderPath);
+          const files = fs.readdirSync(folderPath);
+          const excelFiles = files.filter(f => /\.(xlsx|xls|xlsm|csv)$/i.test(f));
+
+          // Calculate folder size
+          let size = 0;
+          try {
+            files.forEach(file => {
+              const filePath = path.join(folderPath, file);
+              if (fs.statSync(filePath).isFile()) {
+                size += fs.statSync(filePath).size;
+              }
+            });
+          } catch (err) {
+            // Ignore errors
+          }
+
+          return {
+            scriptName: dirent.name.replace(/^egdesk-desktop-recorder-/, 'Desktop Recording '),
+            folderName: dirent.name,
+            path: folderPath,
+            fileCount: files.length,
+            excelFileCount: excelFiles.length,
+            lastModified: stats.mtime,
+            size,
+          };
+        })
+        .filter(folder => folder.excelFileCount > 0) // Only show folders with Excel files
+        .sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime()); // Most recent first
+
+      return { success: true, folders };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to get download folders:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Get files in a specific folder
+   */
+  ipcMain.handle('desktop-recorder:get-folder-files', async (event, { folderPath }) => {
+    try {
+      if (!fs.existsSync(folderPath)) {
+        return { success: false, error: 'Folder not found' };
+      }
+
+      const files = fs.readdirSync(folderPath)
+        .filter(filename => {
+          const filePath = path.join(folderPath, filename);
+          return fs.statSync(filePath).isFile();
+        })
+        .map(filename => {
+          const filePath = path.join(folderPath, filename);
+          const stats = fs.statSync(filePath);
+
+          return {
+            name: filename,
+            path: filePath,
+            size: stats.size,
+            modified: stats.mtime,
+          };
+        })
+        .sort((a, b) => b.modified.getTime() - a.modified.getTime()); // Most recent first
+
+      return { success: true, files };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to get folder files:', error.message);
+      return { success: false, error: error.message };
     }
   });
 

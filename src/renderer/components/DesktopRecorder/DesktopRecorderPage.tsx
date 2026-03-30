@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './DesktopRecorderPage.css';
+import { DownloadedFilesDialog } from './DownloadedFilesDialog';
 
 interface RecordingStatus {
   isRecording: boolean;
@@ -12,6 +13,7 @@ interface SavedRecording {
   name: string;
   createdAt: Date;
   actionCount: number;
+  downloadCount?: number;
 }
 
 const DesktopRecorderPage: React.FC = () => {
@@ -28,6 +30,7 @@ const DesktopRecorderPage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [replaySpeed, setReplaySpeed] = useState<number>(1.0);
+  const [selectedRecordingForDownloads, setSelectedRecordingForDownloads] = useState<string | null>(null);
 
   // Check permissions on mount
   useEffect(() => {
@@ -84,7 +87,32 @@ const DesktopRecorderPage: React.FC = () => {
     try {
       const result = await (window as any).electron.invoke('desktop-recorder:get-recordings');
       if (result.success) {
-        setSavedRecordings(result.recordings || []);
+        const recordings = result.recordings || [];
+
+        // Load download counts for each recording
+        const recordingsWithDownloads = await Promise.all(
+          recordings.map(async (recording: SavedRecording) => {
+            try {
+              const jsonPath = recording.path.replace('.js', '.json');
+              const downloadResult = await (window as any).electron.invoke(
+                'desktop-recorder:load-downloaded-files-from-json',
+                { jsonPath }
+              );
+
+              if (downloadResult.success) {
+                return {
+                  ...recording,
+                  downloadCount: downloadResult.files?.length || 0,
+                };
+              }
+            } catch (err) {
+              console.error('Error loading downloads for recording:', err);
+            }
+            return { ...recording, downloadCount: 0 };
+          })
+        );
+
+        setSavedRecordings(recordingsWithDownloads);
       }
     } catch (err) {
       console.error('Error loading recordings:', err);
@@ -366,9 +394,24 @@ const DesktopRecorderPage: React.FC = () => {
                     <h4>{recording.name}</h4>
                     <p className="recording-meta">
                       {recording.actionCount} actions • {new Date(recording.createdAt).toLocaleString()}
+                      {recording.downloadCount !== undefined && recording.downloadCount > 0 && (
+                        <> • 📥 {recording.downloadCount} file{recording.downloadCount > 1 ? 's' : ''} downloaded</>
+                      )}
                     </p>
                   </div>
                   <div className="recording-actions">
+                    {recording.downloadCount !== undefined && recording.downloadCount > 0 && (
+                      <button
+                        onClick={() => {
+                          const jsonPath = recording.path.replace('.js', '.json');
+                          setSelectedRecordingForDownloads(jsonPath);
+                        }}
+                        className="btn-downloads"
+                        disabled={status.isRecording}
+                      >
+                        📥 View Downloads ({recording.downloadCount})
+                      </button>
+                    )}
                     <div className="replay-controls">
                       <label>Speed:</label>
                       <select
@@ -403,6 +446,14 @@ const DesktopRecorderPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Downloaded Files Dialog */}
+      {selectedRecordingForDownloads && (
+        <DownloadedFilesDialog
+          recordingJsonPath={selectedRecordingForDownloads}
+          onClose={() => setSelectedRecordingForDownloads(null)}
+        />
+      )}
     </div>
   );
 };

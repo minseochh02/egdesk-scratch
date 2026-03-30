@@ -4,12 +4,14 @@
 
 export type FileAction = 'keep' | 'archive' | 'delete';
 export type SyncStatus = 'success' | 'failed' | 'partial' | 'never';
+export type SyncSource = 'browser' | 'desktop';
 
 export interface SyncConfiguration {
   id: string;
   scriptFolderPath: string;
   scriptName: string;
   folderName: string;
+  source?: SyncSource; // 'browser' or 'desktop' - defaults to 'browser' for backwards compatibility
 
   // Target SQL table
   targetTableId: string;
@@ -52,6 +54,7 @@ export interface CreateSyncConfigurationData {
   scriptName: string;
   folderName: string;
   targetTableId: string;
+  source?: SyncSource; // 'browser' or 'desktop'
   headerRow?: number;
   skipBottomRows?: number;
   sheetIndex?: number;
