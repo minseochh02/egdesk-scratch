@@ -112,6 +112,7 @@ export interface DesktopAction {
 
   // Window/App-specific
   appName?: string;
+  appPath?: string; // Full executable path for reliable launching
   windowTitle?: string;
   windowId?: number;
   windowBounds?: { x: number; y: number; width: number; height: number };
@@ -661,7 +662,7 @@ export class DesktopRecorder {
 
       case 'appLaunch':
         console.log(`App launch: ${action.appName}${action.windowTitle ? ` - ${action.windowTitle}` : ''}`);
-        await this.launchApp(action.appName, action.windowTitle);
+        await this.launchApp(action.appName, action.appPath, action.windowTitle);
         await this.sleep(2000); // Give time for app to launch
         break;
 
@@ -828,10 +829,21 @@ export class DesktopRecorder {
           }
           code += '\n';
 
-          // Generate platform-specific launch code
-          const appCmd = this.getWindowsAppCommand(action.appName);
+          // Generate platform-specific launch code using full path when available
           code += `  // Launch ${action.appName}\n`;
-          code += `  require('child_process').execSync('${process.platform === 'win32' ? 'start ' + appCmd : 'open -a "' + action.appName + '"'}');\n`;
+          if (action.appPath) {
+            // Use full executable path for reliability
+            const escapedPath = action.appPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            if (process.platform === 'win32') {
+              code += `  require('child_process').execSync('start "" "${escapedPath}"');\n`;
+            } else {
+              code += `  require('child_process').execSync('open "${escapedPath}"');\n`;
+            }
+          } else {
+            // Fallback to app name if no path
+            const appCmd = this.getWindowsAppCommand(action.appName);
+            code += `  require('child_process').execSync('${process.platform === 'win32' ? 'start ' + appCmd : 'open -a "' + action.appName + '"'}');\n`;
+          }
           code += `  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for app to launch\n`;
         }
         break;
@@ -1231,7 +1243,7 @@ export class DesktopRecorder {
 
           if (!this.seenApps.has(appName)) {
             // First time seeing this app - it's a launch
-            this.recordAppLaunch(appName, activeWindow.title);
+            this.recordAppLaunch(appName, activeWindow.owner.path, activeWindow.title);
             this.seenApps.add(appName);
           } else if (this.lastActiveWindow !== '') {
             // Already seen this app - it's a switch
@@ -1629,16 +1641,18 @@ export class DesktopRecorder {
   /**
    * Record app launch
    */
-  private recordAppLaunch(appName: string, windowTitle?: string): void {
+  private recordAppLaunch(appName: string, appPath: string, windowTitle?: string): void {
     if (!this.isRecording || this.isPaused) return;
 
     console.log(`[DesktopRecorder] 🚀 App launched: "${appName}" - ${windowTitle || 'untitled'}`);
-    console.log(`[DesktopRecorder]    Recorded app name: "${appName}" (will be used during replay)`);
+    console.log(`[DesktopRecorder]    Executable path: "${appPath}"`);
+    console.log(`[DesktopRecorder]    Path will be used for reliable replay`);
 
     const action: DesktopAction = {
       type: 'appLaunch',
       timestamp: Date.now() - this.startTime,
       appName,
+      appPath, // Store full executable path
       windowTitle,
     };
 
@@ -1930,31 +1944,59 @@ export class DesktopRecorder {
   /**
    * Launch an application
    */
-  private async launchApp(appName: string, windowTitle?: string): Promise<void> {
+  private async launchApp(appName: string, appPath?: string, windowTitle?: string): Promise<void> {
     try {
       console.log(`[DesktopRecorder] Launching app: ${appName}${windowTitle ? ` (${windowTitle})` : ''}`);
 
       // Platform-specific app launching
       if (process.platform === 'win32') {
-        const command = this.getWindowsAppCommand(appName);
+        // Prefer full executable path if available (more reliable)
+        if (appPath) {
+          console.log(`[DesktopRecorder] Using full path: "${appPath}"`);
+          console.log(`[DesktopRecorder] Executing: start "" "${appPath}"`);
 
-        console.log(`[DesktopRecorder] Executing: start ${command}`);
-        const result = await execAsync(`start ${command}`);
+          // Use spawn instead of execAsync for better handling of paths with spaces
+          // start "" ensures empty window title, then the path
+          const result = await execAsync(`start "" "${appPath}"`);
 
-        if (result.stderr) {
-          console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
-        }
-        if (result.stdout) {
-          console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+          if (result.stderr) {
+            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+          }
+          if (result.stdout) {
+            console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+          }
+        } else {
+          // Fallback to app name if no path available
+          const command = this.getWindowsAppCommand(appName);
+          console.log(`[DesktopRecorder] No path available, using app name: ${command}`);
+          console.log(`[DesktopRecorder] Executing: start ${command}`);
+          const result = await execAsync(`start ${command}`);
+
+          if (result.stderr) {
+            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+          }
+          if (result.stdout) {
+            console.log(`[DesktopRecorder] Launch stdout: ${result.stdout}`);
+          }
         }
 
       } else if (process.platform === 'darwin') {
-        // macOS - use 'open -a' command
-        console.log(`[DesktopRecorder] Executing: open -a "${appName}"`);
-        const result = await execAsync(`open -a "${appName}"`);
+        // macOS - prefer path, fallback to name
+        if (appPath) {
+          console.log(`[DesktopRecorder] Executing: open "${appPath}"`);
+          const result = await execAsync(`open "${appPath}"`);
 
-        if (result.stderr) {
-          console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+          if (result.stderr) {
+            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+          }
+        } else {
+          // Fallback to app name
+          console.log(`[DesktopRecorder] Executing: open -a "${appName}"`);
+          const result = await execAsync(`open -a "${appName}"`);
+
+          if (result.stderr) {
+            console.warn(`[DesktopRecorder] Launch stderr: ${result.stderr}`);
+          }
         }
 
       } else {
