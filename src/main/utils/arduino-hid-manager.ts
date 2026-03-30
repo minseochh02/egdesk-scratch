@@ -18,7 +18,14 @@
  *   await manager.disconnect();
  */
 
-import { SerialPort } from 'serialport';
+// Optional dependency - gracefully degrade if not available
+let SerialPort: any = null;
+try {
+  SerialPort = require('serialport').SerialPort;
+} catch (error) {
+  console.warn('[ArduinoHIDManager] serialport not available - Arduino features disabled');
+  console.warn('[ArduinoHIDManager] To enable: npm install serialport && npm run rebuild');
+}
 
 export interface ArduinoHIDOptions {
   port: string;
@@ -49,6 +56,9 @@ export class ArduinoHIDManager {
    * List available serial ports
    */
   static async listPorts(): Promise<Array<{ path: string; manufacturer?: string }>> {
+    if (!SerialPort) {
+      throw new Error('serialport module not available. Install with: npm install serialport && npm run rebuild');
+    }
     const ports = await SerialPort.list();
     return ports.map(p => ({
       path: p.path,
@@ -60,6 +70,10 @@ export class ArduinoHIDManager {
    * Connect to Arduino
    */
   async connect(): Promise<void> {
+    if (!SerialPort) {
+      throw new Error('serialport module not available. Install with: npm install serialport && npm run rebuild');
+    }
+
     if (this.connected) {
       console.log('[ArduinoHID] Already connected');
       return;
