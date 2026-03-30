@@ -19,6 +19,7 @@ import { clipboard, systemPreferences } from 'electron';
 import { uIOhook, UiohookKey } from 'uiohook-napi';
 import activeWin from 'active-win';
 import { ReplayOverlayWindow } from './replay-overlay-window';
+import { ArduinoHIDManager } from './utils/arduino-hid-manager';
 
 const execAsync = promisify(exec);
 
@@ -90,7 +91,7 @@ export interface DesktopAction {
         'clipboardCopy' | 'clipboardPaste' | 'clipboardRead' |
         'appSwitch' | 'appLaunch' | 'windowFocus' | 'windowResize' |
         'browserInteractionStart' | 'browserInteractionEnd' |
-        'fileDownload';
+        'fileDownload' | 'uacPrompt';
 
   timestamp: number;
 
@@ -119,6 +120,11 @@ export interface DesktopAction {
   filename?: string;
   filePath?: string;
   fileSize?: number;
+
+  // UAC-specific
+  uacAction?: 'accept' | 'decline';
+  uacPromptTitle?: string;
+  requiresArduino?: boolean; // Flag indicating this action needs Arduino to replay
 }
 
 /**
@@ -157,6 +163,12 @@ export class DesktopRecorder {
   private mouseCheckInterval: NodeJS.Timeout | null = null;
   private mouseMonitoringFailed: boolean = false;
   private mouseMonitoringFailCount: number = 0;
+
+  // Arduino HID for UAC handling
+  private arduinoManager: ArduinoHIDManager | null = null;
+  private arduinoPort: string | null = null;
+  private uacDetectionEnabled: boolean = false;
+  private lastUACDetection: number = 0;
 
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
@@ -587,6 +599,8 @@ export class DesktopRecorder {
         return `📋 Copy to clipboard`;
       case 'fileDownload':
         return `📥 Downloaded: ${action.filename}`;
+      case 'uacPrompt':
+        return `🛡️  UAC Prompt: ${action.uacAction === 'accept' ? 'Accept' : 'Decline'}`;
       default:
         return `${action.type}`;
     }
@@ -667,8 +681,54 @@ export class DesktopRecorder {
         console.log('Browser interaction end');
         break;
 
+      case 'uacPrompt':
+        await this.handleUACPromptReplay(action);
+        break;
+
       default:
         console.warn(`Action type "${action.type}" not supported in replay`);
+    }
+  }
+
+  /**
+   * Handle UAC prompt during replay
+   */
+  private async handleUACPromptReplay(action: DesktopAction): Promise<void> {
+    console.log(`🛡️  UAC Prompt: "${action.uacPromptTitle}"`);
+    console.log(`   Action: ${action.uacAction === 'accept' ? 'Accept (Right Arrow + Enter)' : 'Decline (Enter)'}`);
+
+    if (this.arduinoPort && this.arduinoManager === null) {
+      // Initialize Arduino if we have a port configured
+      try {
+        console.log(`[DesktopRecorder] Connecting to Arduino on ${this.arduinoPort}...`);
+        this.arduinoManager = new ArduinoHIDManager(this.arduinoPort);
+        await this.arduinoManager.connect();
+        console.log(`[DesktopRecorder] Arduino connected successfully`);
+      } catch (error: any) {
+        console.error(`[DesktopRecorder] Failed to connect to Arduino: ${error.message}`);
+        console.log(`[DesktopRecorder] Please handle UAC prompt manually`);
+        this.arduinoManager = null;
+      }
+    }
+
+    if (this.arduinoManager && this.arduinoManager.isConnected()) {
+      // Use Arduino to navigate UAC
+      console.log(`[DesktopRecorder] Using Arduino HID to navigate UAC...`);
+      await this.sleep(1000); // Wait for UAC to fully appear
+
+      if (action.uacAction === 'accept') {
+        await this.arduinoManager.acceptUAC(500);
+      } else {
+        await this.arduinoManager.declineUAC(500);
+      }
+
+      console.log(`[DesktopRecorder] UAC handled via Arduino`);
+    } else {
+      // Manual intervention required
+      console.log(`⚠️  MANUAL INTERVENTION REQUIRED:`);
+      console.log(`   Please ${action.uacAction === 'accept' ? 'accept' : 'decline'} the UAC prompt manually`);
+      console.log(`   Replay will pause for 10 seconds to allow manual handling...`);
+      await this.sleep(10000); // Wait for user to handle UAC manually
     }
   }
 
@@ -1151,6 +1211,11 @@ export class DesktopRecorder {
         // Check if this is a browser app
         const isBrowser = BROWSER_APPS.has(appName);
 
+        // Detect UAC prompts (Windows only)
+        if (this.uacDetectionEnabled && process.platform === 'win32') {
+          this.detectUACPrompt(activeWindow.title, appName);
+        }
+
         // Detect app launches vs switches
         if (appName !== this.lastActiveWindow) {
           // Track browser interaction state changes
@@ -1510,6 +1575,14 @@ export class DesktopRecorder {
     // Stop download monitoring
     this.stopDownloadMonitoring();
 
+    // Disconnect Arduino if connected
+    if (this.arduinoManager) {
+      this.arduinoManager.disconnect().catch((err) => {
+        console.error('[DesktopRecorder] Error disconnecting Arduino:', err);
+      });
+      this.arduinoManager = null;
+    }
+
     // Clear pressed keys tracking
     this.pressedKeys.clear();
 
@@ -1643,6 +1716,60 @@ export class DesktopRecorder {
     this.notifyUpdate();
   }
 
+  /**
+   * Detect UAC (User Account Control) prompt
+   * UAC runs on a secure desktop that blocks input hooking, so we need Arduino for replay
+   */
+  private detectUACPrompt(windowTitle: string, appName: string): void {
+    // Check for UAC indicators in window title or app name
+    const uacIndicators = [
+      'User Account Control',
+      '사용자 계정 컨트롤', // Korean
+      '使用者帳戶控制',     // Chinese Traditional
+      '用户帐户控制',       // Chinese Simplified
+      'Controle de Conta de Usuário', // Portuguese
+      'Контроль учетных записей',      // Russian
+      'この app がデバイスに変更を加えることを許可しますか', // Japanese
+      'Allow this app to make changes',
+      '이 앱이 디바이스를 변경할 수 있도록 허용하시겠어요',
+    ];
+
+    const isUAC = uacIndicators.some(indicator =>
+      windowTitle.includes(indicator) || appName.includes('consent')
+    );
+
+    if (!isUAC) return;
+
+    // Debounce: Only record one UAC event per 2 seconds
+    const now = Date.now();
+    if (now - this.lastUACDetection < 2000) return;
+    this.lastUACDetection = now;
+
+    console.log(`[DesktopRecorder] 🛡️  UAC PROMPT DETECTED: "${windowTitle}"`);
+    console.log(`[DesktopRecorder] ⚠️  Note: UAC clicks cannot be recorded (secure desktop)` );
+    console.log(`[DesktopRecorder] 💡 Replay will require Arduino HID or manual intervention`);
+
+    this.recordUACPrompt(windowTitle);
+  }
+
+  /**
+   * Record a UAC prompt
+   */
+  private recordUACPrompt(promptTitle: string): void {
+    if (!this.isRecording || this.isPaused) return;
+
+    const action: DesktopAction = {
+      type: 'uacPrompt',
+      timestamp: Date.now() - this.startTime,
+      uacPromptTitle: promptTitle,
+      uacAction: 'accept', // Default assumption: user accepted it
+      requiresArduino: true,
+    };
+
+    this.actions.push(action);
+    this.notifyUpdate();
+  }
+
   // ==================== Utilities ====================
 
   /**
@@ -1688,6 +1815,24 @@ export class DesktopRecorder {
    */
   setUpdateCallback(callback: (code: string) => void): void {
     this.updateCallback = callback;
+  }
+
+  /**
+   * Enable UAC detection and set Arduino port for secure desktop input
+   */
+  enableUACDetection(arduinoPort: string): void {
+    this.uacDetectionEnabled = true;
+    this.arduinoPort = arduinoPort;
+    console.log(`[DesktopRecorder] UAC detection enabled with Arduino on ${arduinoPort}`);
+  }
+
+  /**
+   * Disable UAC detection
+   */
+  disableUACDetection(): void {
+    this.uacDetectionEnabled = false;
+    this.arduinoPort = null;
+    console.log(`[DesktopRecorder] UAC detection disabled`);
   }
 
   /**

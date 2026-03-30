@@ -12,6 +12,7 @@ import os from 'os';
 import { DesktopRecorder } from './desktop-recorder';
 import { RecorderControlWindow } from './recorder-control-window';
 import { readExcelPreview, generateExcelHTML, getExcelFileInfo } from './rookie/thumbnail-handler';
+import { ArduinoHIDManager } from './utils/arduino-hid-manager';
 
 // Module-level active recorder (similar to chrome-handlers.ts pattern)
 let activeDesktopRecorder: DesktopRecorder | null = null;
@@ -863,6 +864,55 @@ export function registerDesktopRecorderHandlers(): void {
       return { success: true, files };
     } catch (error: any) {
       console.error('[DesktopRecorder] Failed to get folder files:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ==================== Arduino UAC Detection ====================
+
+  /**
+   * List available Arduino serial ports
+   */
+  ipcMain.handle('desktop-recorder:list-arduino-ports', async () => {
+    try {
+      const ports = await ArduinoHIDManager.listPorts();
+      return { success: true, ports };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to list Arduino ports:', error.message);
+      return { success: false, error: error.message, ports: [] };
+    }
+  });
+
+  /**
+   * Enable UAC detection with Arduino
+   */
+  ipcMain.handle('desktop-recorder:enable-uac-detection', async (event, { port }) => {
+    try {
+      if (!activeDesktopRecorder) {
+        return { success: false, error: 'No active recording session' };
+      }
+
+      activeDesktopRecorder.enableUACDetection(port);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to enable UAC detection:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Disable UAC detection
+   */
+  ipcMain.handle('desktop-recorder:disable-uac-detection', async () => {
+    try {
+      if (!activeDesktopRecorder) {
+        return { success: false, error: 'No active recording session' };
+      }
+
+      activeDesktopRecorder.disableUACDetection();
+      return { success: true };
+    } catch (error: any) {
+      console.error('[DesktopRecorder] Failed to disable UAC detection:', error.message);
       return { success: false, error: error.message };
     }
   });
