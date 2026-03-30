@@ -242,6 +242,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     }
 
     // =============================================
+    // Migration 014: Add source column to sync_configurations
+    // =============================================
+    try {
+      const { migrate } = await import('./migrations/014-add-sync-source-column');
+      migrate(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 014 error:', migrationError.message);
+    }
+
+    // =============================================
     // NOTE: transaction_datetime migration handled by migration 006
     // =============================================
     // Migration 006 (006-combine-datetime.ts) handles:
