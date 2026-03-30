@@ -158,6 +158,12 @@ export class DesktopRecorder {
   private currentlyInBrowser: boolean = false; // Track if user is currently in a browser
   private controlWindow: any = null; // Reference to control window (if using one)
 
+  // Click detection improvements
+  private clickBuffer: Array<{x: number, y: number, button: string, timestamp: number}> = [];
+  private clickBufferTimeout: NodeJS.Timeout | null = null;
+  private lastClickTime: number = 0;
+  private clickDebugMode: boolean = true; // Enable debug logging
+
   // Download monitoring
   private downloadWatcher: fs.FSWatcher | null = null;
   private downloadedFiles: Map<string, DownloadedFileInfo> = new Map();
@@ -872,23 +878,37 @@ export class DesktopRecorder {
       }
     }
 
-    // Setup mouse click listener
-    uIOhook.on('click', async (e) => {
+    // Setup mouse DOWN listener (more reliable than 'click')
+    uIOhook.on('mousedown', (e) => {
       try {
         if (!this.isRecording || this.isPaused) return;
-
-        // Check if click is in EGDesk (skip recording our own app)
-        const activeWindow = await activeWin();
-        if (activeWindow && IGNORED_APPS.has(activeWindow.owner.name)) {
-          // Skip clicks in EGDesk - we don't want to record the recorder UI
-          return;
-        }
 
         // Map button: 1 = left, 2 = right, 3 = middle
         const button = e.button === MouseButton.Left ? 'left' :
                        e.button === MouseButton.Right ? 'right' : 'middle';
 
-        this.recordMouseClick(e.x, e.y, button);
+        if (this.clickDebugMode) {
+          console.log(`[DesktopRecorder] 🖱️  MOUSEDOWN detected: ${button} at (${e.x}, ${e.y})`);
+        }
+
+        // Buffer the click instead of processing immediately
+        this.bufferClick(e.x, e.y, button);
+      } catch (error) {
+        console.error('[DesktopRecorder] Error in mousedown handler:', error);
+      }
+    });
+
+    // Also listen to the old 'click' event as fallback
+    uIOhook.on('click', (e) => {
+      try {
+        if (!this.isRecording || this.isPaused) return;
+
+        const button = e.button === MouseButton.Left ? 'left' :
+                       e.button === MouseButton.Right ? 'right' : 'middle';
+
+        if (this.clickDebugMode) {
+          console.log(`[DesktopRecorder] 🖱️  CLICK event detected: ${button} at (${e.x}, ${e.y})`);
+        }
       } catch (error) {
         console.error('[DesktopRecorder] Error in click handler:', error);
       }
@@ -1506,6 +1526,15 @@ export class DesktopRecorder {
     // Flush any remaining buffered keys
     this.flushKeyBuffer();
 
+    // Clear click buffer timeout
+    if (this.clickBufferTimeout) {
+      clearTimeout(this.clickBufferTimeout);
+      this.clickBufferTimeout = null;
+    }
+
+    // Process any remaining buffered clicks
+    await this.processClickBuffer();
+
     // Stop clipboard monitoring
     if (this.clipboardCheckInterval) {
       clearInterval(this.clipboardCheckInterval);
@@ -1538,12 +1567,96 @@ export class DesktopRecorder {
   // ==================== Recording Helpers (Phase 2) ====================
 
   /**
+   * Buffer a click for processing (prevents async delays)
+   */
+  private bufferClick(x: number, y: number, button: string): void {
+    const now = Date.now();
+
+    // Deduplicate rapid identical clicks (within 50ms)
+    if (this.clickBuffer.length > 0) {
+      const lastClick = this.clickBuffer[this.clickBuffer.length - 1];
+      const timeDiff = now - lastClick.timestamp;
+      const distanceDiff = Math.sqrt(Math.pow(x - lastClick.x, 2) + Math.pow(y - lastClick.y, 2));
+
+      if (timeDiff < 50 && distanceDiff < 5 && button === lastClick.button) {
+        if (this.clickDebugMode) {
+          console.log(`[DesktopRecorder] 🔄 Skipped duplicate click (${timeDiff}ms ago, ${distanceDiff}px away)`);
+        }
+        return;
+      }
+    }
+
+    // Add to buffer
+    this.clickBuffer.push({ x, y, button, timestamp: now });
+
+    if (this.clickDebugMode) {
+      console.log(`[DesktopRecorder] 📦 Buffered click: ${button} at (${x}, ${y}) - Buffer size: ${this.clickBuffer.length}`);
+    }
+
+    // Clear existing timeout
+    if (this.clickBufferTimeout) {
+      clearTimeout(this.clickBufferTimeout);
+    }
+
+    // Process buffer after 100ms of no activity (or immediately if buffer gets large)
+    if (this.clickBuffer.length >= 10) {
+      // Too many clicks buffered, process immediately
+      this.processClickBuffer();
+    } else {
+      // Wait for quiet period
+      this.clickBufferTimeout = setTimeout(() => {
+        this.processClickBuffer();
+      }, 100);
+    }
+  }
+
+  /**
+   * Process all buffered clicks (filters out EGDesk clicks asynchronously)
+   */
+  private async processClickBuffer(): Promise<void> {
+    if (this.clickBuffer.length === 0) return;
+
+    const clicksToProcess = [...this.clickBuffer];
+    this.clickBuffer = [];
+
+    if (this.clickDebugMode) {
+      console.log(`[DesktopRecorder] ⚙️  Processing ${clicksToProcess.length} buffered clicks`);
+    }
+
+    // Check active window once for the batch (non-blocking)
+    let shouldSkip = false;
+    try {
+      const activeWindow = await activeWin();
+      if (activeWindow && IGNORED_APPS.has(activeWindow.owner.name)) {
+        shouldSkip = true;
+        if (this.clickDebugMode) {
+          console.log(`[DesktopRecorder] ⏭️  Skipping ${clicksToProcess.length} clicks in EGDesk app`);
+        }
+      }
+    } catch (error) {
+      // If activeWin fails, record the clicks anyway (better than missing them)
+      if (this.clickDebugMode) {
+        console.log(`[DesktopRecorder] ⚠️  activeWin check failed, recording clicks anyway`);
+      }
+    }
+
+    // Record all clicks from buffer (unless in EGDesk)
+    if (!shouldSkip) {
+      for (const click of clicksToProcess) {
+        this.recordMouseClick(click.x, click.y, click.button as 'left' | 'right' | 'middle');
+      }
+    }
+  }
+
+  /**
    * Record a mouse click action
    */
   private recordMouseClick(x: number, y: number, button: 'left' | 'right' | 'middle'): void {
     if (!this.isRecording || this.isPaused) return;
 
-    console.log(`[DesktopRecorder] 🖱️  Recorded ${button} click at (${x}, ${y})`);
+    if (this.clickDebugMode) {
+      console.log(`[DesktopRecorder] ✅ RECORDED ${button} click at (${x}, ${y})`);
+    }
 
     const action: DesktopAction = {
       type: button === 'left' ? 'mouseClick' : 'mouseRightClick',
@@ -1554,6 +1667,7 @@ export class DesktopRecorder {
 
     this.actions.push(action);
     this.notifyUpdate();
+    this.lastClickTime = Date.now();
   }
 
   /**

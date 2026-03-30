@@ -63,6 +63,12 @@ export class SimpleRecorder {
   // Desktop automation manager for replay
   private desktopManager: DesktopAutomationManager;
 
+  // Click detection improvements
+  private clickBuffer: Array<{x: number, y: number, button: string, timestamp: number}> = [];
+  private clickBufferTimeout: NodeJS.Timeout | null = null;
+  private lastClickTime: number = 0;
+  private clickDebugMode: boolean = true; // Enable debug logging
+
   constructor() {
     this.desktopManager = new DesktopAutomationManager();
   }
@@ -218,8 +224,8 @@ export class SimpleRecorder {
       }
     }
 
-    // Setup mouse click listener
-    uIOhook.on('click', async (e) => {
+    // Setup mouse DOWN listener (more reliable than 'click')
+    uIOhook.on('mousedown', (e) => {
       try {
         if (!this.isRecording || this.isPaused) return;
 
@@ -227,7 +233,28 @@ export class SimpleRecorder {
         const button = e.button === MouseButton.Left ? 'left' :
                        e.button === MouseButton.Right ? 'right' : 'middle';
 
-        this.recordClick(e.x, e.y, button);
+        if (this.clickDebugMode) {
+          console.log(`[SimpleRecorder] 🖱️  MOUSEDOWN detected: ${button} at (${e.x}, ${e.y})`);
+        }
+
+        // Buffer the click instead of processing immediately
+        this.bufferClick(e.x, e.y, button);
+      } catch (error) {
+        console.error('[SimpleRecorder] Error in mousedown handler:', error);
+      }
+    });
+
+    // Also listen to the old 'click' event as fallback
+    uIOhook.on('click', (e) => {
+      try {
+        if (!this.isRecording || this.isPaused) return;
+
+        const button = e.button === MouseButton.Left ? 'left' :
+                       e.button === MouseButton.Right ? 'right' : 'middle';
+
+        if (this.clickDebugMode) {
+          console.log(`[SimpleRecorder] 🖱️  CLICK event detected: ${button} at (${e.x}, ${e.y})`);
+        }
       } catch (error) {
         console.error('[SimpleRecorder] Error in click handler:', error);
       }
@@ -237,12 +264,77 @@ export class SimpleRecorder {
   }
 
   /**
+   * Buffer a click for processing (prevents missed clicks)
+   */
+  private bufferClick(x: number, y: number, button: string): void {
+    const now = Date.now();
+
+    // Deduplicate rapid identical clicks (within 50ms)
+    if (this.clickBuffer.length > 0) {
+      const lastClick = this.clickBuffer[this.clickBuffer.length - 1];
+      const timeDiff = now - lastClick.timestamp;
+      const distanceDiff = Math.sqrt(Math.pow(x - lastClick.x, 2) + Math.pow(y - lastClick.y, 2));
+
+      if (timeDiff < 50 && distanceDiff < 5 && button === lastClick.button) {
+        if (this.clickDebugMode) {
+          console.log(`[SimpleRecorder] 🔄 Skipped duplicate click (${timeDiff}ms ago, ${distanceDiff}px away)`);
+        }
+        return;
+      }
+    }
+
+    // Add to buffer
+    this.clickBuffer.push({ x, y, button, timestamp: now });
+
+    if (this.clickDebugMode) {
+      console.log(`[SimpleRecorder] 📦 Buffered click: ${button} at (${x}, ${y}) - Buffer size: ${this.clickBuffer.length}`);
+    }
+
+    // Clear existing timeout
+    if (this.clickBufferTimeout) {
+      clearTimeout(this.clickBufferTimeout);
+    }
+
+    // Process buffer after 100ms of no activity (or immediately if buffer gets large)
+    if (this.clickBuffer.length >= 10) {
+      // Too many clicks buffered, process immediately
+      this.processClickBuffer();
+    } else {
+      // Wait for quiet period
+      this.clickBufferTimeout = setTimeout(() => {
+        this.processClickBuffer();
+      }, 100);
+    }
+  }
+
+  /**
+   * Process all buffered clicks
+   */
+  private processClickBuffer(): void {
+    if (this.clickBuffer.length === 0) return;
+
+    const clicksToProcess = [...this.clickBuffer];
+    this.clickBuffer = [];
+
+    if (this.clickDebugMode) {
+      console.log(`[SimpleRecorder] ⚙️  Processing ${clicksToProcess.length} buffered clicks`);
+    }
+
+    // Record all clicks from buffer
+    for (const click of clicksToProcess) {
+      this.recordClick(click.x, click.y, click.button as 'left' | 'right' | 'middle');
+    }
+  }
+
+  /**
    * Record a click
    */
   private recordClick(x: number, y: number, button: 'left' | 'right' | 'middle'): void {
     if (!this.isRecording || this.isPaused) return;
 
-    console.log(`[SimpleRecorder] 🖱️  Recorded ${button} click at (${x}, ${y})`);
+    if (this.clickDebugMode) {
+      console.log(`[SimpleRecorder] ✅ RECORDED ${button} click at (${x}, ${y})`);
+    }
 
     const action: ClickAction = {
       type: 'click',
@@ -253,6 +345,7 @@ export class SimpleRecorder {
 
     this.clicks.push(action);
     this.notifyUpdate();
+    this.lastClickTime = Date.now();
   }
 
   /**
@@ -268,6 +361,15 @@ export class SimpleRecorder {
         console.error('[SimpleRecorder] Error stopping uiohook:', error);
       }
     }
+
+    // Clear click buffer timeout
+    if (this.clickBufferTimeout) {
+      clearTimeout(this.clickBufferTimeout);
+      this.clickBufferTimeout = null;
+    }
+
+    // Process any remaining buffered clicks
+    this.processClickBuffer();
 
     console.log('[SimpleRecorder] All listeners stopped');
   }
