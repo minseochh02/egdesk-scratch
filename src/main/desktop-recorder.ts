@@ -16,12 +16,14 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { clipboard, systemPreferences } from 'electron';
-import { uIOhook, UiohookKey } from 'uiohook-napi';
-import activeWin from 'active-win';
 import { ReplayOverlayWindow } from './replay-overlay-window';
-import { ArduinoHIDManager } from './utils/arduino-hid-manager';
 
 const execAsync = promisify(exec);
+
+// Native dependencies
+import { uIOhook, UiohookKey } from 'uiohook-napi';
+import activeWin from 'active-win';
+import { ArduinoHIDManager } from './utils/arduino-hid-manager';
 
 // Mouse button constants (uiohook-napi doesn't export these)
 const MouseButton = {
@@ -900,6 +902,14 @@ export class DesktopRecorder {
    * Setup global keyboard and mouse listener using uiohook
    */
   private setupGlobalKeyboardListener(): void {
+    // Check if uiohook is available
+    if (!uIOhook || !UiohookKey) {
+      console.log('[DesktopRecorder] ⚠️  uiohook-napi not available - mouse/keyboard recording disabled');
+      console.log('[DesktopRecorder] To enable: npm install uiohook-napi && npm run rebuild');
+      this.uiohookStarted = false;
+      return;
+    }
+
     // Check accessibility permissions on macOS (skip in dev mode - it's unreliable)
     if (process.platform === 'darwin' && process.env.NODE_ENV !== 'development') {
       const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
