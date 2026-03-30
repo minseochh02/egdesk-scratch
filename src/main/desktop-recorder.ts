@@ -320,7 +320,7 @@ export class DesktopRecorder {
     this.isPaused = false;
 
     // Stop event listeners
-    this.stopAllListeners();
+    await this.stopAllListeners();
 
     // Emergency key release to prevent stuck keys
     await this.emergencyKeyRelease();
@@ -1505,7 +1505,7 @@ export class DesktopRecorder {
   /**
    * Stop all event listeners
    */
-  private stopAllListeners(): void {
+  private async stopAllListeners(): Promise<void> {
     // Stop uiohook
     if (this.uiohookStarted) {
       try {
@@ -1601,11 +1601,11 @@ export class DesktopRecorder {
     // Process buffer after 100ms of no activity (or immediately if buffer gets large)
     if (this.clickBuffer.length >= 10) {
       // Too many clicks buffered, process immediately
-      this.processClickBuffer();
+      void this.processClickBuffer();
     } else {
       // Wait for quiet period
       this.clickBufferTimeout = setTimeout(() => {
-        this.processClickBuffer();
+        void this.processClickBuffer();
       }, 100);
     }
   }
