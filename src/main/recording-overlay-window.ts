@@ -38,18 +38,20 @@ export class RecordingOverlayWindow {
       transparent: true,
       frame: false,
       alwaysOnTop: true,
-      skipTaskbar: true,
+      skipTaskbar: false,
       resizable: false,
       movable: false,
-      minimizable: false,
+      minimizable: true,
       maximizable: false,
       closable: true,
       show: false,
-      backgroundColor: '#00000000',
+      title: 'Recording Overlay',
+      hasShadow: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         preload: require('path').join(__dirname, 'preload.js'),
+        backgroundThrottling: false,
       },
     });
 
@@ -63,11 +65,16 @@ export class RecordingOverlayWindow {
     // Setup IPC listeners for overlay interactions
     this.setupIPC();
 
-    // Ready to show
+    // Ready to show - delay slightly to ensure transparency is applied
     this.window.once('ready-to-show', () => {
       if (this.window) {
-        this.window.show();
-        console.log('[RecordingOverlay] Overlay created (click-through mode)');
+        // Small delay to ensure CSS is applied before showing
+        setTimeout(() => {
+          if (this.window && !this.window.isDestroyed()) {
+            this.window.show();
+            console.log('[RecordingOverlay] Overlay created (click-through mode)');
+          }
+        }, 100);
       }
     });
 
@@ -96,6 +103,14 @@ export class RecordingOverlayWindow {
 
         // Exit mark mode after recording position
         this.exitMarkMode();
+      }
+    });
+
+    // Handle ESC key from renderer to exit mark mode
+    ipcMain.on('recording-overlay:exit-mark-mode', () => {
+      if (this.isMarkMode) {
+        this.exitMarkMode();
+        console.log('[RecordingOverlay] Mark mode exited via ESC key');
       }
     });
   }
@@ -200,31 +215,33 @@ export class RecordingOverlayWindow {
     }
 
     html, body {
-      width: 100vw;
-      height: 100vh;
-      background: transparent !important;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background-color: rgba(0, 0, 0, 0);
       overflow: hidden;
+    }
+
+    body {
       cursor: default;
-      position: relative;
     }
 
     #overlay {
-      width: 100%;
-      height: 100%;
-      background: transparent;
-      position: absolute;
+      position: fixed;
       top: 0;
       left: 0;
-      transition: background 0.2s, opacity 0.2s;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0);
+      transition: background-color 0.2s;
       pointer-events: none;
-      opacity: 0;
     }
 
     #overlay.mark-mode {
-      background: rgba(74, 222, 128, 0.05);
+      background-color: rgba(74, 222, 128, 0.05);
       cursor: crosshair;
       pointer-events: auto;
-      opacity: 1;
     }
 
     /* Crosshair in mark mode */
@@ -395,8 +412,10 @@ export class RecordingOverlayWindow {
 
     // ESC key to exit mark mode
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && overlay.classList.contains('mark-mode')) {
-        // Exit mark mode by removing the class and hiding indicator
+      if (e.key === 'Escape') {
+        // Exit mark mode by notifying main process
+        window.electron.ipcRenderer.send('recording-overlay:exit-mark-mode');
+        // Also update UI immediately
         overlay.classList.remove('mark-mode');
         modeIndicator.classList.remove('visible');
         showToast('Mark mode disabled');

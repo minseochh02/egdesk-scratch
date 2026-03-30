@@ -547,7 +547,7 @@ const DesktopRecorderPage: React.FC = () => {
             borderRadius: '6px',
             border: '1px solid rgba(251, 191, 36, 0.3)'
           }}>
-            🛡️ <strong>For Banking/Secure Apps:</strong> If clicks aren't being recorded automatically, press <strong>Shift+F2</strong> to toggle the transparent overlay. When the overlay is active (green tint visible), click on it to mark positions. Press <strong>ESC</strong> or <strong>Shift+F2</strong> to exit mark mode. The overlay will capture your clicks even when the banking app blocks direct input.
+            🛡️ <strong>For Banking/Secure Apps:</strong> If clicks aren't being recorded automatically, press <strong>Shift+F2</strong> to toggle the transparent overlay. When active (green tint visible), click to mark positions. Press <strong>ESC</strong> or <strong>Shift+F2</strong> to exit mark mode. You can also close the overlay window from the taskbar if needed.
           </p>
           {!simpleMode && (
             <p className="dev-mode-note" style={{

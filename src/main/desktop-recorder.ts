@@ -390,6 +390,8 @@ export class DesktopRecorder {
     // Close recording overlay if it exists
     if (this.recordingOverlay && this.recordingOverlay.exists()) {
       console.log('[DesktopRecorder] Closing recording overlay...');
+      // Remove IPC listener
+      ipcMain.removeAllListeners('recording-overlay:position-marked');
       this.recordingOverlay.close();
       this.recordingOverlay = null;
     }
