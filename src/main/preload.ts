@@ -2765,6 +2765,17 @@ auth: {
       return () => ipcRenderer.removeListener('desktop-recorder:update', subscription);
     },
   },
+
+  // ========================================================================
+  // SIMPLE RECORDER HANDLERS - Click recording without desktop switching
+  // ========================================================================
+  simpleRecorder: {
+    onUpdate: (callback: (data: { filePath: string; code: string; timestamp: string }) => void) => {
+      const subscription = (_event: IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('simple-recorder:update', subscription);
+      return () => ipcRenderer.removeListener('simple-recorder:update', subscription);
+    },
+  },
 };
 
 // ============================================================================

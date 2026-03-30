@@ -32,6 +32,9 @@ const DesktopRecorderPage: React.FC = () => {
   const [replaySpeed, setReplaySpeed] = useState<number>(1.0);
   const [selectedRecordingForDownloads, setSelectedRecordingForDownloads] = useState<string | null>(null);
 
+  // Recording mode
+  const [simpleMode, setSimpleMode] = useState<boolean>(false);
+
   // Arduino UAC detection
   const [enableUAC, setEnableUAC] = useState<boolean>(false);
   const [arduinoPorts, setArduinoPorts] = useState<Array<{ path: string; manufacturer?: string }>>([]);
@@ -55,7 +58,8 @@ const DesktopRecorderPage: React.FC = () => {
     if (status.isRecording) {
       const interval = setInterval(async () => {
         try {
-          const result = await (window as any).electron.invoke('desktop-recorder:get-status');
+          const handler = simpleMode ? 'simple-recorder:get-status' : 'desktop-recorder:get-status';
+          const result = await (window as any).electron.invoke(handler);
           if (result.success) {
             setStatus(result.status);
           }
@@ -66,7 +70,7 @@ const DesktopRecorderPage: React.FC = () => {
 
       return () => clearInterval(interval);
     }
-  }, [status.isRecording]);
+  }, [status.isRecording, simpleMode]);
 
   // Listen for real-time code updates
   useEffect(() => {
@@ -97,35 +101,49 @@ const DesktopRecorderPage: React.FC = () => {
   // Load saved recordings
   const loadSavedRecordings = async () => {
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:get-recordings');
-      if (result.success) {
-        const recordings = result.recordings || [];
+      // Load both desktop and simple recordings
+      const [desktopResult, simpleResult] = await Promise.all([
+        (window as any).electron.invoke('desktop-recorder:get-recordings'),
+        (window as any).electron.invoke('simple-recorder:get-recordings')
+      ]);
 
-        // Load download counts for each recording
-        const recordingsWithDownloads = await Promise.all(
-          recordings.map(async (recording: SavedRecording) => {
-            try {
-              const jsonPath = recording.path.replace('.js', '.json');
-              const downloadResult = await (window as any).electron.invoke(
-                'desktop-recorder:load-downloaded-files-from-json',
-                { jsonPath }
-              );
+      const desktopRecordings = desktopResult.success ? (desktopResult.recordings || []) : [];
+      const simpleRecordings = simpleResult.success ? (simpleResult.recordings || []) : [];
 
-              if (downloadResult.success) {
-                return {
-                  ...recording,
-                  downloadCount: downloadResult.files?.length || 0,
-                };
-              }
-            } catch (err) {
-              console.error('Error loading downloads for recording:', err);
+      // Load download counts for desktop recordings
+      const desktopWithDownloads = await Promise.all(
+        desktopRecordings.map(async (recording: SavedRecording) => {
+          try {
+            const jsonPath = recording.path.replace('.js', '.json');
+            const downloadResult = await (window as any).electron.invoke(
+              'desktop-recorder:load-downloaded-files-from-json',
+              { jsonPath }
+            );
+
+            if (downloadResult.success) {
+              return {
+                ...recording,
+                downloadCount: downloadResult.files?.length || 0,
+              };
             }
-            return { ...recording, downloadCount: 0 };
-          })
-        );
+          } catch (err) {
+            console.error('Error loading downloads for recording:', err);
+          }
+          return { ...recording, downloadCount: 0 };
+        })
+      );
 
-        setSavedRecordings(recordingsWithDownloads);
-      }
+      // Simple recordings don't have downloads
+      const simpleWithMetadata = simpleRecordings.map((rec: SavedRecording) => ({
+        ...rec,
+        downloadCount: 0,
+      }));
+
+      // Merge and sort by date
+      const allRecordings = [...desktopWithDownloads, ...simpleWithMetadata]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setSavedRecordings(allRecordings);
     } catch (err) {
       console.error('Error loading recordings:', err);
     }
@@ -155,7 +173,8 @@ const DesktopRecorderPage: React.FC = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:start-with-control-window');
+      const handler = simpleMode ? 'simple-recorder:start' : 'desktop-recorder:start-with-control-window';
+      const result = await (window as any).electron.invoke(handler);
       if (result.success) {
         // Enable UAC detection if configured
         if (enableUAC && selectedArduinoPort) {
@@ -173,7 +192,10 @@ const DesktopRecorderPage: React.FC = () => {
         const uacMessage = enableUAC && selectedArduinoPort
           ? ` UAC detection enabled on ${selectedArduinoPort}.`
           : '';
-        setSuccessMessage(`Recording started! Use hotkeys to control recording.${uacMessage}`);
+        const modeMessage = simpleMode
+          ? 'Simple mode: Recording click coordinates only.'
+          : 'Use hotkeys to control recording.';
+        setSuccessMessage(`Recording started! ${modeMessage}${uacMessage}`);
       } else {
         setError(result.error || 'Failed to start recording');
       }
@@ -187,7 +209,8 @@ const DesktopRecorderPage: React.FC = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:stop');
+      const handler = simpleMode ? 'simple-recorder:stop' : 'desktop-recorder:stop';
+      const result = await (window as any).electron.invoke(handler);
       if (result.success) {
         setStatus({
           isRecording: false,
@@ -207,7 +230,8 @@ const DesktopRecorderPage: React.FC = () => {
   // Pause recording
   const handlePauseRecording = async () => {
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:pause');
+      const handler = simpleMode ? 'simple-recorder:pause' : 'desktop-recorder:pause';
+      const result = await (window as any).electron.invoke(handler);
       if (result.success) {
         setStatus({ ...status, isPaused: true });
       }
@@ -219,7 +243,8 @@ const DesktopRecorderPage: React.FC = () => {
   // Resume recording
   const handleResumeRecording = async () => {
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:resume');
+      const handler = simpleMode ? 'simple-recorder:resume' : 'desktop-recorder:resume';
+      const result = await (window as any).electron.invoke(handler);
       if (result.success) {
         setStatus({ ...status, isPaused: false });
       }
@@ -233,7 +258,10 @@ const DesktopRecorderPage: React.FC = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:replay', {
+      // Determine handler based on file path (simple recordings are in simple-recordings folder)
+      const isSimpleRecording = filePath.includes('simple-recordings');
+      const handler = isSimpleRecording ? 'simple-recorder:replay' : 'desktop-recorder:replay';
+      const result = await (window as any).electron.invoke(handler, {
         filePath,
         speed: replaySpeed,
       });
@@ -254,7 +282,10 @@ const DesktopRecorderPage: React.FC = () => {
     }
 
     try {
-      const result = await (window as any).electron.invoke('desktop-recorder:delete-recording', {
+      // Determine handler based on file path
+      const isSimpleRecording = filePath.includes('simple-recordings');
+      const handler = isSimpleRecording ? 'simple-recorder:delete-recording' : 'desktop-recorder:delete-recording';
+      const result = await (window as any).electron.invoke(handler, {
         filePath,
       });
       if (result.success) {
@@ -343,8 +374,38 @@ const DesktopRecorderPage: React.FC = () => {
           </div>
         )}
 
+        {/* Recording Mode Toggle */}
+        {!status.isRecording && (
+          <div className="recording-mode-toggle" style={{
+            background: '#262626',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={simpleMode}
+                onChange={(e) => setSimpleMode(e.target.checked)}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <div>
+                <strong style={{ color: '#fff', fontSize: '1rem' }}>
+                  {simpleMode ? '🖱️ Simple Mode (Clicks Only)' : '🎬 Full Recording Mode'}
+                </strong>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#888' }}>
+                  {simpleMode
+                    ? 'Records only mouse click coordinates (x, y) - no desktop switching, keyboard, or window tracking'
+                    : 'Records mouse, keyboard, apps, clipboard, downloads - with automatic desktop switching'}
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
+
         {/* Arduino UAC Configuration (Windows only) */}
-        {!status.isRecording && isWindows && (
+        {!status.isRecording && isWindows && !simpleMode && (
           <div className="arduino-config">
             <h3>🛡️ UAC Prompt Handling (Optional)</h3>
             <p style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
@@ -430,11 +491,11 @@ const DesktopRecorderPage: React.FC = () => {
             <div className="status-indicator">
               <span className="status-dot"></span>
               <span className="status-text">
-                {status.isPaused ? 'Paused' : 'Recording'}
+                {status.isPaused ? 'Paused' : (simpleMode ? 'Recording Clicks' : 'Recording')}
               </span>
             </div>
             <div className="action-count">
-              Actions Recorded: <strong>{status.actionCount}</strong>
+              {simpleMode ? 'Clicks' : 'Actions'} Recorded: <strong>{status.actionCount}</strong>
             </div>
           </div>
         )}
@@ -447,28 +508,44 @@ const DesktopRecorderPage: React.FC = () => {
               <span className="hotkey">🖱️ Mouse Clicks</span>
               <span className="hotkey-desc">Automatically captured (all buttons)</span>
             </div>
-            <div className="hotkey-item">
-              <span className="hotkey">⌨️ Keyboard</span>
-              <span className="hotkey-desc">All keys and shortcuts captured</span>
-            </div>
-            <div className="hotkey-item">
-              <span className="hotkey">⌘ + Shift + P</span>
-              <span className="hotkey-desc">Pause/Resume recording</span>
-            </div>
-            <div className="hotkey-item">
-              <span className="hotkey">⌘ + Shift + S</span>
-              <span className="hotkey-desc">Stop recording</span>
-            </div>
+            {!simpleMode && (
+              <>
+                <div className="hotkey-item">
+                  <span className="hotkey">⌨️ Keyboard</span>
+                  <span className="hotkey-desc">All keys and shortcuts captured</span>
+                </div>
+                <div className="hotkey-item">
+                  <span className="hotkey">⌘ + Shift + P</span>
+                  <span className="hotkey-desc">Pause/Resume recording</span>
+                </div>
+                <div className="hotkey-item">
+                  <span className="hotkey">⌘ + Shift + S</span>
+                  <span className="hotkey-desc">Stop recording</span>
+                </div>
+              </>
+            )}
           </div>
-          <p className="dev-mode-note" style={{
-            marginTop: '1rem',
-            fontSize: '0.9rem',
-            color: '#fbbf24',
-            fontStyle: 'italic'
-          }}>
-            📝 Note: Window/app switching detection is disabled in development mode due to macOS permission limitations.
-            It will work in production builds.
-          </p>
+          {!simpleMode && (
+            <p className="dev-mode-note" style={{
+              marginTop: '1rem',
+              fontSize: '0.9rem',
+              color: '#fbbf24',
+              fontStyle: 'italic'
+            }}>
+              📝 Note: Window/app switching detection is disabled in development mode due to macOS permission limitations.
+              It will work in production builds.
+            </p>
+          )}
+          {simpleMode && (
+            <p className="dev-mode-note" style={{
+              marginTop: '1rem',
+              fontSize: '0.9rem',
+              color: '#22c55e',
+              fontStyle: 'italic'
+            }}>
+              ✅ Simple mode: Only click coordinates are recorded. No desktop switching, keyboard, or window tracking.
+            </p>
+          )}
         </div>
 
         {/* Code Preview */}
@@ -486,17 +563,33 @@ const DesktopRecorderPage: React.FC = () => {
             <p className="no-recordings">No recordings yet. Start recording to create one!</p>
           ) : (
             <div className="recordings-list">
-              {savedRecordings.map((recording) => (
-                <div key={recording.path} className="recording-item">
-                  <div className="recording-info">
-                    <h4>{recording.name}</h4>
-                    <p className="recording-meta">
-                      {recording.actionCount} actions • {new Date(recording.createdAt).toLocaleString()}
-                      {recording.downloadCount !== undefined && recording.downloadCount > 0 && (
-                        <> • 📥 {recording.downloadCount} file{recording.downloadCount > 1 ? 's' : ''} downloaded</>
-                      )}
-                    </p>
-                  </div>
+              {savedRecordings.map((recording) => {
+                const isSimpleRecording = recording.path.includes('simple-recordings');
+                return (
+                  <div key={recording.path} className="recording-item">
+                    <div className="recording-info">
+                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {recording.name}
+                        {isSimpleRecording && (
+                          <span style={{
+                            background: '#22c55e',
+                            color: '#000',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: '600'
+                          }}>
+                            🖱️ SIMPLE
+                          </span>
+                        )}
+                      </h4>
+                      <p className="recording-meta">
+                        {recording.actionCount} {isSimpleRecording ? 'clicks' : 'actions'} • {new Date(recording.createdAt).toLocaleString()}
+                        {recording.downloadCount !== undefined && recording.downloadCount > 0 && (
+                          <> • 📥 {recording.downloadCount} file{recording.downloadCount > 1 ? 's' : ''} downloaded</>
+                        )}
+                      </p>
+                    </div>
                   <div className="recording-actions">
                     {recording.downloadCount !== undefined && recording.downloadCount > 0 && (
                       <button
@@ -539,7 +632,8 @@ const DesktopRecorderPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
