@@ -37,6 +37,12 @@ const DesktopRecorderPage: React.FC = () => {
   const [arduinoPorts, setArduinoPorts] = useState<Array<{ path: string; manufacturer?: string }>>([]);
   const [selectedArduinoPort, setSelectedArduinoPort] = useState<string>('');
   const [loadingPorts, setLoadingPorts] = useState<boolean>(false);
+  const [isWindows, setIsWindows] = useState<boolean>(false);
+
+  // Check platform on mount
+  useEffect(() => {
+    setIsWindows(window.navigator.platform.toLowerCase().includes('win'));
+  }, []);
 
   // Check permissions on mount
   useEffect(() => {
@@ -338,7 +344,7 @@ const DesktopRecorderPage: React.FC = () => {
         )}
 
         {/* Arduino UAC Configuration (Windows only) */}
-        {!status.isRecording && process.platform === 'win32' && (
+        {!status.isRecording && isWindows && (
           <div className="arduino-config">
             <h3>🛡️ UAC Prompt Handling (Optional)</h3>
             <p style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
