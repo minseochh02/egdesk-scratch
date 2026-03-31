@@ -51,3 +51,6 @@ after-shift-click.png
 before-shift-click.png
 playwright-downloads/
 창고별재고-january/
+
+# CSV files (potentially contain sensitive data)
+*.csv
