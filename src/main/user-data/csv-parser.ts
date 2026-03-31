@@ -163,7 +163,14 @@ function parseCSVContent(
 function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] {
   return headers.map((header) => {
     const values = rows.map((row) => row[header]);
-    return detectColumnType(values, header);
+    const detectedType = detectColumnType(values, header);
+
+    // Log detected type for date columns
+    if (detectedType === 'DATE' || header.includes('일자') || header.includes('날짜')) {
+      console.log(`📊 Column "${header}" detected as: ${detectedType}`, { sampleValues: values.slice(0, 3) });
+    }
+
+    return detectedType;
   });
 }
 

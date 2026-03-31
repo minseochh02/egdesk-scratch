@@ -72,6 +72,8 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
     /^\d{2}\/\d{2}\/\d{4}$/,        // DD/MM/YYYY
     /^\d{2}\/\d{2}\/\d{2}$/,        // YY/MM/DD or DD/MM/YY
     /^\d{8}$/,                       // YYYYMMDD
+    // US/English datetime with comma: "12/3/2024, 11:09:47 AM"
+    /^\d{1,2}\/\d{1,2}\/\d{4},\s*\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)$/i,
     // Korean style date/time: "2025/12/22 (월) 오전 9:56:02" or "2025.12.22 (월) 오전 9:56:02"
     /^\d{4}[/.]\d{2}[/.]\d{2}\s*\([^)]+\)\s*(?:오전|오후)\s*\d{1,2}:\d{2}:\d{2}$/,
     // Date patterns with suffixes (e.g., "26/02/02-1", "2024/01/15-2")
@@ -111,6 +113,30 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
 
     // Check if it's a number
     if (typeof value === 'number') {
+      // Check if it's YYYYMMDD format (8-digit integer between 19000101 and 21991231)
+      if (Number.isInteger(value) && value >= 19000101 && value <= 21991231) {
+        const valueStr = String(value);
+        if (valueStr.length === 8) {
+          const year = parseInt(valueStr.substring(0, 4), 10);
+          const month = parseInt(valueStr.substring(4, 6), 10);
+          const day = parseInt(valueStr.substring(6, 8), 10);
+
+          // Validate it's a reasonable date
+          if (year >= 1900 && year <= 2199 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            const testDate = new Date(year, month - 1, day);
+            if (!isNaN(testDate.getTime())) {
+              hasDateStrings++;
+              allNumeric = false;
+              allInteger = false;
+              if (hasDateStrings <= 3) {
+                console.log(`🔍 Detected numeric YYYYMMDD date: ${value} → ${testDate.toISOString().split('T')[0]}`);
+              }
+              continue;
+            }
+          }
+        }
+      }
+
       if (!Number.isInteger(value)) {
         allInteger = false;
       }
@@ -147,7 +173,14 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
         // Handle YY/MM/DD format (assume 20YY for years 00-99)
         let date: Date | null = null;
 
-        if (/^\d{2}\/\d{2}\/\d{2}$/.test(dateStr)) {
+        if (/^\d{8}$/.test(dateStr)) {
+          // YYYYMMDD format - parse manually
+          const year = parseInt(dateStr.substring(0, 4), 10);
+          const month = parseInt(dateStr.substring(4, 6), 10);
+          const day = parseInt(dateStr.substring(6, 8), 10);
+          date = new Date(year, month - 1, day);
+          console.log(`🔍 Detected YYYYMMDD date: "${dateStr}" → ${date.toISOString().split('T')[0]}`);
+        } else if (/^\d{2}\/\d{2}\/\d{2}$/.test(dateStr)) {
           // YY/MM/DD format - parse manually
           const parts = dateStr.split('/');
           const year = parseInt(parts[0], 10);
@@ -159,6 +192,7 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
           date = new Date(fullYear, month - 1, day);
         } else {
           // Standard date formats - normalize Korean if needed
+          // Note: JS Date constructor handles "12/3/2024, 11:09:47 AM" automatically
           date = new Date(normalizeDateValue(dateStr));
         }
 
@@ -202,8 +236,17 @@ export function detectColumnType(values: any[], columnName?: string): ColumnType
     return 'TEXT';
   }
 
-  // If we have ANY Date objects or date strings, it's a DATE column
-  if (hasDateObjects > 0 || hasDateStrings > 0) {
+  // Calculate percentage of date values
+  const datePercentage = (hasDateObjects + hasDateStrings) / validValues.length;
+
+  // If we have Date objects (from Excel), trust them if >50% are dates
+  if (hasDateObjects > 0 && datePercentage >= 0.5) {
+    return 'DATE';
+  }
+
+  // For numeric YYYYMMDD detection, require at least 80% to avoid false positives
+  // (some columns like 합계 might have a few 8-digit numbers that look like dates)
+  if (hasDateStrings > 0 && datePercentage >= 0.8) {
     return 'DATE';
   }
 
@@ -524,7 +567,14 @@ export function detectColumnTypes(rows: any[], headers: string[]): ColumnType[] 
 
   return headers.map((header) => {
     const values = sampleRows.map((row) => row[header]);
-    return detectColumnType(values, header);
+    const detectedType = detectColumnType(values, header);
+
+    // Log detected type for date columns
+    if (detectedType === 'DATE' || header.includes('일자') || header.includes('날짜')) {
+      console.log(`📊 Column "${header}" detected as: ${detectedType}`, { sampleValues: values.slice(0, 3) });
+    }
+
+    return detectedType;
   });
 }
 

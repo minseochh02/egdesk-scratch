@@ -555,8 +555,8 @@ export function registerUserDataIPCHandlers(): void {
         properties: ['openFile'],
         filters: [
           {
-            name: 'Excel Files',
-            extensions: ['xlsx', 'xls', 'xlsm'],
+            name: 'Excel and CSV Files',
+            extensions: ['xlsx', 'xls', 'xlsm', 'csv'],
           },
         ],
       });

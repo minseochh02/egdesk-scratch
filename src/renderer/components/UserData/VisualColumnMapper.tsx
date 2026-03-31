@@ -1,9 +1,53 @@
 import React, { useState, useEffect } from 'react';
 
+/**
+ * Format date value for display
+ * Converts various date formats to YYYY-MM-DD
+ */
+const formatDateForDisplay = (value: any): string => {
+  if (!value) return value;
+
+  // If already a Date object, format it
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // If it's a number, check for YYYYMMDD format (e.g., 20250101)
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    const valueStr = String(value);
+    if (valueStr.length === 8 && value >= 19000101 && value <= 21991231) {
+      const year = valueStr.substring(0, 4);
+      const month = valueStr.substring(4, 6);
+      const day = valueStr.substring(6, 8);
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // If it's a string, check for YYYYMMDD format
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    // Handle YYYYMMDD format (e.g., "20250101")
+    if (/^\d{8}$/.test(trimmed)) {
+      const year = trimmed.substring(0, 4);
+      const month = trimmed.substring(4, 6);
+      const day = trimmed.substring(6, 8);
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // Return as-is for other formats
+  return value;
+};
+
 interface ColumnMapping {
   excelName: string;
   sqlName: string;
   type: string;
+  excelType: string; // Excel column type for formatting display
   included: boolean;
 }
 
@@ -73,14 +117,26 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
             excelName: excelCol.name,
             sqlName: firstAvailableColumn ? firstAvailableColumn.name : excelCol.name,
             type: firstAvailableColumn ? firstAvailableColumn.type : excelCol.type,
+            excelType: excelCol.type, // Preserve Excel type for display formatting
             included: false, // Exclude unmapped columns by default
           };
+        }
+
+        // Debug log for 일자 column
+        if (excelCol.name === '일자') {
+          console.log(`🔍 VisualColumnMapper: Mapping 일자 column`, {
+            excelName: excelCol.name,
+            excelType: excelCol.type,
+            matchedSqlName: matchedColumn.name,
+            matchedType: matchedColumn.type,
+          });
         }
 
         return {
           excelName: excelCol.name,
           sqlName: matchedColumn.name,
           type: matchedColumn.type,
+          excelType: excelCol.type, // Preserve Excel type for display formatting
           included: true,
         };
       });
@@ -89,12 +145,16 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
       setMappings(initialMappings);
     } else {
       // IMPORT MODE: Initialize with exact Excel names (no sanitization yet)
-      const initialMappings = excelColumns.map((col) => ({
-        excelName: col.name,
-        sqlName: col.name, // Start with exact same name
-        type: col.type,
-        included: true,
-      }));
+      const initialMappings = excelColumns.map((col) => {
+        console.log(`🔍 VisualColumnMapper: Setting up column "${col.name}" with type: ${col.type}`);
+        return {
+          excelName: col.name,
+          sqlName: col.name, // Start with exact same name
+          type: col.type,
+          excelType: col.type,
+          included: true,
+        };
+      });
       setMappings(initialMappings);
     }
   }, [excelColumns, targetTable]);
@@ -383,7 +443,9 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
                     }}
                   >
                     {row[mapping.excelName] !== null && row[mapping.excelName] !== undefined
-                      ? String(row[mapping.excelName])
+                      ? mapping.excelType === 'DATE'
+                        ? formatDateForDisplay(row[mapping.excelName])
+                        : String(row[mapping.excelName])
                       : ''}
                   </td>
                 ))}
