@@ -1109,21 +1109,30 @@ export class UserDataDbManager {
           dateStr = suffixMatch[1];
         }
 
-        // Use slashes for normalization to ensure JS Date treats it as local time
-        // (YYYY-MM-DD is often treated as UTC, while YYYY/MM/DD is local)
-        let normalized = dateStr.replace(/-/g, '/');
-        if (normalized.includes('오전') || normalized.includes('오후')) {
-          const isPM = normalized.includes('오후');
-          const isAM = normalized.includes('오전');
-          // Remove day of week like (월)
-          normalized = normalized.replace(/\([^)]+\)/, '').trim();
-          // Remove Korean AM/PM
-          normalized = normalized.replace('오전', '').replace('오후', '').trim();
-          // Add standard AM/PM at the end for JS Date
-          normalized += isPM ? ' PM' : ' AM';
-        }
+        // Handle YYYYMMDD format (e.g., "20250101") by adding delimiters
+        if (/^\d{8}$/.test(dateStr)) {
+          // Convert "20250101" to "2025/01/01"
+          const year = dateStr.substring(0, 4);
+          const month = dateStr.substring(4, 6);
+          const day = dateStr.substring(6, 8);
+          dateObj = new Date(`${year}/${month}/${day}`);
+        } else {
+          // Use slashes for normalization to ensure JS Date treats it as local time
+          // (YYYY-MM-DD is often treated as UTC, while YYYY/MM/DD is local)
+          let normalized = dateStr.replace(/-/g, '/');
+          if (normalized.includes('오전') || normalized.includes('오후')) {
+            const isPM = normalized.includes('오후');
+            const isAM = normalized.includes('오전');
+            // Remove day of week like (월)
+            normalized = normalized.replace(/\([^)]+\)/, '').trim();
+            // Remove Korean AM/PM
+            normalized = normalized.replace('오전', '').replace('오후', '').trim();
+            // Add standard AM/PM at the end for JS Date
+            normalized += isPM ? ' PM' : ' AM';
+          }
 
-        dateObj = new Date(normalized);
+          dateObj = new Date(normalized);
+        }
 
         if (isNaN(dateObj.getTime())) {
           const parts = dateStr.split(/[-/]/);
@@ -1150,7 +1159,22 @@ export class UserDataDbManager {
           }
         }
       } else if (typeof processedValue === 'number') {
-        dateObj = new Date((processedValue - 25569) * 86400 * 1000);
+        // Check if it's YYYYMMDD format (8-digit integer)
+        if (Number.isInteger(processedValue) && processedValue >= 19000101 && processedValue <= 21991231) {
+          const valueStr = String(processedValue);
+          if (valueStr.length === 8) {
+            const year = parseInt(valueStr.substring(0, 4), 10);
+            const month = parseInt(valueStr.substring(4, 6), 10);
+            const day = parseInt(valueStr.substring(6, 8), 10);
+            dateObj = new Date(year, month - 1, day);
+          } else {
+            // Excel serial date
+            dateObj = new Date((processedValue - 25569) * 86400 * 1000);
+          }
+        } else {
+          // Excel serial date
+          dateObj = new Date((processedValue - 25569) * 86400 * 1000);
+        }
       } else {
         throw new Error(`Cannot convert "${processedValue}" to DATE for column "${col.name}"`);
       }

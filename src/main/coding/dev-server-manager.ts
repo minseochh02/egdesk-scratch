@@ -6,6 +6,29 @@ import * as os from 'os';
 import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
 
+/**
+ * Dynamically load setupNextApiPlugin from the user's project node_modules
+ * This avoids npx issues in production
+ */
+async function loadNextApiPluginFromProject(projectPath: string): Promise<any> {
+  try {
+    // Construct path to the plugin in the user's project node_modules
+    const pluginPath = path.join(projectPath, 'node_modules', '@egdesk', 'next-api-plugin', 'dist', 'index.js');
+
+    if (!fs.existsSync(pluginPath)) {
+      console.error(`Plugin not found at ${pluginPath}`);
+      return null;
+    }
+
+    // Dynamically require the plugin from the user's project
+    const plugin = require(pluginPath);
+    return plugin.setupNextApiPlugin;
+  } catch (error) {
+    console.error('Failed to load @egdesk/next-api-plugin from project:', error);
+    return null;
+  }
+}
+
 interface ProjectInfo {
   type: 'nextjs' | 'vite' | 'react' | 'unknown';
   hasPackageJson: boolean;
@@ -622,23 +645,15 @@ export class DevServerManager {
 
       console.log('📦 Installing @egdesk/next-api-plugin for database proxy support...');
 
-      // Get plugin path (works in both dev and production)
-      const pluginPath = this.getPluginPath('next-api-plugin');
+      // Install from npm (published package - more reliable than local path)
+      await this.installPackage(folderPath, '@egdesk/next-api-plugin@latest', packageManager, true);
+      console.log('✓ @egdesk/next-api-plugin installed from npm');
 
-      if (fs.existsSync(pluginPath)) {
-        // Install from local path
-        await this.installPackage(folderPath, `file:${pluginPath}`, packageManager, true);
-        console.log('✓ @egdesk/next-api-plugin installed from local source');
+      // Write EGDesk API key to environment file
+      this.writeEGDeskEnv(folderPath, 'nextjs');
 
-        // Write EGDesk API key to environment file
-        this.writeEGDeskEnv(folderPath, 'nextjs');
-
-        // Run plugin setup to generate middleware and helpers
-        await this.setupNextApiPlugin(folderPath);
-      } else {
-        console.warn('⚠️ Local @egdesk/next-api-plugin not found at', pluginPath);
-        console.warn('⚠️ Skipping plugin installation. Database proxy will need manual setup.');
-      }
+      // Run plugin setup to generate middleware and helpers
+      await this.setupNextApiPlugin(folderPath);
     } catch (error) {
       console.error('Failed to install @egdesk/next-api-plugin:', error);
       console.warn('⚠️ Continuing without API plugin. Database proxy will need manual setup.');
@@ -648,11 +663,47 @@ export class DevServerManager {
 
   /**
    * Run Next.js plugin setup to generate middleware and helper files
+   * Now calls the plugin directly from the project's node_modules instead of using npx
    */
   private async setupNextApiPlugin(folderPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      console.log('🔧 Setting up Next.js API plugin...');
+    console.log('🔧 Setting up Next.js API plugin...');
 
+    try {
+      // Get API key from store
+      const store = getStore();
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      const apiKey = mcpConfig?.tunnel?.apiKey;
+
+      // Try to load and call the setup function directly from the project's node_modules
+      const setupFunc = await loadNextApiPluginFromProject(folderPath);
+
+      if (setupFunc) {
+        // Call the setup function directly
+        console.log('✅ Using direct require of @egdesk/next-api-plugin from project node_modules');
+        await setupFunc(folderPath, {
+          egdeskUrl: 'http://localhost:8080',
+          apiKey: apiKey,
+          useProxy: true
+        });
+        console.log('✓ Next.js API plugin setup complete');
+        console.log('✓ Generated: egdesk.config.ts, egdesk-helpers.ts, proxy.ts, src/lib/api.ts');
+      } else {
+        // Fallback to npx if direct import fails
+        console.log('⚠️ Direct require failed, trying npx fallback...');
+        await this.setupNextApiPluginViaNpx(folderPath);
+      }
+    } catch (error) {
+      console.error('Setup failed:', error);
+      console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
+      // Don't throw - just warn and continue
+    }
+  }
+
+  /**
+   * Fallback method to run setup via npx
+   */
+  private async setupNextApiPluginViaNpx(folderPath: string): Promise<void> {
+    return new Promise((resolve) => {
       // Get API key from store
       const store = getStore();
       const mcpConfig = store.get('mcpConfiguration') as any;
@@ -695,21 +746,18 @@ export class DevServerManager {
 
       setupProcess.on('close', (code) => {
         if (code === 0) {
-          console.log('✓ Next.js API plugin setup complete');
-          resolve();
+          console.log('✓ Next.js API plugin setup complete (via npx)');
         } else {
           const errorMsg = `Next.js plugin setup failed with code ${code}\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
           console.error(errorMsg);
           console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
-          // Don't reject - just warn and continue
-          resolve();
         }
+        resolve();
       });
 
       setupProcess.on('error', (error) => {
         console.error('Next.js setup process error:', error);
         console.warn('⚠️ Please run "npx egdesk-next-setup" manually in your project');
-        // Don't reject - just warn and continue
         resolve();
       });
     });
