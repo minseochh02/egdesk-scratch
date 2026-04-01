@@ -46,7 +46,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Business Identity</h3>
               <p className="egdesk-landing-card-description">
-                Connect your brand assets and website to let AI instantly design your brand identity and social strategy.
+                Build your brand identity and social strategy with AI.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Brand Hub</span>
@@ -64,7 +64,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Social Media</h3>
               <p className="egdesk-landing-card-description">
-                Connect social media accounts and generate content with AI to automatically post. Manage Instagram, Twitter, and more.
+                Create and schedule AI-powered social content in one place.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Social Automation</span>
@@ -79,7 +79,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">SSL-Checker</h3>
               <p className="egdesk-landing-card-description">
-                Analyze SSL certificates and security status of your blog to ensure safe blog operation.
+                Check SSL certificates and site security status quickly.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">SSL Analysis</span>
@@ -94,7 +94,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">SEO-Analyzer</h3>
               <p className="egdesk-landing-card-description">
-                Analyze your website's SEO performance and provide improvement suggestions for search engine optimization.
+                Analyze SEO performance and get practical improvements.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">SEO Analysis</span>
@@ -109,7 +109,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Company Research</h3>
               <p className="egdesk-landing-card-description">
-                Conduct in-depth company research with AI assistance. Gather insights, analyze market trends, and make informed decisions.
+                Research companies with AI-powered insights and trend analysis.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">AI Analysis</span>
@@ -124,7 +124,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Finance Hub</h3>
               <p className="egdesk-landing-card-description">
-                Automatically log into bank accounts and extract transaction lists. Manage your business finances with AI-powered insights.
+                Collect transactions and manage business finances with AI.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Auto-Login</span>
@@ -139,7 +139,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Chatting</h3>
               <p className="egdesk-landing-card-description">
-                Collaborate with your team in real-time, chat with AI assistants, and move projects forward quickly.
+                Collaborate with your team and AI assistants in real time.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Real-time Collaboration</span>
@@ -154,7 +154,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Coding</h3>
               <p className="egdesk-landing-card-description">
-                Efficiently manage and edit your homepage with AI assistance. Automate content creation and editing.
+                Manage and edit homepage projects with AI assistance.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">AI Management</span>
@@ -169,7 +169,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">New Coding</h3>
               <p className="egdesk-landing-card-description">
-                New coding workspace for development tasks.
+                A lightweight coding workspace for development tasks.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Development</span>
@@ -182,7 +182,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Blogging</h3>
               <p className="egdesk-landing-card-description">
-                Plan blog content and schedule posts with AI assistance. Set up automated posting and content management.
+                Plan, write, and schedule blog content with AI.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">AI Writing</span>
@@ -197,7 +197,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">MCP Server</h3>
               <p className="egdesk-landing-card-description">
-                Register and manage MCP (Model Context Protocol) servers to establish connections with AI models.
+                Register and manage MCP servers for AI model connections.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Server Registration</span>
@@ -212,7 +212,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Docker</h3>
               <p className="egdesk-landing-card-description">
-                Manage Docker containers and images directly from EGDesk. Start, stop, and monitor your containerized applications.
+                Start, stop, and monitor Docker containers from EGDesk.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Container Management</span>
@@ -227,7 +227,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">EGDesktop</h3>
               <p className="egdesk-landing-card-description">
-                Manage desktop environment, remote access settings, and system controls directly.
+                Control desktop environment and remote access settings.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Remote Access</span>
@@ -242,7 +242,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Browser Recorder</h3>
               <p className="egdesk-landing-card-description">
-                Record browser interactions and generate automated test scripts. Replay actions and test workflows with built-in download handling.
+                Record browser flows and generate automated test scripts.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Browser Recording</span>
@@ -257,7 +257,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Desktop Recorder</h3>
               <p className="egdesk-landing-card-description">
-                Record desktop application interactions and automate workflows. Generate scripts for desktop automation and testing.
+                Record desktop interactions and automate workflow scripts.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Desktop Recording</span>
@@ -272,7 +272,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">User Data</h3>
               <p className="egdesk-landing-card-description">
-                Import and manage Excel/CSV files, sync browser downloads automatically, and query your data with SQL-like interface.
+                Import Excel/CSV data, auto-sync files, and query tables.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Data Import</span>
@@ -287,7 +287,7 @@ const LandingPage: React.FC = () => {
               </div>
               <h3 className="egdesk-landing-card-title">Rookie Automation</h3>
               <p className="egdesk-landing-card-description">
-                Create automation workflows to extract data from websites and apps. Export results to Excel or PDF automatically.
+                Build automation workflows to extract and export data fast.
               </p>
               <div className="egdesk-landing-card-features">
                 <span className="egdesk-landing-feature-tag">Workflow Builder</span>

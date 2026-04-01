@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowLeft, faFolderOpen, faRefresh, faRobot, faSync, faTable, faTimes, faUpload } from '@fortawesome/free-solid-svg-icons';
 import { UserTable, useUserData } from '../../hooks/useUserData';
 import { ExcelDataWizard } from './wizards/ExcelDataWizard';
 
@@ -161,16 +163,16 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
   // Phase 1: Browser-specific selection steps
   return (
     <div className="import-wizard">
-      <div className="import-wizard-dialog">
+      <div className="import-wizard-dialog browser-sync-wizard-dialog">
         <div className="import-wizard-header">
-          <h2>🔄 Sync Browser Downloads to SQL</h2>
+          <h2><FontAwesomeIcon icon={faSync} /> Sync Browser Downloads to SQL</h2>
           <button className="close-button" onClick={onClose}>
-            ✕
+            <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
 
         {/* Step indicator */}
-        <div className="import-wizard-steps">
+        <div className="import-wizard-steps browser-sync-wizard-steps">
           <div className={`import-wizard-step ${browserStep === 'folder-selection' ? 'active' : 'completed'}`}>
             <div className="import-wizard-step-number">1</div>
             <div className="import-wizard-step-label">Select Automation</div>
@@ -197,21 +199,21 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 </div>
               ) : (
                 <>
-                  <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="browser-sync-header-row">
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0' }}>🤖 Browser Automation Scripts</h3>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                      <h3 className="browser-sync-title"><FontAwesomeIcon icon={faRobot} /> Browser Automation Scripts</h3>
+                      <p className="browser-sync-subtitle">
                         Select a browser automation to import its downloaded Excel or CSV files
                       </p>
                     </div>
                     <button onClick={loadBrowserDownloadFolders} className="btn btn-sm btn-secondary">
-                      🔄 Refresh
+                      <FontAwesomeIcon icon={faRefresh} /> Refresh
                     </button>
                   </div>
 
                   {downloadFolders.length === 0 ? (
                     <div className="file-selection-zone" style={{ cursor: 'default' }}>
-                      <div className="file-selection-icon">📭</div>
+                      <div className="file-selection-icon"><FontAwesomeIcon icon={faFolderOpen} /></div>
                       <h3>No browser automations found</h3>
                       <p>Browser Recorder hasn't downloaded any files yet</p>
                     </div>
@@ -223,7 +225,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                           className="browser-download-folder-card"
                           onClick={() => handleFolderSelect(folder)}
                         >
-                          <div className="browser-download-folder-icon">🤖</div>
+                          <div className="browser-download-folder-icon"><FontAwesomeIcon icon={faRobot} /></div>
                           <div className="browser-download-folder-info">
                             <div className="browser-download-folder-name">{folder.scriptName}</div>
                             <div className="browser-download-folder-meta">
@@ -235,7 +237,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                               Last modified: {new Date(folder.lastModified).toLocaleString()}
                             </div>
                           </div>
-                          <div className="browser-download-folder-action">Connect →</div>
+                          <div className="browser-download-folder-action">Connect</div>
                         </div>
                       ))}
                     </div>
@@ -255,16 +257,16 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 </div>
               ) : (
                 <>
-                  <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
-                    <h4 style={{ margin: '0 0 4px 0' }}>🤖 {selectedFolder?.scriptName}</h4>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                  <div className="browser-sync-selected-card">
+                    <h4 className="browser-sync-selected-title"><FontAwesomeIcon icon={faRobot} /> {selectedFolder?.scriptName}</h4>
+                    <p className="browser-sync-subtitle">
                       Select an Excel or CSV file from this automation's downloads
                     </p>
                   </div>
 
                   {downloadFiles.length === 0 ? (
                     <div className="file-selection-zone" style={{ cursor: 'default' }}>
-                      <div className="file-selection-icon">📭</div>
+                      <div className="file-selection-icon"><FontAwesomeIcon icon={faFolderOpen} /></div>
                       <h3>No Excel or CSV files in this folder</h3>
                       <p>This folder doesn't contain any Excel or CSV files yet</p>
                     </div>
@@ -276,14 +278,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                           className="browser-download-file-card"
                           onClick={() => handleFileSelect(file)}
                         >
-                          <div className="browser-download-file-icon">📄</div>
+                          <div className="browser-download-file-icon"><FontAwesomeIcon icon={faTable} /></div>
                           <div className="browser-download-file-info">
                             <div className="browser-download-file-name">{file.name}</div>
                             <div className="browser-download-file-meta">
                               {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
                             </div>
                           </div>
-                          <div className="browser-download-file-action">Select →</div>
+                          <div className="browser-download-file-action">Select</div>
                         </div>
                       ))}
                     </div>
@@ -303,7 +305,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
               <div className="import-mode-selection">
                 <div className="import-mode-card" onClick={() => handleImportModeSelect('create-new')}>
-                  <div className="import-mode-icon">✨</div>
+                  <div className="import-mode-icon"><FontAwesomeIcon icon={faUpload} /></div>
                   <h4>Create New Table</h4>
                   <p>Create a new database table from this Excel file</p>
                   <ul style={{ textAlign: 'left', fontSize: '13px', color: '#666', paddingLeft: '20px' }}>
@@ -314,7 +316,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                 </div>
 
                 <div className="import-mode-card" onClick={() => handleImportModeSelect('sync-existing')}>
-                  <div className="import-mode-icon">🔄</div>
+                  <div className="import-mode-icon"><FontAwesomeIcon icon={faSync} /></div>
                   <h4>Sync to Existing Table</h4>
                   <p>Append this data to an existing database table</p>
                   <ul style={{ textAlign: 'left', fontSize: '13px', color: '#666', paddingLeft: '20px' }}>
@@ -338,7 +340,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
 
               {tables.length === 0 ? (
                 <div className="file-selection-zone" style={{ cursor: 'default' }}>
-                  <div className="file-selection-icon">📭</div>
+                  <div className="file-selection-icon"><FontAwesomeIcon icon={faFolderOpen} /></div>
                   <h3>No tables available</h3>
                   <p>Create a new table instead</p>
                 </div>
@@ -350,14 +352,14 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
                       className="browser-download-folder-card"
                       onClick={() => handleTableSelect(table)}
                     >
-                      <div className="browser-download-folder-icon">🗂️</div>
+                      <div className="browser-download-folder-icon"><FontAwesomeIcon icon={faTable} /></div>
                       <div className="browser-download-folder-info">
                         <div className="browser-download-folder-name">{table.displayName}</div>
                         <div className="browser-download-folder-meta">
                           {table.tableName} • {table.rowCount} rows • {table.columnCount} columns
                         </div>
                       </div>
-                      <div className="browser-download-folder-action">Select →</div>
+                      <div className="browser-download-folder-action">Select</div>
                     </div>
                   ))}
                 </div>
@@ -371,7 +373,7 @@ export const BrowserDownloadsSyncWizard: React.FC<BrowserDownloadsSyncWizardProp
         <div className="import-wizard-footer">
           {browserStep !== 'folder-selection' && (
             <button className="btn btn-secondary" onClick={handleBack}>
-              ⬅️ Back
+              <FontAwesomeIcon icon={faArrowLeft} /> Back
             </button>
           )}
           {browserStep === 'folder-selection' && (

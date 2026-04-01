@@ -6,6 +6,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowLeft, faDesktop, faFileExcel, faFolderOpen, faPlus, faSync, faTable, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { ExcelDataWizard } from './wizards/ExcelDataWizard';
 import { UserTable } from '../../hooks/useUserData';
 
@@ -147,19 +149,36 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
 
   return (
     <div className="import-wizard">
-      <div className="import-wizard-dialog" style={{ maxWidth: '800px' }}>
+      <div className="import-wizard-dialog desktop-sync-wizard-dialog">
         {/* Header */}
         <div className="import-wizard-header">
-          <h2>🖥️ Sync Desktop Downloads</h2>
+          <h2><FontAwesomeIcon icon={faDesktop} /> Sync Desktop Downloads</h2>
           <button className="btn-icon" onClick={onClose}>
-            ✕
+            <FontAwesomeIcon icon={faTimes} />
           </button>
+        </div>
+
+        <div className="import-wizard-steps desktop-sync-wizard-steps">
+          <div className={`import-wizard-step ${desktopStep === 'folder-selection' ? 'active' : 'completed'}`}>
+            <div className="import-wizard-step-number">1</div>
+            <div className="import-wizard-step-label">Select Recording</div>
+          </div>
+          <div className="import-wizard-step-separator" />
+          <div className={`import-wizard-step ${desktopStep === 'file-selection' ? 'active' : desktopStep === 'import-mode' ? 'completed' : ''}`}>
+            <div className="import-wizard-step-number">2</div>
+            <div className="import-wizard-step-label">Select File</div>
+          </div>
+          <div className="import-wizard-step-separator" />
+          <div className={`import-wizard-step ${desktopStep === 'import-mode' ? 'active' : ''}`}>
+            <div className="import-wizard-step-number">3</div>
+            <div className="import-wizard-step-label">Import Mode</div>
+          </div>
         </div>
 
         {/* Body */}
         <div className="import-wizard-body">
           {error && (
-            <div className="error-message" style={{ marginBottom: '16px' }}>
+            <div className="error-message desktop-sync-inline-error">
               {error}
             </div>
           )}
@@ -167,9 +186,9 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
           {/* Step 1: Folder Selection */}
           {desktopStep === 'folder-selection' && (
             <div>
-              <div className="step-header" style={{ marginBottom: '20px' }}>
+              <div className="desktop-sync-step-header">
                 <h3>Step 1: Select Desktop Recording</h3>
-                <p style={{ color: '#666', fontSize: '14px' }}>
+                <p className="desktop-sync-step-subtitle">
                   Choose a desktop recording folder that contains downloaded Excel/CSV files
                 </p>
               </div>
@@ -181,50 +200,34 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
                 </div>
               ) : folders.length === 0 ? (
                 <div className="empty-state">
-                  <div className="empty-state-icon">🖥️</div>
+                  <div className="empty-state-icon"><FontAwesomeIcon icon={faDesktop} /></div>
                   <h3>No Desktop Recordings Found</h3>
                   <p>
                     Desktop recordings with downloads will appear here. Record a desktop session with file downloads to get started.
                   </p>
                 </div>
               ) : (
-                <div className="folder-list">
+                <div className="browser-downloads-list">
                   {folders.map((folder) => (
                     <div
                       key={folder.path}
-                      className="folder-card"
+                      className="desktop-sync-select-card"
                       onClick={() => handleFolderSelect(folder)}
-                      style={{
-                        padding: '16px',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        marginBottom: '12px',
-                        transition: 'all 0.2s',
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.borderColor = '#4a90e2';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(74, 144, 226, 0.15)';
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.borderColor = '#e0e0e0';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ fontSize: '32px' }}>🖥️</div>
-                        <div style={{ flex: 1 }}>
-                          <h4 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 600 }}>
+                      <div className="desktop-sync-select-row">
+                        <div className="desktop-sync-select-icon"><FontAwesomeIcon icon={faDesktop} /></div>
+                        <div className="desktop-sync-select-info">
+                          <h4 className="desktop-sync-select-title">
                             {folder.scriptName}
                           </h4>
-                          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>
+                          <p className="desktop-sync-select-subtitle">
                             {folder.folderName}
                           </p>
-                          <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#666' }}>
-                            <span>📥 {folder.excelFileCount} Excel/CSV files</span>
-                            <span>📁 {folder.fileCount} total files</span>
-                            <span>💾 {formatFileSize(folder.size)}</span>
-                            <span>🕐 {formatDate(folder.lastModified)}</span>
+                          <div className="desktop-sync-select-meta">
+                            <span><FontAwesomeIcon icon={faFileExcel} /> {folder.excelFileCount} Excel/CSV files</span>
+                            <span><FontAwesomeIcon icon={faFolderOpen} /> {folder.fileCount} total files</span>
+                            <span>{formatFileSize(folder.size)}</span>
+                            <span>{formatDate(folder.lastModified)}</span>
                           </div>
                         </div>
                       </div>
@@ -238,7 +241,7 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
           {/* Step 2: File Selection */}
           {desktopStep === 'file-selection' && selectedFolder && (
             <div>
-              <div className="step-header" style={{ marginBottom: '20px' }}>
+              <div className="desktop-sync-step-header">
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
@@ -246,55 +249,38 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
                     setSelectedFolder(null);
                     setFiles([]);
                   }}
-                  style={{ marginBottom: '12px' }}
                 >
-                  ← Back to Folder Selection
+                  <FontAwesomeIcon icon={faArrowLeft} /> Back to Folder Selection
                 </button>
                 <h3>Step 2: Select Excel/CSV File</h3>
-                <p style={{ color: '#666', fontSize: '14px' }}>
+                <p className="desktop-sync-step-subtitle">
                   From: {selectedFolder.scriptName}
                 </p>
               </div>
 
               {files.length === 0 ? (
                 <div className="empty-state">
-                  <div className="empty-state-icon">📄</div>
+                  <div className="empty-state-icon"><FontAwesomeIcon icon={faFileExcel} /></div>
                   <h3>No Excel/CSV Files Found</h3>
                   <p>This recording folder doesn't contain any Excel or CSV files.</p>
                 </div>
               ) : (
-                <div className="file-list">
+                <div className="browser-downloads-list">
                   {files.map((file) => (
                     <div
                       key={file.path}
-                      className="file-card"
+                      className="desktop-sync-select-card"
                       onClick={() => handleFileSelect(file)}
-                      style={{
-                        padding: '16px',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        marginBottom: '12px',
-                        transition: 'all 0.2s',
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.borderColor = '#4a90e2';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(74, 144, 226, 0.15)';
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.borderColor = '#e0e0e0';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ fontSize: '32px' }}>📊</div>
-                        <div style={{ flex: 1 }}>
-                          <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 600 }}>
+                      <div className="desktop-sync-select-row">
+                        <div className="desktop-sync-select-icon"><FontAwesomeIcon icon={faTable} /></div>
+                        <div className="desktop-sync-select-info">
+                          <h4 className="desktop-sync-select-title">
                             {file.name}
                           </h4>
-                          <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#666' }}>
-                            <span>💾 {formatFileSize(file.size)}</span>
-                            <span>🕐 {formatDate(file.modified)}</span>
+                          <div className="desktop-sync-select-meta">
+                            <span>{formatFileSize(file.size)}</span>
+                            <span>{formatDate(file.modified)}</span>
                           </div>
                         </div>
                       </div>
@@ -308,57 +294,40 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
           {/* Step 3: Import Mode Selection */}
           {desktopStep === 'import-mode' && selectedFile && (
             <div>
-              <div className="step-header" style={{ marginBottom: '20px' }}>
+              <div className="desktop-sync-step-header">
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     setDesktopStep('file-selection');
                     setSelectedFile(null);
                   }}
-                  style={{ marginBottom: '12px' }}
                 >
-                  ← Back to File Selection
+                  <FontAwesomeIcon icon={faArrowLeft} /> Back to File Selection
                 </button>
                 <h3>Step 3: Choose Import Mode</h3>
-                <p style={{ color: '#666', fontSize: '14px' }}>
+                <p className="desktop-sync-step-subtitle">
                   File: {selectedFile.name}
                 </p>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="desktop-sync-mode-grid">
                 {/* Create New Table */}
                 <div
-                  className="mode-card"
+                  className="desktop-sync-mode-card"
                   onClick={() => handleImportModeSelect('import')}
-                  style={{
-                    padding: '24px',
-                    border: '2px solid #e0e0e0',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#4a90e2';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(74, 144, 226, 0.15)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#e0e0e0';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
                 >
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>➕</div>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }}>
+                  <div className="desktop-sync-mode-icon"><FontAwesomeIcon icon={faPlus} /></div>
+                  <h4 className="desktop-sync-mode-title">
                     Create New Table
                   </h4>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                  <p className="desktop-sync-mode-desc">
                     Import this file as a new database table
                   </p>
                 </div>
 
                 {/* Sync to Existing Table */}
                 <div
-                  className="mode-card"
+                  className="desktop-sync-mode-card"
                   onClick={() => {
                     // Show table selector
                     const table = prompt('Enter target table ID (temporary - will add UI):');
@@ -367,28 +336,12 @@ export const DesktopDownloadsSyncWizard: React.FC<DesktopDownloadsSyncWizardProp
                       handleImportModeSelect('upload', selectedTable);
                     }
                   }}
-                  style={{
-                    padding: '24px',
-                    border: '2px solid #e0e0e0',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#4a90e2';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(74, 144, 226, 0.15)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#e0e0e0';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
                 >
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }}>
+                  <div className="desktop-sync-mode-icon"><FontAwesomeIcon icon={faSync} /></div>
+                  <h4 className="desktop-sync-mode-title">
                     Sync to Existing Table
                   </h4>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                  <p className="desktop-sync-mode-desc">
                     Upload data to an existing table
                   </p>
                 </div>

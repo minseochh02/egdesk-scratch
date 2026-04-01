@@ -72,25 +72,6 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
     }
   };
 
-  const handleToggleAutoSync = async (configId: string, currentAutoSync: boolean) => {
-    try {
-      await updateConfiguration(configId, { autoSyncEnabled: !currentAutoSync });
-      await fetchConfigurations();
-      await loadWatcherStatus();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to toggle auto-sync');
-    }
-  };
-
-  const isWatcherActive = (configId: string): boolean => {
-    return watcherStatus.some((w) => w.configId === configId);
-  };
-
-  const getProcessedFilesCount = (configId: string): number => {
-    const watcher = watcherStatus.find((w) => w.configId === configId);
-    return watcher ? watcher.processedFilesCount : 0;
-  };
-
   const handleDelete = async (configId: string, scriptName: string) => {
     if (!confirm(`Delete sync configuration for "${scriptName}"?\n\nThis will not delete the SQL table or downloaded files.`)) {
       return;
@@ -199,10 +180,10 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
   if (loading && configurations.length === 0) {
     return (
       <div className="import-wizard">
-        <div className="import-wizard-dialog">
+        <div className="import-wizard-dialog sync-config-manager-dialog">
           <div className="import-wizard-header">
             <h2>⚙️ Sync Configurations</h2>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div className="sync-config-manager-header-actions">
               <button
                 className="btn btn-sm btn-secondary"
                 onClick={handleImport}
@@ -237,10 +218,10 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
 
   return (
     <div className="import-wizard">
-      <div className="import-wizard-dialog" style={{ maxWidth: '1000px' }}>
+      <div className="import-wizard-dialog sync-config-manager-dialog">
         <div className="import-wizard-header">
           <h2>⚙️ Sync Configurations</h2>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="sync-config-manager-header-actions">
             <button
               className="btn btn-sm btn-secondary"
               onClick={handleImport}
@@ -316,13 +297,35 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                       <div className="sync-config-title-info">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <h4 className="sync-config-name">{config.scriptName}</h4>
-                          <span className={`source-badge ${config.source || 'browser'}`}>
-                            {config.source === 'desktop' ? '🖥️ Desktop' : '🌐 Browser'}
-                          </span>
                         </div>
                         <div className="sync-config-folder">{config.folderName}</div>
                       </div>
                       <div className="sync-config-actions">
+                        <div style={{ fontSize: '11px', color: '#666', marginRight: '10px', whiteSpace: 'nowrap' }}>
+                          Last Sync: {formatRelativeTime(config.lastSyncAt)} · {getStatusIcon(config.lastSyncStatus)} {config.lastSyncStatus || 'Never'}
+                          {' · '}
+                          Rows: ✅ {config.lastSyncRowsImported}
+                          {config.lastSyncRowsSkipped > 0 && ` · ⚠️ ${config.lastSyncRowsSkipped}`}
+                        </div>
+                        <details className="sync-config-overflow-menu">
+                          <summary className="sync-config-overflow-trigger" title="More actions" aria-label="More actions">
+                            ⋯
+                          </summary>
+                          <div className="sync-config-overflow-panel">
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => setEditingConfig(config)}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDelete(config.id, config.scriptName)}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </details>
                         <label className="toggle-switch">
                           <input
                             type="checkbox"
@@ -335,8 +338,8 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                     </div>
                   </div>
 
-                  <div className="sync-config-body">
-                    <div className="sync-config-info-grid">
+                  <div className="sync-config-body sync-config-body-compact">
+                    <div className="sync-config-info-grid sync-config-info-grid-compact">
                       <div className="sync-config-info-item">
                         <div className="sync-config-info-label">Target Table</div>
                         <div className="sync-config-info-value">📊 {getTableName(config.targetTableId)}</div>
@@ -369,7 +372,7 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                           {Object.keys(config.columnMappings).length} columns
                           <button
                             className="btn btn-sm btn-secondary"
-                            style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '11px' }}
+                            style={{ marginLeft: '6px', padding: '2px 6px', fontSize: '10px' }}
                             onClick={() => setSelectedConfig(selectedConfig?.id === config.id ? null : config)}
                           >
                             {selectedConfig?.id === config.id ? 'Hide' : 'View'}
@@ -379,23 +382,23 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                     </div>
 
                     {selectedConfig?.id === config.id && (
-                      <div style={{ marginTop: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '12px' }}>
-                        <strong style={{ display: 'block', marginBottom: '8px', color: '#1976d2' }}>📋 Column Mappings:</strong>
-                        <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+                      <div style={{ marginTop: '8px', padding: '8px', background: '#f8f9fa', borderRadius: '6px', fontSize: '11px' }}>
+                        <strong style={{ display: 'block', marginBottom: '6px', color: '#1976d2' }}>Column Mappings</strong>
+                        <div style={{ maxHeight: '180px', overflow: 'auto' }}>
                           <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
                             <thead>
-                              <tr style={{ borderBottom: '2px solid #ddd' }}>
-                                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600 }}>Excel Column</th>
-                                <th style={{ padding: '4px 8px', textAlign: 'center' }}>→</th>
-                                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600 }}>Table Column</th>
+                              <tr style={{ borderBottom: '1px solid #ddd' }}>
+                                <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 600 }}>Excel Column</th>
+                                <th style={{ padding: '3px 6px', textAlign: 'center' }}>→</th>
+                                <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 600 }}>Table Column</th>
                               </tr>
                             </thead>
                             <tbody>
                               {Object.entries(config.columnMappings).map(([excelCol, tableCol]) => (
                                 <tr key={excelCol} style={{ borderBottom: '1px solid #eee' }}>
-                                  <td style={{ padding: '4px 8px', fontFamily: 'monospace' }}>{excelCol}</td>
-                                  <td style={{ padding: '4px 8px', textAlign: 'center', color: '#999' }}>→</td>
-                                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: '#1976d2' }}>{tableCol}</td>
+                                  <td style={{ padding: '3px 6px', fontFamily: 'monospace' }}>{excelCol}</td>
+                                  <td style={{ padding: '3px 6px', textAlign: 'center', color: '#999' }}>→</td>
+                                  <td style={{ padding: '3px 6px', fontFamily: 'monospace', color: '#1976d2' }}>{tableCol}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -404,73 +407,13 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                       </div>
                     )}
 
-                    <div className="sync-config-status">
-                      <div className="sync-config-status-row">
-                        <div>
-                          <strong>Last Sync:</strong> {formatRelativeTime(config.lastSyncAt)}
-                        </div>
-                        <div>
-                          {getStatusIcon(config.lastSyncStatus)} {config.lastSyncStatus || 'Never'}
-                        </div>
+                    {config.lastSyncError && (
+                      <div className="sync-config-error">
+                        ❌ {config.lastSyncError}
                       </div>
-                      {config.lastSyncAt && (
-                        <div className="sync-config-stats">
-                          <span>✅ {config.lastSyncRowsImported} imported</span>
-                          {config.lastSyncRowsSkipped > 0 && (
-                            <span>⚠️ {config.lastSyncRowsSkipped} skipped</span>
-                          )}
-                        </div>
-                      )}
-                      {config.lastSyncError && (
-                        <div className="sync-config-error">
-                          ❌ {config.lastSyncError}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="sync-config-auto-sync">
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={config.autoSyncEnabled}
-                          onChange={() => handleToggleAutoSync(config.id, config.autoSyncEnabled)}
-                          disabled={!config.enabled}
-                        />
-                        <span style={{ fontSize: '14px', fontWeight: 500 }}>
-                          🔄 Auto-Sync Enabled {!config.enabled && '(disabled)'}
-                        </span>
-                      </label>
-                      {config.autoSyncEnabled && (
-                        <div style={{ fontSize: '12px', color: '#666', marginLeft: '28px', marginTop: '4px' }}>
-                          {isWatcherActive(config.id) ? (
-                            <>
-                              <span style={{ color: '#4CAF50', fontWeight: 500 }}>● Active</span> - Watching for new files
-                              {getProcessedFilesCount(config.id) > 0 && (
-                                <span> ({getProcessedFilesCount(config.id)} files seen)</span>
-                              )}
-                            </>
-                          ) : (
-                            <span style={{ color: '#FF9800' }}>⚪ Not watching (will start when enabled)</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
 
-                  <div className="sync-config-footer">
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => setEditingConfig(config)}
-                    >
-                      ✏️ Edit
-                    </button>
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={() => handleDelete(config.id, config.scriptName)}
-                    >
-                      🗑️ Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>

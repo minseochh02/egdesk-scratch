@@ -928,6 +928,90 @@ export class SQLiteManager {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     });
+
+    // ========================================
+    // Database Transfer Handlers
+    // ========================================
+
+    // Export database
+    ipcMain.handle('financehub-transfer:export', async (event, includeCredentials: boolean) => {
+      try {
+        const { exportDatabase } = await import('../financehub/database-transfer-handler');
+        return await exportDatabase(includeCredentials);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Validate import file
+    ipcMain.handle('financehub-transfer:validate', async (event, filePath: string) => {
+      try {
+        const { validateImportFile } = await import('../financehub/database-transfer-handler');
+        return await validateImportFile(filePath);
+      } catch (error) {
+        return { valid: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Import database
+    ipcMain.handle('financehub-transfer:import', async (event, filePath: string) => {
+      try {
+        const { importDatabase } = await import('../financehub/database-transfer-handler');
+        return await importDatabase(filePath);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Select import file
+    ipcMain.handle('financehub-transfer:select-file', async () => {
+      try {
+        const { selectImportFile } = await import('../financehub/database-transfer-handler');
+        return await selectImportFile();
+      } catch (error) {
+        return { canceled: true, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Create backup
+    ipcMain.handle('financehub-transfer:create-backup', async () => {
+      try {
+        const { createBackup } = await import('../financehub/database-transfer-handler');
+        return await createBackup();
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // List backups
+    ipcMain.handle('financehub-transfer:list-backups', async () => {
+      try {
+        const { listBackups } = await import('../financehub/database-transfer-handler');
+        return await listBackups();
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Restore backup
+    ipcMain.handle('financehub-transfer:restore-backup', async (event, backupId: string) => {
+      try {
+        const { restoreBackup } = await import('../financehub/database-transfer-handler');
+        return await restoreBackup(backupId);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
+    // Delete backup
+    ipcMain.handle('financehub-transfer:delete-backup', async (event, backupId: string) => {
+      try {
+        const { deleteBackup } = await import('../financehub/database-transfer-handler');
+        return await deleteBackup(backupId);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
   }
 
   /**

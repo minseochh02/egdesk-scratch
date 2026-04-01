@@ -71,19 +71,19 @@
 
 /* Main Content */
 .egdesk-landing-content {
-  padding: 60px 40px;
+  padding: 36px 28px;
 }
 
 .egdesk-landing-welcome-section {
   text-align: center;
-  margin-bottom: 60px;
+  margin-bottom: 28px;
 }
 
 .egdesk-landing-welcome-title {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 600;
   color: #1d1d1f;
-  margin: 0 0 20px 0;
+  margin: 0 0 10px 0;
 }
 
 .welcome-description {
@@ -97,16 +97,20 @@
 /* Action Cards */
 .egdesk-landing-action-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 30px;
-  margin-bottom: 60px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 30px;
 }
 
 .egdesk-landing-action-card {
   background: #ffffff;
   border: 2px solid #e1e5e9;
-  border-radius: 16px;
-  padding: 40px;
+  border-radius: 12px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  column-gap: 12px;
+  align-items: start;
   text-decoration: none;
   color: inherit;
   transition: all 0.3s ease;
@@ -131,8 +135,8 @@
 }
 
 .egdesk-landing-action-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
   border-color: #007aff;
 }
 
@@ -225,15 +229,17 @@
 }
 
 .egdesk-landing-card-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 20px;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
-  font-size: 32px;
+  margin-bottom: 0;
+  font-size: 22px;
   color: #ffffff;
+  grid-column: 1;
+  grid-row: 1 / span 2;
 }
 
 .egdesk-landing-card-icon svg {
@@ -285,31 +291,42 @@
 }
 
 .egdesk-landing-card-title {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 600;
   color: #1d1d1f;
-  margin: 0 0 16px 0;
+  margin: 0 0 8px 0;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .egdesk-landing-card-description {
-  font-size: 16px;
+  font-size: 13px;
   color: #6e6e73;
-  line-height: 1.6;
-  margin: 0 0 24px 0;
+  line-height: 1.45;
+  margin: 0 0 12px 0;
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .egdesk-landing-card-features {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+/* Hide feature badges on landing cards */
+.egdesk-landing-card-features {
+  display: none;
 }
 
 .egdesk-landing-feature-tag {
   background: #f2f2f7;
   color: #6e6e73;
-  padding: 6px 12px;
+  padding: 4px 8px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
 }
 

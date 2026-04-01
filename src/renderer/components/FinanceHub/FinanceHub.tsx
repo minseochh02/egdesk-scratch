@@ -33,6 +33,7 @@ import { TransactionTable, TransactionStats, TaxInvoiceTable, TaxInvoiceFilters,
 import type { TaxInvoiceFiltersType, TaxInvoiceStatsData } from './shared';
 import TaxInvoicesPage from './TaxInvoicesPage';
 import { SchedulerSettings } from './SchedulerSettings';
+import { DataManagementTab } from './DataManagementTab';
 
 // Types & Utils
 import {
@@ -101,7 +102,7 @@ const FinanceHub: React.FC = () => {
   // Local State
   // ============================================
   
-  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management'>('account-management');
+  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management' | 'data-management'>('account-management');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -2125,6 +2126,7 @@ const FinanceHub: React.FC = () => {
             <button className={`finance-hub__nav-item ${currentView === 'card-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('card-transactions')}>카드 전체 거래 내역</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-invoices' ? 'active' : ''}`} onClick={() => setCurrentView('tax-invoices')}>전자세금계산서</button>
+            <button className={`finance-hub__nav-item ${currentView === 'data-management' ? 'active' : ''}`} onClick={() => setCurrentView('data-management')}>데이터 관리</button>
           </nav>
         </div>
 
@@ -2748,6 +2750,10 @@ const FinanceHub: React.FC = () => {
               </section>
 
             </div>
+          </div>
+        ) : currentView === 'data-management' ? (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <DataManagementTab />
           </div>
         ) : null}
       </main>

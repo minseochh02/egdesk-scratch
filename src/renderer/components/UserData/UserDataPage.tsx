@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCog, faDatabase, faDownload, faExclamationTriangle, faSpinner, faSync, faTrash, faUpload } from '@fortawesome/free-solid-svg-icons';
 import { useUserData, UserTable } from '../../hooks/useUserData';
 import { TableList } from './TableList';
 import { TableViewer } from './TableViewer';
@@ -21,6 +23,20 @@ export const UserDataPage: React.FC = () => {
   const [exportingSql, setExportingSql] = useState(false);
   const [importingSql, setImportingSql] = useState(false);
   const [forceDropping, setForceDropping] = useState(false);
+  const [openActionGroup, setOpenActionGroup] = useState<'data' | 'sync' | 'reset' | null>(null);
+  const headerActionsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!headerActionsRef.current) return;
+      if (!headerActionsRef.current.contains(event.target as Node)) {
+        setOpenActionGroup(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const handleSelectTable = (table: UserTable) => {
     setSelectedTable(table);
@@ -290,67 +306,107 @@ export const UserDataPage: React.FC = () => {
   return (
     <div className="user-data-page">
       <div className="user-data-header">
-        <h1>📊 User Database</h1>
-        <div className="user-data-header-actions">
+        <h1>
+          <FontAwesomeIcon icon={faDatabase} /> {selectedTable ? 'User Database' : `User Database (${tables.length})`}
+        </h1>
+        <div className="user-data-header-actions" ref={headerActionsRef}>
           {!selectedTable && (
             <>
-              <button className="btn btn-primary" onClick={() => setShowImportWizard(true)}>
-                📥 Import Excel
-              </button>
-            <button className="btn btn-secondary" onClick={() => setShowBrowserSyncWizard(true)}>
-              🔄 Sync Browser Downloads
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowDesktopSyncWizard(true)}>
-              🔄 Sync Desktop Downloads
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowSyncConfigManager(true)}>
-              ⚙️ Configurations
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleImportAll}
-              disabled={importing}
-            >
-              {importing ? '⏳ Importing...' : '📥 Import All'}
-            </button>
-            <button
-              className="btn btn-success"
-              onClick={handleExportAll}
-              disabled={exporting || tables.length === 0}
-            >
-              {exporting ? '⏳ Exporting...' : '📤 Export All'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={handleImportSQL}
-              disabled={importingSql}
-            >
-              {importingSql ? '⏳ Importing...' : '📥 Import SQL'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={handleExportSQL}
-              disabled={exportingSql || tables.length === 0}
-            >
-              {exportingSql ? '⏳ Exporting...' : '📤 Export SQL'}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={handleDropAll}
-              disabled={dropping || tables.length === 0}
-            >
-              {dropping ? '⏳ Dropping...' : '🗑️ Drop All'}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={handleForceDropAll}
-              disabled={forceDropping}
-              title="Force drop ALL tables (including orphaned ones)"
-            >
-              {forceDropping ? '⏳ Force Dropping...' : '💣 Force Drop'}
-            </button>
-          </>
-        )}
+              <div className="action-group">
+                <button
+                  className={`btn btn-primary btn-compact action-group-trigger ${openActionGroup === 'data' ? 'active' : ''}`}
+                  onClick={() => setOpenActionGroup(openActionGroup === 'data' ? null : 'data')}
+                >
+                  <FontAwesomeIcon icon={faDatabase} /> Data Management
+                </button>
+                {openActionGroup === 'data' && (
+                  <div className="action-group-menu">
+                    <button className="action-group-item" onClick={() => { setShowImportWizard(true); setOpenActionGroup(null); }}>
+                      <FontAwesomeIcon icon={faUpload} /> Import Excel
+                    </button>
+                    <button
+                      className="action-group-item"
+                      onClick={() => { handleImportAll(); setOpenActionGroup(null); }}
+                      disabled={importing}
+                    >
+                      {importing ? <><FontAwesomeIcon icon={faSpinner} spin /> Importing All...</> : <><FontAwesomeIcon icon={faUpload} /> Import All</>}
+                    </button>
+                    <button
+                      className="action-group-item"
+                      onClick={() => { handleExportAll(); setOpenActionGroup(null); }}
+                      disabled={exporting || tables.length === 0}
+                    >
+                      {exporting ? <><FontAwesomeIcon icon={faSpinner} spin /> Exporting All...</> : <><FontAwesomeIcon icon={faDownload} /> Export All</>}
+                    </button>
+                    <button
+                      className="action-group-item"
+                      onClick={() => { handleImportSQL(); setOpenActionGroup(null); }}
+                      disabled={importingSql}
+                    >
+                      {importingSql ? <><FontAwesomeIcon icon={faSpinner} spin /> Importing SQL...</> : <><FontAwesomeIcon icon={faUpload} /> Import SQL</>}
+                    </button>
+                    <button
+                      className="action-group-item"
+                      onClick={() => { handleExportSQL(); setOpenActionGroup(null); }}
+                      disabled={exportingSql || tables.length === 0}
+                    >
+                      {exportingSql ? <><FontAwesomeIcon icon={faSpinner} spin /> Exporting SQL...</> : <><FontAwesomeIcon icon={faDownload} /> Export SQL</>}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="action-group">
+                <button
+                  className={`btn btn-secondary action-group-trigger ${openActionGroup === 'sync' ? 'active' : ''}`}
+                  onClick={() => setOpenActionGroup(openActionGroup === 'sync' ? null : 'sync')}
+                >
+                  <FontAwesomeIcon icon={faSync} /> Sync Config
+                </button>
+                {openActionGroup === 'sync' && (
+                  <div className="action-group-menu">
+                    <button className="action-group-item" onClick={() => { setShowBrowserSyncWizard(true); setOpenActionGroup(null); }}>
+                      <FontAwesomeIcon icon={faSync} /> Sync Browser Downloads
+                    </button>
+                    <button className="action-group-item" onClick={() => { setShowDesktopSyncWizard(true); setOpenActionGroup(null); }}>
+                      <FontAwesomeIcon icon={faSync} /> Sync Desktop Downloads
+                    </button>
+                    <button className="action-group-item" onClick={() => { setShowSyncConfigManager(true); setOpenActionGroup(null); }}>
+                      <FontAwesomeIcon icon={faCog} /> Configurations
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="action-group">
+                <button
+                  className={`btn btn-danger action-group-trigger ${openActionGroup === 'reset' ? 'active' : ''}`}
+                  onClick={() => setOpenActionGroup(openActionGroup === 'reset' ? null : 'reset')}
+                >
+                  <FontAwesomeIcon icon={faExclamationTriangle} /> DB Reset
+                </button>
+                {openActionGroup === 'reset' && (
+                  <div className="action-group-menu action-group-menu-danger">
+                    <button
+                      className="action-group-item action-group-item-danger"
+                      onClick={() => { handleDropAll(); setOpenActionGroup(null); }}
+                      disabled={dropping || tables.length === 0}
+                    >
+                      {dropping ? <><FontAwesomeIcon icon={faSpinner} spin /> Dropping...</> : <><FontAwesomeIcon icon={faTrash} /> Drop All</>}
+                    </button>
+                    <button
+                      className="action-group-item action-group-item-danger"
+                      onClick={() => { handleForceDropAll(); setOpenActionGroup(null); }}
+                      disabled={forceDropping}
+                      title="Force drop ALL tables (including orphaned ones)"
+                    >
+                      {forceDropping ? <><FontAwesomeIcon icon={faSpinner} spin /> Force Dropping...</> : <><FontAwesomeIcon icon={faExclamationTriangle} /> Force Drop</>}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

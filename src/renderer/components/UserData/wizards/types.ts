@@ -72,7 +72,7 @@ export const STEP_FLOWS: Record<WizardMode, WizardStep[]> = {
  */
 export interface DuplicateDetectionConfig {
   uniqueKeyColumns: string[];
-  duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
   addTimestamp?: boolean;
 }
 

@@ -516,6 +516,28 @@
   letter-spacing: -0.02em;
 }
 
+.browser-recorder-test-rename-icon {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.browser-recorder-test-rename-icon:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(129, 140, 248, 0.45);
+  color: #e0e7ff;
+}
+
 .browser-recorder-test-badge {
   font-size: 10px;
   color: #bfdbfe;
@@ -556,6 +578,17 @@
   gap: 6px;
   font-weight: 500;
   letter-spacing: -0.01em;
+}
+
+.browser-recorder-schedule-info-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  color: #ddd6fe;
 }
 
 .browser-recorder-test-meta {
@@ -682,15 +715,44 @@
   gap: 6px;
 }
 
+.browser-recorder-downloads-btn-open {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  color: #e0e7ff;
+}
+
+.browser-recorder-downloads-btn-open:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.browser-recorder-downloads-btn-refresh {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.3),
+    0 8px 20px -10px rgba(139, 92, 246, 0.45);
+}
+
+.browser-recorder-downloads-btn-refresh:hover {
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.45),
+    0 10px 24px -10px rgba(139, 92, 246, 0.55);
+}
+
 .browser-recorder-downloads-container {
   background: transparent;
   border-radius: 0;
-  padding: 0;
+  padding: 0 0 var(--br-list-scroll-pad, 28px);
   max-height: 300px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scroll-padding-bottom: var(--br-list-scroll-pad, 28px);
+  box-sizing: border-box;
 }
 
 .browser-recorder-download-item {
@@ -1514,5 +1576,527 @@
 
   .chain-upload-controls .browser-recorder-btn {
     width: 100%;
+  }
+}
+
+/* ============================================
+   COMPACT MODERN REFINEMENTS
+   ============================================ */
+
+.browser-recorder-page {
+  --br-radius-sm: 8px;
+  --br-radius-md: 10px;
+  --br-radius-lg: 12px;
+  --br-text-xs: 11px;
+  --br-text-sm: 12px;
+  --br-text-md: 13px;
+  --br-border: 1px solid rgba(255, 255, 255, 0.1);
+  --br-surface-1: rgba(255, 255, 255, 0.02);
+  --br-surface-2: rgba(255, 255, 255, 0.04);
+  /* Extra space at end of internal scroll areas so last rows aren’t clipped */
+  --br-list-scroll-pad: 28px;
+}
+
+.browser-recorder-scroll {
+  padding: 12px 16px 28px;
+  display: flex;
+}
+
+.browser-recorder-container {
+  max-width: 1120px;
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+}
+
+.browser-recorder-content {
+  border-radius: var(--br-radius-lg);
+  padding: 12px 12px calc(12px + var(--br-list-scroll-pad));
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 12px 28px -10px rgba(0, 0, 0, 0.45);
+}
+
+.browser-recorder-header {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.browser-recorder-title {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.browser-recorder-subtitle {
+  font-size: var(--br-text-sm);
+}
+
+.browser-recorder-section {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: var(--br-radius-md);
+  border: var(--br-border);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.45);
+}
+
+.browser-recorder-section:hover {
+  transform: none;
+  background: var(--br-surface-2);
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.45);
+}
+
+.browser-recorder-section-title {
+  font-size: 14px;
+}
+
+.browser-recorder-section-header {
+  margin-bottom: 8px;
+}
+
+.browser-recorder-url-input {
+  padding: 7px 10px;
+  font-size: var(--br-text-md);
+  border-radius: var(--br-radius-sm);
+  border: var(--br-border);
+}
+
+.browser-recorder-url-input:focus {
+  transform: none;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 0 3px rgba(139, 92, 246, 0.16);
+}
+
+.browser-recorder-btn {
+  padding: 5px 10px;
+  font-size: var(--br-text-sm);
+  border-radius: var(--br-radius-sm);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.browser-recorder-btn::before {
+  display: none;
+}
+
+.browser-recorder-btn-sm {
+  padding: 4px 8px;
+  font-size: var(--br-text-xs);
+}
+
+.browser-recorder-btn-record,
+.browser-recorder-btn-stop,
+.browser-recorder-btn-toggle {
+  padding: 8px 12px;
+  font-size: var(--br-text-md);
+  border-radius: var(--br-radius-md);
+}
+
+.browser-recorder-btn-collapse {
+  min-width: 36px;
+  padding: 8px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.browser-recorder-btn-stop {
+  animation: none;
+}
+
+.browser-recorder-recording-controls {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.browser-recorder-saved-tests-container,
+.browser-recorder-downloads-container {
+  gap: 6px;
+}
+
+.browser-recorder-test-item {
+  padding: 9px 10px;
+  border-radius: var(--br-radius-md);
+  border: var(--br-border);
+  gap: 6px;
+}
+
+.browser-recorder-test-item::before {
+  border-radius: var(--br-radius-md);
+}
+
+.browser-recorder-test-item:hover {
+  transform: none;
+}
+
+.browser-recorder-test-name {
+  font-size: var(--br-text-md);
+}
+
+.browser-recorder-test-meta,
+.browser-recorder-test-preview,
+.browser-recorder-schedule-info,
+.browser-recorder-download-meta {
+  font-size: var(--br-text-xs);
+}
+
+.browser-recorder-test-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.browser-recorder-download-item {
+  padding: 9px 10px;
+  border-radius: var(--br-radius-md);
+  border: var(--br-border);
+}
+
+.browser-recorder-download-item:hover {
+  transform: none;
+}
+
+.browser-recorder-download-name {
+  font-size: var(--br-text-md);
+  margin-bottom: 2px;
+}
+
+.browser-recorder-debug-console {
+  border-radius: var(--br-radius-md);
+  padding: 8px 8px calc(8px + var(--br-list-scroll-pad));
+  max-height: 150px;
+  font-size: var(--br-text-xs);
+  scroll-padding-bottom: var(--br-list-scroll-pad);
+  box-sizing: border-box;
+}
+
+.browser-recorder-code-viewer-container {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: var(--br-radius-md);
+  border: var(--br-border);
+}
+
+.browser-recorder-code-viewer-title {
+  font-size: var(--br-text-md);
+  margin-bottom: 6px;
+}
+
+.browser-recorder-code-viewer {
+  padding: 10px;
+  border-radius: var(--br-radius-sm);
+  max-height: 240px;
+  font-size: var(--br-text-xs);
+}
+
+.browser-recorder-empty-message {
+  margin: 8px 0;
+  padding: 14px 10px;
+  border-radius: var(--br-radius-md);
+  font-size: var(--br-text-sm);
+}
+
+.browser-recorder-modal-overlay {
+  padding: 14px;
+}
+
+.browser-recorder-schedule-modal {
+  max-width: 440px;
+  border-radius: 14px;
+}
+
+.browser-recorder-modal-header {
+  padding: 12px 14px;
+}
+
+.browser-recorder-modal-title {
+  font-size: 15px;
+}
+
+.browser-recorder-modal-body {
+  padding: 12px 14px;
+}
+
+.browser-recorder-modal-footer {
+  padding: 10px 14px;
+}
+
+.browser-recorder-form-group {
+  margin-bottom: 10px;
+}
+
+.browser-recorder-form-label {
+  font-size: var(--br-text-md);
+  margin-bottom: 4px;
+}
+
+.browser-recorder-form-input,
+.browser-recorder-form-select {
+  border-radius: var(--br-radius-sm);
+  border: var(--br-border);
+  padding: 7px 10px;
+  font-size: var(--br-text-md);
+}
+
+.browser-recorder-schedule-preview {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--br-radius-sm);
+  font-size: var(--br-text-sm);
+}
+
+.action-chain-upload {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--br-radius-lg);
+}
+
+.chain-download-info {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.success-icon {
+  font-size: 20px;
+}
+
+.download-message {
+  font-size: var(--br-text-md);
+}
+
+.chain-upload-label {
+  font-size: var(--br-text-md);
+  margin-bottom: 8px;
+}
+
+.chain-upload-controls {
+  gap: 8px;
+}
+
+.chain-upload-controls input {
+  min-width: 220px;
+  padding: 8px 10px;
+  font-size: var(--br-text-md);
+  border-radius: var(--br-radius-sm);
+}
+
+.chain-upload-controls .browser-recorder-btn {
+  padding: 8px 12px;
+}
+
+.browser-recorder-command-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.browser-recorder-command-bar > .browser-recorder-section-title {
+  margin-bottom: 8px;
+}
+
+.browser-recorder-layout-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 30%) minmax(0, 70%);
+  gap: 10px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.browser-recorder-layout-split.saved-tests-collapsed {
+  grid-template-columns: minmax(260px, 1fr) 56px;
+}
+
+.browser-recorder-layout-left,
+.browser-recorder-layout-right {
+  min-width: 0;
+}
+
+.browser-recorder-layout-right {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.browser-recorder-saved-tests-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.browser-recorder-saved-tests-section .browser-recorder-section-header {
+  flex-shrink: 0;
+}
+
+.browser-recorder-saved-tests-section .browser-recorder-saved-tests-container {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: var(--br-list-scroll-pad);
+  scroll-padding-bottom: var(--br-list-scroll-pad);
+  box-sizing: border-box;
+}
+
+.browser-recorder-layout-split.saved-tests-collapsed .browser-recorder-layout-right .browser-recorder-section {
+  padding: 8px 6px;
+}
+
+.browser-recorder-layout-split.saved-tests-collapsed .browser-recorder-layout-right .browser-recorder-section-title {
+  display: none;
+}
+
+.browser-recorder-layout-split.saved-tests-collapsed .browser-recorder-layout-right .browser-recorder-section-header {
+  margin-bottom: 0;
+  justify-content: center;
+}
+
+.browser-recorder-layout-split.saved-tests-collapsed .browser-recorder-layout-right .browser-recorder-section-actions {
+  width: 100%;
+  justify-content: center;
+}
+
+.browser-recorder-header-inline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  border: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.browser-recorder-header-inline::after {
+  display: none;
+}
+
+.browser-recorder-live-status {
+  font-size: var(--br-text-xs);
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.browser-recorder-live-status.idle {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.browser-recorder-live-status.recording {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.browser-recorder-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.browser-recorder-main-left,
+.browser-recorder-main-right {
+  min-width: 0;
+}
+
+.browser-recorder-main-right {
+  display: grid;
+  gap: 10px;
+}
+
+.browser-recorder-tabbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.browser-recorder-tab-active {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #ffffff;
+  border: 1px solid rgba(139, 92, 246, 0.55);
+  box-shadow: 0 6px 18px -8px rgba(99, 102, 241, 0.7);
+}
+
+.browser-recorder-rename-cancel-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  color: #e0e7ff;
+}
+
+.browser-recorder-rename-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.browser-recorder-rename-save-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.3),
+    0 8px 20px -10px rgba(139, 92, 246, 0.45);
+}
+
+.browser-recorder-rename-save-btn:hover {
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.45),
+    0 10px 24px -10px rgba(139, 92, 246, 0.55);
+}
+
+.browser-recorder-collapsible {
+  padding: 8px 10px;
+}
+
+.browser-recorder-collapsible-summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.browser-recorder-collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.browser-recorder-collapsible-summary::before {
+  content: '▸';
+  margin-right: 6px;
+  color: #94a3b8;
+}
+
+.browser-recorder-collapsible[open] .browser-recorder-collapsible-summary::before {
+  content: '▾';
+}
+
+@media (max-width: 980px) {
+  .browser-recorder-command-bar {
+    position: static;
+  }
+
+  .browser-recorder-layout-split {
+    grid-template-columns: 1fr;
+  }
+
+  .browser-recorder-header-inline {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
