@@ -1046,6 +1046,10 @@ export function registerUserDataIPCHandlers(): void {
           console.log('🔄 Sync operation using REPLACE DATE RANGE mode');
           // For replace-date-range, use the special method
           insertResult = userDataManager.replaceByDateRange(config.tableId, filteredRows);
+        } else if (config.duplicateAction === 'replace-all') {
+          console.log('🔄 Sync operation using REPLACE ALL mode');
+          // For replace-all, use the special method
+          insertResult = userDataManager.replaceAll(config.tableId, filteredRows);
         } else if (config.uniqueKeyColumns !== undefined) {
           console.log('🔄 Sync operation using temporary duplicate detection settings');
           console.log('  uniqueKeyColumns:', config.uniqueKeyColumns);

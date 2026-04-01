@@ -24,7 +24,7 @@ const BrowserRecorderPage: React.FC = () => {
   // State
   const [chromeUrl, setChromeUrl] = useState('');
   const [savedTests, setSavedTests] = useState<any[]>([]);
-  const [showSavedTests, setShowSavedTests] = useState(false);
+  const [showSavedTests, setShowSavedTests] = useState(true);
   const [isRecordingEnhanced, setIsRecordingEnhanced] = useState(false);
   const [currentTestCode, setCurrentTestCode] = useState<string>('');
   const [playwrightDownloads, setPlaywrightDownloads] = useState<any[]>([]);
@@ -46,6 +46,7 @@ const BrowserRecorderPage: React.FC = () => {
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [insightTab, setInsightTab] = useState<'code' | 'downloads' | 'debug'>('code');
 
   // Action Chain state
   const [justStoppedRecording, setJustStoppedRecording] = useState(false);
@@ -600,200 +601,300 @@ const BrowserRecorderPage: React.FC = () => {
       <div className="browser-recorder-scroll">
         <div className="browser-recorder-container">
           <div className="browser-recorder-content">
-            {/* Header */}
-            <div className="browser-recorder-header">
-              <h1 className="browser-recorder-title">Browser Recorder</h1>
-              <p className="browser-recorder-subtitle">Record and replay browser interactions with keyboard tracking</p>
-            </div>
+            <div className={`browser-recorder-layout-split ${!showSavedTests ? 'saved-tests-collapsed' : ''}`}>
+              <div className="browser-recorder-layout-left">
+                {/* Sticky command bar */}
+                <div className="browser-recorder-section browser-recorder-command-bar">
+                  <h2 className="browser-recorder-section-title">Step 1. Record New Test</h2>
 
-            {/* URL Input & Recording Controls Section */}
-            <div className="browser-recorder-section">
-              <h2 className="browser-recorder-section-title">Record New Test</h2>
-              <div className="browser-recorder-url-input-container">
-                <input
-                  type="url"
-                  placeholder="Enter URL to record (e.g., https://example.com)"
-                  value={chromeUrl}
-                  onChange={(e) => setChromeUrl(e.target.value)}
-                  className="browser-recorder-url-input"
-                  disabled={isRecordingEnhanced}
-                />
-              </div>
-
-              <div className="browser-recorder-recording-controls">
-                {!isRecordingEnhanced ? (
-                  <>
-                    <button
-                      onClick={() => setShowExtensionSelector(true)}
-                      className="browser-recorder-btn browser-recorder-btn-secondary"
+                  <div className="browser-recorder-url-input-container">
+                    <input
+                      type="url"
+                      placeholder="Enter URL to record (e.g., https://example.com)"
+                      value={chromeUrl}
+                      onChange={(e) => setChromeUrl(e.target.value)}
+                      className="browser-recorder-url-input"
                       disabled={isRecordingEnhanced}
-                      title="Select Chrome extensions to load during recording"
-                    >
-                      🧩 Extensions ({selectedExtensionPaths.length})
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          if (!chromeUrl) {
-                            addDebugLog('⚠️ Please enter a URL first');
-                            return;
-                          }
-
-                          addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
-                          if (selectedExtensionPaths.length > 0) {
-                            addDebugLog(`🧩 Loading ${selectedExtensionPaths.length} Chrome extension(s)`);
-                          }
-
-                          const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced({
-                            url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
-                            extensionPaths: selectedExtensionPaths
-                          });
-
-                          if (result?.success) {
-                            addDebugLog('✅ Enhanced recorder launched successfully');
-                            addDebugLog('📝 All keyboard events including Enter will be captured');
-                            addDebugLog(`📁 Test file: ${result.filePath}`);
-                            addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
-                            addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
-                            setIsRecordingEnhanced(true);
-                          } else {
-                            addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
-                          }
-                        } catch (error) {
-                          console.error('Error launching recorder:', error);
-                          addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                        }
-                      }}
-                      className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
-                    >
-                      🎹 Start Recording
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={async () => {
-                      console.log('🔴 Stop Recording button clicked');
-                      addDebugLog('⏹️ Stopping enhanced recorder...');
-
-                      try {
-                        console.log('📞 Calling stopBrowserRecorderEnhanced...');
-                        const result = await (window as any).electron.debug.stopBrowserRecorderEnhanced();
-                        console.log('📥 Received result:', result);
-
-                        if (result?.success) {
-                          addDebugLog('✅ Recording saved successfully');
-                          addDebugLog(`📁 Test saved to: ${result.filePath}`);
-                          setIsRecordingEnhanced(false);
-                          setCurrentTestCode(''); // Clear the code viewer
-
-                          // Refresh test list
-                          const testsResult = await (window as any).electron.debug.getPlaywrightTests();
-                          if (testsResult.success) {
-                            setSavedTests(testsResult.tests);
-                          }
-                        } else {
-                          addDebugLog(`❌ Failed to stop recorder: ${result?.error || 'Unknown error'}`);
-                          console.error('Stop recorder failed:', result);
-                          // Reset recording state even on failure so user isn't stuck
-                          setIsRecordingEnhanced(false);
-                        }
-                      } catch (error) {
-                        console.error('❌ Exception while stopping recorder:', error);
-                        addDebugLog(`❌ Exception: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                        // Reset recording state on exception so user isn't stuck
-                        setIsRecordingEnhanced(false);
-                      }
-                    }}
-                    className="browser-recorder-btn browser-recorder-btn-danger browser-recorder-btn-stop"
-                  >
-                    ⏹️ Stop Recording
-                  </button>
-                )}
-              </div>
-
-              {/* Real-time Test Code Display */}
-              {isRecordingEnhanced && currentTestCode && (
-                <div className="browser-recorder-code-viewer-container">
-                  <h3 className="browser-recorder-code-viewer-title">📝 Generated Test Code (Real-time)</h3>
-                  <pre className="browser-recorder-code-viewer">
-                    <code>{currentTestCode}</code>
-                  </pre>
-                </div>
-              )}
-
-              {/* Action Chain Upload Section */}
-              {justStoppedRecording && lastRecordingHadDownload && !isRecordingEnhanced && (
-                <div className="action-chain-upload">
-                  <div className="chain-download-info">
-                    <span className="success-icon">✅</span>
-                    <span className="download-message">
-                      File downloaded: <strong>{lastDownloadedFile}</strong>
-                    </span>
+                    />
                   </div>
 
-                  <div className="chain-upload-form">
-                    <label className="chain-upload-label">
-                      Upload the downloaded file to:
-                    </label>
-                    <div className="chain-upload-controls">
-                      <input
-                        type="url"
-                        placeholder="https://upload.example.com"
-                        value={uploadDestinationUrl}
-                        onChange={(e) => setUploadDestinationUrl(e.target.value)}
-                        className="browser-recorder-url-input"
-                      />
+                  <div className="browser-recorder-recording-controls">
+                    {!isRecordingEnhanced ? (
+                      <>
+                        <button
+                          onClick={() => setShowExtensionSelector(true)}
+                          className="browser-recorder-btn browser-recorder-btn-secondary"
+                          disabled={isRecordingEnhanced}
+                          title="Select Chrome extensions to load during recording"
+                        >
+                          🧩 Extensions ({selectedExtensionPaths.length})
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              if (!chromeUrl) {
+                                addDebugLog('⚠️ Please enter a URL first');
+                                return;
+                              }
+
+                              addDebugLog('🚀 Launching enhanced Playwright recorder with keyboard tracking...');
+                              if (selectedExtensionPaths.length > 0) {
+                                addDebugLog(`🧩 Loading ${selectedExtensionPaths.length} Chrome extension(s)`);
+                              }
+
+                              const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced({
+                                url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
+                                extensionPaths: selectedExtensionPaths
+                              });
+
+                              if (result?.success) {
+                                addDebugLog('✅ Enhanced recorder launched successfully');
+                                addDebugLog('📝 All keyboard events including Enter will be captured');
+                                addDebugLog(`📁 Test file: ${result.filePath}`);
+                                addDebugLog('🖥️ Code viewer window opened - watch it update in real-time!');
+                                addDebugLog('⏰ Click "Stop Recording" button or close browser when done');
+                                setIsRecordingEnhanced(true);
+                              } else {
+                                addDebugLog(`❌ Failed to launch enhanced recorder: ${result?.error}`);
+                              }
+                            } catch (error) {
+                              console.error('Error launching recorder:', error);
+                              addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            }
+                          }}
+                          className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
+                        >
+                          🎹 Start Recording
+                        </button>
+                      </>
+                    ) : (
                       <button
-                        onClick={startUploadRecording}
-                        className="browser-recorder-btn browser-recorder-btn-primary"
-                        disabled={!uploadDestinationUrl}
+                        onClick={async () => {
+                          console.log('🔴 Stop Recording button clicked');
+                          addDebugLog('⏹️ Stopping enhanced recorder...');
+
+                          try {
+                            console.log('📞 Calling stopBrowserRecorderEnhanced...');
+                            const result = await (window as any).electron.debug.stopBrowserRecorderEnhanced();
+                            console.log('📥 Received result:', result);
+
+                            if (result?.success) {
+                              addDebugLog('✅ Recording saved successfully');
+                              addDebugLog(`📁 Test saved to: ${result.filePath}`);
+                              setIsRecordingEnhanced(false);
+                              setCurrentTestCode(''); // Clear the code viewer
+
+                              // Refresh test list
+                              const testsResult = await (window as any).electron.debug.getPlaywrightTests();
+                              if (testsResult.success) {
+                                setSavedTests(testsResult.tests);
+                              }
+                            } else {
+                              addDebugLog(`❌ Failed to stop recorder: ${result?.error || 'Unknown error'}`);
+                              console.error('Stop recorder failed:', result);
+                              // Reset recording state even on failure so user isn't stuck
+                              setIsRecordingEnhanced(false);
+                            }
+                          } catch (error) {
+                            console.error('❌ Exception while stopping recorder:', error);
+                            addDebugLog(`❌ Exception: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            // Reset recording state on exception so user isn't stuck
+                            setIsRecordingEnhanced(false);
+                          }
+                        }}
+                        className="browser-recorder-btn browser-recorder-btn-danger browser-recorder-btn-stop"
                       >
-                        🎥 Start Upload Recording
+                        ⏹️ Stop Recording
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Chain Upload Section */}
+                {justStoppedRecording && lastRecordingHadDownload && !isRecordingEnhanced && (
+                  <div className="browser-recorder-section action-chain-upload">
+                    <h2 className="browser-recorder-section-title">Step 2. Continue with Upload Chain</h2>
+                    <div className="chain-download-info">
+                      <span className="success-icon">✅</span>
+                      <span className="download-message">
+                        File downloaded: <strong>{lastDownloadedFile}</strong>
+                      </span>
+                    </div>
+
+                    <div className="chain-upload-form">
+                      <label className="chain-upload-label">
+                        Upload the downloaded file to:
+                      </label>
+                      <div className="chain-upload-controls">
+                        <input
+                          type="url"
+                          placeholder="https://upload.example.com"
+                          value={uploadDestinationUrl}
+                          onChange={(e) => setUploadDestinationUrl(e.target.value)}
+                          className="browser-recorder-url-input"
+                        />
+                        <button
+                          onClick={startUploadRecording}
+                          className="browser-recorder-btn browser-recorder-btn-primary"
+                          disabled={!uploadDestinationUrl}
+                        >
+                          🎥 Start Upload Recording
+                        </button>
+                        <button
+                          onClick={finishWithoutChain}
+                          className="browser-recorder-btn browser-recorder-btn-secondary"
+                        >
+                          ✅ Done
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Workspace Section */}
+                <div className="browser-recorder-section">
+                  <div className="browser-recorder-section-header">
+                    <div className="browser-recorder-tabbar">
+                      <button
+                        onClick={() => setInsightTab('code')}
+                        className={`browser-recorder-btn browser-recorder-btn-sm ${insightTab === 'code' ? 'browser-recorder-tab-active' : 'browser-recorder-btn-secondary'}`}
+                      >
+                        Live Code
                       </button>
                       <button
-                        onClick={finishWithoutChain}
-                        className="browser-recorder-btn browser-recorder-btn-secondary"
+                        onClick={() => setInsightTab('downloads')}
+                        className={`browser-recorder-btn browser-recorder-btn-sm ${insightTab === 'downloads' ? 'browser-recorder-tab-active' : 'browser-recorder-btn-secondary'}`}
                       >
-                        ✅ Done
+                        Downloads
+                      </button>
+                      <button
+                        onClick={() => setInsightTab('debug')}
+                        className={`browser-recorder-btn browser-recorder-btn-sm ${insightTab === 'debug' ? 'browser-recorder-tab-active' : 'browser-recorder-btn-secondary'}`}
+                      >
+                        Debug Logs
                       </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
 
-            {/* Saved Tests Section */}
-            <div className="browser-recorder-section">
+                  {insightTab === 'code' && (
+                    isRecordingEnhanced && currentTestCode ? (
+                      <div className="browser-recorder-code-viewer-container">
+                        <h3 className="browser-recorder-code-viewer-title">📝 Generated Test Code (Real-time)</h3>
+                        <pre className="browser-recorder-code-viewer">
+                          <code>{currentTestCode}</code>
+                        </pre>
+                      </div>
+                    ) : (
+                      <p className="browser-recorder-empty-message">Start recording to see generated code in real time.</p>
+                    )
+                  )}
+
+                  {insightTab === 'downloads' && (
+                    <>
+                      <div className="browser-recorder-downloads-actions">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await (window as any).electron.debug.openPlaywrightDownloadsFolder();
+                            } catch (error) {
+                              console.error('Failed to open folder:', error);
+                              alert('Failed to open folder');
+                            }
+                          }}
+                          className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-downloads-btn-open"
+                        >
+                          Open Folder
+                        </button>
+                        <button
+                          onClick={loadPlaywrightDownloads}
+                          className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-downloads-btn-refresh"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      {playwrightDownloads.length === 0 ? (
+                        <p className="browser-recorder-empty-message">No downloaded files yet.</p>
+                      ) : (
+                        <div className="browser-recorder-downloads-container">
+                          {playwrightDownloads.map((file, idx) => (
+                            <div
+                              key={idx}
+                              className="browser-recorder-download-item"
+                              onClick={() => handleOpenDownload(file.path)}
+                            >
+                              <div className="browser-recorder-download-info">
+                                <div className="browser-recorder-download-name">📄 {file.name}</div>
+                                <div className="browser-recorder-download-meta">
+                                  {file.scriptFolder && <span>📁 {file.scriptFolder} • </span>}
+                                  {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
+                                </div>
+                              </div>
+                              <div className="browser-recorder-download-action">Open →</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {insightTab === 'debug' && (
+                    debugLogs.length > 0 ? (
+                      <>
+                        <div className="browser-recorder-section-header">
+                          <button
+                            onClick={() => setDebugLogs([])}
+                            className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
+                          >
+                            Clear Logs
+                          </button>
+                        </div>
+                        <div className="browser-recorder-debug-console">
+                          {debugLogs.map((log, index) => (
+                            <div key={index} className="browser-recorder-debug-log-entry">
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="browser-recorder-empty-message">No debug logs yet.</p>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="browser-recorder-layout-right">
+                {/* Saved Tests Section */}
+                <div className="browser-recorder-section browser-recorder-saved-tests-section">
               <div className="browser-recorder-section-header">
-                <h2 className="browser-recorder-section-title">Saved Tests</h2>
+                <h2 className="browser-recorder-section-title">Step 3. Saved Tests</h2>
                 <div className="browser-recorder-section-actions">
+                  {showSavedTests && (
+                    <>
+                      <button
+                        onClick={handleImportTests}
+                        disabled={importing}
+                        className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
+                        title="Import tests"
+                      >
+                        {importing ? '⏳ Importing...' : '📥 Import'}
+                      </button>
+                      <button
+                        onClick={handleExportAll}
+                        disabled={exporting || savedTests.length === 0}
+                        className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
+                        title="Export all tests"
+                      >
+                        {exporting ? '⏳ Exporting...' : '📤 Export All'}
+                      </button>
+                    </>
+                  )}
                   <button
-                    onClick={handleImportTests}
-                    disabled={importing}
-                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
-                    title="Import tests"
+                    onClick={() => setShowSavedTests(!showSavedTests)}
+                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-toggle browser-recorder-btn-collapse"
+                    title={showSavedTests ? 'Collapse to side' : 'Expand from side'}
                   >
-                    {importing ? '⏳ Importing...' : '📥 Import'}
-                  </button>
-                  <button
-                    onClick={handleExportAll}
-                    disabled={exporting || savedTests.length === 0}
-                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-sm"
-                    title="Export all tests"
-                  >
-                    {exporting ? '⏳ Exporting...' : '📤 Export All'}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const result = await (window as any).electron.debug.getPlaywrightTests();
-                      if (result.success) {
-                        setSavedTests(result.tests);
-                        setShowSavedTests(!showSavedTests);
-                      }
-                    }}
-                    className="browser-recorder-btn browser-recorder-btn-secondary browser-recorder-btn-toggle"
-                  >
-                    {showSavedTests ? 'Hide Tests' : `View Saved Tests (${savedTests.length})`}
+                    {showSavedTests ? '▸' : '◂'}
                   </button>
                 </div>
               </div>
@@ -806,26 +907,26 @@ const BrowserRecorderPage: React.FC = () => {
                           <div className="browser-recorder-test-info">
                             <div className="browser-recorder-test-name-row">
                               <strong className="browser-recorder-test-name">{test.name}</strong>
-                              <span className="browser-recorder-test-badge">⏱️ Auto-Timed</span>
+                              <button
+                                onClick={() => openRenameModal(test)}
+                                className="browser-recorder-test-rename-icon"
+                                title="Rename test"
+                              >
+                                ✏️
+                              </button>
                               {test.chainId && test.chainOrder && (
                                 <span className="browser-recorder-test-badge browser-recorder-chain-badge" title={`Part of chain: ${test.chainId}`}>
                                   🔗 Step {test.chainOrder}
                                 </span>
                               )}
-                              {(() => {
-                                const schedule = schedules.find(s => s.testPath === test.path);
-                                return schedule?.enabled && (
-                                  <span className="test-badge browser-recorder-schedule-badge">📅 Scheduled</span>
-                                );
-                              })()}
                             </div>
                             <div className="browser-recorder-test-meta">
-                              Created: {new Date(test.createdAt).toLocaleString()} | Size: {test.size} bytes
+                              Created: {new Date(test.createdAt).toLocaleString()} | Size: {formatFileSize(test.size || 0)}
                             </div>
                             {(() => {
                               const schedule = schedules.find(s => s.testPath === test.path);
                               return schedule?.enabled && (
-                                <div className="browser-recorder-schedule-info">
+                                <div className="browser-recorder-schedule-info browser-recorder-test-badge browser-recorder-schedule-info-badge">
                                   📅 {getScheduleDescription(schedule)}
                                 </div>
                               );
@@ -854,13 +955,6 @@ const BrowserRecorderPage: React.FC = () => {
                               title="Export test"
                             >
                               📤 Export
-                            </button>
-                            <button
-                              onClick={() => openRenameModal(test)}
-                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-edit"
-                              title="Rename test"
-                            >
-                              ✏️ Edit
                             </button>
                             <button
                               onClick={async () => {
@@ -925,9 +1019,6 @@ const BrowserRecorderPage: React.FC = () => {
                             </button>
                           </div>
                         </div>
-                        <div className="browser-recorder-test-preview">
-                          {test.preview}
-                        </div>
                       </div>
                     ))}
                 </div>
@@ -936,6 +1027,8 @@ const BrowserRecorderPage: React.FC = () => {
               {showSavedTests && savedTests.length === 0 && (
                 <p className="browser-recorder-empty-message">No saved tests yet. Record your first test above!</p>
               )}
+                </div>
+              </div>
             </div>
 
             {/* Schedule Modal */}
@@ -1137,10 +1230,16 @@ const BrowserRecorderPage: React.FC = () => {
                   </div>
 
                   <div className="browser-recorder-modal-footer">
-                    <button onClick={closeRenameModal} className="browser-recorder-btn browser-recorder-btn-sm btn-secondary">
+                    <button
+                      onClick={closeRenameModal}
+                      className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-rename-cancel-btn"
+                    >
                       Cancel
                     </button>
-                    <button onClick={handleRename} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
+                    <button
+                      onClick={handleRename}
+                      className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-rename-save-btn"
+                    >
                       Rename
                     </button>
                   </div>
@@ -1148,78 +1247,6 @@ const BrowserRecorderPage: React.FC = () => {
               </div>
             )}
 
-            {/* Downloads Section */}
-            <div className="browser-recorder-section">
-              <div className="browser-recorder-section-header">
-                <h2 className="browser-recorder-section-title">📥 Browser Recorder Downloads</h2>
-                <div className="browser-recorder-downloads-actions">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await (window as any).electron.debug.openPlaywrightDownloadsFolder();
-                      } catch (error) {
-                        console.error('Failed to open folder:', error);
-                        alert('Failed to open folder');
-                      }
-                    }}
-                    className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
-                  >
-                    Open Folder
-                  </button>
-                  <button
-                    onClick={loadPlaywrightDownloads}
-                    className="browser-recorder-btn browser-recorder-btn-sm btn-primary"
-                  >
-                    Refresh
-                  </button>
-                </div>
-              </div>
-
-              {playwrightDownloads.length === 0 ? (
-                <p className="browser-recorder-empty-message">No downloaded files yet.</p>
-              ) : (
-                <div className="browser-recorder-downloads-container">
-                  {playwrightDownloads.map((file, idx) => (
-                    <div
-                      key={idx}
-                      className="browser-recorder-download-item"
-                      onClick={() => handleOpenDownload(file.path)}
-                    >
-                      <div className="browser-recorder-download-info">
-                        <div className="browser-recorder-download-name">📄 {file.name}</div>
-                        <div className="browser-recorder-download-meta">
-                          {file.scriptFolder && <span>📁 {file.scriptFolder} • </span>}
-                          {formatFileSize(file.size)} • {new Date(file.modified).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="browser-recorder-download-action">Open →</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Debug Console Section */}
-            {debugLogs.length > 0 && (
-              <div className="browser-recorder-section">
-                <div className="browser-recorder-section-header">
-                  <h2 className="browser-recorder-section-title">Debug Console</h2>
-                  <button
-                    onClick={() => setDebugLogs([])}
-                    className="browser-recorder-btn browser-recorder-btn-sm btn-secondary"
-                  >
-                    Clear Logs
-                  </button>
-                </div>
-                <div className="browser-recorder-debug-console">
-                  {debugLogs.map((log, index) => (
-                    <div key={index} className="browser-recorder-debug-log-entry">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

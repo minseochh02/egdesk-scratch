@@ -2351,6 +2351,27 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-financehub-raw-query', sql, params),
   },
   /**
+   * FinanceHub Database Transfer APIs
+   */
+  financeHubTransfer: {
+    exportDatabase: (includeCredentials: boolean) =>
+      ipcRenderer.invoke('financehub-transfer:export', includeCredentials),
+    validateImportFile: (filePath: string) =>
+      ipcRenderer.invoke('financehub-transfer:validate', filePath),
+    importDatabase: (filePath: string) =>
+      ipcRenderer.invoke('financehub-transfer:import', filePath),
+    selectImportFile: () =>
+      ipcRenderer.invoke('financehub-transfer:select-file'),
+    createBackup: () =>
+      ipcRenderer.invoke('financehub-transfer:create-backup'),
+    listBackups: () =>
+      ipcRenderer.invoke('financehub-transfer:list-backups'),
+    restoreBackup: (backupId: string) =>
+      ipcRenderer.invoke('financehub-transfer:restore-backup', backupId),
+    deleteBackup: (backupId: string) =>
+      ipcRenderer.invoke('financehub-transfer:delete-backup', backupId),
+  },
+  /**
    * Finance Hub Scheduler API
    */
   financeHubScheduler: {

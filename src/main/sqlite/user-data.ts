@@ -517,6 +517,11 @@ export class UserDataDbManager {
       return this.replaceByDateRange(tableId, rows);
     }
 
+    // Handle replace-all mode
+    if (duplicateAction === 'replace-all') {
+      return this.replaceAll(tableId, rows);
+    }
+
     // Check if id column is AUTOINCREMENT (first column is INTEGER with autoincrement)
     const idColumn = table.schema.find((col) => col.name === 'id');
     const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
@@ -734,6 +739,11 @@ export class UserDataDbManager {
     // Handle replace-date-range mode
     if (duplicateAction === 'replace-date-range') {
       return this.replaceByDateRange(tableId, rows);
+    }
+
+    // Handle replace-all mode
+    if (duplicateAction === 'replace-all') {
+      return this.replaceAll(tableId, rows);
     }
 
     // Core insertion logic (same as insertRows but with override settings)
@@ -1039,6 +1049,95 @@ export class UserDataDbManager {
 
     } catch (error) {
       console.error('❌ Date range replacement failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Replace all rows in a table with new data
+   * Deletes ALL existing rows and inserts all incoming rows (complete replacement)
+   * Executes in a single transaction for atomicity
+   *
+   * @param tableId - Table ID to replace data in
+   * @param rows - All rows to insert
+   * @returns Insert result with counts
+   */
+  replaceAll(tableId: string, rows: any[]): InsertResult {
+    console.log(`🔄 Replace all mode: Deleting ALL data and inserting ${rows.length} new rows into table ${tableId}...`);
+
+    try {
+      // Get table metadata
+      const table = this.getTable(tableId);
+      if (!table) {
+        throw new Error(`Table with ID ${tableId} not found`);
+      }
+
+      // Determine which columns to insert (exclude auto-increment id)
+      const idColumn = table.schema.find((col) => col.name === 'id');
+      const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+      const dataColumns = isAutoIncrementId
+        ? table.schema.filter(col => col.name !== 'id')
+        : table.schema;
+
+      let inserted = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+      const errorDetails: Array<{ rowIndex: number; error: string; rowData: any }> = [];
+
+      // Execute in transaction for atomicity
+      const transaction = this.database.transaction(() => {
+        // Step 1: Delete ALL existing rows
+        const deleteStmt = this.database.prepare(`DELETE FROM "${table.tableName}"`);
+        const deleteResult = deleteStmt.run();
+        console.log(`  🗑️ Deleted ${deleteResult.changes} existing rows`);
+
+        // Step 2: Insert all new rows
+        const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
+        const placeholders = dataColumns.map(() => '?').join(', ');
+        const insertStmt = this.database.prepare(
+          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+        );
+
+        rows.forEach((row, idx) => {
+          try {
+            const values = dataColumns.map((col) => {
+              return this.convertValue(col, row[col.name]);
+            });
+
+            insertStmt.run(...values);
+            inserted++;
+          } catch (error) {
+            skipped++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(errorMessage);
+
+            errorDetails.push({
+              rowIndex: idx,
+              error: errorMessage,
+              rowData: row
+            });
+          }
+        });
+      });
+
+      transaction();
+
+      // Update row count
+      this.updateRowCount(tableId);
+
+      console.log(`✅ Replace all complete: ${inserted} inserted, ${skipped} errors`);
+
+      return {
+        inserted,
+        skipped,
+        duplicates: 0, // No duplicates in replace mode
+        errors,
+        duplicateDetails: [], // No duplicate tracking in replace mode
+        errorDetails
+      };
+
+    } catch (error) {
+      console.error('❌ Replace all failed:', error);
       throw error;
     }
   }

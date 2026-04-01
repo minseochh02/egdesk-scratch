@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowLeft, faChevronLeft, faChevronRight, faRobot, faSearch, faTimes, faUpload } from '@fortawesome/free-solid-svg-icons';
 import { UserTable, useUserData, QueryOptions } from '../../hooks/useUserData';
 import { DataTable } from './shared/DataTable';
 import { ExcelUploadDialog } from './ExcelUploadDialog';
@@ -120,7 +122,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
       <div className="table-viewer-header">
         <div className="table-viewer-title">
           <button className="btn-icon" onClick={onBack} title="Back to tables">
-            ⬅️
+            <FontAwesomeIcon icon={faArrowLeft} />
           </button>
           <div>
             <h2>{table.displayName}</h2>
@@ -157,8 +159,8 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <button type="submit" className="btn btn-primary">
-              🔍 Search
+            <button type="submit" className="btn btn-primary btn-compact">
+              <FontAwesomeIcon icon={faSearch} /> Search
             </button>
             {searchQuery && (
               <button
@@ -166,23 +168,23 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
                 className="btn btn-secondary"
                 onClick={() => setSearchQuery('')}
               >
-                ✕ Clear
+                <FontAwesomeIcon icon={faTimes} /> Clear
               </button>
             )}
           </form>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary btn-compact"
             onClick={() => setShowEmbeddingDialog(true)}
             style={{ marginLeft: '8px' }}
           >
-            🧠 Embed Table
+            <FontAwesomeIcon icon={faRobot} /> Embed Table
           </button>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary btn-compact"
             onClick={() => setShowUploadDialog(true)}
             style={{ marginLeft: '8px' }}
           >
-            📤 Upload Excel
+            <FontAwesomeIcon icon={faUpload} /> Upload Excel
           </button>
         </div>
 
@@ -308,14 +310,14 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
             onClick={() => setPage(0)}
             disabled={!canGoPrevious}
           >
-            ⏮️ First
+            First
           </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setPage(page - 1)}
             disabled={!canGoPrevious}
           >
-            ⬅️ Previous
+            <FontAwesomeIcon icon={faChevronLeft} /> Previous
           </button>
           <div className="table-viewer-page-info">
             Page {page + 1} of {totalPages}
@@ -325,14 +327,14 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
             onClick={() => setPage(page + 1)}
             disabled={!canGoNext}
           >
-            Next ➡️
+            Next <FontAwesomeIcon icon={faChevronRight} />
           </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setPage(totalPages - 1)}
             disabled={!canGoNext}
           >
-            Last ⏭️
+            Last
           </button>
         </div>
       </div>

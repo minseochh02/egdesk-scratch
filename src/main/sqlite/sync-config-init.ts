@@ -35,7 +35,7 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
       
       -- Duplicate detection
       unique_key_columns TEXT,
-      duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range')),
+      duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range', 'replace-all')),
       
       -- Status tracking
       last_sync_at TEXT,
@@ -106,7 +106,7 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
   }
 
   if (!syncConfigColumnNames.includes('duplicate_action')) {
-    db.exec(`ALTER TABLE sync_configurations ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range'))`);
+    db.exec(`ALTER TABLE sync_configurations ADD COLUMN duplicate_action TEXT DEFAULT 'skip' CHECK(duplicate_action IN ('skip', 'update', 'allow', 'replace-date-range', 'replace-all'))`);
     console.log('✅ Added duplicate_action column to sync_configurations');
   }
 

@@ -4,11 +4,11 @@ import './UserData.css';
 interface DuplicateDetectionSettingsProps {
   schema: Array<{ name: string; type: string }>;
   initialUniqueColumns?: string[];
-  initialDuplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  initialDuplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
   initialAddTimestamp?: boolean;
   onSettingsChange: (settings: {
     uniqueKeyColumns: string[];
-    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range';
+    duplicateAction: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
     addTimestamp?: boolean;
   }) => void;
 }
@@ -35,7 +35,7 @@ export function DuplicateDetectionSettings({
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(initialUniqueColumns)
   );
-  const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update' | 'allow' | 'replace-date-range'>(
+  const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all'>(
     initialDuplicateAction
   );
   const [addTimestamp, setAddTimestamp] = useState<boolean>(initialAddTimestamp);
@@ -50,12 +50,12 @@ export function DuplicateDetectionSettings({
         duplicateAction,
         addTimestamp,
       });
-    } else if (duplicateAction === 'replace-date-range') {
-      // Special case: Replace Date Range doesn't need unique columns
-      console.log('🔧 DuplicateDetectionSettings: Sending replace-date-range settings (no columns needed)');
+    } else if (duplicateAction === 'replace-date-range' || duplicateAction === 'replace-all') {
+      // Special case: Replace modes don't need unique columns
+      console.log(`🔧 DuplicateDetectionSettings: Sending ${duplicateAction} settings (no columns needed)`);
       onSettingsChange({
         uniqueKeyColumns: [],
-        duplicateAction: 'replace-date-range',
+        duplicateAction,
         addTimestamp,
       });
     } else {
@@ -283,6 +283,22 @@ export function DuplicateDetectionSettings({
                   <div className="radio-title">📅 Replace date range</div>
                   <div className="radio-description">
                     Delete all existing data within the Excel's date range, then insert all Excel data. Treats Excel as source of truth for the time period.
+                  </div>
+                </div>
+              </label>
+
+              <label className="radio-option">
+                <input
+                  type="radio"
+                  name="duplicate-action"
+                  value="replace-all"
+                  checked={duplicateAction === 'replace-all'}
+                  onChange={(e) => setDuplicateAction(e.target.value as any)}
+                />
+                <div className="radio-content">
+                  <div className="radio-title">🔄 Replace all (Complete Replacement)</div>
+                  <div className="radio-description">
+                    Delete ALL existing data in the table, then insert all Excel data. Treats Excel as the complete source of truth.
                   </div>
                 </div>
               </label>

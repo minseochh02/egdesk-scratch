@@ -381,6 +381,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       console.error('⚠️ Migration 012 error:', migrationError.message);
     }
 
+    // =============================================
+    // Migration 020: Add replace-all duplicate action mode
+    // =============================================
+    try {
+      const { migrate020AddReplaceAllMode } = await import('./migrations/020-add-replace-all-mode');
+      migrate020AddReplaceAllMode(userDataDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migration 020 error:', migrationError.message);
+    }
+
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);
     

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSync, faEllipsisV, faEdit, faTrash, faCheck, faTimes, faDatabase, faUpload, faFile, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
 import { UserTable } from '../../hooks/useUserData';
 import { useSyncConfig } from '../../hooks/useSyncConfig';
 
@@ -27,6 +29,7 @@ export const TableList: React.FC<TableListProps> = ({
   const [renamingTableId, setRenamingTableId] = useState<string | null>(null);
   const [newTableName, setNewTableName] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   // Fetch sync configurations on mount
   useEffect(() => {
@@ -55,6 +58,11 @@ export const TableList: React.FC<TableListProps> = ({
     if (window.confirm('Are you sure you want to delete this table? This action cannot be undone.')) {
       onDeleteTable(tableId);
     }
+  };
+
+  const toggleActionMenu = (e: React.MouseEvent, tableId: string) => {
+    e.stopPropagation();
+    setOpenActionMenuId(prev => (prev === tableId ? null : tableId));
   };
 
   const handleRenameClick = (e: React.MouseEvent, table: UserTable) => {
@@ -204,13 +212,13 @@ function testConnection() {
   if (tables.length === 0) {
     return (
       <div className="empty-state">
-        <div className="empty-state-icon">📊</div>
+        <div className="empty-state-icon"><FontAwesomeIcon icon={faDatabase} /></div>
         <h3 className="empty-state-title">No Tables Yet</h3>
         <p className="empty-state-message">
           Import your first Excel file to get started
         </p>
         <button className="btn btn-primary" onClick={onImportClick}>
-          📥 Import Excel File
+          <FontAwesomeIcon icon={faUpload} /> Import Excel File
         </button>
       </div>
     );
@@ -218,13 +226,6 @@ function testConnection() {
 
   return (
     <div className="table-list">
-      <div className="table-list-header">
-        <h2>Your Tables ({tables.length})</h2>
-        <button className="btn btn-primary" onClick={onImportClick}>
-          📥 Import Excel
-        </button>
-      </div>
-
       <div className="table-list-grid">
         {tables.map((table) => (
           <div
@@ -258,62 +259,74 @@ function testConnection() {
                   </div>
                   <div className="table-rename-actions">
                     <button type="submit" className="btn btn-sm btn-primary">
-                      ✓
+                      <FontAwesomeIcon icon={faCheck} />
                     </button>
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
                       onClick={handleRenameCancel}
                     >
-                      ✕
+                      <FontAwesomeIcon icon={faTimes} />
                     </button>
                   </div>
                 </form>
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div>
-                      <h3 className="table-card-title">{table.displayName}</h3>
-                      <div className="table-card-subtitle">{table.tableName}</div>
-                    </div>
+                  <div className="table-card-title-wrap">
+                    <h3 className="table-card-title">{table.displayName}</h3>
+                    <div className="table-card-subtitle">{table.tableName}</div>
+                  </div>
+
+                  <div className="table-card-utility-row">
                     {hasSyncConfig(table.id) && (
-                      <div
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '4px 8px',
-                          backgroundColor: '#4CAF50',
-                          color: 'white',
-                          borderRadius: '12px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                        }}
-                        title="Browser sync configured for this table"
-                      >
-                        <span>🔄</span>
-                        <span>AUTO-SYNC</span>
+                      <div className="table-card-sync-badge" title="Browser sync configured for this table">
+                        <FontAwesomeIcon icon={faSync} />
                       </div>
                     )}
-                  </div>
-                  <div className="table-card-actions">
-                    {onRenameTable && (
+                    <div className="table-card-actions-menu">
                       <button
                         className="btn-icon btn-secondary btn-sm"
-                        onClick={(e) => handleRenameClick(e, table)}
-                        title="Rename table"
+                        onClick={(e) => toggleActionMenu(e, table.id)}
+                        title="Table actions"
                       >
-                        ✏️
+                        <FontAwesomeIcon icon={faEllipsisV} />
                       </button>
-                    )}
-                    <button
-                      className="btn-icon btn-danger btn-sm"
-                      onClick={(e) => handleDeleteClick(e, table.id)}
-                      title="Delete table"
-                    >
-                      🗑️
-                    </button>
+                      {openActionMenuId === table.id && (
+                        <div className="table-card-actions-dropdown" onClick={(e) => e.stopPropagation()}>
+                          {onRenameTable && (
+                            <button
+                              className="table-card-actions-item"
+                              onClick={(e) => {
+                                handleRenameClick(e, table);
+                                setOpenActionMenuId(null);
+                              }}
+                            >
+                              <FontAwesomeIcon icon={faEdit} />
+                              <span>Rename</span>
+                            </button>
+                          )}
+                          <button
+                            className="table-card-actions-item"
+                            onClick={(e) => {
+                              handleToggleSqlInfo(e, table.id);
+                              setOpenActionMenuId(null);
+                            }}
+                          >
+                            <span>{expandedCardId === table.id ? 'Hide SQL Address' : 'Show SQL Address'}</span>
+                          </button>
+                          <button
+                            className="table-card-actions-item danger"
+                            onClick={(e) => {
+                              handleDeleteClick(e, table.id);
+                              setOpenActionMenuId(null);
+                            }}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
@@ -338,18 +351,11 @@ function testConnection() {
 
             <div className="table-card-meta">
               {table.createdFromFile && (
-                <div>📄 From: {table.createdFromFile}</div>
+                <div><FontAwesomeIcon icon={faFile} /> From: {table.createdFromFile}</div>
               )}
-              <div>📅 Created: {formatDate(table.createdAt)}</div>
-              <div>🔄 Updated: {formatDate(table.updatedAt)}</div>
+              <div><FontAwesomeIcon icon={faCalendarAlt} /> Created: {formatDate(table.createdAt)}</div>
+              <div><FontAwesomeIcon icon={faSync} /> Updated: {formatDate(table.updatedAt)}</div>
             </div>
-
-            <button
-              className="btn btn-sm btn-secondary sql-info-toggle"
-              onClick={(e) => handleToggleSqlInfo(e, table.id)}
-            >
-              {expandedCardId === table.id ? 'Hide SQL Info' : 'SQL Address'}
-            </button>
 
             {expandedCardId === table.id && (
               <div className="sql-info-panel" onClick={(e) => e.stopPropagation()}>
