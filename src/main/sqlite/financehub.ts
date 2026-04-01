@@ -49,6 +49,73 @@ export interface Transaction {
   metadata: Record<string, any> | null;
 }
 
+// New separate transaction types for Korean financial reporting
+export interface BankTransaction {
+  id: string;
+  accountId: string;
+  bankId: string;
+  // 거래일자, 거래시간
+  transactionDate: string;       // YYYY-MM-DD
+  transactionTime: string | null; // HH:MM:SS
+  transactionDatetime: string;   // Combined for sorting
+  // 은행, 계좌번호, 계좌별칭
+  accountNumber: string | null;
+  accountName: string | null;
+  // 입금, 출금, 잔액
+  deposit: number;
+  withdrawal: number;
+  balance: number;
+  // 취급지점, 상대계좌, 상대계좌예금주명
+  branch: string | null;
+  counterpartyAccount: string | null;
+  counterpartyName: string | null;
+  // 적요1, 적요2
+  description: string | null;
+  description2: string | null;
+  // 비고, 수기
+  memo: string | null;
+  isManual: boolean;
+  // System fields
+  category: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CardTransaction {
+  id: string;
+  accountId: string;
+  // 카드사
+  cardCompanyId: string;
+  // 본부명, 부서명 (BC Card specific)
+  headquartersName: string | null;
+  departmentName: string | null;
+  // 카드번호, 카드구분, 카드소지자
+  cardNumber: string;
+  cardType: string | null;        // 개인/법인
+  cardholderName: string | null;
+  // 거래은행, 사용구분, 매출종류
+  transactionBank: string | null;
+  usageType: string | null;       // 일시불/할부
+  salesType: string | null;       // 일반매출/취소
+  // 접수일자/(승인일자), 청구일자
+  approvalDatetime: string;       // YYYY/MM/DD HH:MM:SS
+  approvalDate: string;           // YYYY-MM-DD (for indexing)
+  billingDate: string | null;
+  // 승인번호, 가맹점명/국가명(도시명), 이용금액
+  approvalNumber: string | null;
+  merchantName: string;
+  amount: number;
+  // (US $)
+  foreignAmountUsd: number | null;
+  // 비고
+  memo: string | null;
+  // System fields
+  category: string | null;
+  isCancelled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SyncOperation {
   id: string;
   accountId: string;
@@ -364,6 +431,16 @@ export class FinanceHubDbManager {
 
   constructor(database: Database.Database) {
     this.db = database;
+  }
+
+  /**
+   * Feature flag: Check if separate transaction tables should be used
+   *
+   * DEFAULT: ON (uses separate bank_transactions and card_transactions tables)
+   * To rollback to unified transactions table, set USE_SEPARATE_TRANSACTION_TABLES=false
+   */
+  private useSeparateTransactionTables(): boolean {
+    return process.env.USE_SEPARATE_TRANSACTION_TABLES !== 'false';
   }
 
   // ========================================
@@ -748,6 +825,188 @@ export class FinanceHubDbManager {
     return { inserted, skipped };
   }
 
+  /**
+   * Bulk insert bank transactions into the separate bank_transactions table
+   * Feature flag: USE_SEPARATE_TRANSACTION_TABLES
+   */
+  bulkInsertBankTransactions(
+    accountId: string,
+    bankId: string,
+    transactions: Array<{
+      date: string;
+      time?: string;
+      transaction_datetime?: string;
+      category?: string;
+      withdrawal?: number;
+      deposit?: number;
+      description?: string;
+      memo?: string;
+      balance?: number;
+      branch?: string;
+      counterparty?: string;
+      counterpartyAccount?: string;
+      accountNumber?: string;
+      accountName?: string;
+    }>
+  ): { inserted: number; skipped: number } {
+    const now = new Date().toISOString();
+
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO bank_transactions (
+        id, account_id, bank_id,
+        transaction_date, transaction_time, transaction_datetime,
+        account_number, account_name,
+        deposit, withdrawal, balance,
+        branch, counterparty_account, counterparty_name,
+        description, description2, memo, is_manual,
+        category, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let inserted = 0;
+    let skipped = 0;
+
+    const insertMany = this.db.transaction((txns: typeof transactions) => {
+      for (const tx of txns) {
+        const withdrawal = Number(tx.withdrawal) || 0;
+        const deposit = Number(tx.deposit) || 0;
+        const balance = Number(tx.balance) || 0;
+
+        const transactionDatetime = tx.transaction_datetime ||
+          (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date.replace(/-/g, '/'));
+
+        const result = insertStmt.run(
+          randomUUID(),
+          accountId,
+          bankId,
+          tx.date,
+          tx.time || null,
+          transactionDatetime,
+          tx.accountNumber || null,
+          tx.accountName || null,
+          deposit,
+          withdrawal,
+          balance,
+          tx.branch || null,
+          tx.counterpartyAccount || null,
+          tx.counterparty || null,
+          tx.description || null,
+          null, // description2
+          tx.memo || null,
+          0, // is_manual
+          tx.category || null,
+          now,
+          now
+        );
+
+        if (result.changes > 0) {
+          inserted++;
+        } else {
+          skipped++;
+          if (skipped <= 3) {
+            console.log(`[FinanceHub] Bank duplicate detected: account=${accountId}, datetime=${transactionDatetime}, withdrawal=${withdrawal}, deposit=${deposit}`);
+          }
+        }
+      }
+    });
+
+    insertMany(transactions);
+    return { inserted, skipped };
+  }
+
+  /**
+   * Bulk insert card transactions into the separate card_transactions table
+   * Feature flag: USE_SEPARATE_TRANSACTION_TABLES
+   */
+  bulkInsertCardTransactions(
+    accountId: string,
+    cardCompanyId: string,
+    transactions: Array<{
+      approvalDatetime: string;
+      approvalDate: string;
+      merchantName: string;
+      amount: number;
+      cardNumber: string;
+      category?: string;
+      memo?: string;
+      // BC Card specific
+      headquartersName?: string;
+      departmentName?: string;
+      // Card details
+      cardType?: string;
+      cardholderName?: string;
+      transactionBank?: string;
+      usageType?: string;
+      salesType?: string;
+      billingDate?: string;
+      approvalNumber?: string;
+      foreignAmountUsd?: number;
+      isCancelled?: boolean;
+    }>
+  ): { inserted: number; skipped: number } {
+    const now = new Date().toISOString();
+
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO card_transactions (
+        id, account_id, card_company_id,
+        headquarters_name, department_name,
+        card_number, card_type, cardholder_name,
+        transaction_bank, usage_type, sales_type,
+        approval_datetime, approval_date, billing_date,
+        approval_number, merchant_name, amount,
+        foreign_amount_usd, memo,
+        category, is_cancelled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let inserted = 0;
+    let skipped = 0;
+
+    const insertMany = this.db.transaction((txns: typeof transactions) => {
+      for (const tx of txns) {
+        const amount = Number(tx.amount) || 0;
+
+        const result = insertStmt.run(
+          randomUUID(),
+          accountId,
+          cardCompanyId,
+          tx.headquartersName || null,
+          tx.departmentName || null,
+          tx.cardNumber,
+          tx.cardType || null,
+          tx.cardholderName || null,
+          tx.transactionBank || null,
+          tx.usageType || null,
+          tx.salesType || null,
+          tx.approvalDatetime,
+          tx.approvalDate,
+          tx.billingDate || null,
+          tx.approvalNumber || null,
+          tx.merchantName,
+          amount,
+          tx.foreignAmountUsd || null,
+          tx.memo || null,
+          tx.category || null,
+          tx.isCancelled ? 1 : 0,
+          now,
+          now
+        );
+
+        if (result.changes > 0) {
+          inserted++;
+        } else {
+          skipped++;
+          if (skipped <= 3) {
+            console.log(`[FinanceHub] Card duplicate detected: account=${accountId}, datetime=${tx.approvalDatetime}, merchant=${tx.merchantName}`);
+          }
+        }
+      }
+    });
+
+    insertMany(transactions);
+    return { inserted, skipped };
+  }
+
   queryTransactions(options: {
     accountId?: string;
     bankId?: string;
@@ -761,7 +1020,107 @@ export class FinanceHubDbManager {
     offset?: number;
     orderBy?: 'date' | 'amount' | 'balance';
     orderDir?: 'asc' | 'desc';
+    transactionType?: 'bank' | 'card'; // For routing when feature flag is on
   } = {}): Transaction[] {
+    // Feature flag routing: Use separate tables if enabled
+    if (this.useSeparateTransactionTables()) {
+      const isCard = options.transactionType === 'card' || (options.bankId && options.bankId.includes('-card'));
+
+      if (isCard) {
+        // Query card transactions and map to Transaction interface for compatibility
+        const cardTxns = this.queryCardTransactions({
+          accountId: options.accountId,
+          cardCompanyId: options.bankId,
+          startDate: options.startDate,
+          endDate: options.endDate,
+          category: options.category,
+          minAmount: options.minAmount,
+          maxAmount: options.maxAmount,
+          searchText: options.searchText,
+          limit: options.limit,
+          offset: options.offset,
+          orderBy: options.orderBy === 'balance' ? 'date' : options.orderBy,
+          orderDir: options.orderDir,
+        });
+
+        // Map CardTransaction to Transaction for backward compatibility
+        return cardTxns.map(ct => ({
+          id: ct.id,
+          accountId: ct.accountId,
+          bankId: ct.cardCompanyId,
+          date: ct.approvalDate,
+          time: null,
+          transaction_datetime: ct.approvalDatetime,
+          type: ct.salesType || '',
+          category: ct.category,
+          withdrawal: ct.amount,
+          deposit: 0,
+          description: ct.merchantName,
+          memo: ct.memo,
+          balance: 0,
+          branch: null,
+          counterparty: null,
+          transactionId: ct.approvalNumber,
+          createdAt: ct.createdAt,
+          metadata: {
+            isCardTransaction: true, // Flag for sheets export detection
+            cardCompanyId: ct.cardCompanyId,
+            cardNumber: ct.cardNumber,
+            cardType: ct.cardType,
+            cardholderName: ct.cardholderName,
+            transactionBank: ct.transactionBank,
+            usageType: ct.usageType,
+            salesType: ct.salesType,
+            billingDate: ct.billingDate,
+            approvalNumber: ct.approvalNumber,
+            foreignAmountUSD: ct.foreignAmountUsd,
+            isCancelled: ct.isCancelled,
+            headquartersName: ct.headquartersName,
+            departmentName: ct.departmentName,
+          },
+        }));
+      } else {
+        // Query bank transactions and map to Transaction interface for compatibility
+        const bankTxns = this.queryBankTransactions({
+          accountId: options.accountId,
+          bankId: options.bankId,
+          startDate: options.startDate,
+          endDate: options.endDate,
+          category: options.category,
+          minAmount: options.minAmount,
+          maxAmount: options.maxAmount,
+          searchText: options.searchText,
+          limit: options.limit,
+          offset: options.offset,
+          orderBy: options.orderBy,
+          orderDir: options.orderDir,
+        });
+
+        // Map BankTransaction to Transaction for backward compatibility
+        return bankTxns.map(bt => ({
+          id: bt.id,
+          accountId: bt.accountId,
+          bankId: bt.bankId,
+          date: bt.transactionDate,
+          time: bt.transactionTime,
+          transaction_datetime: bt.transactionDatetime,
+          type: '',
+          category: bt.category,
+          withdrawal: bt.withdrawal,
+          deposit: bt.deposit,
+          description: bt.description || '',
+          memo: bt.memo,
+          balance: bt.balance,
+          branch: bt.branch,
+          counterparty: bt.counterpartyName,
+          transactionId: null,
+          createdAt: bt.createdAt,
+          metadata: null,
+        }));
+      }
+    }
+
+    // Original implementation: Use unified transactions table
     const {
       accountId,
       bankId,
@@ -839,6 +1198,202 @@ export class FinanceHubDbManager {
     return stmt.all(...params).map((row: any) => this.mapRowToTransaction(row));
   }
 
+  /**
+   * Query bank transactions from the separate bank_transactions table
+   * Feature flag: USE_SEPARATE_TRANSACTION_TABLES
+   */
+  queryBankTransactions(options: {
+    accountId?: string;
+    bankId?: string;
+    startDate?: string;
+    endDate?: string;
+    category?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    searchText?: string;
+    limit?: number;
+    offset?: number;
+    orderBy?: 'date' | 'amount' | 'balance';
+    orderDir?: 'asc' | 'desc';
+  } = {}): BankTransaction[] {
+    const {
+      accountId,
+      bankId,
+      startDate,
+      endDate,
+      category,
+      minAmount,
+      maxAmount,
+      searchText,
+      limit = 100,
+      offset = 0,
+      orderBy = 'date',
+      orderDir = 'desc'
+    } = options;
+
+    let query = `SELECT * FROM bank_transactions WHERE 1=1`;
+    const params: any[] = [];
+
+    if (accountId) {
+      query += ` AND account_id = ?`;
+      params.push(accountId);
+    }
+
+    if (bankId) {
+      query += ` AND bank_id = ?`;
+      params.push(bankId);
+    }
+
+    if (startDate) {
+      query += ` AND transaction_date >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND transaction_date <= ?`;
+      params.push(endDate);
+    }
+
+    if (category) {
+      query += ` AND category = ?`;
+      params.push(category);
+    }
+
+    if (minAmount !== undefined) {
+      query += ` AND (deposit >= ? OR withdrawal >= ?)`;
+      params.push(minAmount, minAmount);
+    }
+
+    if (maxAmount !== undefined) {
+      query += ` AND deposit <= ? AND withdrawal <= ?`;
+      params.push(maxAmount, maxAmount);
+    }
+
+    if (searchText) {
+      query += ` AND (description LIKE ? OR memo LIKE ? OR counterparty_name LIKE ?)`;
+      const pattern = `%${searchText}%`;
+      params.push(pattern, pattern, pattern);
+    }
+
+    // Order
+    const orderColumn = orderBy === 'amount'
+      ? '(deposit + withdrawal)'
+      : orderBy === 'balance'
+        ? 'balance'
+        : 'transaction_datetime';
+    query += ` ORDER BY ${orderColumn} ${orderDir.toUpperCase()}`;
+
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params).map((row: any) => this.mapRowToBankTransaction(row));
+  }
+
+  /**
+   * Query card transactions from the separate card_transactions table
+   * Feature flag: USE_SEPARATE_TRANSACTION_TABLES
+   */
+  queryCardTransactions(options: {
+    accountId?: string;
+    cardCompanyId?: string;
+    startDate?: string;
+    endDate?: string;
+    category?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    searchText?: string;
+    cardNumber?: string;
+    merchantName?: string;
+    limit?: number;
+    offset?: number;
+    orderBy?: 'date' | 'amount';
+    orderDir?: 'asc' | 'desc';
+  } = {}): CardTransaction[] {
+    const {
+      accountId,
+      cardCompanyId,
+      startDate,
+      endDate,
+      category,
+      minAmount,
+      maxAmount,
+      searchText,
+      cardNumber,
+      merchantName,
+      limit = 100,
+      offset = 0,
+      orderBy = 'date',
+      orderDir = 'desc'
+    } = options;
+
+    let query = `SELECT * FROM card_transactions WHERE 1=1`;
+    const params: any[] = [];
+
+    if (accountId) {
+      query += ` AND account_id = ?`;
+      params.push(accountId);
+    }
+
+    if (cardCompanyId) {
+      query += ` AND card_company_id = ?`;
+      params.push(cardCompanyId);
+    }
+
+    if (startDate) {
+      query += ` AND approval_date >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND approval_date <= ?`;
+      params.push(endDate);
+    }
+
+    if (category) {
+      query += ` AND category = ?`;
+      params.push(category);
+    }
+
+    if (minAmount !== undefined) {
+      query += ` AND amount >= ?`;
+      params.push(minAmount);
+    }
+
+    if (maxAmount !== undefined) {
+      query += ` AND amount <= ?`;
+      params.push(maxAmount);
+    }
+
+    if (searchText) {
+      query += ` AND (merchant_name LIKE ? OR memo LIKE ? OR cardholder_name LIKE ?)`;
+      const pattern = `%${searchText}%`;
+      params.push(pattern, pattern, pattern);
+    }
+
+    if (cardNumber) {
+      query += ` AND card_number LIKE ?`;
+      params.push(`%${cardNumber}%`);
+    }
+
+    if (merchantName) {
+      query += ` AND merchant_name LIKE ?`;
+      params.push(`%${merchantName}%`);
+    }
+
+    // Order
+    const orderColumn = orderBy === 'amount'
+      ? 'amount'
+      : 'approval_datetime';
+    query += ` ORDER BY ${orderColumn} ${orderDir.toUpperCase()}`;
+
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params).map((row: any) => this.mapRowToCardTransaction(row));
+  }
+
   // ========================================
   // Statistics (Cross-Bank)
   // ========================================
@@ -856,45 +1411,144 @@ export class FinanceHubDbManager {
     withdrawalCount: number;
     netChange: number;
   } {
-    let query = `
-      SELECT 
-        COUNT(*) as total_transactions,
-        COALESCE(SUM(deposit), 0) as total_deposits,
-        COALESCE(SUM(withdrawal), 0) as total_withdrawals,
-        SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
-        SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count
-      FROM transactions WHERE 1=1
-    `;
-    const params: any[] = [];
+    if (this.useSeparateTransactionTables()) {
+      // Determine if querying bank or card or both
+      const isCard = options.bankId?.includes('-card');
 
-    if (options.accountId) {
-      query += ` AND account_id = ?`;
-      params.push(options.accountId);
-    }
-    if (options.bankId) {
-      query += ` AND bank_id = ?`;
-      params.push(options.bankId);
-    }
-    if (options.startDate) {
-      query += ` AND date >= ?`;
-      params.push(options.startDate);
-    }
-    if (options.endDate) {
-      query += ` AND date <= ?`;
-      params.push(options.endDate);
-    }
+      let bankStats = { total: 0, deposits: 0, withdrawals: 0, depositCount: 0, withdrawalCount: 0 };
+      let cardStats = { total: 0, deposits: 0, withdrawals: 0, depositCount: 0, withdrawalCount: 0 };
 
-    const stmt = this.db.prepare(query);
-    const row = stmt.get(...params) as any;
+      // Query bank transactions (if not filtering by card-only bankId)
+      if (!isCard || !options.bankId) {
+        let query = `
+          SELECT
+            COUNT(*) as total_transactions,
+            COALESCE(SUM(deposit), 0) as total_deposits,
+            COALESCE(SUM(withdrawal), 0) as total_withdrawals,
+            SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
+            SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count
+          FROM bank_transactions WHERE 1=1
+        `;
+        const params: any[] = [];
 
-    return {
-      totalTransactions: row.total_transactions || 0,
-      totalDeposits: row.total_deposits || 0,
-      totalWithdrawals: row.total_withdrawals || 0,
-      depositCount: row.deposit_count || 0,
-      withdrawalCount: row.withdrawal_count || 0,
-      netChange: (row.total_deposits || 0) - (row.total_withdrawals || 0),
-    };
+        if (options.accountId) {
+          query += ` AND account_id = ?`;
+          params.push(options.accountId);
+        }
+        if (options.bankId && !isCard) {
+          query += ` AND bank_id = ?`;
+          params.push(options.bankId);
+        }
+        if (options.startDate) {
+          query += ` AND transaction_date >= ?`;
+          params.push(options.startDate);
+        }
+        if (options.endDate) {
+          query += ` AND transaction_date <= ?`;
+          params.push(options.endDate);
+        }
+
+        const row = this.db.prepare(query).get(...params) as any;
+        bankStats = {
+          total: row.total_transactions || 0,
+          deposits: row.total_deposits || 0,
+          withdrawals: row.total_withdrawals || 0,
+          depositCount: row.deposit_count || 0,
+          withdrawalCount: row.withdrawal_count || 0
+        };
+      }
+
+      // Query card transactions (if not filtering by bank-only bankId)
+      if (isCard || !options.bankId) {
+        let query = `
+          SELECT
+            COUNT(*) as total_transactions,
+            COALESCE(SUM(CASE WHEN is_cancelled = 1 THEN amount ELSE 0 END), 0) as total_deposits,
+            COALESCE(SUM(CASE WHEN is_cancelled = 0 THEN amount ELSE 0 END), 0) as total_withdrawals,
+            SUM(CASE WHEN is_cancelled = 1 THEN 1 ELSE 0 END) as deposit_count,
+            SUM(CASE WHEN is_cancelled = 0 THEN 1 ELSE 0 END) as withdrawal_count
+          FROM card_transactions WHERE 1=1
+        `;
+        const params: any[] = [];
+
+        if (options.accountId) {
+          query += ` AND account_id = ?`;
+          params.push(options.accountId);
+        }
+        if (options.bankId && isCard) {
+          query += ` AND card_company_id = ?`;
+          params.push(options.bankId);
+        }
+        if (options.startDate) {
+          query += ` AND approval_date >= ?`;
+          params.push(options.startDate);
+        }
+        if (options.endDate) {
+          query += ` AND approval_date <= ?`;
+          params.push(options.endDate);
+        }
+
+        const row = this.db.prepare(query).get(...params) as any;
+        cardStats = {
+          total: row.total_transactions || 0,
+          deposits: row.total_deposits || 0,
+          withdrawals: row.total_withdrawals || 0,
+          depositCount: row.deposit_count || 0,
+          withdrawalCount: row.withdrawal_count || 0
+        };
+      }
+
+      // Merge results
+      return {
+        totalTransactions: bankStats.total + cardStats.total,
+        totalDeposits: bankStats.deposits + cardStats.deposits,
+        totalWithdrawals: bankStats.withdrawals + cardStats.withdrawals,
+        depositCount: bankStats.depositCount + cardStats.depositCount,
+        withdrawalCount: bankStats.withdrawalCount + cardStats.withdrawalCount,
+        netChange: (bankStats.deposits + cardStats.deposits) - (bankStats.withdrawals + cardStats.withdrawals)
+      };
+    } else {
+      // Existing implementation (old transactions table)
+      let query = `
+        SELECT
+          COUNT(*) as total_transactions,
+          COALESCE(SUM(deposit), 0) as total_deposits,
+          COALESCE(SUM(withdrawal), 0) as total_withdrawals,
+          SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
+          SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count
+        FROM transactions WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (options.accountId) {
+        query += ` AND account_id = ?`;
+        params.push(options.accountId);
+      }
+      if (options.bankId) {
+        query += ` AND bank_id = ?`;
+        params.push(options.bankId);
+      }
+      if (options.startDate) {
+        query += ` AND date >= ?`;
+        params.push(options.startDate);
+      }
+      if (options.endDate) {
+        query += ` AND date <= ?`;
+        params.push(options.endDate);
+      }
+
+      const stmt = this.db.prepare(query);
+      const row = stmt.get(...params) as any;
+
+      return {
+        totalTransactions: row.total_transactions || 0,
+        totalDeposits: row.total_deposits || 0,
+        totalWithdrawals: row.total_withdrawals || 0,
+        depositCount: row.deposit_count || 0,
+        withdrawalCount: row.withdrawal_count || 0,
+        netChange: (row.total_deposits || 0) - (row.total_withdrawals || 0),
+      };
+    }
   }
 
   getMonthlySummary(options: {
@@ -911,48 +1565,166 @@ export class FinanceHubDbManager {
     totalWithdrawals: number;
     netChange: number;
   }> {
-    let query = `
-      SELECT 
-        substr(date, 1, 7) as year_month,
-        bank_id,
-        SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
-        SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count,
-        COALESCE(SUM(deposit), 0) as total_deposits,
-        COALESCE(SUM(withdrawal), 0) as total_withdrawals
-      FROM transactions WHERE 1=1
-    `;
-    const params: any[] = [];
+    if (this.useSeparateTransactionTables()) {
+      const isCard = options.bankId?.includes('-card');
+      const results = new Map<string, any>(); // key: "yearMonth|bankId"
 
-    if (options.accountId) {
-      query += ` AND account_id = ?`;
-      params.push(options.accountId);
-    }
-    if (options.bankId) {
-      query += ` AND bank_id = ?`;
-      params.push(options.bankId);
-    }
-    if (options.year) {
-      query += ` AND substr(date, 1, 4) = ?`;
-      params.push(options.year.toString());
-    }
+      // Query bank transactions
+      if (!isCard || !options.bankId) {
+        let query = `
+          SELECT
+            substr(transaction_date, 1, 7) as year_month,
+            bank_id,
+            SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
+            SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count,
+            COALESCE(SUM(deposit), 0) as total_deposits,
+            COALESCE(SUM(withdrawal), 0) as total_withdrawals
+          FROM bank_transactions WHERE 1=1
+        `;
+        const params: any[] = [];
 
-    query += ` GROUP BY year_month, bank_id ORDER BY year_month DESC`;
+        if (options.accountId) {
+          query += ` AND account_id = ?`;
+          params.push(options.accountId);
+        }
+        if (options.bankId && !isCard) {
+          query += ` AND bank_id = ?`;
+          params.push(options.bankId);
+        }
+        if (options.year) {
+          query += ` AND substr(transaction_date, 1, 4) = ?`;
+          params.push(options.year.toString());
+        }
 
-    if (options.months) {
-      query += ` LIMIT ?`;
-      params.push(options.months);
+        query += ` GROUP BY year_month, bank_id`;
+
+        const rows = this.db.prepare(query).all(...params) as any[];
+
+        for (const row of rows) {
+          const key = `${row.year_month}|${row.bank_id}`;
+          results.set(key, {
+            yearMonth: row.year_month,
+            bankId: row.bank_id,
+            depositCount: row.deposit_count || 0,
+            withdrawalCount: row.withdrawal_count || 0,
+            totalDeposits: row.total_deposits || 0,
+            totalWithdrawals: row.total_withdrawals || 0
+          });
+        }
+      }
+
+      // Query card transactions
+      if (isCard || !options.bankId) {
+        let query = `
+          SELECT
+            substr(approval_date, 1, 7) as year_month,
+            card_company_id as bank_id,
+            SUM(CASE WHEN is_cancelled = 1 THEN 1 ELSE 0 END) as deposit_count,
+            SUM(CASE WHEN is_cancelled = 0 THEN 1 ELSE 0 END) as withdrawal_count,
+            COALESCE(SUM(CASE WHEN is_cancelled = 1 THEN amount ELSE 0 END), 0) as total_deposits,
+            COALESCE(SUM(CASE WHEN is_cancelled = 0 THEN amount ELSE 0 END), 0) as total_withdrawals
+          FROM card_transactions WHERE 1=1
+        `;
+        const params: any[] = [];
+
+        if (options.accountId) {
+          query += ` AND account_id = ?`;
+          params.push(options.accountId);
+        }
+        if (options.bankId && isCard) {
+          query += ` AND card_company_id = ?`;
+          params.push(options.bankId);
+        }
+        if (options.year) {
+          query += ` AND substr(approval_date, 1, 4) = ?`;
+          params.push(options.year.toString());
+        }
+
+        query += ` GROUP BY year_month, card_company_id`;
+
+        const rows = this.db.prepare(query).all(...params) as any[];
+
+        for (const row of rows) {
+          const key = `${row.year_month}|${row.bank_id}`;
+          const existing = results.get(key);
+
+          if (existing) {
+            // Merge with existing bank data
+            existing.depositCount += row.deposit_count || 0;
+            existing.withdrawalCount += row.withdrawal_count || 0;
+            existing.totalDeposits += row.total_deposits || 0;
+            existing.totalWithdrawals += row.total_withdrawals || 0;
+          } else {
+            results.set(key, {
+              yearMonth: row.year_month,
+              bankId: row.bank_id,
+              depositCount: row.deposit_count || 0,
+              withdrawalCount: row.withdrawal_count || 0,
+              totalDeposits: row.total_deposits || 0,
+              totalWithdrawals: row.total_withdrawals || 0
+            });
+          }
+        }
+      }
+
+      // Convert map to array, add netChange, sort, and limit
+      const resultArray = Array.from(results.values()).map(item => ({
+        ...item,
+        netChange: item.totalDeposits - item.totalWithdrawals
+      }));
+
+      // Sort by yearMonth DESC
+      resultArray.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
+
+      // Apply limit if specified
+      const limit = options.months || 12;
+      return resultArray.slice(0, limit);
+
+    } else {
+      // Existing implementation (old transactions table)
+      let query = `
+        SELECT
+          substr(date, 1, 7) as year_month,
+          bank_id,
+          SUM(CASE WHEN deposit > 0 THEN 1 ELSE 0 END) as deposit_count,
+          SUM(CASE WHEN withdrawal > 0 THEN 1 ELSE 0 END) as withdrawal_count,
+          COALESCE(SUM(deposit), 0) as total_deposits,
+          COALESCE(SUM(withdrawal), 0) as total_withdrawals
+        FROM transactions WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (options.accountId) {
+        query += ` AND account_id = ?`;
+        params.push(options.accountId);
+      }
+      if (options.bankId) {
+        query += ` AND bank_id = ?`;
+        params.push(options.bankId);
+      }
+      if (options.year) {
+        query += ` AND substr(date, 1, 4) = ?`;
+        params.push(options.year.toString());
+      }
+
+      query += ` GROUP BY year_month, bank_id ORDER BY year_month DESC`;
+
+      if (options.months) {
+        query += ` LIMIT ?`;
+        params.push(options.months);
+      }
+
+      const stmt = this.db.prepare(query);
+      return stmt.all(...params).map((row: any) => ({
+        yearMonth: row.year_month,
+        bankId: row.bank_id,
+        depositCount: row.deposit_count,
+        withdrawalCount: row.withdrawal_count,
+        totalDeposits: row.total_deposits,
+        totalWithdrawals: row.total_withdrawals,
+        netChange: row.total_deposits - row.total_withdrawals,
+      }));
     }
-
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params).map((row: any) => ({
-      yearMonth: row.year_month,
-      bankId: row.bank_id,
-      depositCount: row.deposit_count,
-      withdrawalCount: row.withdrawal_count,
-      totalDeposits: row.total_deposits,
-      totalWithdrawals: row.total_withdrawals,
-      netChange: row.total_deposits - row.total_withdrawals,
-    }));
   }
 
   getOverallStats(): {
@@ -968,36 +1740,108 @@ export class FinanceHubDbManager {
       totalBalance: number;
     }>;
   } {
-    const bankBreakdownStmt = this.db.prepare(`
-      SELECT 
-        b.id as bank_id,
-        b.name_ko as bank_name,
-        COUNT(DISTINCT a.id) as account_count,
-        COUNT(t.id) as transaction_count,
-        COALESCE(SUM(DISTINCT a.balance), 0) as total_balance
-      FROM banks b
-      LEFT JOIN accounts a ON b.id = a.bank_id AND a.is_active = 1
-      LEFT JOIN transactions t ON a.id = t.account_id
-      GROUP BY b.id
-      HAVING account_count > 0
-      ORDER BY account_count DESC
-    `);
+    if (this.useSeparateTransactionTables()) {
+      // Get bank transaction counts per account
+      const bankTxCounts = new Map<string, number>();
+      const bankTxCountsQuery = this.db.prepare(`
+        SELECT account_id, COUNT(*) as tx_count
+        FROM bank_transactions
+        GROUP BY account_id
+      `);
+      for (const row of bankTxCountsQuery.all() as any[]) {
+        bankTxCounts.set(row.account_id, row.tx_count);
+      }
 
-    const breakdown = bankBreakdownStmt.all().map((row: any) => ({
-      bankId: row.bank_id,
-      bankName: row.bank_name,
-      accountCount: row.account_count,
-      transactionCount: row.transaction_count,
-      totalBalance: row.total_balance,
-    }));
+      // Get card transaction counts per account
+      const cardTxCounts = new Map<string, number>();
+      const cardTxCountsQuery = this.db.prepare(`
+        SELECT account_id, COUNT(*) as tx_count
+        FROM card_transactions
+        GROUP BY account_id
+      `);
+      for (const row of cardTxCountsQuery.all() as any[]) {
+        cardTxCounts.set(row.account_id, row.tx_count);
+      }
 
-    return {
-      totalBanks: breakdown.length,
-      totalAccounts: breakdown.reduce((sum, b) => sum + b.accountCount, 0),
-      totalTransactions: breakdown.reduce((sum, b) => sum + b.transactionCount, 0),
-      totalBalance: breakdown.reduce((sum, b) => sum + b.totalBalance, 0),
-      bankBreakdown: breakdown,
-    };
+      // Get bank breakdown with accounts
+      const breakdownQuery = this.db.prepare(`
+        SELECT
+          b.id as bank_id,
+          b.name_ko as bank_name,
+          COUNT(DISTINCT a.id) as account_count,
+          COALESCE(SUM(DISTINCT a.balance), 0) as total_balance
+        FROM banks b
+        LEFT JOIN accounts a ON b.id = a.bank_id AND a.is_active = 1
+        GROUP BY b.id
+        HAVING account_count > 0
+        ORDER BY account_count DESC
+      `);
+
+      const breakdown = breakdownQuery.all().map((row: any) => {
+        // Get all accounts for this bank
+        const accountsQuery = this.db.prepare(`
+          SELECT id FROM accounts
+          WHERE bank_id = ? AND is_active = 1
+        `);
+        const accounts = accountsQuery.all(row.bank_id) as any[];
+
+        // Sum transaction counts from both tables
+        let transactionCount = 0;
+        for (const account of accounts) {
+          transactionCount += bankTxCounts.get(account.id) || 0;
+          transactionCount += cardTxCounts.get(account.id) || 0;
+        }
+
+        return {
+          bankId: row.bank_id,
+          bankName: row.bank_name,
+          accountCount: row.account_count,
+          transactionCount: transactionCount,
+          totalBalance: row.total_balance
+        };
+      });
+
+      return {
+        totalBanks: breakdown.length,
+        totalAccounts: breakdown.reduce((sum, b) => sum + b.accountCount, 0),
+        totalTransactions: breakdown.reduce((sum, b) => sum + b.transactionCount, 0),
+        totalBalance: breakdown.reduce((sum, b) => sum + b.totalBalance, 0),
+        bankBreakdown: breakdown
+      };
+
+    } else {
+      // Existing implementation (old transactions table)
+      const bankBreakdownStmt = this.db.prepare(`
+        SELECT
+          b.id as bank_id,
+          b.name_ko as bank_name,
+          COUNT(DISTINCT a.id) as account_count,
+          COUNT(t.id) as transaction_count,
+          COALESCE(SUM(DISTINCT a.balance), 0) as total_balance
+        FROM banks b
+        LEFT JOIN accounts a ON b.id = a.bank_id AND a.is_active = 1
+        LEFT JOIN transactions t ON a.id = t.account_id
+        GROUP BY b.id
+        HAVING account_count > 0
+        ORDER BY account_count DESC
+      `);
+
+      const breakdown = bankBreakdownStmt.all().map((row: any) => ({
+        bankId: row.bank_id,
+        bankName: row.bank_name,
+        accountCount: row.account_count,
+        transactionCount: row.transaction_count,
+        totalBalance: row.total_balance,
+      }));
+
+      return {
+        totalBanks: breakdown.length,
+        totalAccounts: breakdown.reduce((sum, b) => sum + b.accountCount, 0),
+        totalTransactions: breakdown.reduce((sum, b) => sum + b.transactionCount, 0),
+        totalBalance: breakdown.reduce((sum, b) => sum + b.totalBalance, 0),
+        bankBreakdown: breakdown,
+      };
+    }
   }
 
   /**
@@ -1273,11 +2117,56 @@ export class FinanceHubDbManager {
     try {
       // 4. Bulk insert transactions (with dedup via UNIQUE index)
       console.log(`[FinanceHubDb] 💾 Bulk inserting ${transformedTransactions.length} transactions...`);
-      const { inserted, skipped } = this.bulkInsertTransactions(
-        account.id,
-        bankId,
-        transformedTransactions
-      );
+
+      let inserted: number, skipped: number;
+
+      // Feature flag: Route to appropriate table based on USE_SEPARATE_TRANSACTION_TABLES
+      if (this.useSeparateTransactionTables()) {
+        console.log(`[FinanceHubDb]    🔀 Using separate transaction tables (feature flag enabled)`);
+        if (isCardTransaction) {
+          console.log(`[FinanceHubDb]    💳 Inserting into card_transactions table`);
+          ({ inserted, skipped } = this.bulkInsertCardTransactions(
+            account.id,
+            bankId,
+            transformedTransactions.map(tx => ({
+              approvalDatetime: tx.transaction_datetime || tx.date || '',
+              approvalDate: tx.date || '',
+              merchantName: tx.description || 'UNKNOWN',
+              amount: tx.withdrawal || tx.deposit || 0,
+              cardNumber: (tx as any).cardNumber || tx.metadata?.cardNumber || 'UNKNOWN', // Top level first, fallback to metadata
+              category: tx.category,
+              memo: tx.memo,
+              // Extract from metadata if available
+              headquartersName: tx.metadata?.headquartersName,
+              departmentName: tx.metadata?.departmentName,
+              cardType: tx.metadata?.cardType,
+              cardholderName: tx.metadata?.userName || tx.metadata?.cardHolder,
+              transactionBank: tx.metadata?.transactionBank,
+              usageType: tx.metadata?.transactionMethod,
+              salesType: tx.metadata?.salesType,
+              billingDate: tx.metadata?.billingDate,
+              approvalNumber: tx.metadata?.approvalNumber,
+              foreignAmountUsd: tx.metadata?.foreignAmountUSD,
+              isCancelled: tx.metadata?.isCancelled,
+            }))
+          ));
+        } else {
+          console.log(`[FinanceHubDb]    🏦 Inserting into bank_transactions table`);
+          ({ inserted, skipped } = this.bulkInsertBankTransactions(
+            account.id,
+            bankId,
+            transformedTransactions
+          ));
+        }
+      } else {
+        console.log(`[FinanceHubDb]    📊 Using unified transactions table (feature flag disabled)`);
+        ({ inserted, skipped } = this.bulkInsertTransactions(
+          account.id,
+          bankId,
+          transformedTransactions
+        ));
+      }
+
       console.log(`[FinanceHubDb]    ✅ Bulk insert complete: ${inserted} inserted, ${skipped} skipped`);
 
       // 4. Calculate totals (ensure numbers to prevent string concatenation)
@@ -1371,6 +2260,60 @@ export class FinanceHubDbManager {
       transactionId: row.transaction_id,
       createdAt: row.created_at,
       metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    };
+  }
+
+  private mapRowToBankTransaction(row: any): BankTransaction {
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      bankId: row.bank_id,
+      transactionDate: row.transaction_date,
+      transactionTime: row.transaction_time,
+      transactionDatetime: row.transaction_datetime,
+      accountNumber: row.account_number,
+      accountName: row.account_name,
+      deposit: row.deposit,
+      withdrawal: row.withdrawal,
+      balance: row.balance,
+      branch: row.branch,
+      counterpartyAccount: row.counterparty_account,
+      counterpartyName: row.counterparty_name,
+      description: row.description,
+      description2: row.description2,
+      memo: row.memo,
+      isManual: Boolean(row.is_manual),
+      category: row.category,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private mapRowToCardTransaction(row: any): CardTransaction {
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      cardCompanyId: row.card_company_id,
+      headquartersName: row.headquarters_name,
+      departmentName: row.department_name,
+      cardNumber: row.card_number,
+      cardType: row.card_type,
+      cardholderName: row.cardholder_name,
+      transactionBank: row.transaction_bank,
+      usageType: row.usage_type,
+      salesType: row.sales_type,
+      approvalDatetime: row.approval_datetime,
+      approvalDate: row.approval_date,
+      billingDate: row.billing_date,
+      approvalNumber: row.approval_number,
+      merchantName: row.merchant_name,
+      amount: row.amount,
+      foreignAmountUsd: row.foreign_amount_usd,
+      memo: row.memo,
+      category: row.category,
+      isCancelled: Boolean(row.is_cancelled),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     };
   }
 

@@ -205,6 +205,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     branch: null,                    // N/A for cards
     counterparty: merchantName,
     transactionId: cardTx.approvalNumber || '',
+    cardNumber: metadata.cardNumber, // Add to top level for easier access
     metadata: metadata
   };
 }

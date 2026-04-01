@@ -44,7 +44,7 @@ interface TransactionsPageProps {
   onPageChange: (page: number) => void;
   onSort: (field: SortState['field']) => void;
   loadTransactions: () => Promise<void>;
-  loadAllTransactions: () => Promise<Transaction[]>;
+  loadAllTransactions: (transactionType?: 'bank' | 'card') => Promise<Transaction[]>;
   transactionType: 'bank' | 'card';
 }
 
@@ -123,19 +123,17 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   const handleOpenInSpreadsheet = async () => {
     try {
-      // Load all transactions
-      const allTransactions = await loadAllTransactions();
+      // Load all transactions of the specific type
+      const allTransactions = await loadAllTransactions(transactionType);
 
-      // Filter transactions based on type (bank or card)
-      const filteredAllTransactions = allTransactions.filter(tx =>
-        transactionType === 'card' ? isCardTransaction(tx) : !isCardTransaction(tx)
-      );
-
-      if (filteredAllTransactions.length === 0) {
+      if (allTransactions.length === 0) {
         const typeLabel = transactionType === 'bank' ? '은행' : '카드';
         alert(`내보낼 ${typeLabel} 거래내역이 없습니다.`);
         return;
       }
+
+      // Use all transactions directly (already filtered by type in query)
+      const filteredAllTransactions = allTransactions;
 
       // Get persistent spreadsheet info with type-specific key
       const spreadsheetKey = transactionType === 'bank' ? 'bank-spreadsheet' : 'card-spreadsheet';
@@ -288,7 +286,11 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           </div>
         </td>
         <td className="txp-table__cell txp-table__cell--account">
-          <span className="txp-account-number">{formatAccountNumber(account?.accountNumber)}</span>
+          <span className="txp-account-number">
+            {transactionType === 'card' && tx.metadata?.cardNumber
+              ? formatAccountNumber(tx.metadata.cardNumber)
+              : formatAccountNumber(account?.accountNumber)}
+          </span>
         </td>
         <td className="txp-table__cell txp-table__cell--type">
           <span className="txp-type-text" title={tx.type || '-'}>
@@ -553,7 +555,11 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       </div>
                       <div className="txp-detail__row">
                         <span className="txp-detail__label">{isCardTransaction(tx) ? '카드' : '계좌'}</span>
-                        <span className="txp-detail__value">{formatAccountNumber(account?.accountNumber)}{account?.accountName && ` (${account.accountName})`}</span>
+                        <span className="txp-detail__value">
+                          {isCardTransaction(tx) && tx.metadata?.cardNumber
+                            ? formatAccountNumber(tx.metadata.cardNumber)
+                            : formatAccountNumber(account?.accountNumber)}{account?.accountName && ` (${account.accountName})`}
+                        </span>
                       </div>
                       <div className="txp-detail__row">
                         <span className="txp-detail__label">적요</span>

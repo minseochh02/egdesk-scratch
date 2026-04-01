@@ -304,6 +304,25 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     }
 
     // =============================================
+    // Migration 015-019: Separate bank and card transaction tables
+    // =============================================
+    try {
+      const { migrate015CreateBankTransactions } = await import('./migrations/015-create-bank-transactions');
+      const { migrate016CreateCardTransactions } = await import('./migrations/016-create-card-transactions');
+      const { migrate017MigrateBankData } = await import('./migrations/017-migrate-bank-data');
+      const { migrate018MigrateCardData } = await import('./migrations/018-migrate-card-data');
+      const { migrate019VerifyMigration } = await import('./migrations/019-verify-migration');
+
+      migrate015CreateBankTransactions(financeHubDb);
+      migrate016CreateCardTransactions(financeHubDb);
+      migrate017MigrateBankData(financeHubDb);
+      migrate018MigrateCardData(financeHubDb);
+      migrate019VerifyMigration(financeHubDb);
+    } catch (migrationError: any) {
+      console.error('⚠️ Migrations 015-019 error:', migrationError.message);
+    }
+
+    // =============================================
     // Migration 009: Add vector embeddings support
     // =============================================
     try {
