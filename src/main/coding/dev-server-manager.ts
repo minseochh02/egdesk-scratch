@@ -635,19 +635,16 @@ export class DevServerManager {
         packageJson.dependencies?.['@egdesk/next-api-plugin'];
 
       if (hasPlugin) {
-        console.log('✓ @egdesk/next-api-plugin already installed');
-        // Write EGDesk API key to environment file
-        this.writeEGDeskEnv(folderPath, 'nextjs');
-        // Run setup to generate middleware and helpers
-        await this.setupNextApiPlugin(folderPath);
-        return;
+        console.log('✓ @egdesk/next-api-plugin already installed, updating to latest...');
+        // Always update to latest version to get newest features
+        await this.installPackage(folderPath, '@egdesk/next-api-plugin@latest', packageManager, true);
+        console.log('✓ Updated to latest version');
+      } else {
+        console.log('📦 Installing @egdesk/next-api-plugin for database proxy support...');
+        // Install from npm (published package - more reliable than local path)
+        await this.installPackage(folderPath, '@egdesk/next-api-plugin@latest', packageManager, true);
+        console.log('✓ @egdesk/next-api-plugin installed from npm');
       }
-
-      console.log('📦 Installing @egdesk/next-api-plugin for database proxy support...');
-
-      // Install from npm (published package - more reliable than local path)
-      await this.installPackage(folderPath, '@egdesk/next-api-plugin@latest', packageManager, true);
-      console.log('✓ @egdesk/next-api-plugin installed from npm');
 
       // Write EGDesk API key to environment file
       this.writeEGDeskEnv(folderPath, 'nextjs');
