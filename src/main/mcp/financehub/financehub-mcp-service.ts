@@ -68,7 +68,7 @@ export class FinanceHubMCPService implements IMCPService {
       },
       {
         name: 'financehub_query_transactions',
-        description: 'Query transactions with filtering, sorting, and pagination',
+        description: 'Query bank transactions with filtering, sorting, and pagination. For card transactions, use financehub_query_card_transactions instead.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -117,6 +117,79 @@ export class FinanceHubMCPService implements IMCPService {
             orderBy: {
               type: 'string',
               enum: ['date', 'amount', 'balance'],
+              description: 'Column to sort by',
+              default: 'date'
+            },
+            orderDir: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              description: 'Sort direction',
+              default: 'desc'
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: 'financehub_query_card_transactions',
+        description: 'Query card transactions with card-specific filtering (merchant, card number, approval date, etc.)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            accountId: {
+              type: 'string',
+              description: 'Filter by account ID'
+            },
+            cardCompanyId: {
+              type: 'string',
+              description: 'Filter by card company ID (e.g., "bc-card", "shinhan-card")'
+            },
+            cardNumber: {
+              type: 'string',
+              description: 'Filter by card number'
+            },
+            merchantName: {
+              type: 'string',
+              description: 'Search in merchant name'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date filter (YYYY-MM-DD format)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date filter (YYYY-MM-DD format)'
+            },
+            category: {
+              type: 'string',
+              description: 'Filter by transaction category'
+            },
+            minAmount: {
+              type: 'number',
+              description: 'Minimum transaction amount'
+            },
+            maxAmount: {
+              type: 'number',
+              description: 'Maximum transaction amount'
+            },
+            includeCancelled: {
+              type: 'boolean',
+              description: 'Include cancelled transactions (refunds)',
+              default: true
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of transactions to return (max 1000)',
+              default: 100
+            },
+            offset: {
+              type: 'number',
+              description: 'Number of transactions to skip for pagination',
+              default: 0
+            },
+            orderBy: {
+              type: 'string',
+              enum: ['date', 'amount'],
               description: 'Column to sort by',
               default: 'date'
             },
@@ -323,6 +396,74 @@ export class FinanceHubMCPService implements IMCPService {
               branch: tx.branch,
               counterparty: tx.counterparty,
               transactionId: tx.transactionId,
+              createdAt: tx.createdAt
+            }))
+          };
+          break;
+        }
+
+        case 'financehub_query_card_transactions': {
+          const {
+            accountId,
+            cardCompanyId,
+            cardNumber,
+            merchantName,
+            startDate,
+            endDate,
+            category,
+            minAmount,
+            maxAmount,
+            includeCancelled = true,
+            limit = 100,
+            offset = 0,
+            orderBy = 'date',
+            orderDir = 'desc'
+          } = args;
+
+          // Enforce max limit of 1000
+          const enforcedLimit = Math.min(limit, 1000);
+
+          const cardTransactions = this.manager.queryCardTransactions({
+            accountId,
+            cardCompanyId,
+            cardNumber,
+            merchantName,
+            startDate,
+            endDate,
+            category,
+            minAmount,
+            maxAmount,
+            limit: enforcedLimit,
+            offset,
+            orderBy,
+            orderDir
+          });
+
+          // Filter by includeCancelled if specified
+          const filteredTransactions = includeCancelled
+            ? cardTransactions
+            : cardTransactions.filter(tx => !tx.isCancelled);
+
+          result = {
+            totalReturned: filteredTransactions.length,
+            limit: enforcedLimit,
+            offset,
+            transactions: filteredTransactions.map((tx) => ({
+              id: tx.id,
+              accountId: tx.accountId,
+              cardCompanyId: tx.cardCompanyId,
+              cardNumber: tx.cardNumber,
+              cardholderName: tx.cardholderName,
+              merchantName: tx.merchantName,
+              approvalDate: tx.approvalDate,
+              approvalDatetime: tx.approvalDatetime,
+              approvalNumber: tx.approvalNumber,
+              amount: tx.amount,
+              isCancelled: tx.isCancelled,
+              usageType: tx.usageType,
+              salesType: tx.salesType,
+              category: tx.category,
+              memo: tx.memo,
               createdAt: tx.createdAt
             }))
           };

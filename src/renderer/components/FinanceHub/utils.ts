@@ -53,10 +53,11 @@ export const formatDateForInput = (dateStr: string): string => {
 };
 
 /**
- * Convert date to YYYYMMDD format for SQLite queries
+ * Format date for SQLite queries (keep YYYY-MM-DD format for proper comparison)
  */
 export const formatDateForQuery = (dateStr: string): string => {
-  return dateStr.replace(/-/g, '');
+  // Keep ISO format (YYYY-MM-DD) - SQLite handles this correctly
+  return dateStr;
 };
 
 /**

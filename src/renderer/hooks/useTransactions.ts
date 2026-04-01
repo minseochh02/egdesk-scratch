@@ -189,20 +189,21 @@ export function useTransactions(): UseTransactionsReturn {
   // Load All Transactions (for Export)
   // ============================================
   
-  const loadAllTransactions = useCallback(async (): Promise<Transaction[]> => {
+  const loadAllTransactions = useCallback(async (transactionType?: 'bank' | 'card'): Promise<Transaction[]> => {
     try {
-      console.log('[useTransactions] Loading all transactions for export...');
-      
+      console.log(`[useTransactions] Loading all ${transactionType || 'all'} transactions for export...`);
+
       const result = await window.electron.financeHubDb.queryTransactions({
-        limit: 100000, // Large limit to get all transactions
+        limit: 100000,
         offset: 0,
         orderBy: 'date',
         orderDir: 'desc',
+        transactionType, // Pass the specific type (bank, card, or undefined for all)
       });
-      
+
       if (result.success) {
         const allTransactions = result.data || [];
-        console.log(`[useTransactions] Loaded ${allTransactions.length} total transactions for export`);
+        console.log(`[useTransactions] Loaded ${allTransactions.length} ${transactionType || 'total'} transactions for export`);
         return allTransactions;
       } else {
         console.error('[useTransactions] Failed to load all transactions:', result.error);
@@ -265,6 +266,7 @@ export function useTransactions(): UseTransactionsReturn {
         offset: (pagination.currentPage - 1) * pagination.pageSize,
         orderBy: sort.field === 'description' ? 'date' : sort.field,
         orderDir: sort.direction,
+        transactionType: 'bank', // Explicitly specify bank transactions
       };
 
       // Apply bank filters
@@ -348,17 +350,15 @@ export function useTransactions(): UseTransactionsReturn {
         offset: (pagination.currentPage - 1) * pagination.pageSize,
         orderBy: sort.field === 'description' ? 'date' : sort.field,
         orderDir: sort.direction,
+        transactionType: 'card', // Explicitly specify card transactions
       };
 
       // Apply card filters
-      // IMPORTANT: Always filter for card transactions at SQL level to avoid pagination issues
       if (cardFilters.bankId !== 'all') {
         queryOptions.bankId = cardFilters.bankId;
-      } else {
-        // When "All" is selected, we need to filter for ANY card at SQL level
-        // This prevents pagination from fetching only bank transactions
-        queryOptions.bankIdLike = '%-card';
       }
+      // Note: With transactionType='card', the routing logic will automatically
+      // filter to card_transactions table, so no need for bankIdLike pattern
       if (cardFilters.accountId !== 'all') queryOptions.accountId = cardFilters.accountId;
       if (cardFilters.startDate) queryOptions.startDate = formatDateForQuery(cardFilters.startDate);
       if (cardFilters.endDate) queryOptions.endDate = formatDateForQuery(cardFilters.endDate);

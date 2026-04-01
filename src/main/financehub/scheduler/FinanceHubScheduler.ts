@@ -1922,11 +1922,14 @@ export class FinanceHubScheduler extends EventEmitter {
       // Determine which spreadsheet to use based on entity type
       const spreadsheetKey = entityType === 'card' ? 'card-spreadsheet' : 'bank-spreadsheet';
 
-      const transactions = financeHubDb.prepare(`
-        SELECT * FROM transactions
-        ORDER BY date DESC, time DESC
-        LIMIT 1000
-      `).all();
+      // Use queryTransactions() to respect feature flag routing
+      const transactionType = entityType === 'card' ? 'card' : 'bank';
+      const transactions = financeHubDb.queryTransactions({
+        transactionType,
+        limit: 1000,
+        orderBy: 'date',
+        orderDir: 'desc'
+      });
 
       const banks = financeHubDb.prepare('SELECT * FROM banks').all();
       const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
@@ -2015,11 +2018,14 @@ export class FinanceHubScheduler extends EventEmitter {
       const spreadsheetKey = entityType === 'card' ? 'card-spreadsheet' : 'bank-spreadsheet';
 
       // Export all recent data to spreadsheet
-      const transactions = financeHubDb.prepare(`
-        SELECT * FROM transactions
-        ORDER BY date DESC, time DESC
-        LIMIT 1000
-      `).all();
+      // Use queryTransactions() to respect feature flag routing
+      const transactionType = entityType === 'card' ? 'card' : 'bank';
+      const transactions = financeHubDb.queryTransactions({
+        transactionType,
+        limit: 1000,
+        orderBy: 'date',
+        orderDir: 'desc'
+      });
 
       const banks = financeHubDb.prepare('SELECT * FROM banks').all();
       const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
