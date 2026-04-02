@@ -27,6 +27,7 @@ import { UserDataMCPService } from '../user-data/user-data-mcp-service';
 import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
+import { getSQLiteManager } from '../../sqlite/manager';
 
 // Database path helper
 function getDatabasePath(): string {
@@ -615,9 +616,10 @@ export class LocalServerManager {
    */
   private getUserDataMCPService(): UserDataMCPService {
     if (!this.userDataMCPService) {
-      const dbPath = getUserDataDatabasePath();
-      const Database = require('better-sqlite3');
-      const database = new Database(dbPath);
+      // Use the existing database connection from SQLiteManager instead of creating a new one
+      // This prevents "database is locked" errors from multiple connections
+      const manager = getSQLiteManager();
+      const database = manager.getUserDataDatabase();
       this.userDataMCPService = new UserDataMCPService(database);
     }
     return this.userDataMCPService;
@@ -625,9 +627,10 @@ export class LocalServerManager {
 
   private getFinanceHubMCPService(): FinanceHubMCPService {
     if (!this.financeHubMCPService) {
-      const dbPath = getFinanceHubDatabasePath();
-      const Database = require('better-sqlite3');
-      const database = new Database(dbPath);
+      // Use the existing database connection from SQLiteManager instead of creating a new one
+      // This prevents "database is locked" errors from multiple connections
+      const manager = getSQLiteManager();
+      const database = manager.getFinanceHubDatabase();
       this.financeHubMCPService = new FinanceHubMCPService(database);
     }
     return this.financeHubMCPService;

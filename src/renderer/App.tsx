@@ -297,7 +297,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.102</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.103</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2069,6 +2069,7 @@ function NavigationBar({
 
   const isSystemActive = [
     '/mcp-server',
+    '/coding',
     '/docker',
     '/egdesktop',
     '/ai-keys'
@@ -2183,6 +2184,10 @@ function NavigationBar({
             <Link to="/mcp-server" className={`nav-dropdown-item ${location.pathname.startsWith('/mcp-server') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faServer} fixedWidth />
               <span>MCP Server</span>
+            </Link>
+            <Link to="/coding" className={`nav-dropdown-item ${location.pathname.startsWith('/coding') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faLaptopCode} fixedWidth />
+              <span>Coding</span>
             </Link>
             <Link to="/docker" className={`nav-dropdown-item ${location.pathname.startsWith('/docker') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faDocker} fixedWidth />

@@ -24,6 +24,14 @@ export const UserDataPage: React.FC = () => {
   const [importingSql, setImportingSql] = useState(false);
   const [forceDropping, setForceDropping] = useState(false);
   const [openActionGroup, setOpenActionGroup] = useState<'data' | 'sync' | 'reset' | null>(null);
+  const [exportProgress, setExportProgress] = useState<{
+    currentTable: string;
+    currentTableRows?: number;
+    processedRows: number;
+    totalRows: number;
+    tablesCompleted: number;
+    totalTables: number;
+  } | null>(null);
   const headerActionsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -36,6 +44,19 @@ export const UserDataPage: React.FC = () => {
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Listen for export progress events
+  useEffect(() => {
+    const handleExportProgress = (progress: any) => {
+      setExportProgress(progress);
+    };
+
+    const cleanup = window.electron.ipcRenderer.on('user-data:export-progress', handleExportProgress);
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const handleSelectTable = (table: UserTable) => {
@@ -85,7 +106,25 @@ export const UserDataPage: React.FC = () => {
       return;
     }
 
+    // Calculate total rows and show warning for large datasets
+    const totalRows = tables.reduce((sum, t) => sum + t.rowCount, 0);
+    const estimatedSizeMB = (totalRows * 500) / (1024 * 1024); // Rough estimate: 500 bytes per row
+
+    if (totalRows > 50000) {
+      const proceed = window.confirm(
+        `⚠️ Large Database Export\n\n` +
+        `You are about to export ${totalRows.toLocaleString()} rows from ${tables.length} table(s).\n` +
+        `Estimated size: ~${estimatedSizeMB.toFixed(1)} MB\n\n` +
+        `This may take a few moments. Continue?`
+      );
+
+      if (!proceed) {
+        return;
+      }
+    }
+
     setExporting(true);
+    setExportProgress(null);
     try {
       const result = await exportAllTables();
 
@@ -96,6 +135,7 @@ export const UserDataPage: React.FC = () => {
       alert(err instanceof Error ? err.message : 'Failed to export tables');
     } finally {
       setExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -194,7 +234,25 @@ export const UserDataPage: React.FC = () => {
       return;
     }
 
+    // Calculate total rows and show warning for large datasets
+    const totalRows = tables.reduce((sum, t) => sum + t.rowCount, 0);
+    const estimatedSizeMB = (totalRows * 800) / (1024 * 1024); // SQL is more verbose: ~800 bytes per row
+
+    if (totalRows > 50000) {
+      const proceed = window.confirm(
+        `⚠️ Large SQL Export\n\n` +
+        `You are about to export ${totalRows.toLocaleString()} rows from ${tables.length} table(s) as SQL.\n` +
+        `Estimated size: ~${estimatedSizeMB.toFixed(1)} MB\n\n` +
+        `Large SQL exports may take several minutes. Continue?`
+      );
+
+      if (!proceed) {
+        return;
+      }
+    }
+
     setExportingSql(true);
+    setExportProgress(null);
     try {
       const result = await exportSQL();
 
@@ -205,6 +263,7 @@ export const UserDataPage: React.FC = () => {
       alert(err instanceof Error ? err.message : 'Failed to export SQL');
     } finally {
       setExportingSql(false);
+      setExportProgress(null);
     }
   };
 
@@ -411,6 +470,26 @@ export const UserDataPage: React.FC = () => {
       </div>
 
       {error && <div className="error-message">{error}</div>}
+
+      {/* Export Progress Indicator */}
+      {exportProgress && (exporting || exportingSql) && (
+        <div className="export-progress-container">
+          <div className="export-progress-header">
+            <FontAwesomeIcon icon={faSpinner} spin />
+            <span>Exporting {exportProgress.currentTable}...</span>
+          </div>
+          <div className="export-progress-bar">
+            <div
+              className="export-progress-fill"
+              style={{ width: `${(exportProgress.processedRows / exportProgress.totalRows) * 100}%` }}
+            />
+          </div>
+          <div className="export-progress-text">
+            {exportProgress.processedRows.toLocaleString()} / {exportProgress.totalRows.toLocaleString()} rows
+            {exportProgress.currentTableRows && ` (${exportProgress.currentTableRows.toLocaleString()} in current table)`}
+          </div>
+        </div>
+      )}
 
       <div className="user-data-content">
         {selectedTable ? (

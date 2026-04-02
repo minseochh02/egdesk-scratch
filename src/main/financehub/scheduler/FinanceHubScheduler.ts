@@ -438,7 +438,11 @@ export class FinanceHubScheduler extends EventEmitter {
   // ============================================
 
   public async start(): Promise<void> {
+    this.debugLog(`🚀 start() called at ${new Date().toISOString()}`);
+    console.log('[FinanceHubScheduler] 🚀 start() called');
+
     if (!this.settings.enabled) {
+      this.debugLog('⚠️  Scheduler is disabled, not starting');
       console.log('[FinanceHubScheduler] Scheduler is disabled');
       return;
     }
@@ -458,7 +462,8 @@ export class FinanceHubScheduler extends EventEmitter {
     this.scheduleNextSync();
     this.startKeepAwake();
 
-    console.log(`[FinanceHubScheduler] Started - Next sync at ${this.settings.time}`);
+    this.debugLog(`✅ Scheduler started with ${this.scheduleTimers.size} active timers`);
+    console.log(`[FinanceHubScheduler] ✅ Scheduler started with ${this.scheduleTimers.size} active timers`);
     this.emit('scheduler-started');
   }
 
@@ -561,7 +566,8 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     }
 
-    console.log(`[FinanceHubScheduler] Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
+    this.debugLog(`✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
+    console.log(`[FinanceHubScheduler] ✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
   }
 
   private async scheduleEntity(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, now: Date): Promise<void> {
@@ -579,7 +585,8 @@ export class FinanceHubScheduler extends EventEmitter {
     const msUntilSync = nextSync.getTime() - now.getTime();
     const entityKey = `${entityType}:${entityId}`;
 
-    console.log(`[FinanceHubScheduler] ${entityKey} scheduled for ${nextSync.toLocaleString()}`);
+    this.debugLog(`📅 Scheduling ${entityKey} for ${nextSync.toLocaleString()} (${Math.round(msUntilSync / 1000 / 60)} minutes from now)`);
+    console.log(`[FinanceHubScheduler] ${entityKey} scheduled for ${nextSync.toLocaleString()} (${Math.round(msUntilSync / 1000 / 60)} minutes from now)`);
 
     // Create execution intent for recovery tracking
     try {
@@ -609,10 +616,37 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     // Schedule the entity sync
-    const timer = setTimeout(() => {
-      this.executeEntitySync(entityType, entityId, timeStr);
-      // Reschedule for next day
-      this.scheduleEntity(entityType, entityId, timeStr, new Date());
+    const timer = setTimeout(async () => {
+      try {
+        this.debugLog(`⏰ Timer fired for ${entityKey} at ${new Date().toLocaleString()}`);
+        console.log(`[FinanceHubScheduler] ⏰ Timer fired for ${entityKey} at ${new Date().toLocaleString()}`);
+
+        // Execute the sync (don't await - let it run in background)
+        this.executeEntitySync(entityType, entityId, timeStr);
+
+        // CRITICAL: Reschedule for next day with proper error handling
+        // scheduleEntity is async, so we need to await and catch errors
+        await this.scheduleEntity(entityType, entityId, timeStr, new Date());
+
+        this.debugLog(`✓ Successfully rescheduled ${entityKey} for next day`);
+        console.log(`[FinanceHubScheduler] ✓ Successfully rescheduled ${entityKey} for next day`);
+      } catch (error) {
+        // CRITICAL: Log rescheduling errors to debug file for production visibility
+        this.debugLog(`❌ CRITICAL ERROR: Failed to reschedule ${entityKey} for next day: ${error}`);
+        console.error(`[FinanceHubScheduler] ❌ CRITICAL ERROR: Failed to reschedule ${entityKey} for next day:`, error);
+
+        // Try to reschedule again after a short delay as a fallback
+        setTimeout(async () => {
+          try {
+            await this.scheduleEntity(entityType, entityId, timeStr, new Date());
+            this.debugLog(`✓ Retry: Successfully rescheduled ${entityKey} after initial failure`);
+            console.log(`[FinanceHubScheduler] ✓ Retry: Successfully rescheduled ${entityKey} after initial failure`);
+          } catch (retryError) {
+            this.debugLog(`❌ Retry failed: Could not reschedule ${entityKey}: ${retryError}`);
+            console.error(`[FinanceHubScheduler] ❌ Retry failed: Could not reschedule ${entityKey}:`, retryError);
+          }
+        }, 5000); // Retry after 5 seconds
+      }
     }, msUntilSync);
 
     // Store the timer

@@ -153,11 +153,36 @@ export class DevServerManager {
       }
 
       try {
-        execSync(command, { encoding: 'utf-8', shell: true, stdio: 'ignore' });
+        // Changed: Remove stdio: 'ignore' to capture output for debugging
+        const output = execSync(command, { encoding: 'utf-8', shell: true });
         console.log(`✅ Successfully killed process on port ${port}`);
-      } catch (error) {
-        // It's ok if no process was found on that port
-        console.log(`ℹ️ No process found on port ${port} or already killed`);
+        console.log(`Command output: ${output}`);
+      } catch (error: any) {
+        // Better error handling - distinguish between "no process" and actual errors
+        const errorMessage = error.message || '';
+        const stderr = error.stderr?.toString() || '';
+        const stdout = error.stdout?.toString() || '';
+
+        console.log(`⚠️ Kill port command failed for port ${port}`);
+        console.log(`Error message: ${errorMessage}`);
+        console.log(`Stderr: ${stderr}`);
+        console.log(`Stdout: ${stdout}`);
+
+        // Check if it's just "no process found" (exit code 1 with empty output)
+        // or an actual error (command not found, permission denied, etc.)
+        if (error.code === 1 && !stderr.includes('not found') && !stderr.includes('permission')) {
+          console.log(`ℹ️ No process found on port ${port} (this is ok)`);
+        } else if (stderr.includes('not found') || stderr.includes('command not found')) {
+          console.error(`❌ Command not found. Make sure lsof/netstat is available in PATH`);
+          reject(new Error(`Command not found. The system cannot find the required command to kill processes.`));
+          return;
+        } else if (stderr.includes('permission') || stderr.includes('denied')) {
+          console.error(`❌ Permission denied when trying to kill process on port ${port}`);
+          reject(new Error(`Permission denied. Please run the application with appropriate permissions.`));
+          return;
+        } else {
+          console.error(`❌ Unexpected error killing process: ${errorMessage}`);
+        }
       }
 
       // Give it a moment to fully release the port
@@ -250,7 +275,34 @@ export class DevServerManager {
 
     ipcMain.handle('dev-server:kill-port', async (event, port: number) => {
       try {
+        // Kill the process on the port
         await this.killProcessOnPort(port);
+
+        // Find and clean up any server using this port
+        let cleanedUp = false;
+        for (const [folderPath, serverInfo] of this.servers.entries()) {
+          if (serverInfo.port === port) {
+            console.log(`🧹 Cleaning up server state for ${folderPath} (port ${port})`);
+
+            // Remove from servers map
+            this.servers.delete(folderPath);
+
+            // Unregister from project registry
+            const projectRegistry = getProjectRegistry();
+            const projectName = path.basename(folderPath);
+            projectRegistry.unregister(projectName);
+
+            cleanedUp = true;
+            break;
+          }
+        }
+
+        if (cleanedUp) {
+          console.log(`✅ Port ${port} freed and removed from active servers list`);
+        } else {
+          console.log(`✅ Port ${port} killed (no matching server found in registry)`);
+        }
+
         return { success: true };
       } catch (error: any) {
         console.error('Failed to kill process on port:', error);
