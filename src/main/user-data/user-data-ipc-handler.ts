@@ -1,6 +1,7 @@
-import { ipcMain, dialog, app } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import { randomUUID } from 'crypto';
 import os from 'os';
 import * as XLSX from 'xlsx';
@@ -1134,9 +1135,9 @@ export function registerUserDataIPCHandlers(): void {
   });
 
   /**
-   * Export all tables to a single Excel file
+   * Export all tables to a single Excel file (optimized for large datasets)
    */
-  ipcMain.handle('user-data:export-all-tables', async () => {
+  ipcMain.handle('user-data:export-all-tables', async (event) => {
     try {
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
@@ -1152,37 +1153,113 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      console.log(`📦 Exporting ${tables.length} table(s) to Excel...`);
+      const totalRows = tables.reduce((sum, t) => sum + t.rowCount, 0);
+      console.log(`📦 Exporting ${tables.length} table(s) with ${totalRows} total rows to Excel...`);
+
+      // Show save dialog FIRST
+      const result = await dialog.showSaveDialog({
+        title: 'Export All Tables',
+        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.xlsx`),
+        filters: [
+          {
+            name: 'Excel Files',
+            extensions: ['xlsx'],
+          },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
 
       // Create a new workbook
       const workbook = XLSX.utils.book_new();
+      const BATCH_SIZE = 10000; // Process Excel rows in batches for very large tables
+      let processedRows = 0;
 
       // Export each table as a separate sheet
       for (const table of tables) {
         try {
+          console.log(`   📄 Exporting table "${table.displayName}" (${table.rowCount} rows, ${table.schema.length - 1} columns)`);
+
+          // Send progress update
+          event.sender.send('user-data:export-progress', {
+            currentTable: table.displayName,
+            processedRows,
+            totalRows,
+            tablesCompleted: 0,
+            totalTables: tables.length,
+          });
+
           // Get all data from the table, excluding the auto-generated 'id' column
           const columnsToExport = table.schema
             .filter(col => col.name !== 'id')
-            .map(col => `"${col.name}"`)
-            .join(', ');
+            .map(col => col.name);
 
-          const query = `SELECT ${columnsToExport} FROM "${table.tableName}"`;
-          const stmt = db.prepare(query);
-          const rows = stmt.all();
+          const columnNames = columnsToExport.map(col => `"${col}"`).join(', ');
 
-          console.log(`   📄 Exporting table "${table.displayName}" (${rows.length} rows, ${table.schema.length - 1} columns)`);
-
-          // Convert rows to worksheet format
-          // If there's data, create worksheet from rows
+          // For small to medium tables (< BATCH_SIZE rows), use the simple approach
           let worksheet;
-          if (rows.length > 0) {
-            worksheet = XLSX.utils.json_to_sheet(rows);
+          if (table.rowCount < BATCH_SIZE) {
+            const query = `SELECT ${columnNames} FROM "${table.tableName}"`;
+            const stmt = db.prepare(query);
+            const rows = stmt.all();
+
+            if (rows.length > 0) {
+              worksheet = XLSX.utils.json_to_sheet(rows);
+            } else {
+              // If no data, create empty sheet with headers
+              worksheet = XLSX.utils.aoa_to_sheet([columnsToExport]);
+            }
+
+            processedRows += rows.length;
           } else {
-            // If no data, create empty sheet with headers (excluding 'id')
-            const headers = table.schema
-              .filter(col => col.name !== 'id')
-              .map(col => col.name);
-            worksheet = XLSX.utils.aoa_to_sheet([headers]);
+            // For large tables, process in batches to avoid memory issues
+            console.log(`   ⚡ Large table detected, using batch processing...`);
+
+            // Create worksheet with headers first
+            worksheet = XLSX.utils.aoa_to_sheet([columnsToExport]);
+
+            // Process rows in batches
+            const query = `SELECT ${columnNames} FROM "${table.tableName}"`;
+            const stmt = db.prepare(query);
+            const iterator = stmt.iterate();
+
+            let batch: any[] = [];
+            let batchCount = 0;
+
+            for (const row of iterator) {
+              batch.push(row);
+
+              if (batch.length >= BATCH_SIZE) {
+                // Append batch to worksheet
+                XLSX.utils.sheet_add_json(worksheet, batch, { skipHeader: true, origin: -1 });
+                processedRows += batch.length;
+                batch = [];
+                batchCount++;
+
+                // Send progress update
+                event.sender.send('user-data:export-progress', {
+                  currentTable: table.displayName,
+                  currentTableRows: batchCount * BATCH_SIZE,
+                  processedRows,
+                  totalRows,
+                  tablesCompleted: 0,
+                  totalTables: tables.length,
+                });
+
+                console.log(`     💾 Processed batch ${batchCount} (${batchCount * BATCH_SIZE} rows)`);
+              }
+            }
+
+            // Append remaining rows
+            if (batch.length > 0) {
+              XLSX.utils.sheet_add_json(worksheet, batch, { skipHeader: true, origin: -1 });
+              processedRows += batch.length;
+            }
           }
 
           // Encode both display name and table name in sheet name
@@ -1225,24 +1302,7 @@ export function registerUserDataIPCHandlers(): void {
         }
       }
 
-      // Show save dialog
-      const result = await dialog.showSaveDialog({
-        title: 'Export All Tables',
-        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.xlsx`),
-        filters: [
-          {
-            name: 'Excel Files',
-            extensions: ['xlsx'],
-          },
-        ],
-      });
-
-      if (result.canceled || !result.filePath) {
-        return {
-          success: false,
-          canceled: true,
-        };
-      }
+      console.log(`📝 Writing Excel file to disk...`);
 
       // Generate Excel file buffer
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -1655,9 +1715,11 @@ export function registerUserDataIPCHandlers(): void {
   });
 
   /**
-   * Export all tables as SQL commands
+   * Export all tables as SQL commands (with streaming for large datasets)
    */
-  ipcMain.handle('user-data:export-sql', async () => {
+  ipcMain.handle('user-data:export-sql', async (event) => {
+    let writeStream: fsSync.WriteStream | null = null;
+
     try {
       const manager = getSQLiteManager();
       const userDataManager = manager.getUserDataManager();
@@ -1685,22 +1747,57 @@ export function registerUserDataIPCHandlers(): void {
         };
       }
 
-      console.log(`📦 Exporting ${tables.length} table(s) as SQL...`);
+      const totalRows = tables.reduce((sum, t) => sum + (t.rowCount || 0), 0);
+      console.log(`📦 Exporting ${tables.length} table(s) with ${totalRows} total rows as SQL...`);
 
-      let sqlContent = `-- User Database SQL Export
+      // Show save dialog FIRST (before processing)
+      const result = await dialog.showSaveDialog({
+        title: 'Export as SQL',
+        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.sql`),
+        filters: [
+          {
+            name: 'SQL Files',
+            extensions: ['sql'],
+          },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return {
+          success: false,
+          canceled: true,
+        };
+      }
+
+      // Create write stream for efficient file writing
+      writeStream = fsSync.createWriteStream(result.filePath, { encoding: 'utf-8' });
+
+      // Helper function to write to stream
+      const writeToFile = (content: string) => {
+        return new Promise<void>((resolve, reject) => {
+          if (!writeStream!.write(content)) {
+            writeStream!.once('drain', resolve);
+          } else {
+            process.nextTick(resolve);
+          }
+        });
+      };
+
+      // Write header
+      await writeToFile(`-- User Database SQL Export
 -- Generated: ${new Date().toISOString()}
 -- Tables: ${tables.length}
--- Total Rows: ${tables.reduce((sum, t) => sum + (t.rowCount || 0), 0)}
+-- Total Rows: ${totalRows}
 
 -- IMPORTANT: This export includes metadata for table display names and settings.
 -- Import this file to restore tables with their original names and configurations.
 
-`;
+`);
 
-      // First, export all table metadata as INSERT statements
-      sqlContent += `\n-- ============================================\n`;
-      sqlContent += `-- TABLE METADATA\n`;
-      sqlContent += `-- ============================================\n\n`;
+      // Export table metadata
+      await writeToFile(`\n-- ============================================\n`);
+      await writeToFile(`-- TABLE METADATA\n`);
+      await writeToFile(`-- ============================================\n\n`);
 
       for (const table of tables) {
         const uniqueKeyColumns = table.uniqueKeyColumns
@@ -1719,15 +1816,15 @@ export function registerUserDataIPCHandlers(): void {
         const rowCount = table.rowCount !== undefined && table.rowCount !== null ? table.rowCount : 0;
         const columnCount = table.columnCount !== undefined && table.columnCount !== null ? table.columnCount : 0;
 
-        sqlContent += `INSERT INTO user_tables (id, table_name, display_name, description, created_from_file, row_count, column_count, created_at, updated_at, schema_json, unique_key_columns, duplicate_action, has_imported_at_column) VALUES ('${table.id}', '${table.tableName}', '${table.displayName.replace(/'/g, "''")}', ${description}, ${createdFromFile}, ${rowCount}, ${columnCount}, '${table.createdAt}', '${table.updatedAt}', ${schemaJson}, ${uniqueKeyColumns}, '${table.duplicateAction || 'skip'}', ${table.hasImportedAtColumn ? 1 : 0});\n`;
+        await writeToFile(`INSERT INTO user_tables (id, table_name, display_name, description, created_from_file, row_count, column_count, created_at, updated_at, schema_json, unique_key_columns, duplicate_action, has_imported_at_column) VALUES ('${table.id}', '${table.tableName}', '${table.displayName.replace(/'/g, "''")}', ${description}, ${createdFromFile}, ${rowCount}, ${columnCount}, '${table.createdAt}', '${table.updatedAt}', ${schemaJson}, ${uniqueKeyColumns}, '${table.duplicateAction || 'skip'}', ${table.hasImportedAtColumn ? 1 : 0});\n`);
       }
 
-      sqlContent += `\n`;
+      await writeToFile(`\n`);
 
       // Export sync configurations
-      sqlContent += `\n-- ============================================\n`;
-      sqlContent += `-- SYNC CONFIGURATIONS\n`;
-      sqlContent += `-- ============================================\n\n`;
+      await writeToFile(`\n-- ============================================\n`);
+      await writeToFile(`-- SYNC CONFIGURATIONS\n`);
+      await writeToFile(`-- ============================================\n\n`);
 
       const syncConfigManager = manager.getSyncConfigManager();
       const allSyncConfigs = syncConfigManager.getAllConfigurations();
@@ -1750,26 +1847,38 @@ export function registerUserDataIPCHandlers(): void {
           // Convert absolute path to portable path with ~ for cross-platform compatibility
           const portablePath = makePathPortable(config.scriptFolderPath);
 
-          sqlContent += `INSERT INTO sync_configurations (id, script_folder_path, script_name, folder_name, target_table_id, header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits, file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action, last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates, last_sync_error, created_at, updated_at) VALUES ('${config.id}', '${portablePath.replace(/'/g, "''")}', '${config.scriptName.replace(/'/g, "''")}', '${config.folderName.replace(/'/g, "''")}', '${config.targetTableId}', ${config.headerRow}, ${config.skipBottomRows}, ${config.sheetIndex}, ${columnMappings}, ${appliedSplits}, '${config.fileAction}', ${config.enabled ? 1 : 0}, ${config.autoSyncEnabled ? 1 : 0}, ${uniqueKeyColumns}, '${config.duplicateAction || 'skip'}', ${lastSyncAt}, ${lastSyncStatus}, ${config.lastSyncRowsImported}, ${config.lastSyncRowsSkipped}, ${config.lastSyncDuplicates}, ${lastSyncError}, '${config.createdAt}', '${config.updatedAt}');\n`;
+          await writeToFile(`INSERT INTO sync_configurations (id, script_folder_path, script_name, folder_name, target_table_id, header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits, file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action, last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped, last_sync_duplicates, last_sync_error, created_at, updated_at) VALUES ('${config.id}', '${portablePath.replace(/'/g, "''")}', '${config.scriptName.replace(/'/g, "''")}', '${config.folderName.replace(/'/g, "''")}', '${config.targetTableId}', ${config.headerRow}, ${config.skipBottomRows}, ${config.sheetIndex}, ${columnMappings}, ${appliedSplits}, '${config.fileAction}', ${config.enabled ? 1 : 0}, ${config.autoSyncEnabled ? 1 : 0}, ${uniqueKeyColumns}, '${config.duplicateAction || 'skip'}', ${lastSyncAt}, ${lastSyncStatus}, ${config.lastSyncRowsImported}, ${config.lastSyncRowsSkipped}, ${config.lastSyncDuplicates}, ${lastSyncError}, '${config.createdAt}', '${config.updatedAt}');\n`);
         }
 
-        sqlContent += `\n`;
+        await writeToFile(`\n`);
         console.log(`   ✅ Exported ${allSyncConfigs.length} sync configuration(s)`);
       } else {
-        sqlContent += `-- No sync configurations to export\n\n`;
+        await writeToFile(`-- No sync configurations to export\n\n`);
       }
 
-      // Export each table
+      // Export each table with streaming
+      const BATCH_SIZE = 1000; // Process rows in batches
+      let processedRows = 0;
+
       for (const table of tables) {
         try {
           console.log(`   📄 Exporting table "${table.displayName}" (${table.rowCount} rows)`);
 
+          // Send progress update
+          event.sender.send('user-data:export-progress', {
+            currentTable: table.displayName,
+            processedRows,
+            totalRows,
+            tablesCompleted: 0,
+            totalTables: tables.length,
+          });
+
           // Add comment header for this table
-          sqlContent += `\n-- ============================================\n`;
-          sqlContent += `-- Table: ${table.displayName}\n`;
-          sqlContent += `-- SQL Name: ${table.tableName}\n`;
-          sqlContent += `-- Rows: ${table.rowCount}\n`;
-          sqlContent += `-- ============================================\n\n`;
+          await writeToFile(`\n-- ============================================\n`);
+          await writeToFile(`-- Table: ${table.displayName}\n`);
+          await writeToFile(`-- SQL Name: ${table.tableName}\n`);
+          await writeToFile(`-- Rows: ${table.rowCount}\n`);
+          await writeToFile(`-- ============================================\n\n`);
 
           // Generate CREATE TABLE statement (excluding auto-generated id column)
           const columnsForCreate = table.schema
@@ -1790,12 +1899,12 @@ export function registerUserDataIPCHandlers(): void {
               return colDef;
             });
 
-          sqlContent += `CREATE TABLE "${table.tableName}" (\n`;
-          sqlContent += `  id INTEGER PRIMARY KEY AUTOINCREMENT,\n`;
-          sqlContent += columnsForCreate.join(',\n');
-          sqlContent += `\n);\n\n`;
+          await writeToFile(`CREATE TABLE "${table.tableName}" (\n`);
+          await writeToFile(`  id INTEGER PRIMARY KEY AUTOINCREMENT,\n`);
+          await writeToFile(columnsForCreate.join(',\n'));
+          await writeToFile(`\n);\n\n`);
 
-          // Generate INSERT statements (excluding id column)
+          // Generate INSERT statements (excluding id column) using streaming
           if (table.rowCount > 0) {
             const columnsToExport = table.schema
               .filter(col => col.name !== 'id')
@@ -1805,9 +1914,13 @@ export function registerUserDataIPCHandlers(): void {
 
             const query = `SELECT ${columnsToExport.map(col => `"${col}"`).join(', ')} FROM "${table.tableName}"`;
             const stmt = db.prepare(query);
-            const rows = stmt.all();
 
-            for (const row of rows) {
+            // Use iterate() instead of all() to stream rows
+            const iterator = stmt.iterate();
+            let batch: string[] = [];
+            let rowCount = 0;
+
+            for (const row of iterator) {
               const values = columnsToExport.map(col => {
                 const value = row[col];
                 if (value === null || value === undefined) {
@@ -1820,57 +1933,65 @@ export function registerUserDataIPCHandlers(): void {
                 }
               });
 
-              sqlContent += `INSERT INTO "${table.tableName}" (${columnList}) VALUES (${values.join(', ')});\n`;
+              batch.push(`INSERT INTO "${table.tableName}" (${columnList}) VALUES (${values.join(', ')});\n`);
+              rowCount++;
+
+              // Write batch when it reaches BATCH_SIZE
+              if (batch.length >= BATCH_SIZE) {
+                await writeToFile(batch.join(''));
+                batch = [];
+                processedRows += BATCH_SIZE;
+
+                // Send progress update
+                event.sender.send('user-data:export-progress', {
+                  currentTable: table.displayName,
+                  currentTableRows: rowCount,
+                  processedRows,
+                  totalRows,
+                  tablesCompleted: 0,
+                  totalTables: tables.length,
+                });
+              }
             }
 
-            sqlContent += `\n`;
+            // Write remaining rows
+            if (batch.length > 0) {
+              await writeToFile(batch.join(''));
+              processedRows += batch.length;
+            }
+
+            await writeToFile(`\n`);
           }
 
           // Store metadata as SQL comments
-          sqlContent += `-- Table Metadata:\n`;
-          sqlContent += `-- Display Name: ${table.displayName}\n`;
+          await writeToFile(`-- Table Metadata:\n`);
+          await writeToFile(`-- Display Name: ${table.displayName}\n`);
           if (table.description) {
-            sqlContent += `-- Description: ${table.description}\n`;
+            await writeToFile(`-- Description: ${table.description}\n`);
           }
           if (table.createdFromFile) {
-            sqlContent += `-- Created From: ${table.createdFromFile}\n`;
+            await writeToFile(`-- Created From: ${table.createdFromFile}\n`);
           }
           if (table.uniqueKeyColumns) {
-            sqlContent += `-- Unique Key Columns: ${JSON.parse(table.uniqueKeyColumns).join(', ')}\n`;
+            await writeToFile(`-- Unique Key Columns: ${JSON.parse(table.uniqueKeyColumns).join(', ')}\n`);
           }
           if (table.duplicateAction) {
-            sqlContent += `-- Duplicate Action: ${table.duplicateAction}\n`;
+            await writeToFile(`-- Duplicate Action: ${table.duplicateAction}\n`);
           }
-          sqlContent += `\n`;
+          await writeToFile(`\n`);
 
           console.log(`   ✅ Exported "${table.displayName}"`);
         } catch (tableError) {
           console.error(`Error exporting table "${table.displayName}":`, tableError);
-          sqlContent += `-- ERROR exporting table "${table.displayName}": ${tableError instanceof Error ? tableError.message : 'Unknown error'}\n\n`;
+          await writeToFile(`-- ERROR exporting table "${table.displayName}": ${tableError instanceof Error ? tableError.message : 'Unknown error'}\n\n`);
         }
       }
 
-      // Show save dialog
-      const result = await dialog.showSaveDialog({
-        title: 'Export as SQL',
-        defaultPath: path.join(app.getPath('downloads'), `user_database_export_${new Date().toISOString().split('T')[0]}.sql`),
-        filters: [
-          {
-            name: 'SQL Files',
-            extensions: ['sql'],
-          },
-        ],
+      // Close the write stream
+      await new Promise<void>((resolve, reject) => {
+        writeStream!.end(() => resolve());
+        writeStream!.on('error', reject);
       });
-
-      if (result.canceled || !result.filePath) {
-        return {
-          success: false,
-          canceled: true,
-        };
-      }
-
-      // Write SQL content to file
-      await fs.writeFile(result.filePath, sqlContent, 'utf-8');
 
       console.log(`✅ Successfully exported ${tables.length} table(s) and ${allSyncConfigs.length} sync config(s) as SQL to: ${result.filePath}`);
 
@@ -1884,6 +2005,11 @@ export function registerUserDataIPCHandlers(): void {
         },
       };
     } catch (error) {
+      // Clean up write stream on error
+      if (writeStream) {
+        writeStream.destroy();
+      }
+
       console.error('Error exporting as SQL:', error);
       return {
         success: false,
