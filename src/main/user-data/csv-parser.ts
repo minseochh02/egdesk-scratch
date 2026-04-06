@@ -256,11 +256,24 @@ export async function parseCSVFile(
 
         // Try to parse as number (handle commas)
         const withoutCommas = trimmedValue.replace(/,/g, '');
-        const num = parseFloat(withoutCommas);
 
-        if (!isNaN(num) && /^-?[\d,]+(\.\d+)?$/.test(trimmedValue)) {
-          // It's a valid number
-          rowData[header] = num;
+        // Check if it's a number with or without decimal point
+        if (/^-?[\d,]+$/.test(trimmedValue)) {
+          // Integer - no decimal point
+          const num = parseInt(withoutCommas, 10);
+          if (!isNaN(num)) {
+            rowData[header] = num;
+          } else {
+            rowData[header] = trimmedValue;
+          }
+        } else if (/^-?[\d,]+\.\d+$/.test(trimmedValue)) {
+          // Float - has decimal point
+          const num = parseFloat(withoutCommas);
+          if (!isNaN(num)) {
+            rowData[header] = num;
+          } else {
+            rowData[header] = trimmedValue;
+          }
         } else {
           // Keep as string
           rowData[header] = trimmedValue;
