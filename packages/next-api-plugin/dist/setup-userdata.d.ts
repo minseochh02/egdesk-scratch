@@ -9,7 +9,8 @@ export interface UserDataTable {
     tableName: string;
     displayName: string;
     description?: string;
-    rowCount: number;
+    /** May be unknown until the table is synced or counted */
+    rowCount?: number;
     columnCount: number;
     columns: string[];
 }

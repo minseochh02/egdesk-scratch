@@ -3,6 +3,7 @@ import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as chokidar from 'chokidar';
 import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
 
@@ -39,9 +40,18 @@ interface ProjectInfo {
 interface ServerInfo {
   port: number;
   url: string;
-  status: 'starting' | 'running' | 'error' | 'stopped';
+  status: 'starting' | 'running' | 'error' | 'stopped' | 'rebuilding';
   process: ChildProcess | null;
   projectPath: string;
+  watcher?: chokidar.FSWatcher;
+  rebuildTimer?: NodeJS.Timeout;
+  projectType?: 'nextjs' | 'vite' | 'react' | 'unknown';
+  packageManager?: 'npm' | 'yarn' | 'pnpm';
+  mode: 'dev' | 'production';
+  supportsHotReload: boolean;
+  lastModeChange?: string;
+  terminalLogs: string[];
+  maxLogLines: number;
 }
 
 export class DevServerManager {
@@ -53,6 +63,21 @@ export class DevServerManager {
   constructor() {
     this.setupIpcHandlers();
     this.initializeRuntime();
+  }
+
+  /**
+   * Determine default mode based on tunnel and stored preference
+   */
+  private determineDefaultMode(folderPath: string): 'dev' | 'production' {
+    const store = getStore();
+    const projectName = path.basename(folderPath);
+    const modeConfigs = store.get('projectModeConfigs') as any || {};
+
+    if (modeConfigs[projectName]?.preferredMode) {
+      return modeConfigs[projectName].preferredMode;
+    }
+
+    return this.tunnelId ? 'production' : 'dev';
   }
 
   /**
@@ -219,11 +244,15 @@ export class DevServerManager {
       }
     });
 
-    ipcMain.handle('dev-server:start', async (event, folderPath: string) => {
+    ipcMain.handle('dev-server:start', async (
+      event,
+      folderPath: string,
+      mode?: 'dev' | 'production'
+    ) => {
       try {
-        const serverInfo = await this.startServer(folderPath);
-        // Remove process object before sending through IPC (not serializable)
-        const { process, ...serializableInfo } = serverInfo;
+        const serverInfo = await this.startServer(folderPath, mode);
+        // Remove non-serializable objects before sending through IPC
+        const { process, watcher, rebuildTimer, ...serializableInfo } = serverInfo;
         return { success: true, serverInfo: serializableInfo };
       } catch (error: any) {
         console.error('Failed to start dev server:', error);
@@ -241,12 +270,48 @@ export class DevServerManager {
       }
     });
 
+    ipcMain.handle('dev-server:switch-mode', async (
+      event,
+      folderPath: string,
+      newMode: 'dev' | 'production'
+    ) => {
+      try {
+        // Stop current server
+        await this.stopServer(folderPath);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Start with new mode
+        const serverInfo = await this.startServer(folderPath, newMode);
+
+        // Store mode preference
+        const store = getStore();
+        const projectName = path.basename(folderPath);
+        const modeConfigs = store.get('projectModeConfigs') as any || {};
+
+        modeConfigs[projectName] = {
+          preferredMode: newMode,
+          lastUsedMode: newMode,
+          lastChanged: new Date().toISOString()
+        };
+
+        store.set('projectModeConfigs', modeConfigs);
+
+        // Remove non-serializable objects before sending through IPC
+        const { process, watcher, rebuildTimer, ...serializableInfo } = serverInfo;
+        return { success: true, serverInfo: serializableInfo };
+
+      } catch (error: any) {
+        console.error('Failed to switch mode:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle('dev-server:get-status', async (event, folderPath: string) => {
       try {
         const serverInfo = this.servers.get(folderPath);
         if (serverInfo) {
-          // Remove process object before sending through IPC (not serializable)
-          const { process, ...serializableInfo } = serverInfo;
+          // Remove non-serializable objects before sending through IPC
+          const { process, watcher, rebuildTimer, ...serializableInfo } = serverInfo;
           return { success: true, serverInfo: serializableInfo };
         }
         return { success: true, serverInfo: null };
@@ -256,11 +321,39 @@ export class DevServerManager {
       }
     });
 
+    ipcMain.handle('dev-server:get-logs', async (event, folderPath: string) => {
+      try {
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          return { success: true, logs: serverInfo.terminalLogs };
+        }
+        return { success: true, logs: [] };
+      } catch (error: any) {
+        console.error('Failed to get terminal logs:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('dev-server:clear-logs', async (event, folderPath: string) => {
+      try {
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          serverInfo.terminalLogs = [];
+          this.servers.set(folderPath, serverInfo);
+          return { success: true };
+        }
+        return { success: false, error: 'Server not found' };
+      } catch (error: any) {
+        console.error('Failed to clear terminal logs:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle('dev-server:get-all', async () => {
       try {
         const allServers = Array.from(this.servers.entries()).map(([path, info]) => {
-          // Remove process object before sending through IPC (not serializable)
-          const { process, ...serializableInfo } = info;
+          // Remove non-serializable objects before sending through IPC
+          const { process, watcher, rebuildTimer, ...serializableInfo } = info;
           return {
             projectPath: path,
             ...serializableInfo
@@ -533,14 +626,36 @@ export class DevServerManager {
 
       installProcess.stdout?.on('data', (data) => {
         stdoutOutput += data.toString();
-        console.log(`Install: ${data}`);
+        const output = data.toString();
+        console.log(`Install: ${output}`);
+
+        // Capture install logs
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          output.split('\n').forEach(line => {
+            if (line.trim()) {
+              this.addLogLine(folderPath, `[INSTALL] ${line.trim()}`, 'stdout');
+            }
+          });
+        }
       });
 
       installProcess.stderr?.on('data', (data) => {
         errorOutput += data.toString();
+        const output = data.toString();
         // Don't log warnings as errors
-        if (!data.toString().includes('WARN')) {
-          console.error(`Install error: ${data}`);
+        if (!output.includes('WARN')) {
+          console.error(`Install error: ${output}`);
+        }
+
+        // Capture install error logs
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          output.split('\n').forEach(line => {
+            if (line.trim()) {
+              this.addLogLine(folderPath, `[INSTALL] ${line.trim()}`, 'stderr');
+            }
+          });
         }
       });
 
@@ -561,6 +676,488 @@ export class DevServerManager {
         reject(error);
       });
     });
+  }
+
+  /**
+   * Clean environment - remove problematic variables
+   */
+  private cleanEnv(): NodeJS.ProcessEnv {
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.NODE_OPTIONS;
+    delete cleanEnv.TS_NODE_PROJECT;
+    delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+    return cleanEnv;
+  }
+
+  /**
+   * Add log line to terminal logs with size limit
+   */
+  private addLogLine(folderPath: string, line: string, type: 'stdout' | 'stderr' = 'stdout'): void {
+    const serverInfo = this.servers.get(folderPath);
+    if (!serverInfo) return;
+
+    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const prefix = type === 'stderr' ? '[ERROR]' : '[INFO]';
+    const formattedLine = `[${timestamp}] ${prefix} ${line}`;
+
+    serverInfo.terminalLogs.push(formattedLine);
+
+    // Keep only the last maxLogLines
+    if (serverInfo.terminalLogs.length > serverInfo.maxLogLines) {
+      serverInfo.terminalLogs.shift();
+    }
+
+    this.servers.set(folderPath, serverInfo);
+  }
+
+  /**
+   * Start server in dev mode (no build step)
+   */
+  private async startDevModeServer(
+    folderPath: string,
+    projectType: ProjectInfo['type'],
+    packageManager: string,
+    port: number,
+    basePath?: string
+  ): Promise<ChildProcess> {
+    const packageManagerCommand = process.platform === 'win32'
+      ? `${packageManager}.cmd` : packageManager;
+
+    let command: string;
+    let args: string[];
+
+    switch (projectType) {
+      case 'nextjs':
+        command = packageManagerCommand;
+        args = ['run', 'dev', '--', '-p', port.toString()];
+        break;
+      case 'vite':
+        command = packageManagerCommand;
+        args = ['run', 'dev', '--', '--port', port.toString()];
+        if (basePath) args.push('--base', basePath);
+        break;
+      case 'react':
+        command = packageManagerCommand;
+        args = ['start'];
+        break;
+      default:
+        command = packageManagerCommand;
+        args = ['run', 'dev'];
+    }
+
+    const serverEnv = {
+      ...this.cleanEnv(),
+      PORT: port.toString(),
+      NODE_ENV: 'development'
+    };
+
+    if (projectType === 'nextjs' && basePath) {
+      serverEnv.EGDESK_BASE_PATH = basePath;
+      serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
+    }
+
+    console.log(`🚀 Starting DEV mode: ${command} ${args.join(' ')}`);
+
+    return spawn(command, args, {
+      cwd: folderPath,
+      shell: true,
+      env: serverEnv
+    });
+  }
+
+  /**
+   * Start production server (after build)
+   */
+  private async startProductionServer(
+    folderPath: string,
+    projectType: ProjectInfo['type'],
+    packageManager: string,
+    port: number,
+    basePath?: string
+  ): Promise<ChildProcess> {
+    const packageManagerCommand = process.platform === 'win32'
+      ? `${packageManager}.cmd`
+      : packageManager;
+
+    let command: string;
+    let args: string[];
+
+    switch (projectType) {
+      case 'nextjs':
+        command = packageManagerCommand;
+        args = ['run', 'start', '--', '-p', port.toString()];
+        break;
+      case 'vite':
+        command = packageManagerCommand;
+        args = ['run', 'preview', '--', '--port', port.toString()];
+        if (basePath) {
+          args.push('--base', basePath);
+        }
+        break;
+      case 'react':
+        command = 'npx';
+        args = ['serve', '-s', 'build', '-l', port.toString()];
+        break;
+      default:
+        command = packageManagerCommand;
+        args = ['run', 'start'];
+    }
+
+    const serverEnv = {
+      ...this.cleanEnv(),
+      PORT: port.toString(),
+      NODE_ENV: 'production'
+    };
+
+    if (projectType === 'nextjs' && basePath) {
+      serverEnv.EGDESK_BASE_PATH = basePath;
+      serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
+    }
+
+    console.log(`🚀 Starting PRODUCTION mode: ${command} ${args.join(' ')}`);
+
+    return spawn(command, args, {
+      cwd: folderPath,
+      shell: true,
+      env: serverEnv
+    });
+  }
+
+  /**
+   * Build the project for production
+   */
+  private async buildProject(folderPath: string, packageManager: string, projectType: ProjectInfo['type'], basePath?: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`🏗️ Building ${projectType} project in ${folderPath}...`);
+
+      // Clean environment
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
+      delete cleanEnv.TS_NODE_PROJECT;
+      delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+
+      // Set production environment
+      cleanEnv.NODE_ENV = 'production';
+
+      // For Next.js, set basePath during build
+      if (projectType === 'nextjs' && basePath) {
+        cleanEnv.EGDESK_BASE_PATH = basePath;
+        cleanEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
+        console.log(`🔧 Building Next.js with basePath: ${basePath}`);
+      }
+
+      // Use system package manager (on Windows, use .cmd explicitly)
+      const command = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
+      const buildProcess = spawn(command, ['run', 'build'], { cwd: folderPath, shell: true, env: cleanEnv });
+
+      let stdoutOutput = '';
+      let errorOutput = '';
+
+      buildProcess.stdout?.on('data', (data) => {
+        stdoutOutput += data.toString();
+        const output = data.toString();
+        console.log(`Build: ${output}`);
+
+        // Capture build logs
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          output.split('\n').forEach(line => {
+            if (line.trim()) {
+              this.addLogLine(folderPath, `[BUILD] ${line.trim()}`, 'stdout');
+            }
+          });
+        }
+      });
+
+      buildProcess.stderr?.on('data', (data) => {
+        errorOutput += data.toString();
+        const output = data.toString();
+        // Don't log warnings as errors
+        if (!output.includes('WARN')) {
+          console.error(`Build error: ${output}`);
+        }
+
+        // Capture build error logs
+        const serverInfo = this.servers.get(folderPath);
+        if (serverInfo) {
+          output.split('\n').forEach(line => {
+            if (line.trim()) {
+              this.addLogLine(folderPath, `[BUILD] ${line.trim()}`, 'stderr');
+            }
+          });
+        }
+      });
+
+      buildProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ Build completed successfully');
+          resolve();
+        } else {
+          const errorMsg = `Build failed with code ${code}\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+        }
+      });
+
+      buildProcess.on('error', (error) => {
+        console.error('Build process error:', error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Setup file watcher for auto-rebuild on file changes
+   * Debounces for 60 seconds (1 minute) after last change
+   */
+  private setupFileWatcher(folderPath: string): void {
+    const serverInfo = this.servers.get(folderPath);
+    if (!serverInfo) return;
+
+    console.log(`👀 Setting up file watcher for ${folderPath}...`);
+
+    // Patterns to watch (source files only)
+    const watchPatterns = [
+      path.join(folderPath, 'src/**/*'),
+      path.join(folderPath, 'app/**/*'),
+      path.join(folderPath, 'pages/**/*'),
+      path.join(folderPath, 'components/**/*'),
+      path.join(folderPath, 'lib/**/*'),
+      path.join(folderPath, 'public/**/*'),
+      path.join(folderPath, '*.{js,ts,jsx,tsx,json}'),
+    ];
+
+    // Patterns to ignore
+    const ignorePatterns = [
+      '**/node_modules/**',
+      '**/.git/**',
+      '**/.next/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/out/**',
+      '**/.cache/**',
+      '**/*.log',
+      '**/.DS_Store',
+      '**/package-lock.json',
+      '**/yarn.lock',
+      '**/pnpm-lock.yaml',
+    ];
+
+    const watcher = chokidar.watch(watchPatterns, {
+      ignored: ignorePatterns,
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    watcher.on('change', (filePath) => {
+      console.log(`📝 File changed: ${path.relative(folderPath, filePath)}`);
+      this.scheduleRebuild(folderPath);
+    });
+
+    watcher.on('add', (filePath) => {
+      console.log(`➕ File added: ${path.relative(folderPath, filePath)}`);
+      this.scheduleRebuild(folderPath);
+    });
+
+    watcher.on('unlink', (filePath) => {
+      console.log(`➖ File removed: ${path.relative(folderPath, filePath)}`);
+      this.scheduleRebuild(folderPath);
+    });
+
+    watcher.on('error', (error) => {
+      console.error('File watcher error:', error);
+    });
+
+    serverInfo.watcher = watcher;
+    this.servers.set(folderPath, serverInfo);
+
+    console.log('✅ File watcher active (60s debounce after changes)');
+  }
+
+  /**
+   * Schedule a rebuild after debounce period (60 seconds)
+   */
+  private scheduleRebuild(folderPath: string): void {
+    const serverInfo = this.servers.get(folderPath);
+    if (!serverInfo) return;
+
+    // Clear existing timer
+    if (serverInfo.rebuildTimer) {
+      clearTimeout(serverInfo.rebuildTimer);
+      console.log('⏱️ Reset rebuild timer');
+    }
+
+    // Set new timer for 60 seconds
+    serverInfo.rebuildTimer = setTimeout(async () => {
+      console.log('🔄 Debounce period complete, starting rebuild...');
+      await this.rebuildAndRestart(folderPath);
+    }, 60000); // 60 seconds
+
+    this.servers.set(folderPath, serverInfo);
+    console.log('⏱️ Scheduled rebuild in 60 seconds (will reset if more changes occur)');
+  }
+
+  /**
+   * Rebuild and restart the server
+   */
+  private async rebuildAndRestart(folderPath: string): Promise<void> {
+    const serverInfo = this.servers.get(folderPath);
+    if (!serverInfo) return;
+
+    try {
+      // Update status
+      serverInfo.status = 'rebuilding';
+      this.servers.set(folderPath, serverInfo);
+
+      const projectRegistry = getProjectRegistry();
+      const projectName = path.basename(folderPath);
+      projectRegistry.updateStatus(projectName, 'rebuilding' as any);
+
+      console.log('🛑 Stopping current server...');
+
+      // Stop the current process
+      if (serverInfo.process) {
+        serverInfo.process.kill('SIGTERM');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Calculate basePath
+      const basePath = this.tunnelId ? `/t/${this.tunnelId}/p/${projectName}` : undefined;
+
+      console.log('🏗️ Starting rebuild...');
+
+      // Rebuild
+      await this.buildProject(
+        folderPath,
+        serverInfo.packageManager || 'npm',
+        serverInfo.projectType || 'unknown',
+        basePath
+      );
+
+      console.log('🚀 Restarting server...');
+
+      // Restart server with same port
+      const port = serverInfo.port;
+      const packageManagerCommand = process.platform === 'win32'
+        ? `${serverInfo.packageManager || 'npm'}.cmd`
+        : serverInfo.packageManager || 'npm';
+
+      let command: string;
+      let args: string[];
+
+      switch (serverInfo.projectType) {
+        case 'nextjs':
+          command = packageManagerCommand;
+          args = ['run', 'start', '--', '-p', port.toString()];
+          break;
+        case 'vite':
+          command = packageManagerCommand;
+          args = ['run', 'preview', '--', '--port', port.toString()];
+          if (basePath) {
+            args.push('--base', basePath);
+          }
+          break;
+        case 'react':
+          command = 'npx';
+          args = ['serve', '-s', 'build', '-l', port.toString()];
+          break;
+        default:
+          command = packageManagerCommand;
+          args = ['run', 'start'];
+      }
+
+      // Setup environment
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
+      delete cleanEnv.TS_NODE_PROJECT;
+      delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+
+      const serverEnv = {
+        ...cleanEnv,
+        PORT: port.toString(),
+        NODE_ENV: 'production'
+      };
+
+      if (serverInfo.projectType === 'nextjs' && basePath) {
+        serverEnv.EGDESK_BASE_PATH = basePath;
+        serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
+      }
+
+      // Start new process
+      const serverProcess = spawn(command, args, {
+        cwd: folderPath,
+        shell: true,
+        env: serverEnv
+      });
+
+      serverInfo.process = serverProcess;
+      serverInfo.status = 'starting';
+      this.servers.set(folderPath, serverInfo);
+
+      // Setup output handlers with log capturing
+      serverProcess.stdout?.on('data', (data) => {
+        const output = data.toString();
+        console.log(`[Production Server ${port}]:`, output);
+
+        // Capture logs
+        output.split('\n').forEach(line => {
+          if (line.trim()) {
+            this.addLogLine(folderPath, line.trim(), 'stdout');
+          }
+        });
+
+        if (output.includes('ready') ||
+            output.includes('started') ||
+            output.includes('Local:') ||
+            output.includes('Accepting connections') ||
+            output.includes('started server')) {
+          serverInfo.status = 'running';
+          this.servers.set(folderPath, serverInfo);
+          projectRegistry.updateStatus(projectName, 'running');
+          console.log('✅ Server restarted successfully');
+        }
+      });
+
+      serverProcess.stderr?.on('data', (data) => {
+        const errorOutput = data.toString();
+        console.error(`[Production Server ${port} Error]:`, errorOutput);
+
+        // Capture error logs
+        errorOutput.split('\n').forEach(line => {
+          if (line.trim()) {
+            this.addLogLine(folderPath, line.trim(), 'stderr');
+          }
+        });
+      });
+
+      serverProcess.on('error', (error) => {
+        console.error('Failed to restart server:', error);
+        serverInfo.status = 'error';
+        this.servers.set(folderPath, serverInfo);
+        projectRegistry.updateStatus(projectName, 'error');
+      });
+
+      serverProcess.on('close', (code) => {
+        console.log(`Production server process exited with code ${code}`);
+        serverInfo.status = 'stopped';
+        serverInfo.process = null;
+        this.servers.set(folderPath, serverInfo);
+        projectRegistry.updateStatus(projectName, 'stopped');
+      });
+
+    } catch (error) {
+      console.error('Rebuild and restart failed:', error);
+      serverInfo.status = 'error';
+      this.servers.set(folderPath, serverInfo);
+
+      const projectRegistry = getProjectRegistry();
+      const projectName = path.basename(folderPath);
+      projectRegistry.updateStatus(projectName, 'error');
+    }
   }
 
   /**
@@ -1125,44 +1722,68 @@ EGDesk automatically configures this - try restarting the dev server.
       configPath = path.join(folderPath, 'next.config.js');
       const newConfig = `/** @type {import('next').NextConfig} */
 console.log('🔍 DEBUG next.config.js: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);
+console.log('🔍 DEBUG next.config.js: NODE_ENV =', process.env.NODE_ENV);
+
+// Only use basePath in production mode, not in dev mode (npm run dev)
+const isDevelopment = process.env.NODE_ENV === 'development';
+const basePath = isDevelopment ? '' : (process.env.EGDESK_BASE_PATH || '');
 
 const nextConfig = {
-  basePath: process.env.EGDESK_BASE_PATH || '',
-  assetPrefix: process.env.EGDESK_BASE_PATH || '',
+  basePath: basePath,
+  assetPrefix: basePath,
+  // Always skip TypeScript and ESLint errors to prevent blocking on auto-generated files
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
+console.log('🔍 DEBUG next.config.js: isDevelopment =', isDevelopment);
 console.log('🔍 DEBUG next.config.js: basePath =', nextConfig.basePath);
 console.log('🔍 DEBUG next.config.js: assetPrefix =', nextConfig.assetPrefix);
 
 export default nextConfig;
 `;
       await fs.promises.writeFile(configPath, this.normalizeLineEndings(newConfig), 'utf8');
-      console.log(`✅ Created next.config.js with dynamic basePath`);
+      console.log(`✅ Created next.config.js with dynamic basePath (disabled in dev mode)`);
       return;
     }
 
     // Modify existing config to read from environment variable
     let content = await fs.promises.readFile(configPath, 'utf8');
 
-    // Check if already configured
-    if (content.includes('EGDESK_BASE_PATH')) {
-      console.log('✓ next.config.js already configured for dynamic basePath');
+    // Check if already configured for basePath with NODE_ENV check
+    const hasBasePath = content.includes('EGDESK_BASE_PATH') && content.includes("NODE_ENV === 'development'");
+
+    // Check if config already has typescript/eslint settings
+    const hasTypeScriptConfig = content.includes('typescript:') || content.includes('typescript :');
+    const hasEslintConfig = content.includes('eslint:') || content.includes('eslint :');
+    const hasIgnoreBuildErrors = content.includes('ignoreBuildErrors');
+    const hasIgnoreDuringBuilds = content.includes('ignoreDuringBuilds');
+
+    // If everything is already configured, skip
+    if (hasBasePath && hasIgnoreBuildErrors && hasIgnoreDuringBuilds) {
+      console.log('✓ next.config already configured for dynamic basePath and error skipping');
       return;
     }
 
-    // Add debug logging before the config
-    const debugLogging = `\nconsole.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);\n`;
+    // Add debug logging before the config (only if not already present)
+    if (!hasBasePath) {
+      const debugLogging = `\nconsole.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);\n`;
 
-    // Find import statement or beginning of file to insert debug
-    const firstImportMatch = content.match(/^import\s/m);
-    if (firstImportMatch && firstImportMatch.index !== undefined) {
-      // Insert after imports
-      const lastImportIndex = content.lastIndexOf('import');
-      const afterImportLine = content.indexOf('\n', lastImportIndex) + 1;
-      content = content.slice(0, afterImportLine) + debugLogging + content.slice(afterImportLine);
-    } else {
-      // Insert at beginning
-      content = debugLogging + content;
+      // Find import statement or beginning of file to insert debug
+      const firstImportMatch = content.match(/^import\s/m);
+      if (firstImportMatch && firstImportMatch.index !== undefined) {
+        // Insert after imports
+        const lastImportIndex = content.lastIndexOf('import');
+        const afterImportLine = content.indexOf('\n', lastImportIndex) + 1;
+        content = content.slice(0, afterImportLine) + debugLogging + content.slice(afterImportLine);
+      } else {
+        // Insert at beginning
+        content = debugLogging + content;
+      }
     }
 
     // Simple injection: add to config object
@@ -1172,22 +1793,53 @@ export default nextConfig;
     if (configObjectMatch) {
       const matchedPattern = configObjectMatch[0];
       const insertPoint = configObjectMatch.index! + matchedPattern.length;
-      const injection = `
-  basePath: process.env.EGDESK_BASE_PATH || '',
-  assetPrefix: process.env.EGDESK_BASE_PATH || '',`;
 
-      content = content.slice(0, insertPoint) + injection + content.slice(insertPoint);
+      let injection = '';
 
-      // Add logging after the config object
-      const configEndMatch = content.indexOf('};', insertPoint);
-      if (configEndMatch !== -1) {
-        const afterConfigEnd = configEndMatch + 2;
-        const configLogging = `\n\nconsole.log('🔍 DEBUG next.config: Final config basePath =', nextConfig.basePath);\nconsole.log('🔍 DEBUG next.config: Final config assetPrefix =', nextConfig.assetPrefix);\n`;
-        content = content.slice(0, afterConfigEnd) + configLogging + content.slice(afterConfigEnd);
+      // Add basePath only if not already present
+      if (!hasBasePath) {
+        injection += `
+  // Only use basePath in production mode, not in dev mode
+  basePath: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),
+  assetPrefix: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),`;
       }
 
-      await fs.promises.writeFile(configPath, this.normalizeLineEndings(content), 'utf8');
-      console.log(`✅ Configured ${path.basename(configPath)} to read basePath from EGDESK_BASE_PATH (with debug logging)`);
+      // Add TypeScript and ESLint error skipping if not already present
+      if (!hasIgnoreBuildErrors) {
+        injection += `
+  typescript: {
+    // Always skip TypeScript errors to prevent blocking on auto-generated files
+    ignoreBuildErrors: true,
+  },`;
+      }
+
+      if (!hasIgnoreDuringBuilds) {
+        injection += `
+  eslint: {
+    // Always skip ESLint errors to prevent blocking on auto-generated files
+    ignoreDuringBuilds: true,
+  },`;
+      }
+
+      // Only inject if we have something to add
+      if (injection) {
+        content = content.slice(0, insertPoint) + injection + content.slice(insertPoint);
+
+        // Add logging after the config object (only if basePath was added)
+        if (!hasBasePath) {
+          const configEndMatch = content.indexOf('};', insertPoint);
+          if (configEndMatch !== -1) {
+            const afterConfigEnd = configEndMatch + 2;
+            const configLogging = `\n\nconsole.log('🔍 DEBUG next.config: Final config basePath =', nextConfig.basePath);\nconsole.log('🔍 DEBUG next.config: Final config assetPrefix =', nextConfig.assetPrefix);\n`;
+            content = content.slice(0, afterConfigEnd) + configLogging + content.slice(afterConfigEnd);
+          }
+        }
+
+        await fs.promises.writeFile(configPath, this.normalizeLineEndings(content), 'utf8');
+        console.log(`✅ Configured ${path.basename(configPath)} with TypeScript/ESLint error skipping`);
+      } else {
+        console.log('✓ next.config already has all required configuration');
+      }
     } else {
       console.warn('⚠️ Could not parse next.config - may need manual configuration');
     }
@@ -1230,7 +1882,7 @@ export default nextConfig;
   }
 
 
-  public async startServer(folderPath: string): Promise<ServerInfo> {
+  public async startServer(folderPath: string, mode?: 'dev' | 'production'): Promise<ServerInfo> {
     // Ensure runtime is initialized
     if (!this.runtimeInitialized) {
       await this.initializeRuntime();
@@ -1248,12 +1900,21 @@ export default nextConfig;
 
     console.log(`✅ Using Node.js ${nodeCheck.nodeVersion} and npm ${nodeCheck.npmVersion}`);
 
-    // Check if tunnel is active for Vite projects
-    // We need tunnelId set to properly configure Vite's --base flag
+    // Determine effective mode
+    const effectiveMode = mode || this.determineDefaultMode(folderPath);
+    const projectName = path.basename(folderPath);
+
+    console.log(`📦 Starting ${projectName} in ${effectiveMode.toUpperCase()} mode`);
+
+    // CHANGE: Only require tunnel for production mode
+    const requiresTunnel = effectiveMode === 'production';
+
+    if (!this.tunnelId && requiresTunnel) {
+      throw new Error('Tunnel required for production mode. Start tunnel in Settings or switch to dev mode.');
+    }
+
     if (!this.tunnelId) {
-      console.warn('⚠️ No tunnel ID set - dev servers will not work with website viewer');
-      console.warn('⚠️ Please start the MCP tunnel first before starting dev servers');
-      throw new Error('Tunnel not started. Please start the MCP tunnel in Settings first, then start the dev server.');
+      console.log('ℹ️ Starting in dev mode without tunnel (local development)');
     }
 
     // Check if server already running
@@ -1303,106 +1964,78 @@ export default nextConfig;
     // Find available port
     const port = await this.findAvailablePort();
 
-    // Determine command based on project type
-    let command: string;
-    let args: string[];
-    const projectName = path.basename(folderPath);
+    // Determine basePath
+    const basePath = this.tunnelId ? `/t/${this.tunnelId}/p/${projectName}` : undefined;
 
-    // On Windows, npm/yarn/pnpm are .cmd files
-    const packageManagerCommand = process.platform === 'win32'
-      ? `${projectInfo.packageManager}.cmd`
-      : projectInfo.packageManager;
+    let serverProcess: ChildProcess;
 
-    switch (projectInfo.type) {
-      case 'nextjs':
-        command = packageManagerCommand;
-        args = ['run', 'dev', '--', '-p', port.toString()];
-        break;
-      case 'vite':
-        command = packageManagerCommand;
-        args = ['run', 'dev', '--', '--port', port.toString()];
+    if (effectiveMode === 'dev') {
+      // DEV MODE: Skip build, start immediately
+      if (projectInfo.type === 'nextjs' && this.tunnelId) {
+        await this.configureNextJsBasePath(folderPath);
+      }
 
-        // Add --base flag for tunneling if tunnel ID is set
-        if (this.tunnelId) {
-          const viteBasePath = `/t/${this.tunnelId}/p/${projectName}`;
-          args.push('--base', viteBasePath);
-          console.log(`Adding Vite --base flag: ${viteBasePath}`);
-        }
-        break;
-      case 'react':
-        command = packageManagerCommand;
-        args = ['start'];
-        break;
-      default:
-        command = packageManagerCommand;
-        args = ['run', 'dev'];
+      serverProcess = await this.startDevModeServer(
+        folderPath,
+        projectInfo.type,
+        projectInfo.packageManager,
+        port,
+        basePath
+      );
+
+    } else {
+      // PRODUCTION MODE: Build then start
+      await this.buildProject(folderPath, projectInfo.packageManager, projectInfo.type, basePath);
+      serverProcess = await this.startProductionServer(
+        folderPath,
+        projectInfo.type,
+        projectInfo.packageManager,
+        port,
+        basePath
+      );
     }
-
-    console.log(`Starting dev server: ${command} ${args.join(' ')} in ${folderPath}`);
-
-    // Clean environment - remove problematic variables
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.NODE_OPTIONS;
-    delete cleanEnv.TS_NODE_PROJECT;
-    delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
-
-    // For Next.js, set basePath via environment variable
-    const serverEnv = {
-      ...cleanEnv,
-      PORT: port.toString(),
-      NODE_ENV: 'development'
-    };
-
-    if (projectInfo.type === 'nextjs' && this.tunnelId) {
-      const basePath = `/t/${this.tunnelId}/p/${projectName}`;
-      serverEnv.EGDESK_BASE_PATH = basePath;
-      // Also expose to client-side for fetch calls
-      serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
-      console.log(`🔧 Setting EGDESK_BASE_PATH=${basePath} for Next.js`);
-      console.log(`🔧 Setting NEXT_PUBLIC_EGDESK_BASE_PATH=${basePath} for client-side`);
-      console.log(`🔍 DEBUG: Full environment for Next.js process:`);
-      console.log(`   - EGDESK_BASE_PATH: ${serverEnv.EGDESK_BASE_PATH}`);
-      console.log(`   - NEXT_PUBLIC_EGDESK_BASE_PATH: ${serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH}`);
-      console.log(`   - PORT: ${serverEnv.PORT}`);
-      console.log(`   - NODE_ENV: ${serverEnv.NODE_ENV}`);
-      console.log(`   - PATH: ${serverEnv.PATH?.substring(0, 100)}...`);
-    }
-
-    // Spawn the dev server process using system npm/yarn/pnpm
-    console.log(`🔍 DEBUG: Spawning process with command: ${command} ${args.join(' ')}`);
-    console.log(`🔍 DEBUG: Working directory: ${folderPath}`);
-    console.log(`🔍 DEBUG: Shell: true`);
-    console.log(`🔍 DEBUG: Environment variables count: ${Object.keys(serverEnv).length}`);
-
-    const serverProcess = spawn(command, args, {
-      cwd: folderPath,
-      shell: true,
-      env: serverEnv
-    });
 
     const serverInfo: ServerInfo = {
       port,
       url: `http://localhost:${port}`,
       status: 'starting',
       process: serverProcess,
-      projectPath: folderPath
+      projectPath: folderPath,
+      projectType: projectInfo.type,
+      packageManager: projectInfo.packageManager,
+      mode: effectiveMode,
+      supportsHotReload: ['nextjs', 'vite', 'react'].includes(projectInfo.type),
+      lastModeChange: new Date().toISOString(),
+      terminalLogs: [],
+      maxLogLines: 500
     };
 
     this.servers.set(folderPath, serverInfo);
 
-    // Register project in registry
+    // Register with mode
     const projectRegistry = getProjectRegistry();
-    projectRegistry.register(folderPath, port, serverInfo.url, 'starting', projectInfo.type);
+    projectRegistry.register(
+      folderPath, port, serverInfo.url, 'starting',
+      projectInfo.type, effectiveMode
+    );
 
-    // Monitor output for "ready" status
+    // Monitor output for "ready" status and capture logs
     serverProcess.stdout?.on('data', (data) => {
       const output = data.toString();
-      console.log(`[Dev Server ${port}]:`, output);
+      console.log(`[${effectiveMode.toUpperCase()} Server ${port}]:`, output);
+
+      // Capture logs
+      output.split('\n').forEach(line => {
+        if (line.trim()) {
+          this.addLogLine(folderPath, line.trim(), 'stdout');
+        }
+      });
 
       // Detect when server is ready
       if (output.includes('ready') ||
-          output.includes('compiled') ||
+          output.includes('started') ||
           output.includes('Local:') ||
+          output.includes('Accepting connections') ||
           output.includes('started server')) {
         serverInfo.status = 'running';
         this.servers.set(folderPath, serverInfo);
@@ -1412,7 +2045,7 @@ export default nextConfig;
         const projectName = path.basename(folderPath);
         projectRegistry.updateStatus(projectName, 'running');
 
-        console.log(`Dev server ready at ${serverInfo.url}`);
+        console.log(`${effectiveMode.toUpperCase()} server ready at ${serverInfo.url}`);
 
         // For Next.js, check if basePath was applied
         if (projectInfo.type === 'nextjs' && this.tunnelId) {
@@ -1423,11 +2056,19 @@ export default nextConfig;
     });
 
     serverProcess.stderr?.on('data', (data) => {
-      console.error(`[Dev Server ${port} Error]:`, data.toString());
+      const errorOutput = data.toString();
+      console.error(`[${effectiveMode.toUpperCase()} Server ${port} Error]:`, errorOutput);
+
+      // Capture error logs
+      errorOutput.split('\n').forEach(line => {
+        if (line.trim()) {
+          this.addLogLine(folderPath, line.trim(), 'stderr');
+        }
+      });
     });
 
     serverProcess.on('error', (error) => {
-      console.error(`Failed to start dev server:`, error);
+      console.error(`Failed to start production server:`, error);
       serverInfo.status = 'error';
       this.servers.set(folderPath, serverInfo);
 
@@ -1438,7 +2079,7 @@ export default nextConfig;
     });
 
     serverProcess.on('close', (code) => {
-      console.log(`Dev server process exited with code ${code}`);
+      console.log(`Production server process exited with code ${code}`);
       serverInfo.status = 'stopped';
       serverInfo.process = null;
       this.servers.set(folderPath, serverInfo);
@@ -1452,6 +2093,13 @@ export default nextConfig;
     // Give it a moment to start
     await new Promise(resolve => setTimeout(resolve, 2000));
 
+    // File watcher ONLY for production mode
+    if (effectiveMode === 'production') {
+      this.setupFileWatcher(folderPath);
+    } else {
+      console.log('ℹ️ DEV MODE: Using framework native hot reload');
+    }
+
     return serverInfo;
   }
 
@@ -1460,6 +2108,17 @@ export default nextConfig;
 
     if (!serverInfo || !serverInfo.process) {
       throw new Error('No server running for this folder');
+    }
+
+    // Stop file watcher
+    if (serverInfo.watcher) {
+      console.log('🛑 Stopping file watcher...');
+      await serverInfo.watcher.close();
+    }
+
+    // Clear any pending rebuild timers
+    if (serverInfo.rebuildTimer) {
+      clearTimeout(serverInfo.rebuildTimer);
     }
 
     // Restore Next.js config and remove README if it was modified
@@ -1476,7 +2135,7 @@ export default nextConfig;
       }
 
       serverInfo.process.on('close', () => {
-        console.log(`Dev server stopped for ${folderPath}`);
+        console.log(`Production server stopped for ${folderPath}`);
         this.servers.delete(folderPath);
 
         // Unregister from registry

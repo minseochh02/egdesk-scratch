@@ -5,9 +5,11 @@ export interface RegisteredProject {
   folderPath: string;
   port: number;
   url: string;
-  status: 'starting' | 'running' | 'stopped' | 'error';
+  status: 'starting' | 'running' | 'stopped' | 'error' | 'rebuilding';
   registeredAt: string;
   type?: 'nextjs' | 'vite' | 'react' | 'unknown';
+  mode: 'dev' | 'production';
+  availableModes: ('dev' | 'production')[];
 }
 
 export class ProjectRegistry {
@@ -20,8 +22,9 @@ export class ProjectRegistry {
     folderPath: string,
     port: number,
     url: string,
-    status: 'starting' | 'running' | 'stopped' | 'error',
-    type?: 'nextjs' | 'vite' | 'react' | 'unknown'
+    status: 'starting' | 'running' | 'stopped' | 'error' | 'rebuilding',
+    type?: 'nextjs' | 'vite' | 'react' | 'unknown',
+    mode: 'dev' | 'production' = 'production'
   ): RegisteredProject {
     // Use folder name as project name
     const projectName = path.basename(folderPath);
@@ -33,11 +36,13 @@ export class ProjectRegistry {
       url,
       status,
       registeredAt: new Date().toISOString(),
-      type
+      type,
+      mode,
+      availableModes: ['dev', 'production']
     };
 
     this.projects.set(projectName, project);
-    console.log(`✅ Registered project: ${projectName} (${type || 'unknown'}) on port ${port}`);
+    console.log(`✅ Registered project: ${projectName} (${type || 'unknown'}) in ${mode} mode on port ${port}`);
 
     return project;
   }
@@ -45,7 +50,7 @@ export class ProjectRegistry {
   /**
    * Update project status
    */
-  updateStatus(projectName: string, status: 'starting' | 'running' | 'stopped' | 'error'): void {
+  updateStatus(projectName: string, status: 'starting' | 'running' | 'stopped' | 'error' | 'rebuilding'): void {
     const project = this.projects.get(projectName);
     if (project) {
       project.status = status;

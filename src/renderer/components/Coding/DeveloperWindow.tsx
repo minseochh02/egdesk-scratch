@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTerminal, faCopy, faTrash, faArrowDown } from '@fortawesome/free-solid-svg-icons';
 import './DeveloperWindow.css';
 
 interface DeveloperWindowProps {
@@ -30,6 +32,9 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [error, setError] = useState<string | null>(null);
   const [nodeCheckDone, setNodeCheckDone] = useState(false);
   const [tunnelId, setTunnelId] = useState<string | null>(null);
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+  const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const terminalRef = useRef<HTMLDivElement | null>(null);
 
   // Removed automatic window creation on mount
   // Windows will be created after dev server starts successfully
@@ -157,6 +162,44 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     return () => clearInterval(interval);
   }, [folderPath, tunnelId]);
 
+  // Poll for terminal logs
+  useEffect(() => {
+    if (!folderPath || !registeredProject) return;
+
+    // Fetch immediately
+    fetchLogs();
+
+    // Poll every 2 seconds
+    const interval = setInterval(fetchLogs, 2000);
+
+    return () => clearInterval(interval);
+  }, [folderPath, registeredProject]);
+
+  const scrollToBottom = useCallback((smooth = false) => {
+    const el = terminalRef.current;
+    if (!el) return;
+
+    const apply = () => {
+      if (smooth) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    };
+
+    // Two rAFs: wait until layout/paint so scrollHeight reflects new log lines
+    requestAnimationFrame(() => {
+      requestAnimationFrame(apply);
+    });
+  }, []);
+
+  // Auto-scroll after logs paint (layout effect avoids racing the browser layout)
+  useLayoutEffect(() => {
+    if (autoScroll) {
+      scrollToBottom(false);
+    }
+  }, [terminalLogs, autoScroll, scrollToBottom]);
+
   const killPortProcess = async (port: number) => {
     try {
       const electron = (window as any).electron;
@@ -177,7 +220,64 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     }
   };
 
-  const startDevServer = async (path: string) => {
+  const fetchLogs = async () => {
+    if (!folderPath) return;
+
+    try {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) return;
+
+      const result = await electron.ipcRenderer.invoke('dev-server:get-logs', folderPath);
+      if (result.success && result.logs) {
+        setTerminalLogs(result.logs);
+      }
+    } catch (error) {
+      console.error('Failed to fetch logs:', error);
+    }
+  };
+
+  const copyLogsToClipboard = async () => {
+    const logsText = terminalLogs.join('\n');
+
+    try {
+      await navigator.clipboard.writeText(logsText);
+      alert('Logs copied to clipboard! You can now paste them to your AI assistant.');
+    } catch (error) {
+      console.error('Failed to copy logs:', error);
+      alert('Failed to copy logs to clipboard.');
+    }
+  };
+
+  const clearLogs = async () => {
+    if (!folderPath) return;
+
+    try {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) return;
+
+      const result = await electron.ipcRenderer.invoke('dev-server:clear-logs', folderPath);
+      if (result.success) {
+        setTerminalLogs([]);
+      }
+    } catch (error) {
+      console.error('Failed to clear logs:', error);
+    }
+  };
+
+  const handleScroll = () => {
+    const el = terminalRef.current;
+    if (!el) return;
+
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isScrolledToBottom = distanceFromBottom <= 12;
+
+    setAutoScroll(isScrolledToBottom);
+  };
+
+  const startDevServer = async (selectedPath?: string, mode?: 'dev' | 'production') => {
+    const path = selectedPath || folderPath;
+    if (!path) return;
+
     setLoading(true);
     setError(null);
 
@@ -197,9 +297,33 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
 
       console.log('Project info:', analyzeResult.projectInfo);
 
-      // Start dev server
-      console.log('Starting dev server...');
-      const startResult = await electron.ipcRenderer.invoke('dev-server:start', path);
+      // Determine mode if not provided
+      let effectiveMode = mode;
+      if (!effectiveMode) {
+        const tunnelConfig = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+        const hasTunnel = tunnelConfig?.tunnel?.registered;
+
+        if (hasTunnel) {
+          effectiveMode = window.confirm(
+            '🚀 Tunnel is active. Start in PRODUCTION mode?\n\n' +
+            'Production:\n' +
+            '• Optimized for external hosting\n' +
+            '• ~40-60s build time\n' +
+            '• Production performance\n\n' +
+            'Dev (Cancel):\n' +
+            '• Fast startup ~3-5s\n' +
+            '• Hot reload enabled\n' +
+            '• Local development'
+          ) ? 'production' : 'dev';
+        } else {
+          effectiveMode = 'dev';
+        }
+      }
+
+      console.log(`Starting server in ${effectiveMode} mode...`);
+
+      // Start dev server with mode
+      const startResult = await electron.ipcRenderer.invoke('dev-server:start', path, effectiveMode);
 
       if (!startResult.success) {
         throw new Error(startResult.error || 'Failed to start dev server');
@@ -419,6 +543,65 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
             <span style={{ fontSize: '12px', color: '#666' }}>
               Use this if dev server fails to start due to port conflict
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Terminal Logs Section */}
+      {folderPath && registeredProject && (
+        <div className="terminal-section" style={{ marginTop: '24px' }}>
+          <div className="terminal-header">
+            <span className="terminal-title">
+              <FontAwesomeIcon icon={faTerminal} /> Terminal Output
+              {!autoScroll && (
+                <span className="auto-scroll-indicator" title="Auto-scroll paused (scroll to bottom to resume)">
+                  ⏸
+                </span>
+              )}
+            </span>
+            <div className="terminal-actions">
+              {!autoScroll && (
+                <button
+                  className="terminal-action-btn scroll-to-bottom-btn"
+                  onClick={() => {
+                    scrollToBottom(true);
+                    setAutoScroll(true);
+                  }}
+                  title="Scroll to bottom"
+                >
+                  <FontAwesomeIcon icon={faArrowDown} />
+                </button>
+              )}
+              <button
+                className="terminal-action-btn"
+                onClick={copyLogsToClipboard}
+                title="Copy logs to clipboard"
+              >
+                <FontAwesomeIcon icon={faCopy} /> Copy
+              </button>
+              <button
+                className="terminal-action-btn"
+                onClick={clearLogs}
+                title="Clear logs"
+              >
+                <FontAwesomeIcon icon={faTrash} /> Clear
+              </button>
+            </div>
+          </div>
+          <div
+            className="terminal-content"
+            ref={terminalRef}
+            onScroll={handleScroll}
+          >
+            {terminalLogs.length === 0 ? (
+              <div className="terminal-empty">No logs available yet. Logs will appear here once the server starts.</div>
+            ) : (
+              terminalLogs.map((log, index) => (
+                <div key={index} className={`terminal-line ${log.includes('[ERROR]') ? 'error' : ''}`}>
+                  {log}
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
