@@ -208,6 +208,16 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const userDataDb = new Database(userDataDbPath);
     const syncDb = createSyncDatabase({ dbPath: syncDbPath });
 
+    // =============================================
+    // Configure FULL durability for user_data.db
+    // =============================================
+    // Use DELETE journal mode (default) with FULL synchronous for simplicity and reliability
+    // This ensures all transaction commits are immediately written to disk via fsync
+    // and prevents data loss on app shutdown with uncommitted changes
+    userDataDb.pragma('journal_mode=DELETE');
+    userDataDb.pragma('synchronous=FULL');
+    console.log('✅ User Data DB configured with DELETE journal mode and synchronous=FULL for immediate durability');
+
     // Initialize database schemas FIRST
     initializeConversationsDatabaseSchema(conversationsDb);
     initializeTaskSchema(taskDb);
