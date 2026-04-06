@@ -163,7 +163,7 @@ function updateEnvLocal(projectPath, config) {
         '',
         '# Available Tables',
         `# Total tables: ${config.tables.length}`,
-        ...config.tables.map((table, index) => `# ${index + 1}. ${table.displayName} (${table.tableName}) - ${table.rowCount} rows, ${table.columnCount} columns`),
+        ...config.tables.map((table, index) => `# ${index + 1}. ${table.displayName} (${table.tableName}) - ${table.rowCount != null ? table.rowCount : '?'} rows, ${table.columnCount} columns`),
         ''
     ].join('\n');
     fs.writeFileSync(envPath, envContent.replace(/\r?\n/g, os.EOL), 'utf-8');
@@ -190,20 +190,26 @@ export interface TableDefinition {
   name: string;
   displayName: string;
   description?: string;
-  rowCount: number;
+  /** Omitted or unknown until synced / counted */
+  rowCount?: number;
   columnCount: number;
   columns: string[];
 }
 
 export const TABLES = {
-${config.tables.map((table, index) => `  table${index + 1}: {
-    name: '${table.tableName}',
-    displayName: '${table.displayName}',
-    description: ${table.description ? `'${table.description}'` : 'undefined'},
-    rowCount: ${table.rowCount},
-    columnCount: ${table.columnCount},
-    columns: [${table.columns.map(col => `'${col}'`).join(', ')}]
-  } as TableDefinition`).join(',\n')}
+${config.tables.map((table, index) => {
+        const properties = [
+            `name: '${table.tableName}'`,
+            `displayName: '${table.displayName}'`,
+            table.description ? `description: '${table.description}'` : null,
+            table.rowCount != null ? `rowCount: ${table.rowCount}` : null,
+            `columnCount: ${table.columnCount}`,
+            `columns: [${table.columns.map(col => `'${col}'`).join(', ')}]`
+        ].filter(Boolean).join(',\n    ');
+        return `  table${index + 1}: {
+    ${properties}
+  } as TableDefinition`;
+    }).join(',\n')}
 } as const;
 
 ${config.tables.length > 0 ? `
