@@ -670,7 +670,11 @@ const createWindow = async () => {
           
           if (!automator) {
             const { createAutomator } = require('./financehub');
-            automator = createAutomator(bankId, { headless: false });
+            const shinhanOpts =
+              bankId === 'shinhan'
+                ? { headless: false, arduinoPort: await getArduinoPort() }
+                : { headless: false };
+            automator = createAutomator(bankId, shinhanOpts);
             activeAutomators.set(bankId, automator);
           }
           
@@ -681,6 +685,56 @@ const createWindow = async () => {
           return { ...loginResult, accounts };
         } catch (error) {
           console.error(`[FINANCE-HUB] Login and get accounts failed for ${bankId}:`, error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      // Shinhan 기업: two-phase certificate login (prepare native dialog → user selects cert → UI password → complete)
+      ipcMain.handle('finance-hub:shinhan-corporate-cert-prepare', async (_event, { proxyUrl } = {}) => {
+        try {
+          const bankId = 'shinhan';
+          let automator = activeAutomators.get(bankId);
+          if (automator && typeof automator.cleanup === 'function') {
+            await automator.cleanup(false);
+            activeAutomators.delete(bankId);
+          }
+          const { createAutomator } = require('./financehub');
+          const arduinoPort = await getArduinoPort();
+          automator = createAutomator(bankId, { headless: false, arduinoPort });
+          activeAutomators.set(bankId, automator);
+          return await automator.prepareCorporateCertificateLogin(proxyUrl);
+        } catch (error) {
+          console.error('[FINANCE-HUB] shinhan-corporate-cert-prepare failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      ipcMain.handle(
+        'finance-hub:shinhan-corporate-cert-complete',
+        async (_event, { certificatePassword }: { certificatePassword: string }) => {
+          try {
+            const automator = activeAutomators.get('shinhan');
+            if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
+              return { success: false, error: '활성 신한 세션이 없습니다. 1단계부터 다시 시도하세요.' };
+            }
+            return await automator.completeCorporateCertificateLogin({ certificatePassword });
+          } catch (error) {
+            console.error('[FINANCE-HUB] shinhan-corporate-cert-complete failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        }
+      );
+
+      ipcMain.handle('finance-hub:shinhan-corporate-cert-cancel', async () => {
+        try {
+          const automator = activeAutomators.get('shinhan');
+          if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+            await automator.cancelCorporateCertificateLogin(true);
+          }
+          activeAutomators.delete('shinhan');
+          return { success: true };
+        } catch (error) {
+          console.error('[FINANCE-HUB] shinhan-corporate-cert-cancel failed:', error);
           return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
       });

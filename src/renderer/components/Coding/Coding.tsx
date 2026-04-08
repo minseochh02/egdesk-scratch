@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircle, faPlus, faCopy, faStop, faTerminal, faTrash, faChevronDown, faChevronUp, faArrowDown } from '@fortawesome/free-solid-svg-icons';
@@ -220,12 +220,22 @@ const Coding: React.FC = () => {
     }
   };
 
-  const scrollToBottom = (folderPath: string) => {
-    const terminalElement = terminalRefs.current[folderPath];
-    if (terminalElement) {
-      terminalElement.scrollTop = terminalElement.scrollHeight;
-    }
-  };
+  const scrollToBottom = useCallback((folderPath: string, smooth = false) => {
+    const el = terminalRefs.current[folderPath];
+    if (!el) return;
+
+    const apply = () => {
+      if (smooth) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(apply);
+    });
+  }, []);
 
   const toggleTerminal = (folderPath: string) => {
     setExpandedTerminals(prev => {
@@ -256,22 +266,22 @@ const Coding: React.FC = () => {
     return () => clearInterval(interval);
   }, [expandedTerminals]);
 
-  // Auto-scroll to bottom when logs update
-  useEffect(() => {
-    Object.keys(terminalLogs).forEach(folderPath => {
-      if (autoScroll[folderPath] && expandedTerminals.has(folderPath)) {
-        scrollToBottom(folderPath);
+  // Auto-scroll after logs paint (layout effect + rAF matches DeveloperWindow)
+  useLayoutEffect(() => {
+    expandedTerminals.forEach((folderPath) => {
+      if (autoScroll[folderPath]) {
+        scrollToBottom(folderPath, false);
       }
     });
-  }, [terminalLogs, autoScroll, expandedTerminals]);
+  }, [terminalLogs, autoScroll, expandedTerminals, scrollToBottom]);
 
   // Detect manual scroll to disable auto-scroll
   const handleScroll = (folderPath: string) => {
-    const terminalElement = terminalRefs.current[folderPath];
-    if (!terminalElement) return;
+    const el = terminalRefs.current[folderPath];
+    if (!el) return;
 
-    const isScrolledToBottom =
-      terminalElement.scrollHeight - terminalElement.scrollTop <= terminalElement.clientHeight + 10;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isScrolledToBottom = distanceFromBottom <= 12;
 
     setAutoScroll(prev => ({ ...prev, [folderPath]: isScrolledToBottom }));
   };
@@ -482,7 +492,7 @@ const Coding: React.FC = () => {
                         <button
                           className="terminal-action-btn scroll-to-bottom-btn"
                           onClick={() => {
-                            scrollToBottom(project.folderPath);
+                            scrollToBottom(project.folderPath, true);
                             setAutoScroll(prev => ({ ...prev, [project.folderPath]: true }));
                           }}
                           title="Scroll to bottom"

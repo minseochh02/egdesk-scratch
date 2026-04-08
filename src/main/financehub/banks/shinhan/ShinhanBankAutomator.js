@@ -4,7 +4,18 @@
 
 const path = require('path');
 const fs = require('fs');
+let SerialPort = null;
+try {
+  ({ SerialPort } = require('serialport'));
+} catch (e) {
+  /* optional dependency */
+}
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
+const {
+  isWindows,
+  waitForRootWindowByClassName,
+  sendEnterKeyViaSendKeys,
+} = require('../../utils/windows-uia-native');
 const { SHINHAN_CONFIG } = require('./config');
 const { handleSecurityPopup } = require('./securityPopup');
 const { typePasswordWithKeyboard } = require('./virtualKeyboard');
@@ -33,6 +44,11 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('shinhan');
+    this.arduinoPort = options.arduinoPort || null;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this.arduino = null;
+    /** @type {'idle'|'awaiting_password'|'completed'} */
+    this._shinhanCorporateCertPhase = 'idle';
   }
 
   // ============================================================================
@@ -352,6 +368,296 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     } catch (error) {
       this.error('Failed to get accounts:', error.message);
       throw error;
+    }
+  }
+
+  // ============================================================================
+  // CORPORATE (기업) CERTIFICATE — TWO-PHASE (prepare → user selects cert + app password → complete)
+  // ============================================================================
+
+  async _closeBizBankPopup() {
+    if (!this.page) return;
+    try {
+      await this.page.locator('[id="mf_divRPPop99_1775110936087_wframe_btn_closePopIco"]').click({ timeout: 3000 });
+      this.log('Closed biz bank popup (primary close).');
+    } catch (e) {
+      try {
+        await this.page.locator('input[value="팝업닫기"]').first().click({ timeout: 2000 });
+        this.log('Closed biz bank popup (fallback).');
+      } catch (e2) {
+        this.log('No biz popup to close.');
+      }
+    }
+    await this.page.waitForTimeout(2000);
+  }
+
+  async _clickBizCertLogin() {
+    try {
+      await this.page.locator(`[id="${this.config.xpaths.bizCertLoginButtonId}"]`).click({ timeout: 10000 });
+    } catch (e) {
+      await this.page.locator('a:has-text("공동인증서 로그인")').first().click({ timeout: 10000 });
+    }
+    this.log('Clicked 공동인증서 로그인 (biz).');
+  }
+
+  async _navigateBizToAccountInquiry() {
+    try {
+      await this.page.locator('[id="mf_header_gen_topGnb_0_tbx_topItemText"]').click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('span:has-text("조회")').first().click({ timeout: 5000 });
+    }
+    await this.page.waitForTimeout(2000);
+    try {
+      await this.page.locator('span:has-text("계좌별거래내역")').first().click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('[id="mf_header_gen_topGnb_0_gen_menuBox_1_gen_section_0_gen_depth3_0_btn_dep3_text_span"]').click({ timeout: 5000 });
+    }
+    await this.page.waitForTimeout(3000);
+    this.log('Navigated to 계좌별거래내역 (biz).');
+  }
+
+  async _getBizAccountsFromPage() {
+    const rows = await this.page.evaluate(() => {
+      const sel = document.querySelector('select[id*="sbx_acctList"]');
+      if (!sel) return [];
+      const opts = Array.from(sel.querySelectorAll('option'));
+      return opts
+        .map((o) => ({ text: (o.textContent || '').trim(), value: o.value }))
+        .filter((o) => o.text && o.value);
+    });
+
+    const accounts = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const m = row.text.match(/(\d{3}-\d{2,4}-\d{4,7})/);
+      if (!m) continue;
+      const accountNumber = m[1];
+      const key = accountNumber.replace(/-/g, '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      accounts.push({
+        accountNumber,
+        accountName: row.text.replace(accountNumber, '').trim() || '신한 기업 계좌',
+        bankId: 'shinhan',
+        balance: 0,
+        currency: 'KRW',
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+    return accounts;
+  }
+
+  async connectArduino() {
+    if (!SerialPort) {
+      throw new Error('serialport module not available. Install serialport and rebuild native deps.');
+    }
+    if (!this.arduinoPort) {
+      throw new Error('Arduino port not configured (financeHub.arduinoPort).');
+    }
+    return new Promise((resolve, reject) => {
+      this.arduino = new SerialPort({ path: this.arduinoPort, baudRate: this.arduinoBaudRate });
+      this.arduino.on('open', () => {
+        this.log(`Arduino connected on ${this.arduinoPort}`);
+        setTimeout(() => resolve(), 2000);
+      });
+      this.arduino.on('error', (err) => reject(err));
+      this.arduino.on('data', (data) => {
+        this.log(`[Arduino] ${data.toString().trim()}`);
+      });
+    });
+  }
+
+  async typeViaArduinoWithNaturalTiming(text, options = {}) {
+    const { minDelay = 80, maxDelay = 200 } = options;
+    if (!this.arduino) await this.connectArduino();
+    this.log(`Typing ${text.length} chars via Arduino HID`);
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      await new Promise((resolve, reject) => {
+        this.arduino.write(char + '\n', (err) => {
+          if (err) return reject(err);
+          setTimeout(() => resolve(), 950);
+        });
+      });
+      if (i < text.length - 1) {
+        const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  async disconnectArduino() {
+    if (this.arduino && this.arduino.isOpen) {
+      return new Promise((resolve) => {
+        this.arduino.close(() => {
+          this.log('Arduino disconnected');
+          this.arduino = null;
+          resolve();
+        });
+      });
+    }
+    this.arduino = null;
+  }
+
+  /**
+   * Phase 1: Open 기업 뱅킹, trigger native cert dialog, wait for INICertManUI (Windows).
+   * User then selects certificate in the native UI; password is entered in Finance Hub and submitted via phase 2.
+   * @param {string} [proxyUrl]
+   */
+  async prepareCorporateCertificateLogin(proxyUrl) {
+    if (!isWindows()) {
+      return {
+        success: false,
+        error: '신한 기업 인증서 연결은 Windows에서만 지원됩니다.',
+      };
+    }
+
+    const proxy = this.buildProxyOption(proxyUrl);
+
+    try {
+      this.log('Starting Shinhan corporate certificate flow (phase 1)...');
+      if (this.browser) {
+        try {
+          await this.browser.close();
+        } catch (e) {
+          this.warn('Could not close previous browser:', e.message);
+        }
+        this.browser = null;
+        this.context = null;
+        this.page = null;
+      }
+
+      const { browser, context } = await this.createBrowser(proxy);
+      this.browser = browser;
+      this.context = context;
+      await this.setupBrowserContext(context, null);
+      this.page = await context.newPage();
+      await this.setupBrowserContext(context, this.page);
+
+      const bizUrl = this.config.xpaths.bizMainUrl;
+      this.log('Navigating to biz bank:', bizUrl);
+      await this.page.goto(bizUrl, { waitUntil: 'domcontentloaded' });
+      await this.page.waitForTimeout(3000);
+
+      await this._closeBizBankPopup();
+      await this._clickBizCertLogin();
+
+      const uia = await waitForRootWindowByClassName('INICertManUI', {
+        timeoutMs: 30000,
+        pollMs: 1000,
+        onLog: (m) => this.log(m),
+      });
+
+      if (!uia.ok) {
+        this._shinhanCorporateCertPhase = 'idle';
+        return {
+          success: false,
+          error: uia.error || '인증서 창(INICertManUI)을 찾지 못했습니다.',
+        };
+      }
+
+      this._shinhanCorporateCertPhase = 'awaiting_password';
+      this.isLoggedIn = false;
+
+      return {
+        success: true,
+        phase: 'awaiting_password',
+        certWindowName: uia.windowName,
+        message:
+          '인증서 창이 열렸습니다. 인증서를 선택한 뒤 앱에서 비밀번호를 입력하고 로그인 완료를 눌러주세요.',
+      };
+    } catch (error) {
+      this.error('prepareCorporateCertificateLogin failed:', error.message);
+      this._shinhanCorporateCertPhase = 'idle';
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Phase 2: Type certificate password from UI via Arduino, confirm, load accounts (기업).
+   * @param {{ certificatePassword: string }} creds
+   */
+  async completeCorporateCertificateLogin(creds) {
+    const { certificatePassword } = creds || {};
+    if (this._shinhanCorporateCertPhase !== 'awaiting_password') {
+      return {
+        success: false,
+        error: '인증서 준비 단계가 완료되지 않았습니다. 먼저 1단계를 실행하세요.',
+      };
+    }
+    if (!certificatePassword) {
+      return { success: false, error: '인증서 비밀번호가 필요합니다.' };
+    }
+    if (!this.page || this.page.isClosed()) {
+      this._shinhanCorporateCertPhase = 'idle';
+      return { success: false, error: '브라우저 세션이 없습니다.' };
+    }
+    if (!isWindows()) {
+      return { success: false, error: 'Windows에서만 지원됩니다.' };
+    }
+
+    try {
+      if (!this.arduinoPort) {
+        return {
+          success: false,
+          error: 'Arduino 시리얼 포트가 설정되지 않았습니다. 설정에서 포트를 지정하세요.',
+        };
+      }
+
+      await this.connectArduino();
+      await this.typeViaArduinoWithNaturalTiming(certificatePassword);
+      await this.disconnectArduino();
+
+      await this.page.waitForTimeout(1000);
+      const enterResult = sendEnterKeyViaSendKeys();
+      if (!enterResult.ok) {
+        this.warn('SendKeys Enter failed:', enterResult.error);
+      }
+      await this.page.waitForTimeout(5000);
+
+      await this._navigateBizToAccountInquiry();
+      const accounts = await this._getBizAccountsFromPage();
+
+      this._shinhanCorporateCertPhase = 'completed';
+      this.isLoggedIn = true;
+      this.userName = '신한 기업뱅킹';
+
+      try {
+        this.startSessionKeepAlive();
+      } catch (e) {
+        this.warn('Session keep-alive not started (biz UI may differ):', e.message);
+      }
+
+      return {
+        success: true,
+        isLoggedIn: this.isLoggedIn,
+        userName: this.userName,
+        accounts,
+      };
+    } catch (error) {
+      this.error('completeCorporateCertificateLogin failed:', error.message);
+      try {
+        await this.disconnectArduino();
+      } catch (e) {
+        /* ignore */
+      }
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Abort corporate cert flow and optionally close browser.
+   * @param {boolean} closeBrowser
+   */
+  async cancelCorporateCertificateLogin(closeBrowser = true) {
+    this._shinhanCorporateCertPhase = 'idle';
+    try {
+      await this.disconnectArduino();
+    } catch (e) {
+      /* ignore */
+    }
+    if (closeBrowser) {
+      await this.cleanup(false);
     }
   }
 

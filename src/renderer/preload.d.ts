@@ -687,6 +687,21 @@ interface FinanceHubAPI {
   getAccounts: (bankId: string, credentials?: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
   getTransactions: (bankId: string, accountNumber: string, startDate: string, endDate: string, parse?: boolean) => Promise<{ success: boolean; transactions?: any[]; summary?: any; metadata?: any; filename?: string; file?: string; error?: string }>;
   loginAndGetAccounts: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; isLoggedIn: boolean; userName?: string; accounts?: any[]; error?: string }>;
+  shinhanCorporateCertPrepare: (proxyUrl?: string) => Promise<{
+    success: boolean;
+    phase?: string;
+    certWindowName?: string;
+    message?: string;
+    error?: string;
+  }>;
+  shinhanCorporateCertComplete: (certificatePassword: string) => Promise<{
+    success: boolean;
+    isLoggedIn?: boolean;
+    userName?: string;
+    accounts?: any[];
+    error?: string;
+  }>;
+  shinhanCorporateCertCancel: () => Promise<{ success: boolean; error?: string }>;
   getConnectedBanks: () => Promise<any[]>;
   disconnect: (bankId: string) => Promise<{ success: boolean; error?: string }>;
   saveCredentials: (bankId: string, credentials: any) => Promise<{ success: boolean; error?: string }>;

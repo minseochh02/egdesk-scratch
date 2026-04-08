@@ -2189,6 +2189,11 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:get-transactions', { bankId, accountNumber, startDate, endDate, parse }),
     loginAndGetAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:login-and-get-accounts', { bankId, credentials, proxyUrl }),
+    shinhanCorporateCertPrepare: (proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-prepare', { proxyUrl }),
+    shinhanCorporateCertComplete: (certificatePassword: string) =>
+      ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-complete', { certificatePassword }),
+    shinhanCorporateCertCancel: () => ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-cancel'),
     getConnectedBanks: () =>
       ipcRenderer.invoke('finance-hub:get-connected-banks'),
     disconnect: (bankId: string) =>

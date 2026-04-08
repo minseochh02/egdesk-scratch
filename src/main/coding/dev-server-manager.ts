@@ -751,10 +751,8 @@ export class DevServerManager {
       NODE_ENV: 'development'
     };
 
-    if (projectType === 'nextjs' && basePath) {
-      serverEnv.EGDESK_BASE_PATH = basePath;
-      serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
-    }
+    // DEV MODE: Do NOT set basePath env vars - framework should use empty basePath
+    // The config checks NODE_ENV === 'development' and skips basePath accordingly
 
     console.log(`🚀 Starting DEV mode: ${command} ${args.join(' ')}`);
 
@@ -1975,12 +1973,13 @@ export default nextConfig;
         await this.configureNextJsBasePath(folderPath);
       }
 
+      // Dev mode doesn't use basePath - pass undefined
       serverProcess = await this.startDevModeServer(
         folderPath,
         projectInfo.type,
         projectInfo.packageManager,
         port,
-        basePath
+        undefined
       );
 
     } else {
