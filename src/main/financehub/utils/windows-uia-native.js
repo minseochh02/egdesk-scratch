@@ -80,6 +80,92 @@ async function waitForRootWindowByClassName(className, opts = {}) {
 }
 
 /**
+ * One-shot: find common Korean bank native cert dialogs (INI CertMan, Delfino/Qt, or titled "인증서 선택").
+ * Not process-based — uses the same UIA desktop children search as bank-excel-download-automation scripts.
+ * @returns {{ ok: boolean, windowName?: string, matchedClass?: string, error?: string }}
+ */
+function probeNativeCertificateDialogWindow() {
+  if (!isWindows()) {
+    return { ok: false, error: 'UI Automation requires Windows' };
+  }
+  const tryClass = (className) => {
+    if (!/^[A-Za-z0-9_]+$/.test(className)) return null;
+    const script =
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      '$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, ' +
+      `'${className}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+      'if ($w) { $w.Current.Name + "|" + $w.Current.ClassName } else { "" }';
+    const out = runPowerShellUtf8(script, { timeoutMs: 12000 });
+    if (!out) return null;
+    const pipe = out.indexOf('|');
+    const name = pipe >= 0 ? out.slice(0, pipe) : out;
+    const cls = pipe >= 0 ? out.slice(pipe + 1) : className;
+    return { windowName: name, matchedClass: cls };
+  };
+  const tryName = (exactName) => {
+    const safe = exactName.replace(/'/g, "''");
+    const script =
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      '$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, ' +
+      `'${safe}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+      'if ($w) { $w.Current.Name + "|" + $w.Current.ClassName } else { "" }';
+    const out = runPowerShellUtf8(script, { timeoutMs: 12000 });
+    if (!out) return null;
+    const pipe = out.indexOf('|');
+    const cls = pipe >= 0 ? out.slice(pipe + 1) : '';
+    const name = pipe >= 0 ? out.slice(0, pipe) : out;
+    return { windowName: name, matchedClass: cls };
+  };
+  try {
+    for (const cls of ['INICertManUI', 'QWidget']) {
+      const hit = tryClass(cls);
+      if (hit) {
+        return { ok: true, windowName: hit.windowName, matchedClass: hit.matchedClass };
+      }
+    }
+    const byName = tryName('인증서 선택');
+    if (byName && byName.matchedClass) {
+      return { ok: true, windowName: byName.windowName, matchedClass: byName.matchedClass };
+    }
+    return { ok: false };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Poll until a native cert dialog is found (multiple strategies) or timeout.
+ * @param {{ timeoutMs?: number, pollMs?: number, onLog?: (msg: string) => void }} [opts]
+ * @returns {Promise<{ ok: boolean, windowName?: string, matchedClass?: string, error?: string }>}
+ */
+async function waitForNativeCertificateDialogWindow(opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 60000;
+  const pollMs = opts.pollMs ?? 1000;
+  const onLog = opts.onLog || (() => {});
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const r = probeNativeCertificateDialogWindow();
+    if (r.ok) {
+      onLog(`UIA found cert dialog class=${r.matchedClass} name="${r.windowName}"`);
+      return r;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return {
+    ok: false,
+    error:
+      'Timeout: native cert window not detected (tried INICertManUI, QWidget, title "인증서 선택"). ' +
+      'If the bank module shows its own error about a missing process, that is separate from this app — reinstall NPKI/공동인증 modules. ' +
+      'If the cert window is visible but this still fails, try running EGDesk as Administrator once, or use Inspect.exe to confirm the window Class name.',
+  };
+}
+
+/**
  * Send Enter to the foreground window (fallback after typing cert password).
  */
 function sendEnterKeyViaSendKeys() {
@@ -100,5 +186,7 @@ module.exports = {
   runPowerShellUtf8,
   probeRootWindowByClassName,
   waitForRootWindowByClassName,
+  probeNativeCertificateDialogWindow,
+  waitForNativeCertificateDialogWindow,
   sendEnterKeyViaSendKeys,
 };
