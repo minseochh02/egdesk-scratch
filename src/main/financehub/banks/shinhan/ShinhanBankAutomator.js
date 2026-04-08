@@ -13,7 +13,7 @@ try {
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const {
   isWindows,
-  waitForRootWindowByClassName,
+  waitForNativeCertificateDialogWindow,
   sendEnterKeyViaSendKeys,
 } = require('../../utils/windows-uia-native');
 const { SHINHAN_CONFIG } = require('./config');
@@ -542,8 +542,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       await this._closeBizBankPopup();
       await this._clickBizCertLogin();
 
-      const uia = await waitForRootWindowByClassName('INICertManUI', {
-        timeoutMs: 30000,
+      const uia = await waitForNativeCertificateDialogWindow({
+        timeoutMs: 60000,
         pollMs: 1000,
         onLog: (m) => this.log(m),
       });
@@ -552,7 +552,9 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         this._shinhanCorporateCertPhase = 'idle';
         return {
           success: false,
-          error: uia.error || '인증서 창(INICertManUI)을 찾지 못했습니다.',
+          error:
+            uia.error ||
+            '인증서 창을 찾지 못했습니다. 은행 보안창이 뜬 경우 창 제목·클래스가 다를 수 있습니다. EGDesk를 관리자 권한으로 실행해 보거나 NPKI/공동인증 프로그램을 재설치해 보세요.',
         };
       }
 
@@ -563,6 +565,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         success: true,
         phase: 'awaiting_password',
         certWindowName: uia.windowName,
+        certWindowClass: uia.matchedClass,
         message:
           '인증서 창이 열렸습니다. 인증서를 선택한 뒤 앱에서 비밀번호를 입력하고 로그인 완료를 눌러주세요.',
       };
