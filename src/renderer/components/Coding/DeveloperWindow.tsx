@@ -141,11 +141,21 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
         if (result.success && result.project) {
           setRegisteredProject(result.project);
 
-          // Update WebsiteViewer URL if this is a Next.js project with active tunnel
-          if (result.project.type === 'nextjs' && tunnelId) {
-            const tunnelUrl = `https://tunneling-service.onrender.com/t/${tunnelId}/p/${result.project.projectName}/`;
-            localStorage.setItem('dev-server-url', tunnelUrl);
-            console.log('📡 Updated viewer URL to tunnel:', tunnelUrl);
+          // Update WebsiteViewer URL based on mode
+          if (result.project.type === 'nextjs') {
+            let viewerUrl: string;
+
+            if (result.project.mode === 'production' && tunnelId) {
+              // Production mode: Use tunnel URL with basePath
+              viewerUrl = `https://tunneling-service.onrender.com/t/${tunnelId}/p/${result.project.projectName}/`;
+              console.log('📡 Updated viewer URL to tunnel (production):', viewerUrl);
+            } else {
+              // Dev mode: Use local URL without basePath
+              viewerUrl = `http://localhost:${result.project.port}/`;
+              console.log('🏠 Updated viewer URL to localhost (dev):', viewerUrl);
+            }
+
+            localStorage.setItem('dev-server-url', viewerUrl);
           }
         }
       } catch (err) {

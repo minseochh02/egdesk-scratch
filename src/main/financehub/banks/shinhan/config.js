@@ -75,6 +75,10 @@ const SHINHAN_XPATHS = {
   excelSaveButtonPattern: 'btn_saveXls',
   accountRow: '//div[contains(@class, "account_info")]', // This is a guess, I'll need to refine this based on the provided text
   accountList: '//ul[contains(@class, "account_list")]',
+
+  // Corporate (기업) certificate login — bizbank.shinhan.com (see scripts/bank-excel-download-automation/shinhan.spec.js)
+  bizMainUrl: 'https://bizbank.shinhan.com/main.html',
+  bizCertLoginButtonId: 'mf_wfm_main_btn_goCert',
 };
 
 /**

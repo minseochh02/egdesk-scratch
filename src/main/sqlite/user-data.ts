@@ -178,8 +178,12 @@ export class UserDataDbManager {
 
     // Execute with EXPLICIT transaction control to ensure proper commit/fsync
     // Using manual BEGIN/COMMIT instead of .transaction() wrapper
+    const wasInTransaction = this.database.inTransaction;
+
     try {
-      this.database.exec('BEGIN IMMEDIATE');
+      if (!wasInTransaction) {
+        this.database.exec('BEGIN IMMEDIATE');
+      }
 
       // Create the data table
       this.database.exec(createTableSql);
@@ -227,15 +231,19 @@ export class UserDataDbManager {
       console.log('Verification - schema_json stored as:', verifyResult?.schema_json);
 
       // EXPLICIT COMMIT - this forces fsync to disk
-      this.database.exec('COMMIT');
-      console.log('✅ [createTable] Explicit COMMIT executed, data flushed to disk');
+      if (!wasInTransaction) {
+        this.database.exec('COMMIT');
+        console.log('✅ [createTable] Explicit COMMIT executed, data flushed to disk');
+      }
 
     } catch (error) {
-      // Rollback on error
-      try {
-        this.database.exec('ROLLBACK');
-      } catch (rollbackError) {
-        console.error('Failed to rollback:', rollbackError);
+      // Rollback on error only if we started the transaction
+      if (!wasInTransaction) {
+        try {
+          this.database.exec('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('Failed to rollback:', rollbackError);
+        }
       }
       throw error;
     }
@@ -424,8 +432,12 @@ export class UserDataDbManager {
       }
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         // Rename the actual SQLite table (only if name changed)
         if (table.tableName !== sanitizedNewTableName) {
@@ -448,14 +460,18 @@ export class UserDataDbManager {
         );
 
         // EXPLICIT COMMIT
-        this.database.exec('COMMIT');
-        console.log('✅ [renameTable] Explicit COMMIT executed');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+          console.log('✅ [renameTable] Explicit COMMIT executed');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback:', rollbackError);
+          }
         }
         throw txError;
       }
@@ -481,8 +497,12 @@ export class UserDataDbManager {
       const table = this.getTable(tableId);
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         // If we got the table, drop it
         if (table && table.tableName) {
@@ -501,14 +521,18 @@ export class UserDataDbManager {
         deleteMetadata.run(tableId);
 
         // EXPLICIT COMMIT
-        this.database.exec('COMMIT');
-        console.log('✅ [deleteTable] Explicit COMMIT executed, data flushed to disk');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+          console.log('✅ [deleteTable] Explicit COMMIT executed, data flushed to disk');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback:', rollbackError);
+          }
         }
         throw txError;
       }
@@ -612,8 +636,12 @@ export class UserDataDbManager {
       const batch = rows.slice(batchStart, batchStart + batchSize);
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         for (let i = 0; i < batch.length; i++) {
           const row = batch[i];
@@ -733,13 +761,17 @@ export class UserDataDbManager {
         }
 
         // EXPLICIT COMMIT for this batch
-        this.database.exec('COMMIT');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback batch:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback batch:', rollbackError);
+          }
         }
         // Don't throw - continue with next batch
         console.error('Batch insert error:', txError);
@@ -857,8 +889,12 @@ export class UserDataDbManager {
       const batch = rows.slice(batchStart, batchStart + batchSize);
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         for (let i = 0; i < batch.length; i++) {
           const row = batch[i];
@@ -954,13 +990,17 @@ export class UserDataDbManager {
         }
 
         // EXPLICIT COMMIT for this batch
-        this.database.exec('COMMIT');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback batch:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback batch:', rollbackError);
+          }
         }
         // Don't throw - continue with next batch
         console.error('Batch insert error:', txError);
@@ -1061,8 +1101,12 @@ export class UserDataDbManager {
       console.log(`📅 Excel date range: ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`);
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         // Delete existing data in the date range - use DATE() function to handle rows with time components
         const deleteStmt = this.database.prepare(
@@ -1100,14 +1144,18 @@ export class UserDataDbManager {
         });
 
         // EXPLICIT COMMIT
-        this.database.exec('COMMIT');
-        console.log('✅ [replaceByDateRange] Explicit COMMIT executed');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+          console.log('✅ [replaceByDateRange] Explicit COMMIT executed');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback:', rollbackError);
+          }
         }
         throw txError;
       }
@@ -1164,8 +1212,12 @@ export class UserDataDbManager {
       const errorDetails: Array<{ rowIndex: number; error: string; rowData: any }> = [];
 
       // Use explicit BEGIN/COMMIT for proper fsync
+      const wasInTransaction = this.database.inTransaction;
+
       try {
-        this.database.exec('BEGIN IMMEDIATE');
+        if (!wasInTransaction) {
+          this.database.exec('BEGIN IMMEDIATE');
+        }
 
         // Step 1: Delete ALL existing rows
         const deleteStmt = this.database.prepare(`DELETE FROM "${table.tableName}"`);
@@ -1201,14 +1253,18 @@ export class UserDataDbManager {
         });
 
         // EXPLICIT COMMIT
-        this.database.exec('COMMIT');
-        console.log('✅ [replaceAll] Explicit COMMIT executed');
+        if (!wasInTransaction) {
+          this.database.exec('COMMIT');
+          console.log('✅ [replaceAll] Explicit COMMIT executed');
+        }
 
       } catch (txError) {
-        try {
-          this.database.exec('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Failed to rollback:', rollbackError);
+        if (!wasInTransaction) {
+          try {
+            this.database.exec('ROLLBACK');
+          } catch (rollbackError) {
+            console.error('Failed to rollback:', rollbackError);
+          }
         }
         throw txError;
       }
