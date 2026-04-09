@@ -38,8 +38,10 @@ const NH_BUSINESS_CONFIG = {
     // Initial popup
     confirmPopupButton: 'a:has-text("확인")',
 
-    // Certificate selection
+    // Certificate selection (INIpay in-page list — same as nhbank.spec.js)
     certificateListButton: '/html/body/div[7]/div[2]/form[2]/div/div[1]/a[2]/p/span', // 공동인증서 로그인 button
+    /** Rows in the cert picker table; used to enumerate and click a chosen cert */
+    certificateTableRow: 'div.cert-list table tbody tr',
     certificateItem: '[id="id=cn%3DCrossCertCA4%2Cou%3DAccreditedCA%2Co%3DCrossCert%2Cc%3DKR&sn=01AF1D0A"]',
 
     // Certificate password (INItech virtual keyboard)
