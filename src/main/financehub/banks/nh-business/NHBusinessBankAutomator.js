@@ -1190,7 +1190,7 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
    * @param {string} endDate - End date (YYYYMMDD)
    * @returns {Promise<Object>} Transaction data with metadata
    */
-  async getTransactions(accountNumber, startDate, _endDate) {
+  async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);

@@ -405,7 +405,7 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * ibk.spec.js — mainframe, ecb_user_num01, inqy_sttg_ymd_*, 저장 → 엑셀파일저장 → DownloadExcel → DownloadButton
+   * ibk.spec.js — mainframe, ecb_user_num01, inqy_sttg_ymd_* (시작), inqy_fnsh_ymd_* (종료, if present), 저장 → 엑셀파일저장 → DownloadExcel → DownloadButton
    * @returns {Promise<Array<{status:string,filename?:string|null,path?:string|null,extractedData:object}>>}
    */
   async getTransactions(accountNumber, startDate, endDate) {
@@ -469,18 +469,42 @@ class IbkBankAutomator extends BaseBankAutomator {
         dd = '01';
       }
 
+      const ed = (endDate || '').replace(/\D/g, '');
+      let endYy;
+      let endMm;
+      let endDd;
+      if (ed.length >= 8) {
+        endYy = ed.slice(0, 4);
+        endMm = ed.slice(4, 6);
+        endDd = ed.slice(6, 8);
+      } else {
+        const today = new Date();
+        endYy = String(today.getFullYear());
+        endMm = String(today.getMonth() + 1).padStart(2, '0');
+        endDd = String(today.getDate()).padStart(2, '0');
+      }
+
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const yestYY = String(yesterday.getFullYear());
       const yestMM = String(yesterday.getMonth() + 1).padStart(2, '0');
       const yestDD = String(yesterday.getDate()).padStart(2, '0');
 
+      const setYmdTriplet = async (prefix, y, m, day) => {
+        await frame.locator(`[id="${prefix}_yy"]`).selectOption(y);
+        await frame.locator(`[id="${prefix}_mm"]`).selectOption(m);
+        await frame.locator(`[id="${prefix}_dd"]`).selectOption(day);
+      };
+
       try {
-        await frame.locator('[id="inqy_sttg_ymd_yy"]').selectOption(yy);
-        await frame.locator('[id="inqy_sttg_ymd_mm"]').selectOption(mm);
-        await frame.locator('[id="inqy_sttg_ymd_dd"]').selectOption(dd);
+        await setYmdTriplet('inqy_sttg_ymd', yy, mm, dd);
       } catch (e) {
-        this.warn('IBK: date selects:', e.message);
+        this.warn('IBK: start date selects:', e.message);
+      }
+      try {
+        await setYmdTriplet('inqy_fnsh_ymd', endYy, endMm, endDd);
+      } catch (e) {
+        this.warn('IBK: end date selects (inqy_fnsh_ymd_*):', e.message);
       }
       await this.page.waitForTimeout(600);
 
@@ -506,9 +530,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
         } catch (e) {}
         await this.page.waitForTimeout(800);
-        await frame.locator('[id="inqy_sttg_ymd_yy"]').selectOption(yestYY);
-        await frame.locator('[id="inqy_sttg_ymd_mm"]').selectOption(yestMM);
-        await frame.locator('[id="inqy_sttg_ymd_dd"]').selectOption(yestDD);
+        await setYmdTriplet('inqy_sttg_ymd', yestYY, yestMM, yestDD);
         await this.page.waitForTimeout(400);
         try {
           await frame.locator('[id="_btnSubmit"]').click({ timeout: 5000 });
