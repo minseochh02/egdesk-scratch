@@ -361,6 +361,8 @@ class KookminBankAutomator extends BaseBankAutomator {
       const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
       this.ensureOutputDirectory(corpDownloadsPath);
       const { browser, context } = await this.createBrowser(proxy, {
+        // Same profile location as kb.spec.js (system temp + playwright-profile-*), not userData/chrome-profiles
+        useKbScriptPlaywrightProfile: true,
         extraChromeArgs: [
           '--start-maximized',
           '--no-default-browser-check',
