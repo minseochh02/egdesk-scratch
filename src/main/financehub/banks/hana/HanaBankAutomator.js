@@ -216,7 +216,17 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this.page.waitForTimeout(3000);
       await this._closeHanaPopups();
 
-      const accounts = await this._getHanaAccounts(frame);
+      // Wait for 거래내역 화면 to paint account controls (dropdown may be in frame or main document)
+      const frameAfter = this._hanaFrame();
+      try {
+        const racers = [this.page.waitForSelector('select', { timeout: 15000 })];
+        if (frameAfter) racers.push(frameAfter.waitForSelector('select', { timeout: 15000 }));
+        await Promise.race(racers);
+      } catch (e) {
+        this.warn('[HANA] No <select> within 15s after navigation — account list may still be empty.');
+      }
+
+      const accounts = await this._getHanaAccounts();
       this._hanaCorporateCertPhase = 'completed';
       this.isLoggedIn = true;
       this.userName = '하나 기업뱅킹';
@@ -239,33 +249,110 @@ class HanaBankAutomator extends BaseBankAutomator {
     }
   }
 
-  async _getHanaAccounts(frame) {
-    if (!frame) return [];
+  /**
+   * Find account `<select>` in hanaMainframe first, then full page (spec only scans frame; Electron/DOM may differ).
+   * @returns {{ scope: import('playwright').Frame | import('playwright').Page, acctSelectId: string | null }}
+   */
+  async _findHanaAccountSelectScope() {
     const candidates = ['sAcctNo', 'sAccount', 'ID_sAcctNo', 'acct', 'drw_acno', 'sInqAcctNo'];
-    let acctSelectId = null;
-    for (const id of candidates) {
-      const ex = await frame.evaluate((cid) => !!document.getElementById(cid), id);
-      if (ex) {
-        acctSelectId = id;
-        break;
+    const tryScope = async (scope, label) => {
+      for (const id of candidates) {
+        const ex = await scope.evaluate((cid) => !!document.getElementById(cid), id).catch(() => false);
+        if (ex) return { scope, acctSelectId: id, label };
       }
-    }
-    if (!acctSelectId) {
-      acctSelectId = await frame.evaluate(() => {
-        const selects = document.querySelectorAll('select');
-        for (const s of selects) {
-          for (const opt of s.options) {
-            if (/\d{3}-\d+/.test(opt.text) || /\d{10,}/.test(opt.value)) {
-              return s.id || null;
+      const found = await scope
+        .evaluate(() => {
+          const selects = document.querySelectorAll('select');
+          for (const s of selects) {
+            for (const opt of s.options) {
+              if (/\d{3}-\d+/.test(opt.text) || /\d{10,}/.test(String(opt.value || ''))) {
+                return s.id || null;
+              }
             }
           }
-        }
-        return null;
-      });
-    }
-    if (!acctSelectId) return [];
+          return null;
+        })
+        .catch(() => null);
+      if (found) return { scope, acctSelectId: found, label };
+      return null;
+    };
 
-    const acctSelect = frame.locator(`#${acctSelectId}`);
+    const frame = this._hanaFrame();
+    const fromFrame = frame ? await tryScope(frame, 'hanaMainframe') : null;
+    if (fromFrame) return fromFrame;
+
+    this.warn('[HANA] No account <select> in hanaMainframe; trying main page (same URL may host controls outside frame).');
+    const fromPage = await tryScope(this.page, 'main page');
+    if (fromPage) return fromPage;
+
+    return { scope: frame || this.page, acctSelectId: null, label: 'none' };
+  }
+
+  /** Dump all `<select>` elements for logs (matches hana.spec.js STEP 10 debug). */
+  async _logHanaSelectDebug(scope) {
+    if (!scope) return;
+    try {
+      const allSelects = await scope.evaluate(() => {
+        const selects = document.querySelectorAll('select');
+        return Array.from(selects).map((s) => ({
+          id: s.id,
+          name: s.name,
+          className: s.className,
+          optionCount: s.options.length,
+          firstOptions: Array.from(s.options)
+            .slice(0, 5)
+            .map((o) => (o.text || '').trim()),
+        }));
+      });
+      this.log(`[HANA] Account discovery — ${allSelects.length} <select> in scope:`);
+      for (const s of allSelects) {
+        this.log(
+          `[HANA]   id="${s.id}" name="${s.name}" options=${s.optionCount} first=[${s.firstOptions.join(' | ')}]`
+        );
+      }
+    } catch (e) {
+      this.warn('[HANA] select debug dump failed:', e.message);
+    }
+  }
+
+  /**
+   * Parse option text into account number — hyphenated KB format, or contiguous digits.
+   */
+  _parseAccountNumberFromOptionText(text) {
+    const t = (text || '').trim();
+    const dashed = t.match(/(\d{3})-(\d{2,4})-(\d{4,7})/);
+    if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
+    const digits = t.replace(/\D/g, '');
+    if (digits.length >= 10 && digits.length <= 16) {
+      if (digits.length === 13) return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+      return digits;
+    }
+    return null;
+  }
+
+  /**
+   * @returns {Promise<Array>} account list; never requires regex-only match (spec uses default row if empty).
+   */
+  async _getHanaAccounts() {
+    const { scope, acctSelectId } = await this._findHanaAccountSelectScope();
+    await this._logHanaSelectDebug(scope);
+
+    if (!scope || !acctSelectId) {
+      this.warn('[HANA] Could not find account dropdown id — returning placeholder account (hana.spec.js behavior).');
+      return [
+        {
+          accountNumber: 'unknown',
+          accountName: '하나 기업 계좌 (목록 미확인)',
+          bankId: 'hana',
+          balance: 0,
+          currency: 'KRW',
+          lastUpdated: new Date().toISOString(),
+        },
+      ];
+    }
+
+    const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const acctSelect = scope.locator(`[id="${idEsc}"]`);
     let rows = await acctSelect
       .evaluate((sel) =>
         Array.from(sel.options)
@@ -285,11 +372,13 @@ class HanaBankAutomator extends BaseBankAutomator {
 
     const accounts = [];
     const seen = new Set();
-    const re = /(\d{3}-\d{2,4}-\d{4,7})/;
     for (const row of rows) {
-      const m = row.text.match(re);
-      if (!m) continue;
-      const accountNumber = m[1];
+      let accountNumber = this._parseAccountNumberFromOptionText(row.text);
+      if (!accountNumber && row.value) {
+        const vd = String(row.value).replace(/\D/g, '');
+        if (vd.length >= 10) accountNumber = vd;
+      }
+      if (!accountNumber) continue;
       const key = accountNumber.replace(/-/g, '');
       if (seen.has(key)) continue;
       seen.add(key);
@@ -302,6 +391,21 @@ class HanaBankAutomator extends BaseBankAutomator {
         lastUpdated: new Date().toISOString(),
       });
     }
+
+    if (accounts.length === 0) {
+      this.warn('[HANA] Dropdown found but no parseable account rows — placeholder (hana.spec.js).');
+      return [
+        {
+          accountNumber: 'unknown',
+          accountName: '하나 기업 계좌 (기본)',
+          bankId: 'hana',
+          balance: 0,
+          currency: 'KRW',
+          lastUpdated: new Date().toISOString(),
+        },
+      ];
+    }
+
     return accounts;
   }
 
@@ -318,7 +422,7 @@ class HanaBankAutomator extends BaseBankAutomator {
   }
 
   async getAccounts() {
-    return this._getHanaAccounts(this._hanaFrame());
+    return this._getHanaAccounts();
   }
 }
 
