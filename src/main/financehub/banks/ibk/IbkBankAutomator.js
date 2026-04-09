@@ -552,7 +552,8 @@ class IbkBankAutomator extends BaseBankAutomator {
         return [];
       }
 
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      await this.focusPlaywrightPage();
+      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await frame.locator('span:has-text("저장")').first().click({ timeout: 5000 });
         await this.page.waitForTimeout(800);
