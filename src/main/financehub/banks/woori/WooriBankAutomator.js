@@ -1,5 +1,6 @@
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
+const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const { WOORI_CONFIG } = require('./config');
 
@@ -15,6 +16,8 @@ class WooriBankAutomator extends BaseBankAutomator {
     };
     super(config);
     this.outputDir = options.outputDir || this.getSafeOutputDir('woori');
+    this.downloadDir = path.join(this.outputDir, 'woori-biz-downloads');
+    this.ensureOutputDirectory(this.downloadDir);
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
@@ -393,6 +396,219 @@ class WooriBankAutomator extends BaseBankAutomator {
 
   async getAccounts() {
     return this._getWooriAccountsFromPage();
+  }
+
+  _sanitizeWooriFilenamePart(s) {
+    const t = String(s || 'account').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+    return t.slice(0, 80);
+  }
+
+  async _selectWooriAccountByIndex(index) {
+    await this.page.locator('[id="noAccount"]').click({ timeout: 5000 });
+    await this.page.waitForTimeout(800);
+    const clicked = await this.page.evaluate((idx) => {
+      const container = document.querySelector('[id="noAccount"]')?.parentElement?.querySelector('div:nth-child(2) > div');
+      if (!container) return false;
+      const btns = container.querySelectorAll('button');
+      if (btns[idx]) {
+        btns[idx].click();
+        return true;
+      }
+      return false;
+    }, index);
+    if (!clicked) {
+      throw new Error('Woori: could not click account in dropdown');
+    }
+    await this.page.waitForTimeout(1000);
+  }
+
+  _indexForWooriAccount(accountNumber, accounts) {
+    const digits = String(accountNumber).replace(/\D/g, '');
+    let ai = accounts.findIndex((a) => a.accountNumber.replace(/\D/g, '') === digits);
+    if (ai < 0) {
+      ai = accounts.findIndex((a) =>
+        String(a.accountNumber).replace(/-/g, '').includes(digits)
+      );
+    }
+    return ai >= 0 ? ai : 0;
+  }
+
+  /**
+   * woori.spec.js — noAccount, startDate, searchBtn, qcell_qcExportFile → excelExportBtn + download
+   */
+  async getTransactions(accountNumber, startDate, _endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    this.ensureOutputDirectory(this.downloadDir);
+    this.log(`Woori: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
+
+    try {
+      const accounts = await this._getWooriAccountsFromPage();
+      const ai = this._indexForWooriAccount(accountNumber, accounts);
+      await this._selectWooriAccountByIndex(ai);
+
+      const now = new Date();
+      const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      let usedDate = `${threeMonthsAgo.getFullYear()}${String(threeMonthsAgo.getMonth() + 1).padStart(2, '0')}01`;
+      const d = (startDate || '').replace(/\D/g, '');
+      if (d.length >= 8) usedDate = d.slice(0, 8);
+
+      const yesterday = new Date(now.getTime() - 86400000);
+      const yesterdayStr = `${yesterday.getFullYear()}${String(yesterday.getMonth() + 1).padStart(2, '0')}${String(yesterday.getDate()).padStart(2, '0')}`;
+
+      await this.page.evaluate((val) => {
+        const el = document.getElementById('startDate');
+        if (el) {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, usedDate);
+      await this.page.waitForTimeout(800);
+
+      try {
+        await this.page.locator('[id="searchBtn"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '조회' }).click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(3000);
+
+      const dateError = await this.page.evaluate(() => {
+        const modal = document.querySelector('div[role="dialog"].open');
+        return !!(modal && modal.textContent.includes('계좌 개설일보다 과거를 선택할 수 없습니다'));
+      });
+      if (dateError) {
+        try {
+          await this.page.locator('div[role="dialog"].open button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(800);
+        usedDate = yesterdayStr;
+        await this.page.evaluate((val) => {
+          const el = document.getElementById('startDate');
+          if (el) {
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, usedDate);
+        await this.page.waitForTimeout(800);
+        try {
+          await this.page.locator('[id="searchBtn"]').click({ timeout: 5000 });
+        } catch (e) {
+          await this.page.getByRole('button', { name: '조회' }).click({ timeout: 5000 });
+        }
+        await this.page.waitForTimeout(3000);
+      }
+
+      try {
+        await this.page.locator('[id="qcell_qcExportFile"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '파일저장' }).click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(2000);
+
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await this.page.locator('[id="excelExportBtn"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '엑셀저장' }).click({ timeout: 5000 });
+      }
+
+      const download = await downloadPromise;
+      const suggested = download.suggestedFilename() || 'woori-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeWooriFilenamePart(accountNumber);
+      const finalName = `우리기업_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      await download.saveAs(finalPath);
+
+      try {
+        await this.page.evaluate(() => {
+          const modal = document.querySelector('div[role="dialog"].pop-modal1.open');
+          if (modal) {
+            const closeBtn = modal.querySelector(
+              'button.btn-close, button[aria-label="닫기"], .btn-pop-close, a.btn-close'
+            );
+            if (closeBtn) closeBtn.click();
+            else {
+              modal.classList.remove('open');
+              modal.style.display = 'none';
+            }
+          }
+        });
+        await this.page.waitForTimeout(500);
+      } catch (e) {}
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: '우리은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('Woori Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: '우리은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
+    } catch (error) {
+      this.error('Woori getTransactions failed:', error.message);
+      return [];
+    }
+  }
+
+  async getTransactionsWithParsing(accountNumber, startDate, endDate) {
+    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    if (!downloadResult || downloadResult.length === 0) {
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data - no result returned',
+        downloadResult,
+      };
+    }
+    const resultItem = downloadResult[0];
+    if (resultItem.status !== 'downloaded') {
+      return { success: false, error: 'Data extraction failed', downloadResult };
+    }
+    const extractedData = resultItem.extractedData;
+    return {
+      success: true,
+      file: resultItem.path,
+      filename: resultItem.filename,
+      metadata: extractedData.metadata,
+      summary: extractedData.summary,
+      transactions: extractedData.transactions,
+      headers: extractedData.headers,
+    };
   }
 }
 

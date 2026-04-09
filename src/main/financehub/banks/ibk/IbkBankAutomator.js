@@ -1,5 +1,6 @@
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
+const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
@@ -17,6 +18,8 @@ class IbkBankAutomator extends BaseBankAutomator {
     };
     super(config);
     this.outputDir = options.outputDir || this.getSafeOutputDir('ibk');
+    this.downloadDir = path.join(this.outputDir, 'ibk-biz-downloads');
+    this.ensureOutputDirectory(this.downloadDir);
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
@@ -245,6 +248,11 @@ class IbkBankAutomator extends BaseBankAutomator {
     }
   }
 
+  _sanitizeIbkFilenamePart(s) {
+    const t = String(s || 'account').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+    return t.slice(0, 80);
+  }
+
   _parseIbkAccountFromOption(text, value) {
     const t = (text || '').trim();
     const dashed = t.match(/(\d{3})-(\d{2,4})-(\d{4,7})/);
@@ -394,6 +402,238 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   async getAccounts() {
     return this._getIbKAccounts();
+  }
+
+  /**
+   * ibk.spec.js — mainframe, ecb_user_num01, inqy_sttg_ymd_*, 저장 → 엑셀파일저장 → DownloadExcel → DownloadButton
+   * @returns {Promise<Array<{status:string,filename?:string|null,path?:string|null,extractedData:object}>>}
+   */
+  async getTransactions(accountNumber, startDate, endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    this.ensureOutputDirectory(this.downloadDir);
+    this.log(`IBK: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
+
+    try {
+      let frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      if (!frame) {
+        this.warn('IBK: mainframe missing — waiting');
+        await this.page.waitForTimeout(2000);
+        frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      }
+      if (!frame) {
+        this.error('IBK: mainframe not found');
+        return [];
+      }
+
+      const { scope, id: acctSelectId } = await this._findIbkAccountSelect();
+      if (!acctSelectId || !scope) {
+        this.error('IBK: account <select> not found');
+        return [];
+      }
+      const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const acctSelect = scope.locator(`[id="${idEsc}"]`);
+
+      const matchIdx = await scope.evaluate(
+        ({ selectId, acc }) => {
+          const el = document.getElementById(selectId);
+          if (!el) return -1;
+          const opts = Array.from(el.options);
+          const digits = String(acc).replace(/\D/g, '');
+          for (let i = 0; i < opts.length; i++) {
+            if (!opts[i].value) continue;
+            const text = (opts[i].textContent || '').trim();
+            const rowDigits = text.replace(/\D/g, '');
+            if (text.includes(acc) || (digits.length >= 10 && rowDigits.includes(digits))) return i;
+          }
+          return -1;
+        },
+        { selectId: acctSelectId, acc: accountNumber }
+      );
+      const pickIdx = matchIdx >= 0 ? matchIdx : 0;
+      await acctSelect.selectOption({ index: pickIdx });
+      await this.page.waitForTimeout(800);
+
+      const d = (startDate || '').replace(/\D/g, '');
+      let yy;
+      let mm;
+      let dd;
+      if (d.length >= 8) {
+        yy = d.slice(0, 4);
+        mm = d.slice(4, 6);
+        dd = d.slice(6, 8);
+      } else {
+        const now = new Date();
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        yy = String(threeMonthsAgo.getFullYear());
+        mm = String(threeMonthsAgo.getMonth() + 1).padStart(2, '0');
+        dd = '01';
+      }
+
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yestYY = String(yesterday.getFullYear());
+      const yestMM = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const yestDD = String(yesterday.getDate()).padStart(2, '0');
+
+      try {
+        await frame.locator('[id="inqy_sttg_ymd_yy"]').selectOption(yy);
+        await frame.locator('[id="inqy_sttg_ymd_mm"]').selectOption(mm);
+        await frame.locator('[id="inqy_sttg_ymd_dd"]').selectOption(dd);
+      } catch (e) {
+        this.warn('IBK: date selects:', e.message);
+      }
+      await this.page.waitForTimeout(600);
+
+      try {
+        await frame.locator('[id="_btnSubmit"]').click({ timeout: 5000 });
+      } catch (e) {
+        await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(3000);
+
+      const dateAlert = await frame.evaluate(() => {
+        const els = document.querySelectorAll('.alert, .popup, [class*="msg"], [class*="alert"]');
+        for (const el of els) {
+          if (el.offsetParent !== null && el.textContent && el.textContent.includes('개설일')) {
+            return el.textContent;
+          }
+        }
+        return '';
+      });
+      if (dateAlert) {
+        this.log('IBK: date before account opening — retrying with yesterday');
+        try {
+          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(800);
+        await frame.locator('[id="inqy_sttg_ymd_yy"]').selectOption(yestYY);
+        await frame.locator('[id="inqy_sttg_ymd_mm"]').selectOption(yestMM);
+        await frame.locator('[id="inqy_sttg_ymd_dd"]').selectOption(yestDD);
+        await this.page.waitForTimeout(400);
+        try {
+          await frame.locator('[id="_btnSubmit"]').click({ timeout: 5000 });
+        } catch (e) {
+          await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+        }
+        await this.page.waitForTimeout(3000);
+      }
+
+      const noData = await frame.evaluate(() => {
+        const body = document.body?.textContent || '';
+        return body.includes('저장할 데이터가 없습니다') || body.includes('조회된 데이터가 없습니다');
+      });
+      if (noData) {
+        this.log('IBK: no data to export');
+        try {
+          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        return [];
+      }
+
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await frame.locator('span:has-text("저장")').first().click({ timeout: 5000 });
+        await this.page.waitForTimeout(800);
+      } catch (e) {
+        this.warn('IBK: 저장 click:', e.message);
+      }
+      try {
+        await frame.locator('span:has-text("엑셀파일저장")').first().click({ timeout: 5000 });
+        await this.page.waitForTimeout(600);
+      } catch (e) {
+        this.warn('IBK: 엑셀파일저장 click:', e.message);
+      }
+      try {
+        await frame.locator('[id="DownloadExcel"]').click({ timeout: 5000 });
+        await this.page.waitForTimeout(400);
+      } catch (e) {
+        this.warn('IBK: DownloadExcel:', e.message);
+      }
+      try {
+        await frame.locator('[id="DownloadButton"]').click({ timeout: 5000 });
+      } catch (e) {
+        this.warn('IBK: DownloadButton:', e.message);
+      }
+
+      const download = await downloadPromise;
+      const suggested = download.suggestedFilename() || 'ibk-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeIbkFilenamePart(accountNumber);
+      const finalName = `IBK기업_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      await download.saveAs(finalPath);
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: 'IBK기업은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('IBK Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: 'IBK기업은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
+    } catch (error) {
+      this.error('IBK getTransactions failed:', error.message);
+      return [];
+    }
+  }
+
+  async getTransactionsWithParsing(accountNumber, startDate, endDate) {
+    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    if (!downloadResult || downloadResult.length === 0) {
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data - no result returned',
+        downloadResult,
+      };
+    }
+    const resultItem = downloadResult[0];
+    if (resultItem.status !== 'downloaded') {
+      return { success: false, error: 'Data extraction failed', downloadResult };
+    }
+    const extractedData = resultItem.extractedData;
+    return {
+      success: true,
+      file: resultItem.path,
+      filename: resultItem.filename,
+      metadata: extractedData.metadata,
+      summary: extractedData.summary,
+      transactions: extractedData.transactions,
+      headers: extractedData.headers,
+    };
   }
 }
 

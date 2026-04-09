@@ -14,6 +14,7 @@ const { NH_BUSINESS_CONFIG } = require('./config');
 const { analyzeKeyboardAndType } = require('../../utils/ai-keyboard-analyzer');
 const { buildBilingualKeyboardJSON, exportKeyboardJSON } = require('../../utils/bilingual-keyboard-parser');
 const { getGeminiApiKey } = require('../../utils/api-keys');
+const { parseTransactionExcel } = require('../../utils/transactionParser');
 
 /**
  * NH Business Bank Automator
@@ -31,6 +32,14 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('nh-business');
     this.sessionKeepAliveInterval = null;
+    /** scripts/bank-excel-download-automation/nhbank.spec.js — saveAs targets */
+    this.downloadDir = path.join(this.outputDir, 'nh-biz-excel');
+    this.ensureOutputDirectory(this.downloadDir);
+  }
+
+  _sanitizeNhFilenamePart(s) {
+    const t = String(s || 'account').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+    return t.slice(0, 80);
   }
 
   // ============================================================================
@@ -1181,47 +1190,166 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
    * @param {string} endDate - End date (YYYYMMDD)
    * @returns {Promise<Object>} Transaction data with metadata
    */
-  async getTransactions(accountNumber, startDate, endDate) {
+  async getTransactions(accountNumber, startDate, _endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    this.ensureOutputDirectory(this.downloadDir);
+    this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
 
     try {
-      this.log(`Fetching transactions for account ${accountNumber}...`);
-      this.log(`Date range: ${startDate} to ${endDate}`);
-
-      // Step 1: Select account from dropdown
       await this.selectAccount(accountNumber);
 
-      // Step 2: Set date range
-      const start = new Date(
-        parseInt(startDate.substring(0, 4)),
-        parseInt(startDate.substring(4, 6)) - 1,
-        parseInt(startDate.substring(6, 8))
-      );
-      const end = new Date(
-        parseInt(endDate.substring(0, 4)),
-        parseInt(endDate.substring(4, 6)) - 1,
-        parseInt(endDate.substring(6, 8))
-      );
+      try {
+        await this.page.locator('a:has-text("3개월")').first().click({ timeout: 5000 });
+      } catch (e) {
+        this.warn('NH biz: 3개월 shortcut not found');
+      }
+      await this.page.waitForTimeout(800);
 
-      await this.setDateRange(this.page, start, end);
+      await this.page.locator('a.ibz-btn.size-lg.fill:text-is("조회")').first().click({ timeout: 5000 });
+      await this.page.waitForTimeout(3000);
 
-      // Step 3: Click search button
-      this.log('Clicking search button...');
-      await this.page.locator(this.config.xpaths.searchButton).click();
-      await this.page.waitForTimeout(this.config.delays.humanLike);
+      const dateError = await this.page.evaluate(() => {
+        const body = document.body.textContent || '';
+        return (
+          body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') || body.includes('조회시작일이 계좌개설일')
+        );
+      });
+      if (dateError) {
+        this.log('NH biz: date error — retrying with 1개월');
+        try {
+          await this.page.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(800);
+        try {
+          await this.page.locator('a:has-text("1개월")').first().click({ timeout: 5000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(400);
+        await this.page.locator('a.ibz-btn.size-lg.fill:text-is("조회")').first().click({ timeout: 5000 });
+        await this.page.waitForTimeout(3000);
+      }
 
-      // Step 4: Handle pagination - click "다음내역" to load all pages
-      await this.loadAllTransactionPages();
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await this.page.locator('a:has-text("엑셀저장")').first().click({ timeout: 5000 });
+      } catch (e) {
+        try {
+          await this.page.locator('.ibz-btn:has-text("엑셀저장")').first().click({ timeout: 5000 });
+        } catch (e2) {
+          await this.page.locator('button:has-text("엑셀저장")').first().click({ timeout: 5000 });
+        }
+      }
 
-      // Step 5: Extract transaction data
-      const extractedData = await this.extractTransactionData();
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })),
+        this.page.waitForTimeout(5000).then(() => ({ type: 'timeout' })),
+      ]);
 
-      return extractedData;
+      if (raced.type === 'timeout') {
+        const noDataMsg = await this.page.evaluate(() => {
+          const body = document.body.textContent || '';
+          return (
+            body.includes('저장할 데이터가 없습니다') ||
+            body.includes('조회결과가 없습니다') ||
+            body.includes('거래내역이 없습니다')
+          );
+        });
+        if (noDataMsg) {
+          this.log('NH biz: no data to export');
+          try {
+            await this.page.locator('button:has-text("확인"), a:has-text("확인")').first().click({ timeout: 3000 });
+          } catch (e) {}
+        } else {
+          this.warn('NH biz: Excel download timed out');
+        }
+        return [];
+      }
 
+      const download = raced.data;
+      const suggested = download.suggestedFilename() || 'nh-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeNhFilenamePart(accountNumber);
+      const finalName = `NH법인_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      await download.saveAs(finalPath);
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: 'NH농협은행 법인',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('NH biz Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: 'NH농협은행 법인',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
     } catch (error) {
       this.error('Error fetching transactions:', error.message);
-      throw error;
+      return [];
     }
+  }
+
+  /**
+   * @returns {Promise<Object>}
+   */
+  async getTransactionsWithParsing(accountNumber, startDate, endDate) {
+    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    if (!downloadResult || downloadResult.length === 0) {
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data - no result returned',
+        downloadResult,
+      };
+    }
+    const resultItem = downloadResult[0];
+    if (resultItem.status !== 'downloaded') {
+      return {
+        success: false,
+        error: 'Data extraction failed',
+        downloadResult,
+      };
+    }
+    const extractedData = resultItem.extractedData;
+    return {
+      success: true,
+      file: resultItem.path,
+      filename: resultItem.filename,
+      metadata: extractedData.metadata,
+      summary: extractedData.summary,
+      transactions: extractedData.transactions,
+      headers: extractedData.headers,
+    };
   }
 
   /**
