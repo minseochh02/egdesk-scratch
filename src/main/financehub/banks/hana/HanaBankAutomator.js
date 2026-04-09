@@ -464,7 +464,7 @@ class HanaBankAutomator extends BaseBankAutomator {
   /**
    * hana.spec.js — frame, account select, sInqStrDt, 조회, 전체엑셀다운로드 / fallbacks
    */
-  async getTransactions(accountNumber, startDate, _endDate) {
+  async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`Hana: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);

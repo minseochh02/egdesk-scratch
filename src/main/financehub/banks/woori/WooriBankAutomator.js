@@ -436,7 +436,7 @@ class WooriBankAutomator extends BaseBankAutomator {
   /**
    * woori.spec.js — noAccount, startDate, searchBtn, qcell_qcExportFile → excelExportBtn + download
    */
-  async getTransactions(accountNumber, startDate, _endDate) {
+  async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`Woori: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
