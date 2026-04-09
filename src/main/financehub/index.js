@@ -14,6 +14,9 @@ const shinhan = require('./banks/shinhan');
 const kookmin = require('./banks/kookmin');
 const nh = require('./banks/nh');
 const nhBusiness = require('./banks/nh-business');
+const ibk = require('./banks/ibk');
+const hana = require('./banks/hana');
+const woori = require('./banks/woori');
 
 // Cards
 const cards = require('./cards');
@@ -53,10 +56,21 @@ const BANKS = {
       return automator.login({ certificatePassword }, proxyUrl);
     },
   },
-  // Future banks will be added here:
-  // kb: { ... },
-  // woori: { ... },
-  // hana: { ... },
+  ibk: {
+    config: ibk.IBK_BANK_INFO,
+    Automator: ibk.IbkBankAutomator,
+    create: ibk.createIbkAutomator,
+  },
+  hana: {
+    config: hana.HANA_BANK_INFO,
+    Automator: hana.HanaBankAutomator,
+    create: hana.createHanaAutomator,
+  },
+  woori: {
+    config: woori.WOORI_BANK_INFO,
+    Automator: woori.WooriBankAutomator,
+    create: woori.createWooriAutomator,
+  },
 };
 
 /**
@@ -120,6 +134,9 @@ module.exports = {
   kookmin,
   nh,
   nhBusiness,
+  ibk,
+  hana,
+  woori,
 
   // Cards (full module)
   cards,

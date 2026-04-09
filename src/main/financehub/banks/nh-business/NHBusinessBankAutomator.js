@@ -1,7 +1,9 @@
 // ============================================================================
 // NH BUSINESS BANK AUTOMATOR (법인)
 // ============================================================================
-// Based on workflow from output/nh-business-account.spec.js
+// Based on workflow from output/nh-business-account.spec.js.
+// Playwright reference scripts/bank-excel-download-automation/nhbank.spec.js uses in-page INI + Arduino;
+// this module uses INItech virtual keyboard + AI key detection — keep one automator; use the script for selector/timing updates.
 
 const path = require('path');
 const fs = require('fs');

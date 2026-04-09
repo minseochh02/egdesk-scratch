@@ -2189,11 +2189,21 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:get-transactions', { bankId, accountNumber, startDate, endDate, parse }),
     loginAndGetAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:login-and-get-accounts', { bankId, credentials, proxyUrl }),
+    corporateCertPrepare: (bankId: string, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:corporate-cert-prepare', { bankId, proxyUrl }),
+    corporateCertComplete: (bankId: string, certificatePassword: string) =>
+      ipcRenderer.invoke('finance-hub:corporate-cert-complete', { bankId, certificatePassword }),
+    corporateCertCancel: (bankId: string) =>
+      ipcRenderer.invoke('finance-hub:corporate-cert-cancel', { bankId }),
     shinhanCorporateCertPrepare: (proxyUrl?: string) =>
-      ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-prepare', { proxyUrl }),
+      ipcRenderer.invoke('finance-hub:corporate-cert-prepare', { bankId: 'shinhan', proxyUrl }),
     shinhanCorporateCertComplete: (certificatePassword: string) =>
-      ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-complete', { certificatePassword }),
-    shinhanCorporateCertCancel: () => ipcRenderer.invoke('finance-hub:shinhan-corporate-cert-cancel'),
+      ipcRenderer.invoke('finance-hub:corporate-cert-complete', {
+        bankId: 'shinhan',
+        certificatePassword,
+      }),
+    shinhanCorporateCertCancel: () =>
+      ipcRenderer.invoke('finance-hub:corporate-cert-cancel', { bankId: 'shinhan' }),
     getConnectedBanks: () =>
       ipcRenderer.invoke('finance-hub:get-connected-banks'),
     disconnect: (bankId: string) =>

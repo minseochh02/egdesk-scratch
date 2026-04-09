@@ -670,11 +670,11 @@ const createWindow = async () => {
           
           if (!automator) {
             const { createAutomator } = require('./financehub');
-            const shinhanOpts =
-              bankId === 'shinhan'
-                ? { headless: false, arduinoPort: await getArduinoPort() }
-                : { headless: false };
-            automator = createAutomator(bankId, shinhanOpts);
+            const arduinoBankIds = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+            const automatorOpts = arduinoBankIds.has(bankId)
+              ? { headless: false, arduinoPort: await getArduinoPort() }
+              : { headless: false };
+            automator = createAutomator(bankId, automatorOpts);
             activeAutomators.set(bankId, automator);
           }
           
@@ -689,7 +689,72 @@ const createWindow = async () => {
         }
       });
 
-      // Shinhan 기업: two-phase certificate login (prepare native dialog → user selects cert → UI password → complete)
+      /** 기업 공동인증서 (native or in-page) — shinhan | kookmin | ibk | hana | woori */
+      const CORPORATE_NATIVE_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+
+      ipcMain.handle(
+        'finance-hub:corporate-cert-prepare',
+        async (_event, { bankId, proxyUrl }: { bankId?: string; proxyUrl?: string } = {}) => {
+          try {
+            const id = String(bankId || '').toLowerCase();
+            if (!id || !CORPORATE_NATIVE_CERT_BANK_IDS.has(id)) {
+              return { success: false, error: '지원하지 않는 은행이거나 bankId가 없습니다.' };
+            }
+            let automator = activeAutomators.get(id);
+            if (automator && typeof automator.cleanup === 'function') {
+              await automator.cleanup(false);
+              activeAutomators.delete(id);
+            }
+            const { createAutomator } = require('./financehub');
+            const arduinoPort = await getArduinoPort();
+            automator = createAutomator(id, { headless: false, arduinoPort });
+            activeAutomators.set(id, automator);
+            if (typeof automator.prepareCorporateCertificateLogin !== 'function') {
+              return { success: false, error: '이 은행은 기업 인증서 준비를 지원하지 않습니다.' };
+            }
+            return await automator.prepareCorporateCertificateLogin(proxyUrl);
+          } catch (error) {
+            console.error('[FINANCE-HUB] corporate-cert-prepare failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        }
+      );
+
+      ipcMain.handle(
+        'finance-hub:corporate-cert-complete',
+        async (
+          _event,
+          { bankId, certificatePassword }: { bankId?: string; certificatePassword: string }
+        ) => {
+          try {
+            const id = String(bankId || '').toLowerCase();
+            const automator = activeAutomators.get(id);
+            if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
+              return { success: false, error: '활성 세션이 없습니다. 처음부터 다시 시도하세요.' };
+            }
+            return await automator.completeCorporateCertificateLogin({ certificatePassword });
+          } catch (error) {
+            console.error('[FINANCE-HUB] corporate-cert-complete failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        }
+      );
+
+      ipcMain.handle('finance-hub:corporate-cert-cancel', async (_event, { bankId }: { bankId?: string }) => {
+        try {
+          const id = String(bankId || '').toLowerCase();
+          const automator = activeAutomators.get(id);
+          if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+            await automator.cancelCorporateCertificateLogin(true);
+          }
+          activeAutomators.delete(id);
+          return { success: true };
+        } catch (error) {
+          console.error('[FINANCE-HUB] corporate-cert-cancel failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
       ipcMain.handle('finance-hub:shinhan-corporate-cert-prepare', async (_event, { proxyUrl } = {}) => {
         try {
           const bankId = 'shinhan';
