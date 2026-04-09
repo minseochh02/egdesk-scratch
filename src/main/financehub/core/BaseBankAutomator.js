@@ -318,25 +318,31 @@ class BaseBankAutomator {
    * Sets up browser context with routing and navigation handling
    * @param {Object} context - Playwright browser context
    * @param {Object} [page] - Playwright page object
+   * @param {Object} [options] - Setup options
+   * @param {boolean} [options.skipRouting] - Skip request routing (for native security programs)
    */
-  async setupBrowserContext(context, page = null) {
+  async setupBrowserContext(context, page = null, options = {}) {
     const { targetUrl, undesiredHostnames } = this.config;
+    const { skipRouting = false } = options;
 
-    // Intercept unwanted hostnames
-    await context.route('**/*', async (route) => {
-      try {
-        const request = route.request();
-        const isDocument = request.resourceType() === 'document';
-        const url = new URL(request.url());
-        if (isDocument && undesiredHostnames.includes(url.hostname)) {
-          return route.fulfill({ status: 302, headers: { location: targetUrl } });
-        }
-      } catch {}
-      return route.continue();
-    });
+    // Skip routing if requested (needed for native security programs like Delfino)
+    if (!skipRouting) {
+      // Intercept unwanted hostnames
+      await context.route('**/*', async (route) => {
+        try {
+          const request = route.request();
+          const isDocument = request.resourceType() === 'document';
+          const url = new URL(request.url());
+          if (isDocument && undesiredHostnames.includes(url.hostname)) {
+            return route.fulfill({ status: 302, headers: { location: targetUrl } });
+          }
+        } catch {}
+        return route.continue();
+      });
+    }
 
-    // Handle frame navigation
-    if (page) {
+    // Handle frame navigation (skip if routing is disabled)
+    if (page && !skipRouting) {
       page.on('framenavigated', (frame) => {
         try {
           if (frame === page.mainFrame()) {
