@@ -73,25 +73,79 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
   }
 
-  async _wooriClickCertTableCell() {
-    const certLabel = process.env.CERT_EXPIRY || process.env.WOORI_CERT_ROW_LABEL || '2026-08-15';
-    try {
-      const locator = this.page.getByRole('div', { name: certLabel });
-      await locator.hover({ force: true });
-      await locator.click({ timeout: 5000 });
-    } catch (error) {
-      try {
-        const fallbackLocator = this.page.locator('.xwup-tableview-cell');
-        await fallbackLocator.hover({ force: true });
-        await fallbackLocator.click({ timeout: 5000 });
-      } catch (error2) {
-        const xpathLocator = this.page.locator(
-          'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
-        );
-        await xpathLocator.hover({ force: true });
-        await xpathLocator.click();
-      }
+  /**
+   * Debug: only the cert row labeled 2026-08-15 (no .xwup-tableview-cell / XPath fallbacks).
+   * Logs id / class / text / approximate xpath for cert-related nodes before clicking.
+   */
+  async _logWooriCertSelectionDebug() {
+    const dump = await this.page.evaluate(() => {
+      const snippet = (el) => ({
+        tag: el.tagName,
+        id: el.id || null,
+        className: typeof el.className === 'string' ? el.className : null,
+        text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 160),
+      });
+      const xpathFor = (el) => {
+        if (!el || el.nodeType !== 1) return '';
+        const parts = [];
+        let node = el;
+        for (let depth = 0; node && node.nodeType === 1 && depth < 12; depth++) {
+          let seg = node.tagName.toLowerCase();
+          if (node.id) {
+            seg += `[@id="${node.id}"]`;
+            parts.unshift(seg);
+            break;
+          }
+          const parent = node.parentElement;
+          if (!parent) break;
+          const sameTag = Array.from(parent.children).filter((c) => c.tagName === node.tagName);
+          const idx = sameTag.indexOf(node) + 1;
+          seg += `[${idx}]`;
+          parts.unshift(seg);
+          node = parent;
+        }
+        return parts.length ? '/' + parts.join('/') : '';
+      };
+
+      const cells = Array.from(document.querySelectorAll('.xwup-tableview-cell'));
+      const cellInfo = cells.map((el) => ({ ...snippet(el), xpathApprox: xpathFor(el) }));
+
+      const textHits = [];
+      document.querySelectorAll('div, td, span, a, button').forEach((el) => {
+        const t = (el.textContent || '').trim();
+        if (!t.includes('2026-08-15')) return;
+        if (textHits.length >= 25) return;
+        textHits.push({ ...snippet(el), xpathApprox: xpathFor(el) });
+      });
+
+      return { cellCount: cells.length, cells: cellInfo, textHitsContainingDate: textHits };
+    });
+    this.log('[WOORI DEBUG] .xwup-tableview-cell count=', dump.cellCount);
+    for (let i = 0; i < dump.cells.length; i++) {
+      this.log(`[WOORI DEBUG] cell[${i}]`, JSON.stringify(dump.cells[i]));
     }
+    for (let i = 0; i < dump.textHitsContainingDate.length; i++) {
+      this.log(`[WOORI DEBUG] textHit[${i}] (contains 2026-08-15)`, JSON.stringify(dump.textHitsContainingDate[i]));
+    }
+  }
+
+  async _wooriClickCertTableCell() {
+    const TARGET = '2026-08-15';
+    await this._logWooriCertSelectionDebug();
+
+    const locator = this.page.getByRole('div', { name: TARGET });
+    const count = await locator.count();
+    this.log(`[WOORI DEBUG] getByRole('div', { name: '${TARGET}' }) count=${count}`);
+
+    if (count === 0) {
+      throw new Error(
+        `[WOORI DEBUG] No div with accessible name "${TARGET}". See logs above for .xwup-tableview-cell and text hits.`
+      );
+    }
+
+    await locator.first().hover({ force: true });
+    await locator.first().click({ timeout: 5000 });
+    this.log(`[WOORI DEBUG] clicked getByRole('div', { name: '${TARGET}' }) (first of ${count})`);
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
