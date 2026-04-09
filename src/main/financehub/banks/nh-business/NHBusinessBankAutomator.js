@@ -423,30 +423,76 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
   // ============================================================================
 
   /**
-   * Reads all rows from the INIpay cert table (div.cert-list …), similar to Hometax fetchCertificates.
+   * Substrings to match user/env expiry against row text (nhbank.spec uses tr:has-text).
+   * @param {string} expiry
+   * @returns {string[]}
+   */
+  expandNhCertExpiryVariants(expiry) {
+    if (!expiry || typeof expiry !== 'string') return [];
+    const s = expiry.trim();
+    const out = new Set([s]);
+    const iso = s.match(/^(\d{4})[-/.](\d{2})[-/.](\d{2})/);
+    if (iso) {
+      const [, y, mo, d] = iso;
+      out.add(`${y}-${mo}-${d}`);
+      out.add(`${y}.${mo}.${d}`);
+      out.add(`${y}/${mo}/${d}`);
+      out.add(`${mo}-${d}`);
+      out.add(`${mo}.${d}`);
+    }
+    const md = s.match(/^(\d{2})[-/.](\d{2})$/);
+    if (md) {
+      out.add(`${md[1]}-${md[2]}`);
+      out.add(`${md[1]}.${md[2]}`);
+    }
+    return [...out];
+  }
+
+  /**
+   * Find cert rows by scanning every tr (not only div.cert-list): keep rows whose text
+   * contains a full calendar date YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD — same idea as
+   * nhbank.spec matching expiry in the row.
    * @param {import('playwright-core').Page} page
-   * @returns {Promise<Array<{ index: number, cells: string[], display: string, fullText: string, 소유자명?: string, 용도?: string, 발급기관?: string, 만료일?: string }>>}
+   * @returns {Promise<Array<{ index: number, trNth: number, cells: string[], display: string, fullText: string, matchedDate: string, 소유자명?: string, 용도?: string, 발급기관?: string, 만료일?: string }>>}
    */
   async scrapeIniCertificateRows(page) {
-    const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
-    return page.evaluate((selector) => {
-      const rows = document.querySelectorAll(selector);
-      return Array.from(rows).map((row, index) => {
+    return page.evaluate(() => {
+      const fullDateRe = /\d{4}[-./]\d{2}[-./]\d{2}/;
+      const allTr = document.querySelectorAll('tr');
+      const out = [];
+      let certIndex = 0;
+      for (let trNth = 0; trNth < allTr.length; trNth++) {
+        const row = allTr[trNth];
+        const fullText = (row.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!fullDateRe.test(fullText)) continue;
+
         const cells = Array.from(row.querySelectorAll('td')).map((td) =>
           (td.textContent || '').replace(/\s+/g, ' ').trim()
         );
-        const fullText = (row.textContent || '').replace(/\s+/g, ' ').trim();
-        const display = cells.filter(Boolean).join(' · ') || fullText || `Row ${index + 1}`;
-        const entry = { index, cells, display, fullText };
+        const m = fullText.match(fullDateRe);
+        const matchedDate = m ? m[0] : '';
+        const display = cells.filter(Boolean).join(' · ') || fullText || `Row ${certIndex + 1}`;
+        const entry = {
+          index: certIndex,
+          trNth,
+          cells,
+          display,
+          fullText,
+          matchedDate,
+        };
         if (cells.length >= 4) {
           entry.소유자명 = cells[0];
           entry.용도 = cells[1];
           entry.발급기관 = cells[2];
-          entry.만료일 = cells[3];
+          entry.만료일 = cells[3] || matchedDate;
+        } else {
+          entry.만료일 = matchedDate;
         }
-        return entry;
-      });
-    }, rowSel);
+        out.push(entry);
+        certIndex += 1;
+      }
+      return out;
+    });
   }
 
   /**
@@ -483,17 +529,22 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
       process.env.CERT_EXPIRY ||
       '';
     if (expiry) {
-      const found = certificates.findIndex(
-        (c) =>
-          (c.fullText && c.fullText.includes(expiry)) ||
-          (c.display && c.display.includes(expiry)) ||
-          (c.만료일 && c.만료일.includes(expiry))
+      const variants = this.expandNhCertExpiryVariants(expiry);
+      const found = certificates.findIndex((c) =>
+        variants.some(
+          (v) =>
+            (v && c.fullText && c.fullText.includes(v)) ||
+            (v && c.display && c.display.includes(v)) ||
+            (v && c.matchedDate && c.matchedDate.includes(v)) ||
+            (v && c.만료일 && c.만료일.includes(v)) ||
+            (c.cells || []).some((cell) => v && cell && cell.includes(v))
+        )
       );
       if (found >= 0) {
-        this.log(`Using certificate row matching expiry/substring "${expiry}" (option [${found + 1}]).`);
+        this.log(`Using certificate row matching expiry "${expiry}" (option [${found + 1}]).`);
         return found;
       }
-      this.warn(`No row contains "${expiry}"; using first certificate.`);
+      this.warn(`No row contains "${expiry}" (tried ${variants.length} variants); using first certificate.`);
     }
 
     this.log('No certificateIndex / expiry match; using first certificate [1].');
@@ -532,36 +583,43 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
         ? page.locator(`xpath=${this.config.xpaths.certificateListButton}`)
         : page.locator(this.config.xpaths.certificateListButton);
       await certButton.click();
-      await page.waitForTimeout(1775); // From spec file timing
+      await page.waitForTimeout(3000); // nhbank.spec.js: wait for INIpay cert layer
 
-      // Step 3: Enumerate INIpay cert rows (div.cert-list table) and select one — Hometax-style listing
+      // Step 3: Discover cert rows = any tr whose text has YYYY-MM-DD (or . /); click by global tr index
       const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
-      this.log('Waiting for certificate list (INIpay table)...');
+      this.log('Waiting for certificate list...');
       try {
-        await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 15000 });
+        await page.locator('tr').filter({ hasText: /\d{4}[-./]\d{2}[-./]\d{2}/ }).first().waitFor({ state: 'visible', timeout: 15000 });
       } catch (e) {
-        this.warn('Cert table rows not visible yet, continuing after delay...');
+        try {
+          await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 5000 });
+        } catch (e2) {
+          this.warn('Cert rows not visible yet, continuing after delay...');
+        }
       }
       await page.waitForTimeout(2000);
 
-      const certificates = await this.scrapeIniCertificateRows(page);
+      let certificates = await this.scrapeIniCertificateRows(page);
       if (certificates.length === 0) {
-        this.warn('No rows found in div.cert-list table tbody — check certificateTableRow selector; using first table row fallback.');
-        await page.locator('table tbody tr').first().click({ timeout: 10000 });
+        this.warn('No tr with YYYY-MM-DD style date — trying div.cert-list / first tbody row.');
+        try {
+          await page.locator(rowSel).first().click({ timeout: 5000 });
+        } catch (e) {
+          await page.locator('table tbody tr').first().click({ timeout: 10000 });
+        }
       } else {
-        this.log(`Available certificates (${certificates.length}) — pick with certificateIndex (1–${certificates.length}) or certificateExpiry / NH_BUSINESS_CERT_EXPIRY:`);
+        this.log(`Available certificates (${certificates.length}, tr[] by date) — certificateIndex or certificateExpiry:`);
         certificates.forEach((c, i) => {
-          if (c.만료일) {
-            this.log(
-              `  [${i + 1}] ${c.소유자명 || ''} | ${c.용도 || ''} | ${c.발급기관 || ''} | ${c.만료일}`
-            );
-          } else {
-            this.log(`  [${i + 1}] ${c.display}`);
-          }
+          const line =
+            c.소유자명 && c.만료일
+              ? `  [${i + 1}] ${c.소유자명} | ${c.용도 || ''} | ${c.발급기관 || ''} | ${c.만료일} (tr#${c.trNth})`
+              : `  [${i + 1}] ${c.display} · ${c.matchedDate} (tr#${c.trNth})`;
+          this.log(line);
         });
         const selectedIdx = this.resolveCertificateRowIndex(certificates, credentials);
-        this.log('Selecting certificate...');
-        await page.locator(rowSel).nth(selectedIdx).click({ timeout: 10000 });
+        const chosen = certificates[selectedIdx];
+        this.log(`Selecting certificate (Playwright tr index ${chosen.trNth})...`);
+        await page.locator('tr').nth(chosen.trNth).click({ timeout: 10000 });
       }
       await page.waitForTimeout(500);
 
@@ -853,13 +911,17 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
         ? page.locator(`xpath=${this.config.xpaths.certificateListButton}`)
         : page.locator(this.config.xpaths.certificateListButton);
       await certButton.click();
-      await page.waitForTimeout(1775);
+      await page.waitForTimeout(3000);
 
       const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
       try {
-        await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 15000 });
+        await page.locator('tr').filter({ hasText: /\d{4}[-./]\d{2}[-./]\d{2}/ }).first().waitFor({ state: 'visible', timeout: 15000 });
       } catch (e) {
-        this.warn('Cert table not visible in time:', e.message);
+        try {
+          await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 5000 });
+        } catch (e2) {
+          this.warn('Cert table not visible in time:', e.message);
+        }
       }
       await page.waitForTimeout(2000);
 
