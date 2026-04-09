@@ -35,6 +35,9 @@ class KookminBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('kookmin');
+    /** Real Excel from obiz.kbstar.com (kb.spec.js) — saveAs target */
+    this.downloadDir = path.join(this.outputDir, 'kookmin-biz-downloads');
+    this.ensureOutputDirectory(this.downloadDir);
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     /** @type {import('../../utils/arduino-hid-bank').ArduinoHidBankSession | null} */
@@ -618,6 +621,189 @@ class KookminBankAutomator extends BaseBankAutomator {
     await this.page.waitForTimeout(5000);
   }
 
+  _sanitizeFilenamePart(s) {
+    const t = String(s || 'account').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+    return t.slice(0, 80);
+  }
+
+  /**
+   * KB 기업뱅킹 obiz.kbstar.com — scripts/bank-excel-download-automation/kb.spec.js
+   */
+  async _getTransactionsKookminBiz(accountNumber, startDate, _endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    try {
+      let hasAcct = (await this.page.locator('#acct').count()) > 0;
+      if (!hasAcct) {
+        await this._navigateKookminBizTransactionInquiry();
+        await this.page.waitForTimeout(2000);
+        hasAcct = (await this.page.locator('#acct').count()) > 0;
+      }
+      if (!hasAcct) {
+        throw new Error('KB biz: #acct not found after navigation');
+      }
+
+      const acctSelect = this.page.locator('#acct');
+      const matchIdx = await this.page.evaluate(({ acc }) => {
+        const el = document.getElementById('acct');
+        if (!el) return -1;
+        const opts = Array.from(el.options);
+        const digits = String(acc).replace(/\D/g, '');
+        for (let i = 0; i < opts.length; i++) {
+          if (!opts[i].value) continue;
+          const text = (opts[i].textContent || '').trim();
+          if (text.includes('선택')) continue;
+          const rowDigits = text.replace(/\D/g, '');
+          if (text.includes(acc) || (digits.length >= 10 && rowDigits.includes(digits))) return i;
+        }
+        return -1;
+      }, { acc: accountNumber });
+
+      const pickIdx = matchIdx >= 0 ? matchIdx : 0;
+      await acctSelect.selectOption({ index: pickIdx });
+      this.log(`KB biz: selected account index ${pickIdx} for ${accountNumber}`);
+      await this.page.waitForTimeout(1000);
+
+      const d = (startDate || '').replace(/\D/g, '');
+      let startYear;
+      let startMonth;
+      if (d.length >= 6) {
+        startYear = d.slice(0, 4);
+        startMonth = d.slice(4, 6);
+      } else {
+        const now = new Date();
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        startYear = String(threeMonthsAgo.getFullYear());
+        startMonth = String(threeMonthsAgo.getMonth() + 1).padStart(2, '0');
+      }
+
+      await this.page.locator('#fromYear').selectOption(startYear);
+      await this.page.waitForTimeout(300);
+      await this.page.locator('#fromMonth').selectOption(startMonth);
+      await this.page.waitForTimeout(800);
+
+      try {
+        await this.page.locator('button.u-button:has-text("조회")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('button:has-text("조회")').first().click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(3000);
+
+      const dateError = await this.page.evaluate(() => {
+        const body = document.body.textContent || '';
+        return (
+          body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') || body.includes('조회시작일이 계좌개설일')
+        );
+      });
+      if (dateError) {
+        this.log('KB biz: date error — retrying with current month');
+        try {
+          await this.page.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(800);
+        const now = new Date();
+        const curYear = String(now.getFullYear());
+        const curMonth = String(now.getMonth() + 1).padStart(2, '0');
+        await this.page.locator('#fromYear').selectOption(curYear);
+        await this.page.waitForTimeout(200);
+        await this.page.locator('#fromMonth').selectOption(curMonth);
+        await this.page.waitForTimeout(500);
+        try {
+          await this.page.locator('button.u-button:has-text("조회")').first().click({ timeout: 5000 });
+        } catch (e) {
+          await this.page.locator('button:has-text("조회")').first().click({ timeout: 5000 });
+        }
+        await this.page.waitForTimeout(3000);
+      }
+
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await this.page.locator('button.u-button:has-text("엑셀저장")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('button:has-text("엑셀저장")').first().click({ timeout: 5000 });
+      }
+
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })),
+        this.page.waitForTimeout(5000).then(() => ({ type: 'timeout' })),
+      ]);
+
+      if (raced.type === 'timeout') {
+        const noDataMsg = await this.page.evaluate(() => {
+          const body = document.body.textContent || '';
+          return (
+            body.includes('저장할 데이터가 없습니다') ||
+            body.includes('조회결과가 없습니다') ||
+            body.includes('거래내역이 없습니다')
+          );
+        });
+        if (noDataMsg) {
+          this.log('KB biz: no data to export');
+          try {
+            await this.page.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+          } catch (e) {}
+          await this.page.waitForTimeout(500);
+        } else {
+          this.warn('KB biz: Excel download timed out');
+        }
+        return [];
+      }
+
+      const download = raced.data;
+      const suggested = download.suggestedFilename() || 'kb-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeFilenamePart(accountNumber);
+      const finalName = `국민기업_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      await download.saveAs(finalPath);
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: '국민은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('KB biz Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: '국민은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
+    } catch (error) {
+      this.error('KB biz getTransactions failed:', error.message);
+      return [];
+    }
+  }
+
   async _getKookminBizAccountsFromAcct() {
     const sel = this.page.locator('#acct');
     if ((await sel.count()) === 0) return [];
@@ -775,7 +961,11 @@ class KookminBankAutomator extends BaseBankAutomator {
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
     this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
-    
+
+    if (this.page.url().includes('obiz.kbstar.com')) {
+      return this._getTransactionsKookminBiz(accountNumber, startDate, endDate);
+    }
+
     try {
       // 1. Navigate to inquiry page if needed
       if (!this.page.url().includes('C017213')) {

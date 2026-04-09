@@ -1,5 +1,6 @@
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
+const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
@@ -17,6 +18,8 @@ class HanaBankAutomator extends BaseBankAutomator {
     };
     super(config);
     this.outputDir = options.outputDir || this.getSafeOutputDir('hana');
+    this.downloadDir = path.join(this.outputDir, 'hana-biz-downloads');
+    this.ensureOutputDirectory(this.downloadDir);
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
@@ -451,6 +454,238 @@ class HanaBankAutomator extends BaseBankAutomator {
 
   async getAccounts() {
     return this._getHanaAccounts();
+  }
+
+  _sanitizeHanaFilenamePart(s) {
+    const t = String(s || 'account').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+    return t.slice(0, 80);
+  }
+
+  /**
+   * hana.spec.js — frame, account select, sInqStrDt, 조회, 전체엑셀다운로드 / fallbacks
+   */
+  async getTransactions(accountNumber, startDate, _endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    this.ensureOutputDirectory(this.downloadDir);
+    this.log(`Hana: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
+
+    try {
+      const frame = (await this._waitForHanaMainframe({ maxWaitMs: 15000 })) || this._hanaFrame();
+      if (!frame) {
+        this.error('Hana: hanaMainframe not found');
+        return [];
+      }
+
+      const { scope, acctSelectId } = await this._findHanaAccountSelectScope();
+      if (acctSelectId && scope) {
+        const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const acctSelect = scope.locator(`[id="${idEsc}"]`);
+        const picked = await scope.evaluate(
+          ({ selectId, acc }) => {
+            const el = document.getElementById(selectId);
+            if (!el) return null;
+            const digits = String(acc).replace(/\D/g, '');
+            for (const opt of el.options) {
+              if (!opt.value) continue;
+              const t = (opt.text || '').trim();
+              if (t.includes(acc) || t.replace(/\D/g, '').includes(digits)) return opt.value;
+            }
+            return el.options[1]?.value || el.options[0]?.value || null;
+          },
+          { selectId: acctSelectId, acc: accountNumber }
+        );
+        if (picked) {
+          await acctSelect.selectOption({ value: picked });
+          await this.page.waitForTimeout(800);
+        }
+      }
+
+      const d = (startDate || '').replace(/\D/g, '');
+      let startDateStr;
+      if (d.length >= 8) {
+        startDateStr = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+      } else {
+        const now = new Date();
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        startDateStr = `${threeMonthsAgo.getFullYear()}-${String(threeMonthsAgo.getMonth() + 1).padStart(2, '0')}-01`;
+      }
+
+      await frame.evaluate((val) => {
+        const el = document.getElementById('sInqStrDt');
+        if (el) {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, startDateStr);
+      await this.page.waitForTimeout(400);
+
+      try {
+        await frame.evaluate(() => {
+          const el = document.getElementById('ID_sRqstNcnt4');
+          if (el) el.value = '100';
+        });
+      } catch (e) {}
+
+      try {
+        await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+      } catch (e) {
+        await frame.evaluate(() => {
+          const btns = document.querySelectorAll('button');
+          for (const b of btns) {
+            if (b.textContent.trim() === '조회') {
+              b.click();
+              return;
+            }
+          }
+        });
+      }
+      await this.page.waitForTimeout(3000);
+
+      const dateError = await frame.evaluate(() => {
+        const body = document.body.textContent || '';
+        return (
+          body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') || body.includes('조회시작일이 계좌개설일')
+        );
+      });
+      if (dateError) {
+        try {
+          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(600);
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+        await frame.evaluate((val) => {
+          const el = document.getElementById('sInqStrDt');
+          if (el) {
+            el.value = val;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, yStr);
+        await this.page.waitForTimeout(400);
+        try {
+          await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+        } catch (e) {}
+        await this.page.waitForTimeout(3000);
+      }
+
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
+      } catch (e) {
+        try {
+          await frame.locator('button:has-text("엑셀다운로드")').click({ timeout: 5000 });
+        } catch (e2) {
+          await frame.locator('button:has-text("엑셀")').first().click({ timeout: 5000 });
+        }
+      }
+
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })),
+        this.page.waitForTimeout(5000).then(() => ({ type: 'timeout' })),
+      ]);
+
+      if (raced.type === 'timeout') {
+        const noDataMsg = await frame.evaluate(() => {
+          const body = document.body.textContent || '';
+          return (
+            body.includes('저장할 데이터가 없습니다') ||
+            body.includes('조회결과가 없습니다') ||
+            body.includes('거래내역이 없습니다') ||
+            body.includes('조회된 데이터가 없습니다')
+          );
+        });
+        if (noDataMsg) {
+          this.log('Hana: no data to export');
+          try {
+            await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+          } catch (e) {}
+        } else {
+          this.warn('Hana: Excel download timed out');
+        }
+        return [];
+      }
+
+      const download = raced.data;
+      const suggested = download.suggestedFilename() || 'hana-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeHanaFilenamePart(accountNumber);
+      const finalName = `하나기업_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      await download.saveAs(finalPath);
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: '하나은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('Hana Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: '하나은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
+    } catch (error) {
+      this.error('Hana getTransactions failed:', error.message);
+      return [];
+    }
+  }
+
+  async getTransactionsWithParsing(accountNumber, startDate, endDate) {
+    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    if (!downloadResult || downloadResult.length === 0) {
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data - no result returned',
+        downloadResult,
+      };
+    }
+    const resultItem = downloadResult[0];
+    if (resultItem.status !== 'downloaded') {
+      return { success: false, error: 'Data extraction failed', downloadResult };
+    }
+    const extractedData = resultItem.extractedData;
+    return {
+      success: true,
+      file: resultItem.path,
+      filename: resultItem.filename,
+      metadata: extractedData.metadata,
+      summary: extractedData.summary,
+      transactions: extractedData.transactions,
+      headers: extractedData.headers,
+    };
   }
 }
 
