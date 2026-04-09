@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
-const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
+const { isWindows, waitForKookminKbCertificateWindow } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -424,9 +424,10 @@ class KookminBankAutomator extends BaseBankAutomator {
       this.log('[PREPARE] Waiting 2s before cert window detection...');
       await this.page.waitForTimeout(2000);
 
-      this.log('[PREPARE] Starting cert window detection (60s timeout)...');
-      const uia = await waitForNativeCertificateDialogWindow({
-        timeoutMs: 60000,
+      // Same PowerShell probes + polling as kb.spec.js STEP 3 (30×1s default; extend if needed)
+      this.log('[PREPARE] Starting cert window detection (KB spec: ps() + INICertManUI → QWidget → 인증서 선택)...');
+      const uia = await waitForKookminKbCertificateWindow({
+        timeoutMs: 30000,
         pollMs: 1000,
         onLog: (m) => this.log(`[CERT-DETECT] ${m}`),
       });

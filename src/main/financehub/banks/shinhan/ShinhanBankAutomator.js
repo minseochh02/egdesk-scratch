@@ -485,12 +485,31 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         this.page = null;
       }
 
-      const { browser, context } = await this.createBrowser(proxy);
+      // Match scripts/bank-excel-download-automation/shinhan.spec.js (temp profile, viewport null, downloads)
+      const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
+      this.ensureOutputDirectory(corpDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: corpDownloadsPath,
+      });
       this.browser = browser;
       this.context = context;
-      await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+      this.page = context.pages()[0] || await context.newPage();
+      this.page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
 
       const bizUrl = this.config.xpaths.bizMainUrl;
       this.log('Navigating to biz bank:', bizUrl);

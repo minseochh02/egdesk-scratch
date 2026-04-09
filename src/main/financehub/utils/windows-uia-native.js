@@ -2,8 +2,30 @@
  * Windows UI Automation helpers for native certificate dialogs (INI CertMan, etc.)
  */
 
-const { spawnSync } = require('child_process');
+const { spawnSync, execSync } = require('child_process');
 const os = require('os');
+
+/** UIA script bodies copied from scripts/bank-excel-download-automation/kb.spec.js (STEP 3 cert window) */
+const KB_SPEC_PS_UIA_INICERTMANUI =
+  'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+  '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+  "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'INICertManUI'); " +
+  '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+  "if ($w) { $w.Current.Name } else { '' }";
+
+const KB_SPEC_PS_UIA_QWIDGET =
+  'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+  '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+  "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'QWidget'); " +
+  '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+  "if ($w) { $w.Current.Name } else { '' }";
+
+const KB_SPEC_PS_UIA_NAME_CERT_SELECT =
+  'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+  '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+  "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '인증서 선택'); " +
+  '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+  "if ($w) { $w.Current.ClassName } else { '' }";
 
 function isWindows() {
   return os.platform() === 'win32';
@@ -24,6 +46,91 @@ function runPowerShellUtf8(scriptBody, opts = {}) {
   });
   if (r.error) throw r.error;
   return (r.stdout || '').trim();
+}
+
+/**
+ * Same invocation as kb.spec.js `ps(cmd)`:
+ * execSync(`powershell -command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${cmd}"`)
+ * (no -NoProfile — matches the script.)
+ * @param {string} scriptBody - PowerShell after the UTF-8 prelude
+ * @param {number} [timeoutMs]
+ * @returns {string} trimmed stdout, or '' on failure
+ */
+function runPowerShellKbBankSpec(scriptBody, timeoutMs = 10000) {
+  if (!isWindows()) return '';
+  try {
+    return execSync(
+      `powershell -command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${scriptBody}"`,
+      { encoding: 'utf8', timeout: timeoutMs }
+    ).trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * One-shot: KB obiz native cert window — same three probes and order as kb.spec.js STEP 3.
+ * @returns {{ ok: boolean, windowName?: string, matchedClass?: string, windowType?: string }}
+ */
+function probeKookminKbCertificateWindow() {
+  if (!isWindows()) {
+    return { ok: false, error: 'UI Automation requires Windows' };
+  }
+
+  try {
+    const result1 = runPowerShellKbBankSpec(KB_SPEC_PS_UIA_INICERTMANUI, 10000);
+    if (result1) {
+      return { ok: true, windowName: result1, matchedClass: 'INICertManUI', windowType: 'INICertManUI' };
+    }
+  } catch (e) {}
+
+  try {
+    const result2 = runPowerShellKbBankSpec(KB_SPEC_PS_UIA_QWIDGET, 10000);
+    if (result2) {
+      return { ok: true, windowName: result2, matchedClass: 'QWidget', windowType: 'QWidget' };
+    }
+  } catch (e) {}
+
+  try {
+    const result3 = runPowerShellKbBankSpec(KB_SPEC_PS_UIA_NAME_CERT_SELECT, 10000);
+    if (result3) {
+      return {
+        ok: true,
+        windowName: '인증서 선택',
+        matchedClass: result3,
+        windowType: result3,
+      };
+    }
+  } catch (e) {}
+
+  return { ok: false };
+}
+
+/**
+ * Poll for KB cert window like kb.spec.js (30 × 1s max by default).
+ * @param {{ timeoutMs?: number, pollMs?: number, onLog?: (msg: string) => void }} [opts]
+ */
+async function waitForKookminKbCertificateWindow(opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 30000;
+  const pollMs = opts.pollMs ?? 1000;
+  const onLog = opts.onLog || (() => {});
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const r = probeKookminKbCertificateWindow();
+    if (r.ok) {
+      onLog(`UIA (KB spec ps) found cert dialog class=${r.matchedClass} name="${r.windowName}"`);
+      return r;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  const sec = Math.round(timeoutMs / 1000);
+  return {
+    ok: false,
+    error:
+      `Cert window not detected within ${sec} seconds. Run detect-cert-window.js to diagnose. ` +
+      '(Same probes/order as scripts/bank-excel-download-automation/kb.spec.js STEP 3.)',
+  };
 }
 
 /**
@@ -187,6 +294,9 @@ function sendEnterKeyViaSendKeys() {
 module.exports = {
   isWindows,
   runPowerShellUtf8,
+  runPowerShellKbBankSpec,
+  probeKookminKbCertificateWindow,
+  waitForKookminKbCertificateWindow,
   probeRootWindowByClassName,
   waitForRootWindowByClassName,
   probeNativeCertificateDialogWindow,
