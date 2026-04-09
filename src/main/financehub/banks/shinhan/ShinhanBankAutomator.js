@@ -42,12 +42,69 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('shinhan');
+    /** Per-account Excel from bizbank (see scripts/bank-excel-download-automation/shinhan.spec.js) */
+    this.downloadDir = path.join(this.outputDir, 'shinhan-biz-downloads');
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     /** @type {import('../../utils/arduino-hid-bank').ArduinoHidBankSession | null} */
     this._arduinoHid = null;
     /** @type {'idle'|'awaiting_password'|'completed'} */
     this._shinhanCorporateCertPhase = 'idle';
+
+    try {
+      if (!fs.existsSync(this.downloadDir)) {
+        fs.mkdirSync(this.downloadDir, { recursive: true });
+      }
+    } catch (e) {
+      /* mkdir best-effort */
+    }
+  }
+
+  /**
+   * Safe basename segment for saved downloads (plan: embed account in filename).
+   * @param {string} s
+   * @returns {string}
+   */
+  _sanitizeFilenamePart(s) {
+    if (!s || typeof s !== 'string') return 'account';
+    return s
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .slice(0, 80);
+  }
+
+  /**
+   * Resolve dynamic IDs on Shinhan 기업 계좌별거래내역 (matches shinhan.spec.js STEP 7).
+   * @returns {Promise<{ acctSelectId: string|null, fromDateId: string|null, searchBtnId: string|null, excelBtnId: string|null }>}
+   */
+  async _resolveShinhanBizInquiryIds() {
+    return this.page.evaluate(() => {
+      const sel = document.querySelector('select[id*="sbx_acctList"]');
+      const fromInp = document.querySelector('input[id*="ibx_fromDate"]');
+      const btns = document.querySelectorAll('input[id*="btn_search"]');
+      let searchBtnId = null;
+      for (const btn of btns) {
+        if (!btn.id.includes('header') && btn.value === '조회') {
+          searchBtnId = btn.id;
+          break;
+        }
+      }
+      if (!searchBtnId) {
+        for (const btn of btns) {
+          if (!btn.id.includes('header')) {
+            searchBtnId = btn.id;
+            break;
+          }
+        }
+      }
+      const excelBtn = document.querySelector('input[id*="btn_excel"]');
+      return {
+        acctSelectId: sel ? sel.id : null,
+        fromDateId: fromInp ? fromInp.id : null,
+        searchBtnId,
+        excelBtnId: excelBtn ? excelBtn.id : null,
+      };
+    });
   }
 
   // ============================================================================
@@ -819,72 +876,250 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     }
   }
 
-  async getTransactions(accountNumber, startDate, endDate) {
+  /**
+   * 기업뱅킹 (bizbank.shinhan.com): real Excel download per scripts/bank-excel-download-automation/shinhan.spec.js
+   */
+  async _getTransactionsShinhanBiz(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
-    
+
     try {
-      // 1. Navigate to inquiry page if needed
+      let ids = await this._resolveShinhanBizInquiryIds();
+      if (!ids.acctSelectId || !ids.fromDateId || !ids.searchBtnId || !ids.excelBtnId) {
+        this.log('Biz inquiry controls missing — navigating to 계좌별거래내역...');
+        await this._navigateBizToAccountInquiry();
+        await this.page.waitForTimeout(2000);
+        ids = await this._resolveShinhanBizInquiryIds();
+      }
+      if (!ids.acctSelectId || !ids.fromDateId || !ids.searchBtnId || !ids.excelBtnId) {
+        throw new Error(
+          'Shinhan biz: could not resolve sbx_acctList / ibx_fromDate / btn_search / btn_excel'
+        );
+      }
+
+      const acctSelect = this.page.locator(`[id="${ids.acctSelectId}"]`);
+      const matchIdx = await this.page.evaluate(
+        ({ selectId, acc }) => {
+          const el = document.getElementById(selectId);
+          if (!el) return -1;
+          const opts = Array.from(el.options);
+          const digits = String(acc).replace(/\D/g, '');
+          for (let i = 0; i < opts.length; i++) {
+            if (!opts[i].value) continue;
+            const text = (opts[i].textContent || '').trim();
+            if (text.includes('선택')) continue;
+            const rowDigits = text.replace(/\D/g, '');
+            if (text.includes(acc) || (digits.length >= 10 && rowDigits.includes(digits))) return i;
+          }
+          return -1;
+        },
+        { selectId: ids.acctSelectId, acc: accountNumber }
+      );
+
+      const pickIdx = matchIdx >= 0 ? matchIdx : 1;
+      await acctSelect.selectOption({ index: pickIdx });
+      this.log(`Selected account index ${pickIdx} for ${accountNumber}`);
+      await this.page.waitForTimeout(1000);
+
+      let startDateStr = (startDate || '').replace(/\D/g, '');
+      if (!startDateStr || startDateStr.length !== 8) {
+        const now = new Date();
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        startDateStr = `${threeMonthsAgo.getFullYear()}${String(threeMonthsAgo.getMonth() + 1).padStart(2, '0')}01`;
+      }
+      await this.page.evaluate(
+        ({ id, val }) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        },
+        { id: ids.fromDateId, val: startDateStr }
+      );
+      await this.page.waitForTimeout(1000);
+
+      await this.page.locator(`[id="${ids.searchBtnId}"]`).click({ timeout: 5000 });
+      await this.page.waitForTimeout(3000);
+
+      await this.page.locator(`[id="${ids.excelBtnId}"]`).click({ timeout: 5000 });
+      await this.page.waitForTimeout(2000);
+
+      const noData = await this.page.evaluate(() => {
+        const el = document.querySelector('[class*="MessagePop"], [id*="MessagePop"]');
+        if (el && el.textContent.includes('저장할 데이터가 없습니다')) return true;
+        const all = document.querySelectorAll('div, span, td');
+        for (const node of all) {
+          if (node.offsetParent !== null && node.textContent.includes('저장할 데이터가 없습니다')) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (noData) {
+        this.log('No transaction data to export (저장할 데이터가 없습니다)');
+        try {
+          await this.page.locator('a:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {
+          try {
+            await this.page.locator('[id*="MessagePop"][id*="btn_ok"]').click({ timeout: 3000 });
+          } catch (e2) {
+            /* ignore */
+          }
+        }
+        await this.page.waitForTimeout(1000);
+        return [
+          {
+            status: 'downloaded',
+            filename: null,
+            path: null,
+            extractedData: {
+              metadata: { bankName: '신한은행', accountNumber, channel: 'biz' },
+              summary: { totalCount: 0 },
+              transactions: [],
+              headers: [],
+            },
+          },
+        ];
+      }
+
+      try {
+        await this.page.locator('a:has-text("아니요")').first().click({ timeout: 5000 });
+      } catch (e) {
+        try {
+          await this.page.locator('[id*="MessagePop"][id*="btn_cancel"]').click({ timeout: 3000 });
+        } catch (e2) {
+          this.log('No "아니요" personal-info dialog (continuing)');
+        }
+      }
+      await this.page.waitForTimeout(2000);
+
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      try {
+        await this.page.locator('input[value="파일저장"]').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('[id*="excel_download"][id*="btn_saveFile"]').click({ timeout: 5000 });
+      }
+
+      const download = await downloadPromise;
+      const suggested = download.suggestedFilename() || 'shinhan-export.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const safeAcc = this._sanitizeFilenamePart(accountNumber);
+      const finalName = `신한기업_${safeAcc}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+
+      await download.saveAs(finalPath);
+
+      let extractedData;
+      try {
+        const parsed = parseTransactionExcel(finalPath, this);
+        extractedData = {
+          metadata: {
+            bankName: '신한은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+            ...(parsed.summary || {}),
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+      } catch (parseErr) {
+        this.warn('Excel parse failed:', parseErr.message);
+        extractedData = {
+          metadata: {
+            bankName: '신한은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+            parseError: parseErr.message,
+          },
+          summary: { totalCount: 0 },
+          transactions: [],
+          headers: [],
+        };
+      }
+
+      return [
+        {
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData,
+        },
+      ];
+    } catch (error) {
+      this.error('Shinhan biz getTransactions failed:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * 개인/retail flow: HTML scrape + synthetic Excel (legacy).
+   */
+  async _getTransactionsShinhanRetail(accountNumber, startDate, endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+
+    try {
       if (!this.page.url().includes('010101100010')) {
         await this.page.goto(this.config.xpaths.inquiryUrl, { waitUntil: 'domcontentloaded' });
         await this.page.waitForTimeout(3000);
       }
 
-      // 2. Handle account selection
       this.log('Selecting account...');
-      
-      // Check if it's a native select element
+
       const selectSelector = '//select[@id="sbx_accno_input_0"]';
-      const isNativeSelect = await this.page.locator(selectSelector).count() > 0;
-      
+      const isNativeSelect = (await this.page.locator(selectSelector).count()) > 0;
+
       if (isNativeSelect) {
         this.log('Native select element detected');
-        
-        // Get all options from the select element
+
         const options = await this.page.locator(`${selectSelector}/option`).all();
         this.log(`Found ${options.length} account options`);
-        
-        // Find the option that contains our account number
+
         let matchFound = false;
         for (let i = 0; i < options.length; i++) {
           const optionText = await options[i].textContent();
           this.log(`Option ${i}: ${optionText}`);
-          
+
           if (optionText && optionText.includes(accountNumber)) {
-            // Select by value or index
             await this.page.selectOption(selectSelector, { index: i });
             this.log(`Selected account: ${optionText}`);
             matchFound = true;
             break;
           }
         }
-        
+
         if (!matchFound) {
           this.log('Account not found in select options, using current selection...');
         }
       } else {
-        // Fallback to clicking dropdown (for custom dropdowns)
         this.log('Attempting custom dropdown selection...');
         const dropdownSelector = `xpath=${this.config.xpaths.accountDropdown}`;
         await this.page.click(dropdownSelector);
         await this.page.waitForTimeout(1000);
-        
-        // Try to find and click the account option
-        const accountOption = this.page.locator(`//div[contains(@class, "w2selectbox_layer")]//div[contains(text(), "${accountNumber}")]`).first();
-        if (await accountOption.count() > 0) {
+
+        const accountOption = this.page
+          .locator(`//div[contains(@class, "w2selectbox_layer")]//div[contains(text(), "${accountNumber}")]`)
+          .first();
+        if ((await accountOption.count()) > 0) {
           await accountOption.click();
           this.log('Account selected from custom dropdown');
         } else {
           this.log('Account not found in dropdown, using current selection...');
         }
       }
-      
+
       await this.page.waitForTimeout(1000);
 
-      // 4. Set start date
       this.log('Setting start date...');
       const dateInputSelector = `xpath=${this.config.xpaths.startDateInput}`;
-      
+
       let targetStartDate = startDate;
       if (!targetStartDate) {
         const d = new Date();
@@ -895,94 +1130,91 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       await this.page.fill(dateInputSelector, formattedDate);
       await this.page.waitForTimeout(500);
 
-          // 5. Unfocus by clicking on a neutral area (the page title or form header)
-    this.log('Unfocusing date picker...');
-    try {
-      // Click on the page title "거래내역조회" to unfocus
-      const pageTitleSelector = 'h1.titH01, h1[id*="title"], .pageTop h1';
-      const pageTitle = this.page.locator(pageTitleSelector).first();
-      if (await pageTitle.count() > 0) {
-        await pageTitle.click();
-        this.log('Clicked on page title to unfocus');
-      } else {
-        // Alternative: click on form label
-        const formLabel = this.page.locator('th:has-text("조회계좌번호")').first();
-        if (await formLabel.count() > 0) {
-          await formLabel.click();
-          this.log('Clicked on form label to unfocus');
+      this.log('Unfocusing date picker...');
+      try {
+        const pageTitleSelector = 'h1.titH01, h1[id*="title"], .pageTop h1';
+        const pageTitle = this.page.locator(pageTitleSelector).first();
+        if ((await pageTitle.count()) > 0) {
+          await pageTitle.click();
+          this.log('Clicked on page title to unfocus');
         } else {
-          // Last resort: click body at a safe position
-          await this.page.mouse.click(100, 100);
-          this.log('Clicked on page body to unfocus');
+          const formLabel = this.page.locator('th:has-text("조회계좌번호")').first();
+          if ((await formLabel.count()) > 0) {
+            await formLabel.click();
+            this.log('Clicked on form label to unfocus');
+          } else {
+            await this.page.mouse.click(100, 100);
+            this.log('Clicked on page body to unfocus');
+          }
         }
+      } catch (unfocusError) {
+        this.warn('Unfocus click failed:', unfocusError.message);
+        await this.page.mouse.click(200, 150);
       }
-    } catch (unfocusError) {
-      this.warn('Unfocus click failed:', unfocusError.message);
-      // Try clicking at coordinates outside the date picker area
-      await this.page.mouse.click(200, 150);
-    }
-    
-    await this.page.waitForTimeout(500);
 
-      // 5. Click "조회" (Inquiry) button
+      await this.page.waitForTimeout(500);
+
       this.log('Clicking Inquiry button...');
       await this.page.click(`xpath=${this.config.xpaths.inquiryButton}`);
-      
-      // Wait for transaction data to load
+
       this.log('Waiting for transaction data to load...');
       try {
-        // Wait for either transaction rows or "no data" message
         await Promise.race([
-          // Wait for transaction table rows
           this.page.waitForSelector('#grd_list tbody tr.grid_body_row', { timeout: 10000 }),
-          // Or wait for the total count element
           this.page.waitForSelector('.total em', { timeout: 10000 }),
-          // Or wait for no data message
-          this.page.waitForSelector('.no-data, .empty-message', { timeout: 10000 })
+          this.page.waitForSelector('.no-data, .empty-message', { timeout: 10000 }),
         ]);
-        
-        // Additional wait to ensure data is fully rendered
         await this.page.waitForTimeout(2000);
       } catch (waitError) {
         this.log('Warning: Transaction data wait timed out, proceeding anyway...');
       }
 
-      // 6. Extract data directly from HTML (No download)
       this.log('Extracting transaction data from page...');
       const extractedData = await extractTransactionsFromPage(this);
 
-      // 7. Create Excel file from extracted data (even if no transactions)
       const excelPath = await createExcelFromData(this, extractedData);
       extractedData.file = excelPath;
       extractedData.status = 'success';
-      
-      // Log summary
+
       if (extractedData.transactions.length === 0) {
         this.log('No transactions found for the specified period - this is normal');
       }
-      
-      return [{
-        status: 'downloaded',
-        filename: path.basename(excelPath),
-        path: excelPath,
-        extractedData: extractedData
-      }];
 
+      return [
+        {
+          status: 'downloaded',
+          filename: path.basename(excelPath),
+          path: excelPath,
+          extractedData,
+        },
+      ];
     } catch (error) {
-      this.error('Error fetching transactions:', error.message);
-      
-      // Debug: Take screenshot on error
+      this.error('Error fetching transactions (retail):', error.message);
+
       try {
         this.ensureOutputDirectory(this.outputDir);
         const errorScreenshot = path.join(this.outputDir, `error-${Date.now()}.png`);
         await this.page.screenshot({ path: errorScreenshot, fullPage: true });
         this.log(`Error screenshot saved to: ${errorScreenshot}`);
       } catch (ssErr) {
-        // Ignore screenshot errors
+        /* ignore */
       }
-      
+
       return [];
     }
+  }
+
+  async getTransactions(accountNumber, startDate, endDate) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
+
+    const url = this.page.url();
+    if (url.includes('bizbank.shinhan.com')) {
+      this.log('Using Shinhan 기업 (biz) Excel download flow (shinhan.spec.js)');
+      return this._getTransactionsShinhanBiz(accountNumber, startDate, endDate);
+    }
+
+    return this._getTransactionsShinhanRetail(accountNumber, startDate, endDate);
   }
 
   // Note: cleanup() is inherited from BaseBankAutomator
