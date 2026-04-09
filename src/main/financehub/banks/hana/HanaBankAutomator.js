@@ -36,6 +36,9 @@ class HanaBankAutomator extends BaseBankAutomator {
     return this.page.frame({ name: this.config.xpaths.mainFrameName });
   }
 
+  /**
+   * Match scripts/bank-excel-download-automation/hana.spec.js `closePopups()` (text buttons + layer close).
+   */
   async _closeHanaPopups() {
     for (const target of [this.page, this._hanaFrame()].filter(Boolean)) {
       try {
@@ -51,9 +54,28 @@ class HanaBankAutomator extends BaseBankAutomator {
               if (rect.width > 0 && rect.height > 0) b.click();
             }
           }
+          const layers = document.querySelectorAll('.layer_popup, .popup_wrap, .pop_wrap, [class*="popup"]');
+          for (const l of layers) {
+            const closeBtn = l.querySelector('.btn_close, .close, [class*="close"]');
+            if (closeBtn) closeBtn.click();
+          }
         });
       } catch (e) {}
     }
+  }
+
+  /**
+   * Wait for hanaMainframe — close popups on main document between attempts (overlay can block frame).
+   */
+  async _waitForHanaMainframe({ maxWaitMs = 20000 } = {}) {
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      await this._closeHanaPopups();
+      const frame = this._hanaFrame();
+      if (frame) return frame;
+      await this.page.waitForTimeout(1000);
+    }
+    return this._hanaFrame();
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
@@ -99,12 +121,18 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
 
-      const frame = this._hanaFrame();
+      // Close main-page overlays before requiring frame (spec closes after frame exists; we also clear
+      // top-level popups first so they don't block or delay hanaMainframe — user reported login ran too soon).
+      await this._closeHanaPopups();
+      await this.page.waitForTimeout(500);
+
+      const frame = await this._waitForHanaMainframe({ maxWaitMs: 20000 });
       if (!frame) {
         this._hanaCorporateCertPhase = 'idle';
         return { success: false, error: 'hanaMainframe not found' };
       }
 
+      // hana.spec.js STEP 1: closePopups again in frame + page, then 1s before first 로그인
       await this._closeHanaPopups();
       await this.page.waitForTimeout(1000);
 

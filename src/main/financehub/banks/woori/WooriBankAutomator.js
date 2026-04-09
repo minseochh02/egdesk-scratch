@@ -74,11 +74,12 @@ class WooriBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * Debug: only the cert row labeled 2026-08-15 (no .xwup-tableview-cell / XPath fallbacks).
-   * Logs id / class / text / approximate xpath for cert-related nodes before clicking.
+   * Debug: logs id / class / text / approximate xpath for cert UI nodes before clicking.
+   * When CERT_EXPIRY / WOORI_CERT_EXPIRY is set, also lists elements whose text contains that string.
    */
   async _logWooriCertSelectionDebug() {
-    const dump = await this.page.evaluate(() => {
+    const filterDate = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
+    const dump = await this.page.evaluate((filterDate) => {
       const snippet = (el) => ({
         tag: el.tagName,
         id: el.id || null,
@@ -111,65 +112,89 @@ class WooriBankAutomator extends BaseBankAutomator {
       const cellInfo = cells.map((el) => ({ ...snippet(el), xpathApprox: xpathFor(el) }));
 
       const textHits = [];
-      document.querySelectorAll('div, td, span, a, button').forEach((el) => {
-        const t = (el.textContent || '').trim();
-        if (!t.includes('2026-08-15')) return;
-        if (textHits.length >= 25) return;
-        textHits.push({ ...snippet(el), xpathApprox: xpathFor(el) });
-      });
+      if (filterDate) {
+        document.querySelectorAll('div, td, span, a, button').forEach((el) => {
+          const t = (el.textContent || '').trim();
+          if (!t.includes(filterDate)) return;
+          if (textHits.length >= 25) return;
+          textHits.push({ ...snippet(el), xpathApprox: xpathFor(el) });
+        });
+      }
 
       return { cellCount: cells.length, cells: cellInfo, textHitsContainingDate: textHits };
-    });
+    }, filterDate);
     this.log('[WOORI DEBUG] .xwup-tableview-cell count=', dump.cellCount);
     for (let i = 0; i < dump.cells.length; i++) {
       this.log(`[WOORI DEBUG] cell[${i}]`, JSON.stringify(dump.cells[i]));
     }
-    for (let i = 0; i < dump.textHitsContainingDate.length; i++) {
-      this.log(`[WOORI DEBUG] textHit[${i}] (contains 2026-08-15)`, JSON.stringify(dump.textHitsContainingDate[i]));
+    if (filterDate) {
+      for (let i = 0; i < dump.textHitsContainingDate.length; i++) {
+        this.log(
+          `[WOORI DEBUG] textHit[${i}] (contains ${filterDate})`,
+          JSON.stringify(dump.textHitsContainingDate[i])
+        );
+      }
     }
   }
 
   /**
-   * Same cascade as woori.spec.js STEP 4: getByRole → .xwup-tableview-cell → XPath.
-   * getByRole can be count=0 when the date cell has no accessible name in this Chromium build;
-   * the spec still works because catch #2 uses the recorded XPath to tr[1]/td[3]/div (expiry column).
+   * Same cascade as woori.spec.js STEP 4: optional getByRole/getByText for CERT_EXPIRY (or WOORI_CERT_EXPIRY),
+   * then #xwup_cert_table cell → .xwup-tableview-cell → XPath. getByRole can be count=0 when the date cell has no accessible name.
    */
   async _wooriClickCertTableCell() {
-    const TARGET = '2026-08-15';
+    const targetExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
     if (process.env.WOORI_DEBUG_CERT === '1') {
       await this._logWooriCertSelectionDebug();
     }
 
-    try {
-      const locator = this.page.getByRole('div', { name: TARGET });
-      await locator.hover({ force: true });
-      await locator.click({ timeout: 5000 });
-      this.log(`[WOORI] cert row: getByRole('div', { name: '${TARGET}' })`);
-    } catch (error) {
-      this.warn('[WOORI] getByRole failed (common in Electron — a11y name may differ):', error.message);
+    if (targetExpiry) {
+      try {
+        const locator = this.page.getByRole('div', { name: targetExpiry });
+        await locator.hover({ force: true });
+        await locator.click({ timeout: 5000 });
+        this.log(`[WOORI] cert row: getByRole('div', { name: '${targetExpiry}' })`);
+        return;
+      } catch (error) {
+        this.warn('[WOORI] getByRole failed (common in Electron — a11y name may differ):', error.message);
+      }
       try {
         const table = this.page.locator('#xwup_cert_table');
-        const byText = table.getByText(TARGET, { exact: true });
+        const byText = table.getByText(targetExpiry, { exact: true });
         await byText.first().hover({ force: true });
         await byText.first().click({ timeout: 5000 });
-        this.log(`[WOORI] cert row: #xwup_cert_table getByText('${TARGET}', exact)`);
+        this.log(`[WOORI] cert row: #xwup_cert_table getByText('${targetExpiry}', exact)`);
+        return;
       } catch (errorText) {
-        this.warn('[WOORI] #xwup_cert_table getByText failed, spec CSS fallback (.first() cell):', errorText.message);
-        try {
-          const fallbackLocator = this.page.locator('.xwup-tableview-cell');
-          await fallbackLocator.hover({ force: true });
-          await fallbackLocator.click({ timeout: 5000 });
-          this.warn('[WOORI] cert row: first .xwup-tableview-cell (woori.spec.js fallback — often wrong cell)');
-        } catch (error2) {
-          this.warn('[WOORI] CSS fallback failed, woori.spec.js XPath:', error2.message);
-          const xpathLocator = this.page.locator(
-            'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
-          );
-          await xpathLocator.hover({ force: true });
-          await xpathLocator.click();
-          this.log('[WOORI] cert row: xpath …/tr[1]/td[3]/div (woori.spec.js last resort)');
-        }
+        this.warn('[WOORI] #xwup_cert_table getByText failed, trying table cell fallbacks:', errorText.message);
       }
+    } else {
+      this.log('[WOORI] CERT_EXPIRY / WOORI_CERT_EXPIRY not set; using cert table cell fallbacks');
+    }
+
+    try {
+      const scoped = this.page.locator('#xwup_cert_table .xwup-tableview-cell');
+      if ((await scoped.count()) > 0) {
+        await scoped.first().hover({ force: true });
+        await scoped.first().click({ timeout: 5000 });
+        this.log('[WOORI] cert row: #xwup_cert_table .xwup-tableview-cell.first()');
+        return;
+      }
+    } catch (e) {
+      this.warn('[WOORI] #xwup_cert_table scoped cell failed:', e.message);
+    }
+    try {
+      const fallbackLocator = this.page.locator('.xwup-tableview-cell').first();
+      await fallbackLocator.hover({ force: true });
+      await fallbackLocator.click({ timeout: 5000 });
+      this.warn('[WOORI] cert row: first .xwup-tableview-cell (woori.spec.js fallback — may be wrong cell)');
+    } catch (error2) {
+      this.warn('[WOORI] CSS fallback failed, woori.spec.js XPath:', error2.message);
+      const xpathLocator = this.page.locator(
+        'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
+      );
+      await xpathLocator.hover({ force: true });
+      await xpathLocator.click();
+      this.log('[WOORI] cert row: xpath …/tr[1]/td[3]/div (woori.spec.js last resort)');
     }
   }
 
