@@ -2189,6 +2189,8 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:get-transactions', { bankId, accountNumber, startDate, endDate, parse }),
     loginAndGetAccounts: (bankId: string, credentials: BankCredentials, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:login-and-get-accounts', { bankId, credentials, proxyUrl }),
+    fetchBankCertificates: (bankId: string, proxyUrl?: string) =>
+      ipcRenderer.invoke('finance-hub:fetch-bank-certificates', { bankId, proxyUrl }),
     corporateCertPrepare: (bankId: string, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:corporate-cert-prepare', { bankId, proxyUrl }),
     corporateCertComplete: (bankId: string, certificatePassword: string) =>

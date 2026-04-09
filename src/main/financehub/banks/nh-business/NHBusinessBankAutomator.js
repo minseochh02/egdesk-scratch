@@ -797,17 +797,106 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
   }
 
   // ============================================================================
+  // FETCH CERTIFICATES (UI — same table as login, Hometax-style list)
+  // ============================================================================
+
+  /**
+   * Opens NH 법인 로그인, shows INIpay cert table, returns rows without entering password.
+   * Caller should close browser via cleanup(false) when used for one-shot IPC.
+   * @param {string} [proxyUrl]
+   * @returns {Promise<{ success: boolean, certificates?: Array, error?: string }>}
+   */
+  async fetchCertificates(proxyUrl) {
+    const proxy = this.buildProxyOption(proxyUrl);
+    try {
+      this.log('NH Business: fetching certificate list for UI...');
+      const nhDownloadsPath = path.join(this.outputDir, 'nh-business-downloads');
+      this.ensureOutputDirectory(nhDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: nhDownloadsPath,
+      });
+      this.browser = browser;
+      this.context = context;
+      const page = context.pages()[0] || (await context.newPage());
+      this.page = page;
+      page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
+
+      await page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(this.config.delays.humanLike);
+
+      try {
+        const confirmButton = page.locator(this.config.xpaths.confirmPopupButton);
+        if (await confirmButton.isVisible({ timeout: 3000 })) {
+          await confirmButton.click();
+          await page.waitForTimeout(this.config.delays.humanLike);
+        }
+      } catch (e) {
+        this.log('No confirmation popup, continuing...');
+      }
+
+      const certButton = this.config.xpaths.certificateListButton.startsWith('/')
+        ? page.locator(`xpath=${this.config.xpaths.certificateListButton}`)
+        : page.locator(this.config.xpaths.certificateListButton);
+      await certButton.click();
+      await page.waitForTimeout(1775);
+
+      const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
+      try {
+        await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 15000 });
+      } catch (e) {
+        this.warn('Cert table not visible in time:', e.message);
+      }
+      await page.waitForTimeout(2000);
+
+      const rows = await this.scrapeIniCertificateRows(page);
+      const certificates = rows.map((c, i) => ({
+        ...c,
+        certificateIndex: i + 1,
+      }));
+
+      if (certificates.length === 0) {
+        return {
+          success: false,
+          error: '인증서 목록을 찾을 수 없습니다. 페이지 구조가 바뀌었을 수 있습니다.',
+        };
+      }
+
+      return { success: true, certificates };
+    } catch (error) {
+      this.error('fetchCertificates failed:', error.message);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // ============================================================================
   // MAIN LOGIN METHOD
   // ============================================================================
 
   /**
    * Main login automation method for NH Business Bank
-   * @param {Object} credentials - { certificatePassword }
+   * @param {Object} credentials - { certificatePassword, certificateIndex?, certificateExpiry? }
    * @param {string} [proxyUrl] - Optional proxy URL
    * @returns {Promise<Object>} Automation result
    */
   async login(credentials, proxyUrl) {
-    const { certificatePassword } = credentials;
     const proxy = this.buildProxyOption(proxyUrl);
 
     try {

@@ -689,6 +689,49 @@ const createWindow = async () => {
         }
       });
 
+      /** NH 법인 등: INIpay cert table — one-shot browser, list only (see NHBusinessBankAutomator.fetchCertificates) */
+      ipcMain.handle(
+        'finance-hub:fetch-bank-certificates',
+        async (_event, { bankId, proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
+          const id = String(bankId || '').toLowerCase();
+          if (id !== 'nh-business') {
+            return { success: false, error: '이 은행은 인증서 목록 조회를 지원하지 않습니다.' };
+          }
+          let existing = activeAutomators.get(id);
+          if (existing && typeof existing.cleanup === 'function') {
+            try {
+              await existing.cleanup(false);
+            } catch (e) {
+              console.warn('[FINANCE-HUB] fetch-bank-certificates: cleanup existing automator', e);
+            }
+            activeAutomators.delete(id);
+          }
+          const { createAutomator } = require('./financehub');
+          const automator = createAutomator(id, { headless: false });
+          try {
+            if (typeof automator.fetchCertificates !== 'function') {
+              return { success: false, error: '인증서 목록 조회를 지원하지 않습니다.' };
+            }
+            return await automator.fetchCertificates(proxyUrl);
+          } catch (error) {
+            console.error('[FINANCE-HUB] fetch-bank-certificates failed:', error);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          } finally {
+            if (automator && typeof automator.cleanup === 'function') {
+              try {
+                await automator.cleanup(false);
+              } catch (e) {
+                console.warn('[FINANCE-HUB] fetch-bank-certificates: automator cleanup', e);
+              }
+            }
+            activeAutomators.delete(id);
+          }
+        }
+      );
+
       /** 기업 공동인증서 (native or in-page) — shinhan | kookmin | ibk | hana | woori */
       const CORPORATE_NATIVE_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
 
