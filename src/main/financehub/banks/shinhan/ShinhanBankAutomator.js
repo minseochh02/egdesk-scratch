@@ -486,6 +486,23 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     }
   }
 
+  /**
+   * Special key via Leonardo firmware (arduino-hid-sketch / KEY: branch), same as bank-excel-download-automation/shinhan.spec.js `arduino.key('ENTER')`.
+   * @param {'ENTER'|'TAB'|'ESC'|string} keyName
+   */
+  async sendKeyViaArduino(keyName) {
+    if (!this.arduino || !this.arduino.isOpen) {
+      throw new Error('Arduino serial not open');
+    }
+    this.log(`Arduino KEY:${keyName} (native cert dialog)`);
+    await new Promise((resolve, reject) => {
+      this.arduino.write(`KEY:${keyName}\n`, (err) => {
+        if (err) return reject(err);
+        setTimeout(() => resolve(), 550);
+      });
+    });
+  }
+
   async disconnectArduino() {
     if (this.arduino && this.arduino.isOpen) {
       return new Promise((resolve) => {
@@ -609,12 +626,16 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
       await this.connectArduino();
       await this.typeViaArduinoWithNaturalTiming(certificatePassword);
+      // shinhan.spec.js: wait 1s, then arduino.key('ENTER') — must be real HID on cert window (SendKeys hits wrong window).
+      await this.page.waitForTimeout(1000);
+      await this.sendKeyViaArduino('ENTER');
       await this.disconnectArduino();
 
-      await this.page.waitForTimeout(1000);
-      const enterResult = sendEnterKeyViaSendKeys();
-      if (!enterResult.ok) {
-        this.warn('SendKeys Enter failed:', enterResult.error);
+      if (process.env.SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK === '1') {
+        const enterResult = sendEnterKeyViaSendKeys();
+        if (!enterResult.ok) {
+          this.warn('SendKeys Enter fallback failed:', enterResult.error);
+        }
       }
       await this.page.waitForTimeout(5000);
 
