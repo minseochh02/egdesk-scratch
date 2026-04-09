@@ -155,7 +155,24 @@ const { ArduinoHID } = require('./arduino-typer');
         }
       } catch (e) {}
 
-      // Try by name "인증서 선택"
+      // Try by name "전자 서명 작성" (INICertMan/INITECH)
+      try {
+        const result = ps(
+          "Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; " +
+          "$r = [System.Windows.Automation.AutomationElement]::RootElement; " +
+          "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '전자 서명 작성'); " +
+          "$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); " +
+          "if ($w) { $w.Current.ClassName } else { '' }"
+        );
+        if (result) {
+          console.log(`[STEP 3] ✓ Found cert window (전자 서명 작성, class=${result})`);
+          windowFound = true;
+          windowType = result;
+          break;
+        }
+      } catch (e) {}
+
+      // Try by name "인증서 선택" (Delfino/alternative config)
       try {
         const result = ps(
           "Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; " +

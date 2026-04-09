@@ -121,15 +121,22 @@ function probeNativeCertificateDialogWindow() {
     return { windowName: name, matchedClass: cls };
   };
   try {
+    // Try common cert dialog class names first (most reliable)
     for (const cls of ['INICertManUI', 'QWidget']) {
       const hit = tryClass(cls);
       if (hit) {
         return { ok: true, windowName: hit.windowName, matchedClass: hit.matchedClass };
       }
     }
-    const byName = tryName('인증서 선택');
-    if (byName && byName.matchedClass) {
-      return { ok: true, windowName: byName.windowName, matchedClass: byName.matchedClass };
+    // Try common cert dialog window titles as fallbacks
+    // Different security programs use different titles:
+    // - INICertMan/INITECH: "전자 서명 작성" (Create Digital Signature)
+    // - Delfino/some configs: "인증서 선택" (Certificate Selection)
+    for (const title of ['전자 서명 작성', '인증서 선택']) {
+      const byName = tryName(title);
+      if (byName && byName.matchedClass) {
+        return { ok: true, windowName: byName.windowName, matchedClass: byName.matchedClass };
+      }
     }
     return { ok: false };
   } catch (e) {
@@ -159,7 +166,7 @@ async function waitForNativeCertificateDialogWindow(opts = {}) {
   return {
     ok: false,
     error:
-      'Timeout: native cert window not detected (tried INICertManUI, QWidget, title "인증서 선택"). ' +
+      'Timeout: native cert window not detected (tried INICertManUI, QWidget, titles "전자 서명 작성"/"인증서 선택"). ' +
       'If the bank module shows its own error about a missing process, that is separate from this app — reinstall NPKI/공동인증 modules. ' +
       'If the cert window is visible but this still fails, try running EGDesk as Administrator once, or use Inspect.exe to confirm the window Class name.',
   };
