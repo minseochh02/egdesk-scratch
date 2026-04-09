@@ -672,38 +672,143 @@ const FinanceHub: React.FC = () => {
     await checkExistingCardConnections();
   };
 
+  /** Matches main process CORPORATE_NATIVE_CERT_BANK_IDS + Excel download automators (scripts/bank-excel-download-automation). */
+  const CORPORATE_NATIVE_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'];
+
+  /**
+   * Restores Playwright automator session from saved credentials (동기화 / 재연결 공통).
+   * — 기업 네이티브: corporateCertPrepare → corporateCertComplete
+   * — NH 법인: loginAndGetAccounts + 인증서
+   * — 개인: login (ID/PW)
+   */
+  const reconnectBankFromSavedCredentials = async (bankId: string): Promise<boolean> => {
+    const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
+    if (!credResult.success || !credResult.credentials) {
+      alert(`저장된 인증 정보가 없습니다. 계정 관리에서 은행을 다시 연결해 주세요.`);
+      return false;
+    }
+    const cred: any = credResult.credentials;
+    const isCorporate = cred.accountType === 'corporate';
+
+    if (isCorporate && CORPORATE_NATIVE_CERT_BANK_IDS.includes(bankId)) {
+      if (!cred.certificatePassword) {
+        alert(`저장된 공동인증서 비밀번호가 없습니다. 계정에서 기업 인증으로 다시 연결해 주세요.`);
+        return false;
+      }
+      const prep = await window.electron.financeHub.corporateCertPrepare(bankId);
+      if (!prep.success) {
+        alert(`인증 준비 실패: ${prep.error || '알 수 없는 오류'}`);
+        return false;
+      }
+      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword);
+      if (!done.success || !done.isLoggedIn) {
+        await window.electron.financeHub.corporateCertCancel(bankId);
+        alert(`기업 뱅킹 재연결 실패: ${done.error || '알 수 없는 오류'}`);
+        return false;
+      }
+      setConnectedBanks((prev) =>
+        prev.map((b) =>
+          b.bankId === bankId
+            ? {
+                ...b,
+                status: 'connected' as const,
+                alias: done.userName || b.alias,
+                accounts: done.accounts || b.accounts,
+                lastSync: new Date(),
+                accountType: 'corporate',
+              }
+            : b
+        )
+      );
+      return true;
+    }
+
+    if (bankId === 'nh-business' && isCorporate) {
+      if (!cred.certificatePassword) {
+        alert(`저장된 공동인증서 비밀번호가 없습니다. NH 법인 계정에서 다시 연결해 주세요.`);
+        return false;
+      }
+      const loginCreds: BankCredentials & { certificateIndex?: number } = {
+        bankId,
+        userId: cred.userId || '',
+        password: cred.password || '',
+        certificatePassword: cred.certificatePassword,
+        accountType: 'corporate',
+      };
+      if (cred.certificateIndex != null) loginCreds.certificateIndex = cred.certificateIndex;
+
+      const loginResult = await window.electron.financeHub.loginAndGetAccounts(bankId, loginCreds);
+      if (!loginResult.success || !loginResult.isLoggedIn) {
+        alert(`NH 법인 재연결 실패: ${loginResult.error || '알 수 없는 오류'}`);
+        return false;
+      }
+      setConnectedBanks((prev) =>
+        prev.map((b) =>
+          b.bankId === bankId
+            ? {
+                ...b,
+                status: 'connected' as const,
+                alias: loginResult.userName || b.alias,
+                accounts: loginResult.accounts || b.accounts,
+                lastSync: new Date(),
+                accountType: 'corporate',
+              }
+            : b
+        )
+      );
+      return true;
+    }
+
+    if (!cred.userId || !cred.password) {
+      alert(`저장된 아이디·비밀번호가 없습니다. 계정에서 다시 연결해 주세요.`);
+      return false;
+    }
+    const loginResult = await window.electron.financeHub.login(bankId, {
+      userId: cred.userId,
+      password: cred.password,
+    });
+    if (!loginResult.success || !loginResult.isLoggedIn) {
+      alert(`자동 재연결 실패: ${loginResult.error || '알 수 없는 오류'}`);
+      return false;
+    }
+    setConnectedBanks((prev) =>
+      prev.map((b) =>
+        b.bankId === bankId
+          ? {
+              ...b,
+              status: 'connected' as const,
+              alias: loginResult.userName || b.alias,
+              lastSync: new Date(),
+              accountType: cred.accountType || b.accountType || 'personal',
+            }
+          : b
+      )
+    );
+    return true;
+  };
+
   const handleReconnect = async (bankId: string) => {
     const bank = getBankConfigById(bankId);
     try {
-      setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'pending' as const } : b));
+      setConnectedBanks((prev) => prev.map((b) => (b.bankId === bankId ? { ...b, status: 'pending' as const } : b)));
       const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
-      
+
       if (!credResult.success || !credResult.credentials) {
         setSelectedBank(bank || null);
         setShowBankSelector(true);
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'disconnected' as const } : b));
+        setConnectedBanks((prev) => prev.map((b) => (b.bankId === bankId ? { ...b, status: 'disconnected' as const } : b)));
         return;
       }
 
-      const loginResult = await window.electron.financeHub.loginAndGetAccounts(bankId, { userId: credResult.credentials.userId, password: credResult.credentials.password });
-
-      if (loginResult.success && loginResult.isLoggedIn) {
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
-          ...b,
-          status: 'connected' as const,
-          alias: loginResult.userName || b.alias,
-          accounts: loginResult.accounts || b.accounts,
-          lastSync: new Date(),
-          accountType: credResult.credentials.accountType || b.accountType || 'personal'
-        } : b));
+      const ok = await reconnectBankFromSavedCredentials(bankId);
+      if (ok) {
         alert(`✅ ${bank?.nameKo || bankId} 재연결 성공!`);
       } else {
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'error' as const } : b));
-        alert(`${bank?.nameKo || bankId} 재연결 실패: ${loginResult.error || '알 수 없는 오류'}`);
+        setConnectedBanks((prev) => prev.map((b) => (b.bankId === bankId ? { ...b, status: 'error' as const } : b)));
       }
     } catch (error) {
       console.error('[FinanceHub] Reconnect error:', error);
-      setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'error' as const } : b));
+      setConnectedBanks((prev) => prev.map((b) => (b.bankId === bankId ? { ...b, status: 'error' as const } : b)));
       alert(`재연결 중 오류가 발생했습니다: ${error}`);
     }
   };
@@ -827,31 +932,29 @@ const FinanceHub: React.FC = () => {
     setIsSyncing(accountNumber);
     try {
       const connection = connectedBanks.find(b => b.bankId === bankId);
-      
-      if (!connection || connection.status === 'disconnected' || connection.status === 'error') {
-        const credResult = await window.electron.financeHub.getSavedCredentials(bankId);
-        if (!credResult.success || !credResult.credentials) {
-          alert(`세션이 만료되었습니다. 저장된 인증 정보가 없습니다.`);
-          return;
-        }
 
-        const loginResult = await window.electron.financeHub.login(bankId, { userId: credResult.credentials.userId, password: credResult.credentials.password });
-        if (!loginResult.success || !loginResult.isLoggedIn) {
-          alert(`자동 재연결 실패: ${loginResult.error}`);
-          return;
-        }
-        setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
-          ...b,
-          status: 'connected' as const,
-          alias: loginResult.userName || b.alias,
-          lastSync: new Date(),
-          accountType: credResult.credentials.accountType || b.accountType || 'personal'
-        } : b));
+      const needsRestore =
+        !connection ||
+        connection.status === 'disconnected' ||
+        connection.status === 'error';
+
+      if (needsRestore) {
+        const ok = await reconnectBankFromSavedCredentials(bankId);
+        if (!ok) return;
       }
 
       const { startDate, endDate } = getDateRange(period);
-      const result = await window.electron.financeHub.getTransactions(bankId, accountNumber, startDate, endDate, true);
-      if (!result.success) throw new Error(result.error || 'Failed to fetch transactions');
+      let result = await window.electron.financeHub.getTransactions(bankId, accountNumber, startDate, endDate, true);
+
+      if (!result.success) {
+        const errMsg = String(result.error || '');
+        if (/no active browser session|active browser session|Please open browser or login/i.test(errMsg)) {
+          const ok = await reconnectBankFromSavedCredentials(bankId);
+          if (!ok) throw new Error(errMsg);
+          result = await window.electron.financeHub.getTransactions(bankId, accountNumber, startDate, endDate, true);
+        }
+        if (!result.success) throw new Error(result.error || 'Failed to fetch transactions');
+      }
 
       const connectedBank = connectedBanks.find(b => b.bankId === bankId);
       const accountInfo = connectedBank?.accounts?.find(a => a.accountNumber === accountNumber);
@@ -866,14 +969,19 @@ const FinanceHub: React.FC = () => {
       };
 
       const transactionsData = (result.transactions || []).map((tx: any) => ({
-        date: tx.date ? tx.date.replace(/[-.]/g, '') : '',
+        date: tx.date ? String(tx.date).replace(/[-.]/g, '') : '',
         time: tx.time || '',
+        transaction_datetime: tx.transaction_datetime || '',
         type: tx.type || '',
         withdrawal: tx.withdrawal || 0,
         deposit: tx.deposit || 0,
         description: tx.description || '',
+        description2: tx.description2 || '',
         balance: tx.balance || 0,
         branch: tx.branch || '',
+        counterparty: tx.counterparty || '',
+        counterpartyAccount: tx.counterpartyAccount || '',
+        memo: tx.memo || '',
       }));
 
       const syncMetadata = { queryPeriodStart: startDate, queryPeriodEnd: endDate, excelFilePath: result.file || result.filename };
