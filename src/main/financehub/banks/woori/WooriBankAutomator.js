@@ -129,23 +129,48 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
   }
 
+  /**
+   * Same cascade as woori.spec.js STEP 4: getByRole → .xwup-tableview-cell → XPath.
+   * getByRole can be count=0 when the date cell has no accessible name in this Chromium build;
+   * the spec still works because catch #2 uses the recorded XPath to tr[1]/td[3]/div (expiry column).
+   */
   async _wooriClickCertTableCell() {
     const TARGET = '2026-08-15';
-    await this._logWooriCertSelectionDebug();
-
-    const locator = this.page.getByRole('div', { name: TARGET });
-    const count = await locator.count();
-    this.log(`[WOORI DEBUG] getByRole('div', { name: '${TARGET}' }) count=${count}`);
-
-    if (count === 0) {
-      throw new Error(
-        `[WOORI DEBUG] No div with accessible name "${TARGET}". See logs above for .xwup-tableview-cell and text hits.`
-      );
+    if (process.env.WOORI_DEBUG_CERT === '1') {
+      await this._logWooriCertSelectionDebug();
     }
 
-    await locator.first().hover({ force: true });
-    await locator.first().click({ timeout: 5000 });
-    this.log(`[WOORI DEBUG] clicked getByRole('div', { name: '${TARGET}' }) (first of ${count})`);
+    try {
+      const locator = this.page.getByRole('div', { name: TARGET });
+      await locator.hover({ force: true });
+      await locator.click({ timeout: 5000 });
+      this.log(`[WOORI] cert row: getByRole('div', { name: '${TARGET}' })`);
+    } catch (error) {
+      this.warn('[WOORI] getByRole failed (common in Electron — a11y name may differ):', error.message);
+      try {
+        const table = this.page.locator('#xwup_cert_table');
+        const byText = table.getByText(TARGET, { exact: true });
+        await byText.first().hover({ force: true });
+        await byText.first().click({ timeout: 5000 });
+        this.log(`[WOORI] cert row: #xwup_cert_table getByText('${TARGET}', exact)`);
+      } catch (errorText) {
+        this.warn('[WOORI] #xwup_cert_table getByText failed, spec CSS fallback (.first() cell):', errorText.message);
+        try {
+          const fallbackLocator = this.page.locator('.xwup-tableview-cell');
+          await fallbackLocator.hover({ force: true });
+          await fallbackLocator.click({ timeout: 5000 });
+          this.warn('[WOORI] cert row: first .xwup-tableview-cell (woori.spec.js fallback — often wrong cell)');
+        } catch (error2) {
+          this.warn('[WOORI] CSS fallback failed, woori.spec.js XPath:', error2.message);
+          const xpathLocator = this.page.locator(
+            'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
+          );
+          await xpathLocator.hover({ force: true });
+          await xpathLocator.click();
+          this.log('[WOORI] cert row: xpath …/tr[1]/td[3]/div (woori.spec.js last resort)');
+        }
+      }
+    }
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
