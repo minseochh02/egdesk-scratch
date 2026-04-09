@@ -375,11 +375,12 @@ class KookminBankAutomator extends BaseBankAutomator {
       });
       this.browser = browser;
       this.context = context;
-      // CRITICAL: Use existing page from launchPersistentContext instead of creating new one
-      // Security programs (Delfino) inject into the initial page and won't work with new pages
+
+      // Match kb.spec.js EXACTLY: use existing page, no setupBrowserContext routing
+      // kb.spec.js line 59: let page = context.pages()[0] || await context.newPage();
       this.page = context.pages()[0] || await context.newPage();
-      // Skip routing setup for corporate cert flow to avoid interfering with security program
-      // The setupBrowserContext() routing can block native security program installations
+
+      // Auto-accept dialogs (from kb.spec.js lines 62-65)
       this.page.on('dialog', async (dialog) => {
         try {
           await dialog.accept();
@@ -402,16 +403,24 @@ class KookminBankAutomator extends BaseBankAutomator {
         this.warn('DelfinoConfig:', e.message);
       }
 
+      this.log('[PREPARE] Clicking 공동인증서 button...');
       try {
         await this.page.locator('button:has-text("공동인증서")').first().click({ timeout: 15000 });
+        this.log('[PREPARE] ✓ Clicked button:has-text("공동인증서")');
       } catch (e) {
+        this.log('[PREPARE] Fallback: trying .btn:has-text("공동인증서")...');
         await this.page.locator('.btn:has-text("공동인증서")').first().click({ timeout: 15000 });
+        this.log('[PREPARE] ✓ Clicked .btn:has-text("공동인증서")');
       }
 
+      this.log('[PREPARE] Waiting 2s before cert window detection...');
+      await this.page.waitForTimeout(2000);
+
+      this.log('[PREPARE] Starting cert window detection (60s timeout)...');
       const uia = await waitForNativeCertificateDialogWindow({
         timeoutMs: 60000,
         pollMs: 1000,
-        onLog: (m) => this.log(m),
+        onLog: (m) => this.log(`[CERT-DETECT] ${m}`),
       });
       if (!uia.ok) {
         this._kookminCorporateCertPhase = 'idle';
