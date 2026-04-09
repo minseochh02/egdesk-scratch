@@ -497,6 +497,7 @@ class HanaBankAutomator extends BaseBankAutomator {
         if (picked) {
           await acctSelect.selectOption({ value: picked });
           await this.page.waitForTimeout(800);
+          this.log(`Hana: account select id=${acctSelectId}, pickedValue=${picked}`);
         }
       }
 
@@ -518,6 +519,7 @@ class HanaBankAutomator extends BaseBankAutomator {
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }, startDateStr);
+      this.log(`Hana: startDate input set to ${startDateStr}`);
       await this.page.waitForTimeout(400);
 
       try {
@@ -529,6 +531,7 @@ class HanaBankAutomator extends BaseBankAutomator {
 
       try {
         await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+        this.log('Hana: search click via text("조회")');
       } catch (e) {
         await frame.evaluate(() => {
           const btns = document.querySelectorAll('button');
@@ -539,8 +542,10 @@ class HanaBankAutomator extends BaseBankAutomator {
             }
           }
         });
+        this.log('Hana: search click via frame evaluate fallback');
       }
       await this.page.waitForTimeout(3000);
+      this.log('Hana: search wait complete');
 
       const dateError = await frame.evaluate(() => {
         const body = document.body.textContent || '';
@@ -549,6 +554,7 @@ class HanaBankAutomator extends BaseBankAutomator {
         );
       });
       if (dateError) {
+        this.warn('Hana: date error detected, retrying with yesterday');
         try {
           await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
         } catch (e) {}
@@ -566,25 +572,32 @@ class HanaBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(400);
         try {
           await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
+          this.log('Hana: retry search click via text("조회")');
         } catch (e) {}
         await this.page.waitForTimeout(3000);
+        this.log(`Hana: retry search complete with startDate=${yStr}`);
       }
 
       await this.focusPlaywrightPage();
+      this.log('Hana: focused page, waiting for next download event');
       const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
+        this.log('Hana: excel export click via text("전체엑셀다운로드")');
       } catch (e) {
         try {
           await frame.locator('button:has-text("엑셀다운로드")').click({ timeout: 5000 });
+          this.log('Hana: excel export click via text("엑셀다운로드")');
         } catch (e2) {
           await frame.locator('button:has-text("엑셀")').first().click({ timeout: 5000 });
+          this.log('Hana: excel export click via text("엑셀")');
         }
       }
 
       let download;
       try {
         download = await downloadPromise;
+        this.log(`Hana: download event received (${download.suggestedFilename() || 'no-suggested-filename'})`);
       } catch (e) {
         const noDataMsg = await frame.evaluate(() => {
           const body = document.body.textContent || '';
@@ -612,6 +625,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       const finalName = `하나기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
       await download.saveAs(finalPath);
+      this.log(`Hana: download saved to ${finalPath}`);
 
       let extractedData;
       try {
