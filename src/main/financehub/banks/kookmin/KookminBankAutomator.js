@@ -389,6 +389,14 @@ class KookminBankAutomator extends BaseBankAutomator {
         }
       });
 
+      // Add close event listeners for diagnostics
+      this.context.on('close', () => {
+        this.log('[DEBUG] Browser context closed event fired');
+      });
+      this.page.on('close', () => {
+        this.log('[DEBUG] Page closed event fired');
+      });
+
       const bizUrl = this.config.xpaths.bizMainUrl;
       await this.page.goto(bizUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
