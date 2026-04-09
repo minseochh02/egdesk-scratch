@@ -88,56 +88,52 @@ function probeNativeCertificateDialogWindow() {
   if (!isWindows()) {
     return { ok: false, error: 'UI Automation requires Windows' };
   }
-  const tryClass = (className) => {
-    if (!/^[A-Za-z0-9_]+$/.test(className)) return null;
-    const script =
-      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
-      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
-      '$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, ' +
-      `'${className}'); ` +
-      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
-      'if ($w) { $w.Current.Name + "|" + $w.Current.ClassName } else { "" }';
-    const out = runPowerShellUtf8(script, { timeoutMs: 12000 });
-    if (!out) return null;
-    const pipe = out.indexOf('|');
-    const name = pipe >= 0 ? out.slice(0, pipe) : out;
-    const cls = pipe >= 0 ? out.slice(pipe + 1) : className;
-    return { windowName: name, matchedClass: cls };
-  };
-  const tryName = (exactName) => {
-    const safe = exactName.replace(/'/g, "''");
-    const script =
-      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
-      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
-      '$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, ' +
-      `'${safe}'); ` +
-      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
-      'if ($w) { $w.Current.Name + "|" + $w.Current.ClassName } else { "" }';
-    const out = runPowerShellUtf8(script, { timeoutMs: 12000 });
-    if (!out) return null;
-    const pipe = out.indexOf('|');
-    const cls = pipe >= 0 ? out.slice(pipe + 1) : '';
-    const name = pipe >= 0 ? out.slice(0, pipe) : out;
-    return { windowName: name, matchedClass: cls };
-  };
   try {
-    // Try common cert dialog class names first (most reliable)
-    for (const cls of ['INICertManUI', 'QWidget']) {
-      const hit = tryClass(cls);
-      if (hit) {
-        return { ok: true, windowName: hit.windowName, matchedClass: hit.matchedClass };
+    // Try INICertManUI (like Shinhan) - match kb.spec.js exactly
+    try {
+      const result = runPowerShellUtf8(
+        "Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; " +
+        "$r = [System.Windows.Automation.AutomationElement]::RootElement; " +
+        "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'INICertManUI'); " +
+        "$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); " +
+        "if ($w) { $w.Current.Name } else { '' }",
+        { timeoutMs: 12000 }
+      );
+      if (result) {
+        return { ok: true, windowName: result, matchedClass: 'INICertManUI' };
       }
-    }
-    // Try common cert dialog window titles as fallbacks
-    // Different security programs use different titles:
-    // - INICertMan/INITECH: "전자 서명 작성" (Create Digital Signature)
-    // - Delfino/some configs: "인증서 선택" (Certificate Selection)
-    for (const title of ['전자 서명 작성', '인증서 선택']) {
-      const byName = tryName(title);
-      if (byName && byName.matchedClass) {
-        return { ok: true, windowName: byName.windowName, matchedClass: byName.matchedClass };
+    } catch (e) {}
+
+    // Try QWidget (like Hana) - match kb.spec.js exactly
+    try {
+      const result = runPowerShellUtf8(
+        "Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; " +
+        "$r = [System.Windows.Automation.AutomationElement]::RootElement; " +
+        "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'QWidget'); " +
+        "$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); " +
+        "if ($w) { $w.Current.Name } else { '' }",
+        { timeoutMs: 12000 }
+      );
+      if (result) {
+        return { ok: true, windowName: result, matchedClass: 'QWidget' };
       }
-    }
+    } catch (e) {}
+
+    // Try by name "인증서 선택" - match kb.spec.js exactly
+    try {
+      const result = runPowerShellUtf8(
+        "Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; " +
+        "$r = [System.Windows.Automation.AutomationElement]::RootElement; " +
+        "$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '인증서 선택'); " +
+        "$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); " +
+        "if ($w) { $w.Current.ClassName } else { '' }",
+        { timeoutMs: 12000 }
+      );
+      if (result) {
+        return { ok: true, windowName: '인증서 선택', matchedClass: result };
+      }
+    } catch (e) {}
+
     return { ok: false };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -166,7 +162,7 @@ async function waitForNativeCertificateDialogWindow(opts = {}) {
   return {
     ok: false,
     error:
-      'Timeout: native cert window not detected (tried INICertManUI, QWidget, titles "전자 서명 작성"/"인증서 선택"). ' +
+      'Timeout: native cert window not detected (tried INICertManUI, QWidget, title "인증서 선택"). ' +
       'If the bank module shows its own error about a missing process, that is separate from this app — reinstall NPKI/공동인증 modules. ' +
       'If the cert window is visible but this still fails, try running EGDesk as Administrator once, or use Inspect.exe to confirm the window Class name.',
   };
