@@ -118,6 +118,10 @@ const FinanceHub: React.FC = () => {
   const [showManualPasswordContinue, setShowManualPasswordContinue] = useState(false);
   /** 기업 공동인증서 (native Arduino 경로): 연결 시도 중 — 창 닫기 시 IPC cancel */
   const [corporateNativeCertSessionActive, setCorporateNativeCertSessionActive] = useState(false);
+  /** NH 법인 (nh-business): INIpay cert table — Hometax-style list from fetchBankCertificates */
+  const [nhBusinessCertificates, setNhBusinessCertificates] = useState<any[]>([]);
+  const [selectedNhBusinessCertificate, setSelectedNhBusinessCertificate] = useState<any | null>(null);
+  const [isFetchingNhBusinessCertificates, setIsFetchingNhBusinessCertificates] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
@@ -340,6 +344,63 @@ const FinanceHub: React.FC = () => {
   useEffect(() => {
     loadArduinoPort();
   }, []);
+
+  // NH + 법인 + 공동인증서: INIpay cert 목록 (홈택스와 유사 — fetchBankCertificates → 선택)
+  useEffect(() => {
+    if (
+      !showBankSelector ||
+      selectedBank?.id !== 'nh' ||
+      credentials.accountType !== 'corporate' ||
+      bankAuthMethod !== 'certificate'
+    ) {
+      return;
+    }
+    if (nhBusinessCertificates.length > 0 || isFetchingNhBusinessCertificates) return;
+
+    let cancelled = false;
+    (async () => {
+      setIsFetchingNhBusinessCertificates(true);
+      setConnectionProgress('NH 법인 인증서 목록을 불러오는 중...');
+      try {
+        const result = await window.electron.financeHub.fetchBankCertificates('nh-business');
+        if (cancelled) return;
+        if (result.success && result.certificates?.length) {
+          setNhBusinessCertificates(result.certificates);
+          setSelectedNhBusinessCertificate(null);
+        } else {
+          setNhBusinessCertificates([]);
+          alert(`인증서 목록 조회 실패: ${result.error || '알 수 없는 오류'}`);
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setNhBusinessCertificates([]);
+          alert(`인증서 목록 조회 오류: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsFetchingNhBusinessCertificates(false);
+          setConnectionProgress('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showBankSelector,
+    selectedBank?.id,
+    credentials.accountType,
+    bankAuthMethod,
+    nhBusinessCertificates.length,
+    isFetchingNhBusinessCertificates,
+  ]);
+
+  useEffect(() => {
+    if (selectedBank?.id !== 'nh' || credentials.accountType !== 'corporate' || bankAuthMethod !== 'certificate') {
+      setNhBusinessCertificates([]);
+      setSelectedNhBusinessCertificate(null);
+    }
+  }, [selectedBank?.id, credentials.accountType, bankAuthMethod]);
 
   // Arduino Port Functions
   const loadArduinoPort = async () => {
@@ -1875,6 +1936,15 @@ const FinanceHub: React.FC = () => {
         alert('공동인증서 비밀번호를 입력해주세요.');
         return;
       }
+      if (
+        selectedBank?.id === 'nh' &&
+        bankAuthMethod === 'certificate' &&
+        nhBusinessCertificates.length > 0 &&
+        !selectedNhBusinessCertificate
+      ) {
+        alert('인증서를 목록에서 선택해주세요.');
+        return;
+      }
     } else {
       if (!selectedBank || !credentials.userId || !credentials.password) {
         alert('아이디와 비밀번호를 입력해주세요.');
@@ -1963,10 +2033,20 @@ const FinanceHub: React.FC = () => {
         bankId = 'nh-business';
       }
 
-      const loginCredentials =
+      let loginCredentials =
         credentials.accountType === 'corporate'
           ? { certificatePassword: credentials.certificatePassword }
           : { userId: credentials.userId, password: credentials.password };
+
+      if (
+        bankId === 'nh-business' &&
+        selectedNhBusinessCertificate?.certificateIndex != null
+      ) {
+        loginCredentials = {
+          ...loginCredentials,
+          certificateIndex: selectedNhBusinessCertificate.certificateIndex,
+        };
+      }
 
       const result = await window.electron.financeHub.loginAndGetAccounts(bankId, loginCredentials);
       if (result.success && result.isLoggedIn) {
@@ -2098,6 +2178,8 @@ const FinanceHub: React.FC = () => {
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
     setConnectionProgress('');
+    setNhBusinessCertificates([]);
+    setSelectedNhBusinessCertificate(null);
   };
   const handleBackToList = () => {
     if (corporateNativeCertSessionActive && selectedBank?.id) {
@@ -2108,6 +2190,8 @@ const FinanceHub: React.FC = () => {
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
     setConnectionProgress('');
+    setNhBusinessCertificates([]);
+    setSelectedNhBusinessCertificate(null);
   };
 
   // ============================================
@@ -2953,8 +3037,56 @@ const FinanceHub: React.FC = () => {
                                 (Windows + Arduino HID 필요)
                               </p>
                             )}
+                            {selectedBank?.id === 'nh' && credentials.accountType === 'corporate' && (
+                              <p style={{ marginTop: '8px', fontSize: '0.9em', opacity: 0.9 }}>
+                                NH 법인뱅킹은 브라우저 인증서 목록에서 인증서를 고른 뒤 비밀번호를 입력합니다 (홈택스와 동일).
+                              </p>
+                            )}
                           </div>
                         </div>
+
+                        {selectedBank?.id === 'nh' &&
+                          credentials.accountType === 'corporate' &&
+                          isFetchingNhBusinessCertificates && (
+                          <div className="finance-hub__connection-progress" style={{ marginTop: '16px' }}>
+                            <span className="finance-hub__spinner"></span>
+                            <span>NH 법인 인증서 목록을 불러오는 중...</span>
+                          </div>
+                        )}
+
+                        {selectedBank?.id === 'nh' &&
+                          credentials.accountType === 'corporate' &&
+                          nhBusinessCertificates.length > 0 && (
+                          <div className="finance-hub__login-fields" style={{ marginTop: '16px' }}>
+                            <h3 style={{ marginBottom: '12px', color: 'var(--fh-text-primary)', fontSize: '1rem' }}>
+                              인증서를 선택하세요
+                            </h3>
+                            <div className="finance-hub__certificate-list">
+                              {nhBusinessCertificates.map((cert: any, index: number) => (
+                                <div
+                                  key={`nh-cert-${index}-${cert.certificateIndex ?? index}`}
+                                  className={`finance-hub__certificate-item ${selectedNhBusinessCertificate === cert ? 'finance-hub__certificate-item--selected' : ''}`}
+                                  onClick={() => setSelectedNhBusinessCertificate(cert)}
+                                >
+                                  <div className="finance-hub__certificate-icon">🔐</div>
+                                  <div className="finance-hub__certificate-info">
+                                    <h4>{cert.소유자명 || cert.display || `인증서 ${cert.certificateIndex ?? index + 1}`}</h4>
+                                    <div className="finance-hub__certificate-details">
+                                      {cert.용도 != null && cert.용도 !== '' && <span>용도: {cert.용도}</span>}
+                                      {cert.발급기관 != null && cert.발급기관 !== '' && <span>발급: {cert.발급기관}</span>}
+                                      {cert.만료일 != null && cert.만료일 !== '' && <span>만료: {cert.만료일}</span>}
+                                      {!cert.만료일 && cert.display && <span>{cert.display}</span>}
+                                    </div>
+                                  </div>
+                                  {selectedNhBusinessCertificate === cert && (
+                                    <span className="finance-hub__certificate-check">✓</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="finance-hub__input-group">
                           <label>공동인증서 비밀번호</label>
                           <input
@@ -2981,7 +3113,14 @@ const FinanceHub: React.FC = () => {
                         <button
                           className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
                           onClick={handleConnect}
-                          disabled={isConnecting || !credentials.certificatePassword}
+                          disabled={
+                            isConnecting ||
+                            !credentials.certificatePassword ||
+                            (selectedBank?.id === 'nh' &&
+                              credentials.accountType === 'corporate' &&
+                              (isFetchingNhBusinessCertificates ||
+                                (nhBusinessCertificates.length > 0 && !selectedNhBusinessCertificate)))
+                          }
                         >
                           {isConnecting ? (
                             <><span className="finance-hub__spinner"></span> 연결 중...</>
