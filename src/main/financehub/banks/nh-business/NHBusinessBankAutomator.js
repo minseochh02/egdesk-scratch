@@ -708,15 +708,32 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
     const proxy = this.buildProxyOption(proxyUrl);
 
     try {
-      // Step 1: Create browser
+      // Step 1: Browser — match scripts/bank-excel-download-automation/nhbank.spec.js (temp profile, args, no route interception)
       this.log('Starting NH Business Bank automation...');
-      const { browser, context } = await this.createBrowser(proxy);
+      const nhDownloadsPath = path.join(this.outputDir, 'nh-business-downloads');
+      this.ensureOutputDirectory(nhDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: nhDownloadsPath,
+      });
       this.browser = browser;
       this.context = context;
-
-      await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+      this.page = context.pages()[0] || (await context.newPage());
+      this.page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
 
       // Step 2: Navigate to login page
       this.log('Navigating to NH Business Bank login page...');

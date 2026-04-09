@@ -205,19 +205,24 @@ class BaseBankAutomator {
    */
   async createBrowser(proxy, launchOverrides = {}) {
     const explicitProfilePath = this.config.chromeProfile?.trim() || null;
-    let persistentProfileDir = explicitProfilePath;
+    let persistentProfileDir = null;
 
-    if (!persistentProfileDir && launchOverrides.useKbScriptPlaywrightProfile === true) {
-      // scripts/bank-excel-download-automation/kb.spec.js: mkdtemp under os.tmpdir(), prefix playwright-profile-
+    // Bank-excel scripts use os.tmpdir() + playwright-profile-*; this must win over config.chromeProfile
+    // when launchOverrides.useKbScriptPlaywrightProfile is true (e.g. nh-business had chromeProfile: 'Default').
+    if (launchOverrides.useKbScriptPlaywrightProfile === true) {
       try {
         persistentProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));
         this.log(
-          'Using KB script-style Chrome profile (os.tmpdir + playwright-profile-*):',
+          'Using script-style Chrome profile (os.tmpdir + playwright-profile-*):',
           persistentProfileDir
         );
       } catch (e) {
-        this.warn('Failed to create KB script-style Chrome profile:', e?.message || e);
+        this.warn('Failed to create script-style Chrome profile:', e?.message || e);
       }
+    }
+
+    if (!persistentProfileDir) {
+      persistentProfileDir = explicitProfilePath || null;
     }
 
     if (!persistentProfileDir) {

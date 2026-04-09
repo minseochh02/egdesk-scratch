@@ -1,3 +1,4 @@
+const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
@@ -72,12 +73,32 @@ class IbkBankAutomator extends BaseBankAutomator {
         this.context = null;
         this.page = null;
       }
-      const { browser, context } = await this.createBrowser(proxy);
+      // Match scripts/bank-excel-download-automation/ibk.spec.js launch (temp profile, viewport null, downloads)
+      const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
+      this.ensureOutputDirectory(corpDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: corpDownloadsPath,
+      });
       this.browser = browser;
       this.context = context;
-      await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+      // Corporate cert: first page only — no setupBrowserContext (avoids route interception; same as spec)
+      this.page = context.pages()[0] || await context.newPage();
+      this.page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
 
       await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);

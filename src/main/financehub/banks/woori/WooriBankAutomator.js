@@ -1,3 +1,4 @@
+const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const { WOORI_CONFIG } = require('./config');
@@ -29,6 +30,70 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
   }
 
+  /**
+   * Match scripts/bank-excel-download-automation/woori.spec.js: hover(force) then click, same fallbacks.
+   */
+  async _wooriClickLogin() {
+    try {
+      const locator = this.page.getByRole('button', { name: '로그인' });
+      await locator.hover({ force: true });
+      await locator.click({ timeout: 5000 });
+    } catch (error) {
+      try {
+        const fallbackLocator = this.page.locator('.btn-action1');
+        await fallbackLocator.hover({ force: true });
+        await fallbackLocator.click({ timeout: 5000 });
+      } catch (error2) {
+        const xpathLocator = this.page.locator(
+          'xpath=/html/body/div/main/div[2]/div[1]/div[2]/div/div/dl/dd[1]/button'
+        );
+        await xpathLocator.hover({ force: true });
+        await xpathLocator.click();
+      }
+    }
+  }
+
+  async _wooriClickLegacyCertButton() {
+    try {
+      const locator = this.page.getByRole('span', { name: '(구)공인인증서' });
+      await locator.hover({ force: true });
+      await locator.click({ timeout: 5000 });
+    } catch (error) {
+      try {
+        const fallbackLocator = this.page.locator('span');
+        await fallbackLocator.hover({ force: true });
+        await fallbackLocator.click({ timeout: 5000 });
+      } catch (error2) {
+        const xpathLocator = this.page.locator(
+          'xpath=/html/body/div/div[2]/section/div/div/fieldset[1]/div[1]/button[2]/span'
+        );
+        await xpathLocator.hover({ force: true });
+        await xpathLocator.click();
+      }
+    }
+  }
+
+  async _wooriClickCertTableCell() {
+    const certLabel = process.env.CERT_EXPIRY || process.env.WOORI_CERT_ROW_LABEL || '2026-08-15';
+    try {
+      const locator = this.page.getByRole('div', { name: certLabel });
+      await locator.hover({ force: true });
+      await locator.click({ timeout: 5000 });
+    } catch (error) {
+      try {
+        const fallbackLocator = this.page.locator('.xwup-tableview-cell');
+        await fallbackLocator.hover({ force: true });
+        await fallbackLocator.click({ timeout: 5000 });
+      } catch (error2) {
+        const xpathLocator = this.page.locator(
+          'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
+        );
+        await xpathLocator.hover({ force: true });
+        await xpathLocator.click();
+      }
+    }
+  }
+
   async prepareCorporateCertificateLogin(proxyUrl) {
     const proxy = this.buildProxyOption(proxyUrl);
     try {
@@ -40,36 +105,43 @@ class WooriBankAutomator extends BaseBankAutomator {
         this.context = null;
         this.page = null;
       }
-      const { browser, context } = await this.createBrowser(proxy);
+
+      // scripts/bank-excel-download-automation/woori.spec.js — temp profile, args order, viewport null, downloads; no route interception
+      const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
+      this.ensureOutputDirectory(corpDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: corpDownloadsPath,
+      });
       this.browser = browser;
       this.context = context;
-      await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+      this.page = context.pages()[0] || (await context.newPage());
+      this.page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
 
       await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' });
+      await this.page.waitForTimeout(2839);
+
+      await this._wooriClickLogin();
+      await this.page.waitForTimeout(2044);
+
+      await this._wooriClickLegacyCertButton();
       await this.page.waitForTimeout(3000);
 
-      try {
-        const locator = this.page.getByRole('button', { name: '로그인' });
-        await locator.click({ timeout: 10000 });
-      } catch (e) {
-        await this.page.locator('.btn-action1').first().click({ timeout: 10000 });
-      }
-      await this.page.waitForTimeout(2000);
-
-      try {
-        await this.page.getByRole('span', { name: '(구)공인인증서' }).click({ timeout: 10000 });
-      } catch (e) {
-        await this.page.locator('fieldset div button').nth(1).click({ timeout: 10000 });
-      }
-      await this.page.waitForTimeout(3000);
-
-      try {
-        await this.page.locator('.xwup-tableview-cell').first().click({ timeout: 10000 });
-      } catch (e) {
-        await this.page.locator('table tbody tr td div').first().click({ timeout: 10000 });
-      }
+      await this._wooriClickCertTableCell();
       await this.page.waitForTimeout(2000);
 
       this._wooriCorporateCertPhase = 'awaiting_password';
@@ -114,7 +186,9 @@ class WooriBankAutomator extends BaseBankAutomator {
       for (let i = 1; i <= 20; i++) {
         await this._arduinoHid.sendKey('TAB');
         await this.page.waitForTimeout(300);
-        focused = await this.page.evaluate(() => document.activeElement?.id || '');
+        focused = await this.page.evaluate(
+          () => document.activeElement?.id || document.activeElement?.tagName || ''
+        );
         if (focused === 'xwup_certselect_tek_input1') break;
       }
       if (focused !== 'xwup_certselect_tek_input1') {
