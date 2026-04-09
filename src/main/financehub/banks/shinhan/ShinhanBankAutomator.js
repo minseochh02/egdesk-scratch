@@ -500,8 +500,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * Phase 1: Open 기업 뱅킹, trigger native cert dialog, wait for INICertManUI (Windows).
-   * User then selects certificate in the native UI; password is entered in Finance Hub and submitted via phase 2.
+   * Phase 1: Open 기업 뱅킹, trigger native cert dialog, wait for native cert window (Windows).
+   * Renderer collects certificate password first, then runs prepare → complete; user typically relies on last-used cert in the native UI.
    * @param {string} [proxyUrl]
    */
   async prepareCorporateCertificateLogin(proxyUrl) {
@@ -567,7 +567,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         certWindowName: uia.windowName,
         certWindowClass: uia.matchedClass,
         message:
-          '인증서 창이 열렸습니다. 인증서를 선택한 뒤 앱에서 비밀번호를 입력하고 로그인 완료를 눌러주세요.',
+          '인증서 창이 열렸습니다. 곧 HID로 비밀번호가 입력됩니다. 필요하면 인증서 창에서 인증서를 바꿀 수 있습니다.',
       };
     } catch (error) {
       this.error('prepareCorporateCertificateLogin failed:', error.message);

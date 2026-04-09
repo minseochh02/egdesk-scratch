@@ -116,8 +116,8 @@ const FinanceHub: React.FC = () => {
   const [saveCredentials, setSaveCredentials] = useState(true);
   const [manualPasswordMode, setManualPasswordMode] = useState(false);
   const [showManualPasswordContinue, setShowManualPasswordContinue] = useState(false);
-  /** 신한 기업 + 공동인증서: 1단계(인증서 창) 후 2단계(앱에서 비밀번호 입력) */
-  const [shinhanCertAwaitingPassword, setShinhanCertAwaitingPassword] = useState(false);
+  /** 신한 기업 공동인증서: 연결 시도 중(창 닫기 시 IPC cancel) — 성공 시 끄고 닫아서 세션 유지 */
+  const [shinhanCorpCertSessionActive, setShinhanCorpCertSessionActive] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
@@ -1843,7 +1843,6 @@ const FinanceHub: React.FC = () => {
       alert(`${bank.nameKo}은(는) 현재 자동화를 지원하지 않습니다.`);
       return;
     }
-    setShinhanCertAwaitingPassword(false);
     setSelectedBank(bank);
     try {
       const result = await window.electron.financeHub.getSavedCredentials(bank.id);
@@ -1870,13 +1869,7 @@ const FinanceHub: React.FC = () => {
       bankAuthMethod === 'certificate';
 
     if (credentials.accountType === 'corporate') {
-      if (shinhanCorpCertFlow && shinhanCertAwaitingPassword && !credentials.certificatePassword) {
-        alert('공동인증서 비밀번호를 입력해주세요.');
-        return;
-      }
-      if (shinhanCorpCertFlow && !shinhanCertAwaitingPassword) {
-        /* 1단계: 비밀번호 없이 진행 */
-      } else if (!shinhanCorpCertFlow && !credentials.certificatePassword) {
+      if (!credentials.certificatePassword) {
         alert('공동인증서 비밀번호를 입력해주세요.');
         return;
       }
@@ -1890,70 +1883,71 @@ const FinanceHub: React.FC = () => {
     setIsConnecting(true);
     setConnectionProgress('로그인 중...');
     try {
-      // ── 신한 기업: 공동인증서 2단계 (인증서 창 → 앱에서 비밀번호 → HID) ──
-      if (shinhanCorpCertFlow && !shinhanCertAwaitingPassword) {
-        setConnectionProgress('기업뱅킹 및 인증서 창 준비 중...');
-        const prep = await window.electron.financeHub.shinhanCorporateCertPrepare();
-        if (!prep.success) {
-          setConnectionProgress('');
-          alert(`1단계 실패: ${prep.error || '알 수 없는 오류'}`);
-          return;
-        }
-        setShinhanCertAwaitingPassword(true);
-        setConnectionProgress('');
-        alert(
-          prep.message ||
-            '인증서 창에서 인증서를 선택한 뒤, 여기에 공동인증서 비밀번호를 입력하고 「연결 완료」를 눌러주세요.'
-        );
-        return;
-      }
+      // ── 신한 기업: 공동인증서 — 비밀번호를 먼저 받은 뒤 인증서 창을 띄우고 바로 HID로 입력 (인증서 창이 뜨면 다른 앱에 타이핑 불가) ──
+      if (shinhanCorpCertFlow) {
+        setShinhanCorpCertSessionActive(true);
+        try {
+          setConnectionProgress('기업뱅킹 및 인증서 창 준비 중...');
+          const prep = await window.electron.financeHub.shinhanCorporateCertPrepare();
+          if (!prep.success) {
+            setConnectionProgress('');
+            await window.electron.financeHub.shinhanCorporateCertCancel();
+            alert(`연결 실패: ${prep.error || '알 수 없는 오류'}`);
+            return;
+          }
+          setConnectionProgress('인증서 비밀번호 입력 중...');
+          const result = await window.electron.financeHub.shinhanCorporateCertComplete(credentials.certificatePassword || '');
+          const bankId = 'shinhan';
+          if (result.success && result.isLoggedIn) {
+            setShinhanCorpCertSessionActive(false);
+            setConnectionProgress('계좌 정보를 불러왔습니다!');
+            if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, { ...credentials, bankId });
 
-      if (shinhanCorpCertFlow && shinhanCertAwaitingPassword) {
-        setConnectionProgress('인증서 비밀번호 입력 중...');
-        const result = await window.electron.financeHub.shinhanCorporateCertComplete(credentials.certificatePassword || '');
-        const bankId = 'shinhan';
-        if (result.success && result.isLoggedIn) {
-          setConnectionProgress('계좌 정보를 불러왔습니다!');
-          setShinhanCertAwaitingPassword(false);
-          if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, { ...credentials, bankId });
+            const newConnection: ConnectedBank = {
+              bankId,
+              status: 'connected',
+              alias: result.userName || undefined,
+              lastSync: new Date(),
+              accounts: result.accounts || [],
+              accountType: 'corporate',
+            };
 
-          const newConnection: ConnectedBank = {
-            bankId,
-            status: 'connected',
-            alias: result.userName || undefined,
-            lastSync: new Date(),
-            accounts: result.accounts || [],
-            accountType: 'corporate',
-          };
-
-          if (result.accounts && result.accounts.length > 0) {
-            for (const acc of result.accounts) {
-              const accountBankId = acc.bankId || bankId;
-              await window.electron.financeHubDb.upsertAccount({
-                bankId: accountBankId,
-                accountNumber: acc.accountNumber,
-                accountName: acc.accountName,
-                customerName: result.userName || '사용자',
-                balance: acc.balance,
-                availableBalance: acc.balance,
-                openDate: '',
-              });
+            if (result.accounts && result.accounts.length > 0) {
+              for (const acc of result.accounts) {
+                const accountBankId = acc.bankId || bankId;
+                await window.electron.financeHubDb.upsertAccount({
+                  bankId: accountBankId,
+                  accountNumber: acc.accountNumber,
+                  accountName: acc.accountName,
+                  customerName: result.userName || '사용자',
+                  balance: acc.balance,
+                  availableBalance: acc.balance,
+                  openDate: '',
+                });
+              }
+              loadDatabaseStats();
+              loadBanksAndAccounts();
             }
-            loadDatabaseStats();
-            loadBanksAndAccounts();
-          }
 
-          const existingIndex = connectedBanks.findIndex(b => b.bankId === bankId);
-          if (existingIndex >= 0) {
-            setConnectedBanks(prev => prev.map((b, i) => (i === existingIndex ? newConnection : b)));
+            const existingIndex = connectedBanks.findIndex(b => b.bankId === bankId);
+            if (existingIndex >= 0) {
+              setConnectedBanks(prev => prev.map((b, i) => (i === existingIndex ? newConnection : b)));
+            } else {
+              setConnectedBanks(prev => [...prev, newConnection]);
+            }
+            alert(`${selectedBank!.nameKo} 연결 성공! ${result.accounts?.length || 0}개의 계좌를 찾았습니다.`);
+            handleCloseModal();
           } else {
-            setConnectedBanks(prev => [...prev, newConnection]);
+            setConnectionProgress('');
+            await window.electron.financeHub.shinhanCorporateCertCancel();
+            alert(`${selectedBank!.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
           }
-          alert(`${selectedBank!.nameKo} 연결 성공! ${result.accounts?.length || 0}개의 계좌를 찾았습니다.`);
-          handleCloseModal();
-        } else {
+        } catch {
+          await window.electron.financeHub.shinhanCorporateCertCancel();
           setConnectionProgress('');
-          alert(`${selectedBank!.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
+          alert('은행 연결 중 오류가 발생했습니다.');
+        } finally {
+          setShinhanCorpCertSessionActive(false);
         }
         return;
       }
@@ -2090,10 +2084,10 @@ const FinanceHub: React.FC = () => {
   };
 
   const handleCloseModal = () => {
-    if (shinhanCertAwaitingPassword && selectedBank?.id === 'shinhan') {
+    if (shinhanCorpCertSessionActive) {
       void window.electron.financeHub.shinhanCorporateCertCancel();
     }
-    setShinhanCertAwaitingPassword(false);
+    setShinhanCorpCertSessionActive(false);
     setShowBankSelector(false);
     setSelectedBank(null);
     setBankAuthMethod(null);
@@ -2101,10 +2095,10 @@ const FinanceHub: React.FC = () => {
     setConnectionProgress('');
   };
   const handleBackToList = () => {
-    if (shinhanCertAwaitingPassword && selectedBank?.id === 'shinhan') {
+    if (shinhanCorpCertSessionActive) {
       void window.electron.financeHub.shinhanCorporateCertCancel();
     }
-    setShinhanCertAwaitingPassword(false);
+    setShinhanCorpCertSessionActive(false);
     setSelectedBank(null);
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
@@ -2948,27 +2942,24 @@ const FinanceHub: React.FC = () => {
                             <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
                             {selectedBank?.id === 'shinhan' && credentials.accountType === 'corporate' && (
                               <p style={{ marginTop: '8px', fontSize: '0.9em', opacity: 0.9 }}>
-                                {shinhanCertAwaitingPassword
-                                  ? '인증서 창에서 인증서를 선택한 뒤, 아래에 비밀번호를 입력하고 「연결 완료」를 누르세요. (Windows + Arduino HID 필요)'
-                                  : '먼저 「인증서 창 열기」로 기업뱅킹과 인증서 선택 창을 띄운 뒤, 인증서를 고르고 다음 단계에서 비밀번호를 입력합니다.'}
+                                먼저 아래에 공동인증서 비밀번호를 입력한 뒤 연결하세요. 인증서 창이 열리면 보통 <strong>마지막으로 사용한 인증서</strong>가 선택됩니다.
+                                (Windows + Arduino HID 필요)
                               </p>
                             )}
                           </div>
                         </div>
-                        {!(selectedBank?.id === 'shinhan' && credentials.accountType === 'corporate' && !shinhanCertAwaitingPassword) && (
-                          <div className="finance-hub__input-group">
-                            <label>공동인증서 비밀번호</label>
-                            <input
-                              type="password"
-                              placeholder="공동인증서 비밀번호"
-                              value={credentials.certificatePassword || ''}
-                              onChange={(e) => setCredentials({ ...credentials, certificatePassword: e.target.value })}
-                              className="finance-hub__input"
-                              disabled={isConnecting}
-                              onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
-                            />
-                          </div>
-                        )}
+                        <div className="finance-hub__input-group">
+                          <label>공동인증서 비밀번호</label>
+                          <input
+                            type="password"
+                            placeholder="공동인증서 비밀번호"
+                            value={credentials.certificatePassword || ''}
+                            onChange={(e) => setCredentials({ ...credentials, certificatePassword: e.target.value })}
+                            className="finance-hub__input"
+                            disabled={isConnecting}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !isConnecting) handleConnect(); }}
+                          />
+                        </div>
                         <div className="finance-hub__checkbox-group">
                           <label className="finance-hub__checkbox-label">
                             <input
@@ -2983,18 +2974,10 @@ const FinanceHub: React.FC = () => {
                         <button
                           className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
                           onClick={handleConnect}
-                          disabled={(() => {
-                            const shinhanCorp =
-                              selectedBank?.id === 'shinhan' &&
-                              credentials.accountType === 'corporate';
-                            const needPw = !shinhanCorp || shinhanCertAwaitingPassword;
-                            return isConnecting || (needPw && !credentials.certificatePassword);
-                          })()}
+                          disabled={isConnecting || !credentials.certificatePassword}
                         >
                           {isConnecting ? (
                             <><span className="finance-hub__spinner"></span> 연결 중...</>
-                          ) : selectedBank?.id === 'shinhan' && credentials.accountType === 'corporate' ? (
-                            shinhanCertAwaitingPassword ? '연결 완료 (2단계)' : '인증서 창 열기 (1단계)'
                           ) : (
                             '은행 연결하기'
                           )}
