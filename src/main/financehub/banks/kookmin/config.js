@@ -61,6 +61,11 @@ const KOOKMIN_XPATHS = {
   timerGroup: '//div[contains(@class, "timer")] | //div[contains(@class, "session")]',
   extendSessionButton: '//button[contains(text(), "연장")] | //a[contains(text(), "연장")]',
 
+  // KB 기업 (obiz) — corporate certificate flow (see scripts/bank-excel-download-automation/kb.spec.js)
+  bizMainUrl: 'https://obiz.kbstar.com/quics?page=C019320',
+  bizTransactionFallbackUrl: 'https://obiz.kbstar.com/quics?page=C015668',
+  bizTransactionAltUrl: 'https://obiz.kbstar.com/quics?page=C102210',
+
   // Transaction inquiry
   inquiryUrl: 'https://obank.kbstar.com/quics?page=C017213',
   inquiryButton: '//button[contains(text(), "조회")] | //a[contains(text(), "조회")]',

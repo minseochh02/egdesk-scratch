@@ -242,7 +242,7 @@ export const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#FFBC00',
     icon: '⭐',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'woori',
@@ -252,7 +252,7 @@ export const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#0072BC',
     icon: '🏛️',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'hana',
@@ -262,7 +262,7 @@ export const KOREAN_BANKS: BankConfig[] = [
     category: 'major',
     color: '#009775',
     icon: '🌿',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'nh',
@@ -282,7 +282,7 @@ export const KOREAN_BANKS: BankConfig[] = [
     category: 'special',
     color: '#004A98',
     icon: '🏢',
-    supportsAutomation: false,
+    supportsAutomation: true,
   },
   {
     id: 'kakao',
@@ -308,12 +308,12 @@ export const KOREAN_BANKS: BankConfig[] = [
 
 export const DEFAULT_BANK_INFO: Record<string, BankInfo> = {
   shinhan: { id: 'shinhan', name: 'Shinhan Bank', nameKo: '신한은행', color: '#0046FF', icon: '🏦', supportsAutomation: true },
-  kookmin: { id: 'kookmin', name: 'KB Kookmin Bank', nameKo: 'KB국민은행', color: '#FFBC00', icon: '⭐', supportsAutomation: false },
-  woori: { id: 'woori', name: 'Woori Bank', nameKo: '우리은행', color: '#0072BC', icon: '🏛️', supportsAutomation: false },
-  hana: { id: 'hana', name: 'Hana Bank', nameKo: '하나은행', color: '#009775', icon: '🌿', supportsAutomation: false },
+  kookmin: { id: 'kookmin', name: 'KB Kookmin Bank', nameKo: 'KB국민은행', color: '#FFBC00', icon: '⭐', supportsAutomation: true },
+  woori: { id: 'woori', name: 'Woori Bank', nameKo: '우리은행', color: '#0072BC', icon: '🏛️', supportsAutomation: true },
+  hana: { id: 'hana', name: 'Hana Bank', nameKo: '하나은행', color: '#009775', icon: '🌿', supportsAutomation: true },
   nh: { id: 'nh', name: 'NH Bank', nameKo: 'NH농협은행', color: '#00B140', icon: '🌾', supportsAutomation: true },
   'nh-business': { id: 'nh-business', name: 'NH Business Bank', nameKo: 'NH농협은행', color: '#00B140', icon: '🌾', supportsAutomation: true },
-  ibk: { id: 'ibk', name: 'IBK Bank', nameKo: 'IBK기업은행', color: '#004A98', icon: '🏢', supportsAutomation: false },
+  ibk: { id: 'ibk', name: 'IBK Bank', nameKo: 'IBK기업은행', color: '#004A98', icon: '🏢', supportsAutomation: true },
   kakao: { id: 'kakao', name: 'Kakao Bank', nameKo: '카카오뱅크', color: '#FFEB00', icon: '💬', supportsAutomation: false },
   toss: { id: 'toss', name: 'Toss Bank', nameKo: '토스뱅크', color: '#0064FF', icon: '💸', supportsAutomation: false },
 };

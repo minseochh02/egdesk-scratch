@@ -4,18 +4,16 @@
 
 const path = require('path');
 const fs = require('fs');
-let SerialPort = null;
-try {
-  ({ SerialPort } = require('serialport'));
-} catch (e) {
-  /* optional dependency */
-}
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const {
   isWindows,
   waitForNativeCertificateDialogWindow,
-  sendEnterKeyViaSendKeys,
 } = require('../../utils/windows-uia-native');
+const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
+const {
+  runNativeCertArduinoSteps,
+  SHINHAN_NATIVE_CERT_STEPS,
+} = require('../../utils/corporate-cert-native-steps');
 const { SHINHAN_CONFIG } = require('./config');
 const { handleSecurityPopup } = require('./securityPopup');
 const { typePasswordWithKeyboard } = require('./virtualKeyboard');
@@ -46,7 +44,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     this.outputDir = options.outputDir || this.getSafeOutputDir('shinhan');
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
-    this.arduino = null;
+    /** @type {import('../../utils/arduino-hid-bank').ArduinoHidBankSession | null} */
+    this._arduinoHid = null;
     /** @type {'idle'|'awaiting_password'|'completed'} */
     this._shinhanCorporateCertPhase = 'idle';
   }
@@ -447,73 +446,15 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     return accounts;
   }
 
-  async connectArduino() {
-    if (!SerialPort) {
-      throw new Error('serialport module not available. Install serialport and rebuild native deps.');
-    }
-    if (!this.arduinoPort) {
-      throw new Error('Arduino port not configured (financeHub.arduinoPort).');
-    }
-    return new Promise((resolve, reject) => {
-      this.arduino = new SerialPort({ path: this.arduinoPort, baudRate: this.arduinoBaudRate });
-      this.arduino.on('open', () => {
-        this.log(`Arduino connected on ${this.arduinoPort}`);
-        setTimeout(() => resolve(), 2000);
-      });
-      this.arduino.on('error', (err) => reject(err));
-      this.arduino.on('data', (data) => {
-        this.log(`[Arduino] ${data.toString().trim()}`);
-      });
-    });
-  }
-
-  async typeViaArduinoWithNaturalTiming(text, options = {}) {
-    const { minDelay = 80, maxDelay = 200 } = options;
-    if (!this.arduino) await this.connectArduino();
-    this.log(`Typing ${text.length} chars via Arduino HID`);
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      await new Promise((resolve, reject) => {
-        this.arduino.write(char + '\n', (err) => {
-          if (err) return reject(err);
-          setTimeout(() => resolve(), 950);
-        });
-      });
-      if (i < text.length - 1) {
-        const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-        await new Promise((r) => setTimeout(r, delay));
+  async _disconnectArduinoHid() {
+    if (this._arduinoHid) {
+      try {
+        await this._arduinoHid.disconnect();
+      } catch (e) {
+        /* ignore */
       }
+      this._arduinoHid = null;
     }
-  }
-
-  /**
-   * Special key via Leonardo firmware (arduino-hid-sketch / KEY: branch), same as bank-excel-download-automation/shinhan.spec.js `arduino.key('ENTER')`.
-   * @param {'ENTER'|'TAB'|'ESC'|string} keyName
-   */
-  async sendKeyViaArduino(keyName) {
-    if (!this.arduino || !this.arduino.isOpen) {
-      throw new Error('Arduino serial not open');
-    }
-    this.log(`Arduino KEY:${keyName} (native cert dialog)`);
-    await new Promise((resolve, reject) => {
-      this.arduino.write(`KEY:${keyName}\n`, (err) => {
-        if (err) return reject(err);
-        setTimeout(() => resolve(), 550);
-      });
-    });
-  }
-
-  async disconnectArduino() {
-    if (this.arduino && this.arduino.isOpen) {
-      return new Promise((resolve) => {
-        this.arduino.close(() => {
-          this.log('Arduino disconnected');
-          this.arduino = null;
-          resolve();
-        });
-      });
-    }
-    this.arduino = null;
   }
 
   /**
@@ -624,19 +565,26 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         };
       }
 
-      await this.connectArduino();
-      await this.typeViaArduinoWithNaturalTiming(certificatePassword);
-      // shinhan.spec.js: wait 1s, then arduino.key('ENTER') — must be real HID on cert window (SendKeys hits wrong window).
-      await this.page.waitForTimeout(1000);
-      await this.sendKeyViaArduino('ENTER');
-      await this.disconnectArduino();
-
-      if (process.env.SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK === '1') {
-        const enterResult = sendEnterKeyViaSendKeys();
-        if (!enterResult.ok) {
-          this.warn('SendKeys Enter fallback failed:', enterResult.error);
+      this._arduinoHid = new ArduinoHidBankSession({
+        portPath: this.arduinoPort,
+        baudRate: this.arduinoBaudRate,
+        log: (m) => this.log(m),
+      });
+      await this._arduinoHid.connect();
+      await runNativeCertArduinoSteps(
+        this._arduinoHid,
+        this.page,
+        certificatePassword,
+        SHINHAN_NATIVE_CERT_STEPS,
+        {
+          log: this.log.bind(this),
+          warn: this.warn.bind(this),
+          sendkeysEnterFallbackEnv: 'SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK',
         }
-      }
+      );
+      await this._arduinoHid.disconnect();
+      this._arduinoHid = null;
+
       await this.page.waitForTimeout(5000);
 
       await this._navigateBizToAccountInquiry();
@@ -661,7 +609,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     } catch (error) {
       this.error('completeCorporateCertificateLogin failed:', error.message);
       try {
-        await this.disconnectArduino();
+        await this._disconnectArduinoHid();
       } catch (e) {
         /* ignore */
       }
@@ -676,7 +624,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
   async cancelCorporateCertificateLogin(closeBrowser = true) {
     this._shinhanCorporateCertPhase = 'idle';
     try {
-      await this.disconnectArduino();
+      await this._disconnectArduinoHid();
     } catch (e) {
       /* ignore */
     }

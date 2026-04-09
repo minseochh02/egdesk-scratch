@@ -5,6 +5,12 @@
 const path = require('path');
 const fs = require('fs');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
+const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
+const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
+const {
+  runNativeCertArduinoSteps,
+  KOOKMIN_NATIVE_CERT_STEPS,
+} = require('../../utils/corporate-cert-native-steps');
 const { KOOKMIN_CONFIG } = require('./config');
 const { handleSecurityPopup } = require('./securityPopup');
 const { typePasswordWithKeyboard } = require('./virtualKeyboard');
@@ -29,6 +35,12 @@ class KookminBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('kookmin');
+    this.arduinoPort = options.arduinoPort || null;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    /** @type {import('../../utils/arduino-hid-bank').ArduinoHidBankSession | null} */
+    this._arduinoHid = null;
+    /** @type {'idle'|'awaiting_password'|'completed'} */
+    this._kookminCorporateCertPhase = 'idle';
   }
 
   // ============================================================================
@@ -311,6 +323,288 @@ class KookminBankAutomator extends BaseBankAutomator {
       this.error('Failed to get accounts:', error.message);
       throw error;
     }
+  }
+
+  // ============================================================================
+  // KB 기업 — 공동인증서 (native Delfino + Arduino, kb.spec.js)
+  // ============================================================================
+
+  async _disconnectArduinoHid() {
+    if (this._arduinoHid) {
+      try {
+        await this._arduinoHid.disconnect();
+      } catch (e) {
+        /* ignore */
+      }
+      this._arduinoHid = null;
+    }
+  }
+
+  async prepareCorporateCertificateLogin(proxyUrl) {
+    if (!isWindows()) {
+      return { success: false, error: 'KB 기업 인증서 연결은 Windows에서만 지원됩니다.' };
+    }
+    const proxy = this.buildProxyOption(proxyUrl);
+    try {
+      if (this.browser) {
+        try {
+          await this.browser.close();
+        } catch (e) {
+          this.warn('Could not close previous browser:', e.message);
+        }
+        this.browser = null;
+        this.context = null;
+        this.page = null;
+      }
+      const { browser, context } = await this.createBrowser(proxy);
+      this.browser = browser;
+      this.context = context;
+      await this.setupBrowserContext(context, null);
+      this.page = await context.newPage();
+      await this.setupBrowserContext(context, this.page);
+
+      const bizUrl = this.config.xpaths.bizMainUrl;
+      await this.page.goto(bizUrl, { waitUntil: 'domcontentloaded' });
+      await this.page.waitForTimeout(3000);
+      await this.handleSecurityPopup(this.page);
+
+      try {
+        await this.page.evaluate(() => {
+          if (typeof DelfinoConfig !== 'undefined') {
+            DelfinoConfig.lastUsedCertFirst = true;
+          }
+        });
+      } catch (e) {
+        this.warn('DelfinoConfig:', e.message);
+      }
+
+      try {
+        await this.page.locator('button:has-text("공동인증서")').first().click({ timeout: 15000 });
+      } catch (e) {
+        await this.page.locator('.btn:has-text("공동인증서")').first().click({ timeout: 15000 });
+      }
+
+      const uia = await waitForNativeCertificateDialogWindow({
+        timeoutMs: 60000,
+        pollMs: 1000,
+        onLog: (m) => this.log(m),
+      });
+      if (!uia.ok) {
+        this._kookminCorporateCertPhase = 'idle';
+        return { success: false, error: uia.error || '인증서 창을 찾지 못했습니다.' };
+      }
+      this._kookminCorporateCertPhase = 'awaiting_password';
+      this.isLoggedIn = false;
+      return {
+        success: true,
+        phase: 'awaiting_password',
+        certWindowName: uia.windowName,
+        certWindowClass: uia.matchedClass,
+        message: '인증서 창이 열렸습니다.',
+      };
+    } catch (error) {
+      this.error('prepareCorporateCertificateLogin (kookmin) failed:', error.message);
+      this._kookminCorporateCertPhase = 'idle';
+      return { success: false, error: error.message };
+    }
+  }
+
+  async completeCorporateCertificateLogin(creds) {
+    const { certificatePassword } = creds || {};
+    if (this._kookminCorporateCertPhase !== 'awaiting_password') {
+      return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
+    }
+    if (!certificatePassword) {
+      return { success: false, error: '인증서 비밀번호가 필요합니다.' };
+    }
+    if (!this.page || this.page.isClosed()) {
+      this._kookminCorporateCertPhase = 'idle';
+      return { success: false, error: '브라우저 세션이 없습니다.' };
+    }
+    if (!isWindows()) {
+      return { success: false, error: 'Windows에서만 지원됩니다.' };
+    }
+    if (!this.arduinoPort) {
+      return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
+    }
+
+    try {
+      this._arduinoHid = new ArduinoHidBankSession({
+        portPath: this.arduinoPort,
+        baudRate: this.arduinoBaudRate,
+        log: (m) => this.log(m),
+      });
+      await this._arduinoHid.connect();
+      await runNativeCertArduinoSteps(
+        this._arduinoHid,
+        this.page,
+        certificatePassword,
+        KOOKMIN_NATIVE_CERT_STEPS,
+        {
+          log: this.log.bind(this),
+          warn: this.warn.bind(this),
+          sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
+        }
+      );
+      await this._arduinoHid.disconnect();
+      this._arduinoHid = null;
+
+      await this.page.waitForTimeout(5000);
+      await this.handleSecurityPopup(this.page);
+      await this._navigateKookminBizTransactionInquiry();
+      const accounts = await this._getKookminBizAccountsFromAcct();
+
+      this._kookminCorporateCertPhase = 'completed';
+      this.isLoggedIn = true;
+      this.userName = 'KB 기업뱅킹';
+
+      try {
+        this.startSessionKeepAlive();
+      } catch (e) {
+        this.warn('Session keep-alive:', e.message);
+      }
+
+      return {
+        success: true,
+        isLoggedIn: this.isLoggedIn,
+        userName: this.userName,
+        accounts,
+      };
+    } catch (error) {
+      this.error('completeCorporateCertificateLogin (kookmin) failed:', error.message);
+      try {
+        await this._disconnectArduinoHid();
+      } catch (e) {
+        /* ignore */
+      }
+      return { success: false, error: error.message };
+    }
+  }
+
+  async cancelCorporateCertificateLogin(closeBrowser = true) {
+    this._kookminCorporateCertPhase = 'idle';
+    try {
+      await this._disconnectArduinoHid();
+    } catch (e) {
+      /* ignore */
+    }
+    if (closeBrowser) {
+      await this.cleanup(false);
+    }
+  }
+
+  async _navigateKookminBizTransactionInquiry() {
+    try {
+      const bizPos = await this.page.evaluate(() => {
+        const els = document.querySelectorAll('a, button, span');
+        for (const el of els) {
+          if (el.textContent.trim() === '기업') {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+            }
+          }
+        }
+        return null;
+      });
+      if (bizPos) {
+        await this.page.mouse.click(bizPos.x, bizPos.y);
+        await this.page.waitForTimeout(2000);
+      }
+    } catch (e) {
+      this.warn('기업 tab:', e.message);
+    }
+
+    const menuPos = await this.page.evaluate(() => {
+      const links = document.querySelectorAll('a');
+      for (const a of links) {
+        if (a.textContent.trim() === '조회/이체') {
+          const rect = a.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+          }
+        }
+      }
+      return null;
+    });
+    if (menuPos) {
+      await this.page.mouse.move(menuPos.x, menuPos.y);
+      await this.page.waitForTimeout(2000);
+    }
+
+    const allSubs = await this.page.evaluate(() => {
+      const links = document.querySelectorAll('a');
+      const matches = [];
+      for (const a of links) {
+        if (a.textContent.trim() === '거래내역조회') {
+          const rect = a.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            matches.push({ x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+          }
+        }
+      }
+      return matches;
+    });
+
+    if (allSubs.length >= 1) {
+      await this.page.mouse.click(allSubs[0].x, allSubs[0].y);
+      await this.page.waitForTimeout(2000);
+      const debugLinks = await this.page.evaluate(() => {
+        const links = document.querySelectorAll('a');
+        const results = [];
+        for (const a of links) {
+          if (a.textContent.includes('거래내역')) {
+            const rect = a.getBoundingClientRect();
+            results.push({
+              text: a.textContent.trim(),
+              visible: rect.width > 0 && rect.height > 0,
+              x: Math.round(rect.x + rect.width / 2),
+              y: Math.round(rect.y + rect.height / 2),
+            });
+          }
+        }
+        return results;
+      });
+      const targetLink = debugLinks.find((l) => l.visible && l.text === '거래내역 조회');
+      if (targetLink) {
+        await this.page.mouse.click(targetLink.x, targetLink.y);
+      } else {
+        await this.page.goto(this.config.xpaths.bizTransactionAltUrl, { waitUntil: 'domcontentloaded' });
+      }
+    } else {
+      await this.page.goto(this.config.xpaths.bizTransactionFallbackUrl, { waitUntil: 'domcontentloaded' });
+    }
+    await this.page.waitForTimeout(5000);
+  }
+
+  async _getKookminBizAccountsFromAcct() {
+    const sel = this.page.locator('#acct');
+    if ((await sel.count()) === 0) return [];
+    const rows = await sel.evaluate((el) =>
+      Array.from(el.options)
+        .filter((o) => o.value)
+        .map((o) => ({ text: (o.textContent || '').trim(), value: o.value }))
+    );
+    const accounts = [];
+    const seen = new Set();
+    const re = /(\d{3}-\d{2,4}-\d{4,7})/;
+    for (const row of rows) {
+      const m = row.text.match(re);
+      if (!m) continue;
+      const accountNumber = m[1];
+      const key = accountNumber.replace(/-/g, '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      accounts.push({
+        accountNumber,
+        accountName: row.text.replace(accountNumber, '').trim() || 'KB 기업 계좌',
+        bankId: 'kookmin',
+        balance: 0,
+        currency: 'KRW',
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+    return accounts;
   }
 
   // ============================================================================
