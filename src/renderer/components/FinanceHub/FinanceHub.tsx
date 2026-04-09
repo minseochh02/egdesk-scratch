@@ -346,6 +346,8 @@ const FinanceHub: React.FC = () => {
   }, []);
 
   // NH + 법인 + 공동인증서: INIpay cert 목록 (홈택스와 유사 — fetchBankCertificates → 선택)
+  // Do NOT put isFetchingNhBusinessCertificates in deps — setting it true re-runs the effect, cleanup sets
+  // cancelled=true, and the in-flight IPC callback skips finally → UI stuck on "불러오는 중".
   useEffect(() => {
     if (
       !showBankSelector ||
@@ -355,7 +357,7 @@ const FinanceHub: React.FC = () => {
     ) {
       return;
     }
-    if (nhBusinessCertificates.length > 0 || isFetchingNhBusinessCertificates) return;
+    if (nhBusinessCertificates.length > 0) return;
 
     let cancelled = false;
     (async () => {
@@ -364,7 +366,7 @@ const FinanceHub: React.FC = () => {
       try {
         const result = await window.electron.financeHub.fetchBankCertificates('nh-business');
         if (cancelled) return;
-        if (result.success && result.certificates?.length) {
+        if (result.success && result.certificates && result.certificates.length > 0) {
           setNhBusinessCertificates(result.certificates);
           setSelectedNhBusinessCertificate(null);
         } else {
@@ -377,23 +379,15 @@ const FinanceHub: React.FC = () => {
           alert(`인증서 목록 조회 오류: ${e instanceof Error ? e.message : String(e)}`);
         }
       } finally {
-        if (!cancelled) {
-          setIsFetchingNhBusinessCertificates(false);
-          setConnectionProgress('');
-        }
+        // Always clear loading — even if cancelled (modal closed) or IPC threw
+        setIsFetchingNhBusinessCertificates(false);
+        setConnectionProgress('');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    showBankSelector,
-    selectedBank?.id,
-    credentials.accountType,
-    bankAuthMethod,
-    nhBusinessCertificates.length,
-    isFetchingNhBusinessCertificates,
-  ]);
+  }, [showBankSelector, selectedBank?.id, credentials.accountType, bankAuthMethod, nhBusinessCertificates.length]);
 
   useEffect(() => {
     if (selectedBank?.id !== 'nh' || credentials.accountType !== 'corporate' || bankAuthMethod !== 'certificate') {
