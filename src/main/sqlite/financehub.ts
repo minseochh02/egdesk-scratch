@@ -840,6 +840,7 @@ export class FinanceHubDbManager {
       withdrawal?: number;
       deposit?: number;
       description?: string;
+      description2?: string;
       memo?: string;
       balance?: number;
       branch?: string;
@@ -891,7 +892,7 @@ export class FinanceHubDbManager {
           tx.counterpartyAccount || null,
           tx.counterparty || null,
           tx.description || null,
-          null, // description2
+          tx.description2 || null,
           tx.memo || null,
           0, // is_manual
           tx.category || null,
@@ -2050,10 +2051,13 @@ export class FinanceHubDbManager {
       withdrawal?: number;
       deposit?: number;
       description?: string;
+      /** JSON string: excel_parsing_logic.md 적요2 bundle */
+      description2?: string;
       memo?: string;
       balance?: number;
       branch?: string;
       counterparty?: string;
+      counterpartyAccount?: string;
       // Card-specific fields (will be transformed)
       dateTime?: string;
       amount?: string;

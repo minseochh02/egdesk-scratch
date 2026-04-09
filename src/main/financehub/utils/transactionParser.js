@@ -4,6 +4,20 @@ const path = require('path');
 
 const DEFAULT_HEADER_KEYWORDS = ['거래일자', '거래일', '일자', '날짜', '거래시간', '적요', '출금', '입금', '잔액'];
 
+/**
+ * Excel row (1-based, as in spreadsheet UI) where transaction table headers appear.
+ * Corporate bank exports differ; see excel_parsing_logic.md / bank specs.
+ */
+const BANK_EXCEL_HEADER_ROW_1BASED = {
+  shinhan: 1,
+  hana: 7,
+  kookmin: 7,
+  ibk: 3,
+  woori: 4,
+  'nh-business': 10,
+  nh: 10,
+};
+
 const DEFAULT_HEADER_MAPPING = {
   '거래일자': 'date',
   '거래일': 'date',
@@ -31,95 +45,522 @@ const DEFAULT_HEADER_MAPPING = {
 };
 
 /**
+ * @param {any[]} row
+ * @returns {Record<string, number>} field -> column index
+ */
+function buildHeaderMapFromRow(row) {
+  const headerMap = {};
+  if (!row || !Array.isArray(row)) return headerMap;
+  row.forEach((cell, colIdx) => {
+    if (typeof cell === 'string') {
+      const key = cell.replace(/\s/g, '');
+      if (DEFAULT_HEADER_MAPPING[key]) {
+        headerMap[DEFAULT_HEADER_MAPPING[key]] = colIdx;
+      }
+    }
+  });
+  return headerMap;
+}
+
+/**
+ * @param {Object} [ctx] - automator (`this`) with `config.bank.id`, or `{ excelHeaderRow: number }` (1-based)
+ * @returns {number|null} 0-based header row index, or null to auto-detect
+ */
+function resolveFixedHeaderRowIndex(ctx) {
+  if (ctx && typeof ctx.excelHeaderRow === 'number' && ctx.excelHeaderRow >= 1) {
+    return ctx.excelHeaderRow - 1;
+  }
+  const bankId = ctx && ctx.config && ctx.config.bank && ctx.config.bank.id;
+  if (!bankId) return null;
+  const row1 = BANK_EXCEL_HEADER_ROW_1BASED[String(bankId).toLowerCase()];
+  if (typeof row1 === 'number' && row1 >= 1) {
+    return row1 - 1;
+  }
+  return null;
+}
+
+// --- excel_parsing_logic.md: source (Excel) column → DB-facing fields (bank_transactions) ---
+// Target names: date, time, description (적요1), description2 (적요2 JSON), deposit, withdrawal, balance,
+// branch (취급지점), counterparty (상대계좌예금주명), counterpartyAccount (상대계좌)
+
+/** @type {Record<string, { datetimeStyle: string|null, columns: Array<{ keys: string[], role: string, jeogyoKey?: string }> }>} */
+const NH_EXCEL_COLUMNS = {
+  datetimeStyle: null,
+  columns: [
+    { keys: ['거래일자'], role: 'date' },
+    { keys: ['거래시간'], role: 'time' },
+    { keys: ['거래기록사항'], role: 'description' },
+    { keys: ['입금금액(원)'], role: 'deposit' },
+    { keys: ['출금금액(원)'], role: 'withdrawal' },
+    { keys: ['거래후잔액(원)'], role: 'balance' },
+    { keys: ['거래점'], role: 'branch' },
+    { keys: ['거래내용'], role: 'jeogyo2', jeogyoKey: '거래내용' },
+    { keys: ['이체메모'], role: 'jeogyo2', jeogyoKey: '이체메모' },
+  ],
+};
+
+const BANK_EXCEL_PARSE_SCHEMA = {
+  shinhan: {
+    datetimeStyle: 'shinhan14',
+    columns: [
+      { keys: ['거래일시'], role: '_dt' },
+      { keys: ['적요'], role: 'description' },
+      { keys: ['입금액'], role: 'deposit' },
+      { keys: ['출금액'], role: 'withdrawal' },
+      { keys: ['잔액'], role: 'balance' },
+      { keys: ['거래점명'], role: 'branch' },
+      { keys: ['내용'], role: 'jeogyo2', jeogyoKey: '내용' },
+    ],
+  },
+  hana: {
+    datetimeStyle: 'hanaSpace',
+    columns: [
+      { keys: ['거래일시'], role: '_dt' },
+      { keys: ['적요'], role: 'description' },
+      { keys: ['입금'], role: 'deposit' },
+      { keys: ['출금'], role: 'withdrawal' },
+      { keys: ['거래후잔액'], role: 'balance' },
+      { keys: ['거래점'], role: 'branch' },
+      { keys: ['의뢰인/수취인', '의뢰인수취인'], role: 'counterparty' },
+      { keys: ['거래특이사항'], role: 'jeogyo2', jeogyoKey: '거래특이사항' },
+      { keys: ['추가메모'], role: 'jeogyo2', jeogyoKey: '추가메모' },
+      { keys: ['구분'], role: 'jeogyo2', jeogyoKey: '구분' },
+    ],
+  },
+  nh: NH_EXCEL_COLUMNS,
+  'nh-business': NH_EXCEL_COLUMNS,
+  kookmin: {
+    datetimeStyle: 'kbSpace',
+    columns: [
+      { keys: ['거래일시'], role: '_dt' },
+      { keys: ['보낸분/받는분', '보낸분받는분'], role: 'counterparty' },
+      { keys: ['적요'], role: 'description' },
+      { keys: ['입금액(원)'], role: 'deposit' },
+      { keys: ['출금액(원)'], role: 'withdrawal' },
+      { keys: ['잔액(원)'], role: 'balance' },
+      { keys: ['처리점'], role: 'branch' },
+      { keys: ['내통장표시'], role: 'jeogyo2', jeogyoKey: '내통장표시' },
+      { keys: ['구분'], role: 'jeogyo2', jeogyoKey: '구분' },
+    ],
+  },
+  ibk: {
+    datetimeStyle: null,
+    columns: [
+      { keys: ['거래일시'], role: 'date' },
+      { keys: ['거래시간'], role: 'time' },
+      { keys: ['거래내용'], role: 'description' },
+      { keys: ['입금'], role: 'deposit' },
+      { keys: ['출금'], role: 'withdrawal' },
+      { keys: ['거래후잔액'], role: 'balance' },
+      { keys: ['상대계좌번호'], role: 'counterpartyAccount' },
+      { keys: ['상대계좌예금주명'], role: 'counterparty' },
+      { keys: ['거래구분'], role: 'jeogyo2', jeogyoKey: '거래구분' },
+      { keys: ['수표어음금액'], role: 'jeogyo2', jeogyoKey: '수표어음금액' },
+      { keys: ['CMS코드'], role: 'jeogyo2', jeogyoKey: 'CMS코드' },
+      { keys: ['상대은행'], role: 'jeogyo2', jeogyoKey: '상대은행' },
+    ],
+  },
+  woori: {
+    datetimeStyle: 'wooriSpace',
+    columns: [
+      { keys: ['거래일시'], role: '_dt' },
+      { keys: ['적요'], role: 'description' },
+      { keys: ['입금(원)'], role: 'deposit' },
+      { keys: ['지급(원)'], role: 'withdrawal' },
+      { keys: ['거래후잔액(원)'], role: 'balance' },
+      { keys: ['취급점'], role: 'branch' },
+      { keys: ['기재내용'], role: 'jeogyo2', jeogyoKey: '기재내용' },
+      { keys: ['표어음증권금액(원)'], role: 'jeogyo2', jeogyoKey: '표어음증권금액(원)' },
+    ],
+  },
+};
+
+function normalizeExcelHeaderKey(h) {
+  return String(h ?? '')
+    .replace(/\s+/g, '')
+    .replace(/·/g, '')
+    .trim();
+}
+
+function cellToDisplayString(cell) {
+  if (cell == null || cell === '') return '';
+  if (cell instanceof Date) {
+    const d = cell;
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+  }
+  if (typeof cell === 'number' && cell > 20000 && cell < 1000000) {
+    try {
+      const utc = Math.round((cell - 25569) * 86400 * 1000);
+      return new Date(utc).toISOString().slice(0, 10);
+    } catch (e) {
+      /* fall through */
+    }
+  }
+  return String(cell).trim();
+}
+
+function normalizeDateDigits(s) {
+  const digits = String(s).replace(/\D/g, '');
+  if (digits.length >= 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = String(s).match(/(\d{4})\.(\d{2})\.(\d{2})/);
+  if (d) return `${d[1]}-${d[2]}-${d[3]}`;
+  return '';
+}
+
+function normalizeDateFromCell(raw) {
+  if (raw == null || raw === '') return '';
+  if (raw instanceof Date) return raw.toISOString().slice(0, 10);
+  if (typeof raw === 'number' && raw > 20000 && raw < 1000000) {
+    try {
+      const utc = Math.round((raw - 25569) * 86400 * 1000);
+      return new Date(utc).toISOString().slice(0, 10);
+    } catch (e) {
+      return '';
+    }
+  }
+  return normalizeDateDigits(cellToDisplayString(raw));
+}
+
+function normalizeTimeFromCell(raw) {
+  const s = cellToDisplayString(raw);
+  const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return '';
+  const h = m[1].padStart(2, '0');
+  const min = m[2].padStart(2, '0');
+  const sec = (m[3] || '00').padStart(2, '0');
+  return `${h}:${min}:${sec}`;
+}
+
+function splitCombinedDateTime(raw, style) {
+  const s = cellToDisplayString(raw).trim();
+  if (!s) return { date: '', time: '00:00:00' };
+
+  if (style === 'shinhan14') {
+    const digits = s.replace(/\D/g, '');
+    if (digits.length >= 14) {
+      return {
+        date: `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`,
+        time: `${digits.slice(8, 10)}:${digits.slice(10, 12)}:${digits.slice(12, 14)}`,
+      };
+    }
+    if (digits.length >= 8) {
+      return {
+        date: `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`,
+        time: '00:00:00',
+      };
+    }
+    return { date: '', time: '00:00:00' };
+  }
+
+  if (style === 'hanaSpace') {
+    let m = s.match(/^(\d{4}-\d{2}-\d{2})[ T]+(\d{1,2}:\d{2}(?::\d{2})?)/);
+    if (m) {
+      const t = normalizeTimeFromCell(m[2]);
+      return { date: m[1], time: t || '00:00:00' };
+    }
+    m = s.match(/^(\d{4})\.(\d{2})\.(\d{2})[ T]+(\d{1,2}:\d{2}(?::\d{2})?)/);
+    if (m) {
+      const t = normalizeTimeFromCell(m[4]);
+      return { date: `${m[1]}-${m[2]}-${m[3]}`, time: t || '00:00:00' };
+    }
+    return { date: normalizeDateDigits(s), time: '00:00:00' };
+  }
+
+  if (style === 'kbSpace') {
+    const m = s.match(/^(\d{4})\.(\d{2})\.(\d{2})[ T]+(\d{1,2}:\d{2})/);
+    if (m) {
+      const t = normalizeTimeFromCell(m[4]);
+      return { date: `${m[1]}-${m[2]}-${m[3]}`, time: t || '00:00:00' };
+    }
+    const m2 = s.match(/^(\d{4}-\d{2}-\d{2})[ T]+(\d{1,2}:\d{2})/);
+    if (m2) {
+      const t = normalizeTimeFromCell(m2[2]);
+      return { date: m2[1], time: t || '00:00:00' };
+    }
+    return { date: normalizeDateDigits(s), time: '00:00:00' };
+  }
+
+  if (style === 'wooriSpace') {
+    const m = s.match(/^(\d{4})\.(\d{2})\.(\d{2})[ T]+(\d{1,2}:\d{2}(?::\d{2})?)/);
+    if (m) {
+      const t = normalizeTimeFromCell(m[4]);
+      return { date: `${m[1]}-${m[2]}-${m[3]}`, time: t || '00:00:00' };
+    }
+    return { date: normalizeDateDigits(s), time: '00:00:00' };
+  }
+
+  return { date: normalizeDateDigits(s), time: '00:00:00' };
+}
+
+function normalizeAmountCell(raw) {
+  return parseInt(String(raw).replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+function buildHeaderNormToColMap(headerRow) {
+  const m = new Map();
+  if (!headerRow) return m;
+  headerRow.forEach((cell, colIdx) => {
+    if (cell === undefined || cell === null || cell === '') return;
+    const label = typeof cell === 'number' && !Number.isNaN(cell) ? String(cell) : cell;
+    if (label === '') return;
+    const nk = normalizeExcelHeaderKey(label);
+    if (nk) m.set(nk, colIdx);
+  });
+  return m;
+}
+
+function parseTransactionRowWithSchema(row, headerNormToCol, schema) {
+  const tx = {
+    date: '',
+    time: '00:00:00',
+    deposit: 0,
+    withdrawal: 0,
+    balance: 0,
+    description: '',
+    branch: '',
+    counterparty: '',
+    counterpartyAccount: '',
+  };
+  const jeogyo2 = {};
+
+  for (const colDef of schema.columns) {
+    let colIdx = -1;
+    for (const k of colDef.keys) {
+      const nk = normalizeExcelHeaderKey(k);
+      if (headerNormToCol.has(nk)) {
+        colIdx = headerNormToCol.get(nk);
+        break;
+      }
+    }
+    if (colIdx < 0 || colIdx >= row.length) continue;
+    const raw = row[colIdx];
+    const val = cellToDisplayString(raw);
+
+    switch (colDef.role) {
+      case '_dt': {
+        const { date, time } = splitCombinedDateTime(raw, schema.datetimeStyle);
+        if (date) tx.date = date;
+        if (time) tx.time = time;
+        break;
+      }
+      case 'date':
+        tx.date = normalizeDateFromCell(raw) || tx.date;
+        break;
+      case 'time': {
+        const t = normalizeTimeFromCell(raw);
+        if (t) tx.time = t;
+        break;
+      }
+      case 'deposit':
+        tx.deposit = normalizeAmountCell(raw);
+        break;
+      case 'withdrawal':
+        tx.withdrawal = normalizeAmountCell(raw);
+        break;
+      case 'balance':
+        tx.balance = normalizeAmountCell(raw);
+        break;
+      case 'description':
+        if (val) tx.description = val;
+        break;
+      case 'branch':
+        if (val) tx.branch = val;
+        break;
+      case 'counterparty':
+        if (val) tx.counterparty = val;
+        break;
+      case 'counterpartyAccount':
+        if (val) tx.counterpartyAccount = val;
+        break;
+      case 'jeogyo2':
+        if (val !== '') jeogyo2[colDef.jeogyoKey || colDef.keys[0]] = val;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (Object.keys(jeogyo2).length > 0) {
+    tx.description2 = JSON.stringify(jeogyo2);
+  }
+
+  if (tx.date) {
+    tx.transaction_datetime = `${tx.date.replace(/-/g, '/')} ${tx.time || '00:00:00'}`;
+  }
+
+  return tx;
+}
+
+function parseWithBankSchema(rows, headerRowIndex, schema, ctx) {
+  const headerNormToCol = buildHeaderNormToColMap(rows[headerRowIndex]);
+  const transactions = [];
+  for (let i = headerRowIndex + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    const tx = parseTransactionRowWithSchema(row, headerNormToCol, schema);
+    const hasAmount = (tx.deposit || tx.withdrawal) > 0 || tx.balance > 0;
+    if (!tx.date && !hasAmount) continue;
+    if (!hasAmount && !tx.description) continue;
+    transactions.push(tx);
+  }
+  if (ctx && ctx.log) {
+    ctx.log(`Parsed ${transactions.length} transactions from Excel (bank schema, header row ${headerRowIndex + 1})`);
+  }
+  return { transactions, metadata: {}, summary: {} };
+}
+
+function resolveHeaderRowForParsing(rows, ctx, schema) {
+  const fixedIdx = resolveFixedHeaderRowIndex(ctx);
+  if (fixedIdx != null && fixedIdx < rows.length && schema) {
+    const map = buildHeaderNormToColMap(rows[fixedIdx]);
+    let hits = 0;
+    for (const colDef of schema.columns) {
+      for (const k of colDef.keys) {
+        if (map.has(normalizeExcelHeaderKey(k))) {
+          hits++;
+          break;
+        }
+      }
+    }
+    if (hits >= 2) return fixedIdx;
+  }
+
+  if (schema) {
+    let best = -1;
+    let bestScore = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const map = buildHeaderNormToColMap(rows[i]);
+      let score = 0;
+      for (const colDef of schema.columns) {
+        for (const k of colDef.keys) {
+          if (map.has(normalizeExcelHeaderKey(k))) {
+            score++;
+            break;
+          }
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    if (bestScore >= 2) return best;
+  }
+
+  const fixedIdx2 = resolveFixedHeaderRowIndex(ctx);
+  if (fixedIdx2 != null && fixedIdx2 < rows.length) {
+    const generic = buildHeaderMapFromRow(rows[fixedIdx2]);
+    if (Object.keys(generic).length > 0) return fixedIdx2;
+  }
+
+  return -1;
+}
+
+/**
  * Parses a transaction Excel file
  * @param {string} filePath - Path to Excel file
- * @param {Object} [ctx] - Context for logging (optional)
+ * @param {Object} [ctx] - Context for logging (optional); automator `this` sets bank-specific header row
  * @returns {Object} Parsed data
  */
 function parseTransactionExcel(filePath, ctx) {
   if (ctx && ctx.log) ctx.log(`Parsing Excel file: ${filePath}`);
-  
+
   try {
-    // Read with fs first, then parse buffer — avoids XLSX.readFile path/permission quirks on some systems
     const fileBuffer = fs.readFileSync(filePath);
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    
-    // Convert to JSON with array of arrays to find header
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    
-    // Find header row
-    let headerRowIndex = -1;
-    let headerMap = {};
-    
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      let matchCount = 0;
-      
-      // Check if this row contains header keywords
-      for (let j = 0; j < row.length; j++) {
-        const cell = row[j];
-        if (typeof cell === 'string' && DEFAULT_HEADER_KEYWORDS.includes(cell.replace(/\s/g, ''))) {
-          matchCount++;
-        }
+
+    const bankId = ctx && ctx.config && ctx.config.bank && String(ctx.config.bank.id).toLowerCase();
+    const schema = bankId ? BANK_EXCEL_PARSE_SCHEMA[bankId] : null;
+
+    if (schema) {
+      const headerRowIndex = resolveHeaderRowForParsing(rows, ctx, schema);
+      if (headerRowIndex >= 0) {
+        return parseWithBankSchema(rows, headerRowIndex, schema, ctx);
       }
-      
-      // If we found enough keywords, assume this is the header row
-      if (matchCount >= 3) { 
-        headerRowIndex = i;
-        // Build map
-        row.forEach((cell, colIdx) => {
-          if (typeof cell === 'string') {
-            const key = cell.replace(/\s/g, '');
-            if (DEFAULT_HEADER_MAPPING[key]) {
-              headerMap[DEFAULT_HEADER_MAPPING[key]] = colIdx;
-            }
-          }
-        });
-        break;
+      if (ctx && ctx.warn) {
+        ctx.warn(`Bank ${bankId}: schema header row not found; using generic column scan`);
       }
     }
-    
+
+    let headerRowIndex = -1;
+    let headerMap = {};
+
+    const fixedIdx = resolveFixedHeaderRowIndex(ctx);
+    if (fixedIdx != null && fixedIdx < rows.length) {
+      const candidate = buildHeaderMapFromRow(rows[fixedIdx]);
+      if (Object.keys(candidate).length > 0) {
+        headerRowIndex = fixedIdx;
+        headerMap = candidate;
+        if (ctx && ctx.log) {
+          ctx.log(`Using bank-specific header row (1-based): ${fixedIdx + 1}`);
+        }
+      } else if (ctx && ctx.warn) {
+        ctx.warn(`Fixed header row ${fixedIdx + 1} had no known columns; falling back to scan`);
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        let matchCount = 0;
+
+        for (let j = 0; j < row.length; j++) {
+          const cell = row[j];
+          if (typeof cell === 'string' && DEFAULT_HEADER_KEYWORDS.includes(cell.replace(/\s/g, ''))) {
+            matchCount++;
+          }
+        }
+
+        if (matchCount >= 3) {
+          headerRowIndex = i;
+          headerMap = buildHeaderMapFromRow(row);
+          break;
+        }
+      }
+    }
+
     if (headerRowIndex === -1) {
       if (ctx && ctx.warn) ctx.warn('Could not find header row in Excel file, using default mapping if possible or failing');
       throw new Error('Could not find header row in Excel file');
     }
-    
-    // Extract transactions
+
     const transactions = [];
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length === 0) continue;
-      
+
       const tx = {};
       let hasData = false;
-      
+
       for (const [field, colIdx] of Object.entries(headerMap)) {
         if (row[colIdx] !== undefined) {
           tx[field] = row[colIdx];
           hasData = true;
         }
       }
-      
+
       if (hasData) {
-        // Basic cleaning
         if (tx.withdrawal) tx.withdrawal = parseInt(String(tx.withdrawal).replace(/[^0-9]/g, ''), 10) || 0;
         if (tx.deposit) tx.deposit = parseInt(String(tx.deposit).replace(/[^0-9]/g, ''), 10) || 0;
         if (tx.balance) tx.balance = parseInt(String(tx.balance).replace(/[^0-9]/g, ''), 10) || 0;
-        
+
         transactions.push(tx);
       }
     }
-    
+
     if (ctx && ctx.log) ctx.log(`Parsed ${transactions.length} transactions from Excel`);
-    
+
     return {
       transactions,
       metadata: {},
-      summary: {}
+      summary: {},
     };
-    
   } catch (error) {
     if (ctx && ctx.error) ctx.error(`Error parsing Excel: ${error.message}`);
     throw error;
@@ -631,5 +1072,7 @@ module.exports = {
   createExcelFromData,
   getTransactionsWithParsing,
   DEFAULT_HEADER_KEYWORDS,
-  DEFAULT_HEADER_MAPPING
+  DEFAULT_HEADER_MAPPING,
+  BANK_EXCEL_HEADER_ROW_1BASED,
+  BANK_EXCEL_PARSE_SCHEMA,
 };
