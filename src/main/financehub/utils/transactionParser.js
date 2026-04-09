@@ -40,7 +40,9 @@ function parseTransactionExcel(filePath, ctx) {
   if (ctx && ctx.log) ctx.log(`Parsing Excel file: ${filePath}`);
   
   try {
-    const workbook = XLSX.readFile(filePath);
+    // Read with fs first, then parse buffer — avoids XLSX.readFile path/permission quirks on some systems
+    const fileBuffer = fs.readFileSync(filePath);
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     
