@@ -356,17 +356,37 @@ class KookminBankAutomator extends BaseBankAutomator {
         this.context = null;
         this.page = null;
       }
-      const { browser, context } = await this.createBrowser(proxy);
+      // Match scripts/bank-excel-download-automation/kb.spec.js: Chrome args, viewport null,
+      // acceptDownloads — and do NOT dismiss 보안프로그램 before 공동인증서 (script never does).
+      const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
+      this.ensureOutputDirectory(corpDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: corpDownloadsPath,
+      });
       this.browser = browser;
       this.context = context;
       await this.setupBrowserContext(context, null);
       this.page = await context.newPage();
       await this.setupBrowserContext(context, this.page);
+      this.page.on('dialog', async (dialog) => {
+        try {
+          await dialog.accept();
+        } catch (e) {
+          /* ignore */
+        }
+      });
 
       const bizUrl = this.config.xpaths.bizMainUrl;
       await this.page.goto(bizUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
-      await this.handleSecurityPopup(this.page);
 
       try {
         await this.page.evaluate(() => {
@@ -450,7 +470,6 @@ class KookminBankAutomator extends BaseBankAutomator {
       this._arduinoHid = null;
 
       await this.page.waitForTimeout(5000);
-      await this.handleSecurityPopup(this.page);
       await this._navigateKookminBizTransactionInquiry();
       const accounts = await this._getKookminBizAccountsFromAcct();
 

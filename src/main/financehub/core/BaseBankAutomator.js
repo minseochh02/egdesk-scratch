@@ -194,9 +194,15 @@ class BaseBankAutomator {
   /**
    * Creates and configures browser instance
    * @param {ProxyConfig} [proxy] - Proxy configuration
+   * @param {{
+   *   extraChromeArgs?: string[],
+   *   viewport?: { width: number, height: number } | null,
+   *   acceptDownloads?: boolean,
+   *   downloadsPath?: string,
+   * }} [launchOverrides] - Optional Playwright launch options (e.g. KB obiz script parity)
    * @returns {Promise<BrowserSetupResult>}
    */
-  async createBrowser(proxy) {
+  async createBrowser(proxy, launchOverrides = {}) {
     const explicitProfilePath = this.config.chromeProfile?.trim() || null;
     let persistentProfileDir = explicitProfilePath;
 
@@ -227,12 +233,17 @@ class BaseBankAutomator {
       }
     }
 
+    const extraChromeArgs = Array.isArray(launchOverrides.extraChromeArgs)
+      ? launchOverrides.extraChromeArgs
+      : [];
+
     const args = [
       '--disable-web-security',
       '--disable-features=IsolateOrigins,site-per-process',
       '--allow-running-insecure-content',
       '--disable-features=PrivateNetworkAccessSendPreflights',
       '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+      ...extraChromeArgs,
     ];
 
     // Add cache-disabling flags if configured
@@ -246,15 +257,26 @@ class BaseBankAutomator {
       );
     }
 
+    const defaultViewport = { width: 1280, height: 1024 };
+    const viewport =
+      launchOverrides.viewport !== undefined ? launchOverrides.viewport : defaultViewport;
+
     const launchOptions = {
       headless: this.config.headless,
       channel: 'chrome',
       proxy,
       locale: 'ko-KR',
-      viewport: { width: 1280, height: 1024 },
+      viewport,
       permissions: ['clipboard-read', 'clipboard-write'],
-      args
+      args,
     };
+
+    if (launchOverrides.acceptDownloads === true) {
+      launchOptions.acceptDownloads = true;
+    }
+    if (launchOverrides.downloadsPath) {
+      launchOptions.downloadsPath = launchOverrides.downloadsPath;
+    }
 
     if (persistentProfileDir) {
       const context = await chromium.launchPersistentContext(persistentProfileDir, launchOptions);
@@ -271,7 +293,8 @@ class BaseBankAutomator {
 
     const context = await browser.newContext({
       locale: 'ko-KR',
-      viewport: { width: 1280, height: 1024 }
+      viewport,
+      ...(launchOverrides.acceptDownloads === true ? { acceptDownloads: true } : {}),
     });
 
     return { browser, context };
