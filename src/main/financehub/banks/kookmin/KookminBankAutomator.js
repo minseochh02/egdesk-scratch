@@ -375,9 +375,11 @@ class KookminBankAutomator extends BaseBankAutomator {
       });
       this.browser = browser;
       this.context = context;
-      await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+      // CRITICAL: Use existing page from launchPersistentContext instead of creating new one
+      // Security programs (Delfino) inject into the initial page and won't work with new pages
+      this.page = context.pages()[0] || await context.newPage();
+      // Skip routing setup for corporate cert flow to avoid interfering with security program
+      // The setupBrowserContext() routing can block native security program installations
       this.page.on('dialog', async (dialog) => {
         try {
           await dialog.accept();
@@ -649,9 +651,8 @@ class KookminBankAutomator extends BaseBankAutomator {
       this.browser = browser;
       this.context = context;
 
-      await this.setupBrowserContext(context, null);
-
-      this.page = await context.newPage();
+      // Use existing page from persistent context (best practice)
+      this.page = context.pages()[0] || await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
       // Step 2: Navigate to login page
