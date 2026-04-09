@@ -213,7 +213,16 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(3000);
 
-      const accounts = await this._getIbKAccounts(activeFrame);
+      try {
+        const f = this._mainFrame();
+        const racers = [this.page.waitForSelector('select', { timeout: 12000 })];
+        if (f) racers.push(f.waitForSelector('select', { timeout: 12000 }));
+        await Promise.race(racers);
+      } catch (e) {
+        this.warn('[IBK] No <select> soon after 거래내역조회 — account list may be incomplete.');
+      }
+
+      const accounts = await this._getIbKAccounts();
       this._ibkCorporateCertPhase = 'completed';
       this.isLoggedIn = true;
       this.userName = 'IBK 기업뱅킹';
@@ -236,34 +245,138 @@ class IbkBankAutomator extends BaseBankAutomator {
     }
   }
 
-  async _getIbKAccounts(frame) {
-    if (!frame) return [];
-    const acctSelect = frame.locator('[id="ecb_user_num01"]');
-    if ((await acctSelect.count()) === 0) return [];
-    const rows = await acctSelect.evaluate((sel) =>
-      Array.from(sel.options)
-        .filter((o) => o.value)
-        .map((o) => ({ text: (o.textContent || '').trim(), value: o.value }))
-    );
+  _parseIbkAccountFromOption(text, value) {
+    const t = (text || '').trim();
+    const dashed = t.match(/(\d{3})-(\d{2,4})-(\d{4,7})/);
+    if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
+    const digits = t.replace(/\D/g, '');
+    if (digits.length >= 10 && digits.length <= 16) {
+      if (digits.length === 13) return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+      return digits;
+    }
+    const v = String(value || '').replace(/\D/g, '');
+    if (v.length >= 10 && v.length <= 16) {
+      if (v.length === 13) return `${v.slice(0, 6)}-${v.slice(6, 8)}-${v.slice(8)}`;
+      return v;
+    }
+    return null;
+  }
+
+  async _logIbkSelectDebug(scope) {
+    if (!scope) return;
+    try {
+      const all = await scope.evaluate(() => {
+        const selects = document.querySelectorAll('select');
+        return Array.from(selects).map((s) => ({
+          id: s.id,
+          name: s.name,
+          optionCount: s.options.length,
+          firstOptions: Array.from(s.options)
+            .slice(0, 6)
+            .map((o) => (o.text || '').trim().slice(0, 80)),
+        }));
+      });
+      this.log(`[IBK] account discovery — ${all.length} <select> in scope:`);
+      for (const s of all) {
+        this.log(`[IBK]   id="${s.id}" name="${s.name}" options=${s.optionCount} first=[${s.firstOptions.join(' | ')}]`);
+      }
+    } catch (e) {
+      this.warn('[IBK] select debug failed:', e.message);
+    }
+  }
+
+  /**
+   * ibk.spec.js uses frame.locator('[id="ecb_user_num01"]'); also search main page and other selects.
+   */
+  async _findIbkAccountSelect() {
+    const primaryId = 'ecb_user_num01';
+    const candidates = [primaryId, 'sAcctNo', 'sAccount', 'ID_sAcctNo', 'acct', 'drw_acno', 'sInqAcctNo'];
+
+    const tryScope = async (scope, label) => {
+      for (const id of candidates) {
+        const n = await scope.locator(`[id="${String(id).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`).count();
+        if (n > 0) return { scope, id, label };
+      }
+      const found = await scope
+        .evaluate(() => {
+          const selects = document.querySelectorAll('select');
+          for (const s of selects) {
+            for (const opt of s.options) {
+              if (/\d{3}-\d+/.test((opt.text || '').trim()) || /\d{10,}/.test(String(opt.value || ''))) {
+                return s.id || null;
+              }
+            }
+          }
+          return null;
+        })
+        .catch(() => null);
+      if (found) return { scope, id: found, label };
+      return null;
+    };
+
+    const frame = this._mainFrame();
+    const fromFrame = frame ? await tryScope(frame, 'mainframe') : null;
+    if (fromFrame) return fromFrame;
+
+    this.warn('[IBK] No account <select> in mainframe; trying main page.');
+    const fromPage = await tryScope(this.page, 'main page');
+    if (fromPage) return fromPage;
+
+    return { scope: frame || this.page, id: null, label: 'none' };
+  }
+
+  /**
+   * Same option list as ibk.spec.js STEP 10 (all options with opt.value), then flexible account parsing.
+   */
+  async _getIbKAccounts() {
+    const { scope, id: acctSelectId } = await this._findIbkAccountSelect();
+    await this._logIbkSelectDebug(scope);
+
+    if (!scope || !acctSelectId) {
+      this.warn('[IBK] Account dropdown not found.');
+      return [];
+    }
+
+    const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const acctSelect = scope.locator(`[id="${idEsc}"]`);
+
+    const rows = await acctSelect
+      .evaluate((sel) =>
+        Array.from(sel.options)
+          .filter((opt) => opt.value)
+          .map((opt, i) => ({
+            index: i,
+            text: (opt.textContent || '').trim(),
+            value: opt.value,
+          }))
+      )
+      .catch(() => []);
+
     const accounts = [];
     const seen = new Set();
-    const re = /(\d{3}-\d{2,4}-\d{4,7})/;
     for (const row of rows) {
-      const m = row.text.match(re);
-      if (!m) continue;
-      const accountNumber = m[1];
-      const key = accountNumber.replace(/-/g, '');
+      let accountNumber = this._parseIbkAccountFromOption(row.text, row.value);
+      if (!accountNumber) {
+        accountNumber = `value:${String(row.value).slice(0, 48)}`;
+      }
+      const key =
+        accountNumber.startsWith('value:') ? `${accountNumber}:${row.index}` : accountNumber.replace(/-/g, '');
       if (seen.has(key)) continue;
       seen.add(key);
+      const nameFromText = row.text
+        .replace(/\d{3}-\d{2,4}-\d{4,7}/g, '')
+        .replace(/\d{10,16}/g, '')
+        .trim();
       accounts.push({
         accountNumber,
-        accountName: row.text.replace(accountNumber, '').trim() || 'IBK 기업 계좌',
+        accountName: nameFromText || 'IBK 기업 계좌',
         bankId: 'ibk',
         balance: 0,
         currency: 'KRW',
         lastUpdated: new Date().toISOString(),
       });
     }
+
     return accounts;
   }
 
@@ -280,7 +393,7 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   async getAccounts() {
-    return this._getIbKAccounts(this._mainFrame());
+    return this._getIbKAccounts();
   }
 }
 

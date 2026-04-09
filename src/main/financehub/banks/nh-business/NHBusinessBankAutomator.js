@@ -423,12 +423,91 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
   // ============================================================================
 
   /**
+   * Reads all rows from the INIpay cert table (div.cert-list …), similar to Hometax fetchCertificates.
+   * @param {import('playwright-core').Page} page
+   * @returns {Promise<Array<{ index: number, cells: string[], display: string, fullText: string, 소유자명?: string, 용도?: string, 발급기관?: string, 만료일?: string }>>}
+   */
+  async scrapeIniCertificateRows(page) {
+    const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
+    return page.evaluate((selector) => {
+      const rows = document.querySelectorAll(selector);
+      return Array.from(rows).map((row, index) => {
+        const cells = Array.from(row.querySelectorAll('td')).map((td) =>
+          (td.textContent || '').replace(/\s+/g, ' ').trim()
+        );
+        const fullText = (row.textContent || '').replace(/\s+/g, ' ').trim();
+        const display = cells.filter(Boolean).join(' · ') || fullText || `Row ${index + 1}`;
+        const entry = { index, cells, display, fullText };
+        if (cells.length >= 4) {
+          entry.소유자명 = cells[0];
+          entry.용도 = cells[1];
+          entry.발급기관 = cells[2];
+          entry.만료일 = cells[3];
+        }
+        return entry;
+      });
+    }, rowSel);
+  }
+
+  /**
+   * Picks a cert row index (0-based) from credentials / env, logs options like Hometax.
+   * Priority: certificateIndex (1-based) or NH_BUSINESS_CERT_INDEX → certificateExpiry / NH_BUSINESS_CERT_EXPIRY / CERT_EXPIRY substring → 0.
+   * @param {Array} certificates - from scrapeIniCertificateRows
+   * @param {Object} credentials
+   * @returns {number} 0-based index
+   */
+  resolveCertificateRowIndex(certificates, credentials = {}) {
+    const n = certificates.length;
+    if (n === 0) return 0;
+
+    const envIndex = process.env.NH_BUSINESS_CERT_INDEX;
+    const raw =
+      credentials.certificateIndex != null
+        ? Number(credentials.certificateIndex)
+        : envIndex != null && String(envIndex).trim() !== ''
+          ? parseInt(String(envIndex).trim(), 10)
+          : NaN;
+
+    if (!Number.isNaN(raw) && raw >= 1 && raw <= n) {
+      this.log(`Using certificate at option [${raw}] (certificateIndex / NH_BUSINESS_CERT_INDEX).`);
+      return raw - 1;
+    }
+    if (!Number.isNaN(raw)) {
+      this.warn(`certificateIndex ${raw} out of range (1–${n}); using first certificate.`);
+      return 0;
+    }
+
+    const expiry =
+      credentials.certificateExpiry ||
+      process.env.NH_BUSINESS_CERT_EXPIRY ||
+      process.env.CERT_EXPIRY ||
+      '';
+    if (expiry) {
+      const found = certificates.findIndex(
+        (c) =>
+          (c.fullText && c.fullText.includes(expiry)) ||
+          (c.display && c.display.includes(expiry)) ||
+          (c.만료일 && c.만료일.includes(expiry))
+      );
+      if (found >= 0) {
+        this.log(`Using certificate row matching expiry/substring "${expiry}" (option [${found + 1}]).`);
+        return found;
+      }
+      this.warn(`No row contains "${expiry}"; using first certificate.`);
+    }
+
+    this.log('No certificateIndex / expiry match; using first certificate [1].');
+    return 0;
+  }
+
+  /**
    * Handles certificate selection and password entry
    * @param {Object} page - Playwright page object
-   * @param {string} certificatePassword - Certificate password
+   * @param {Object} credentials - { certificatePassword, certificateIndex?, certificateExpiry? }
    * @returns {Promise<Object>}
    */
-  async handleCertificateLogin(page, certificatePassword) {
+  async handleCertificateLogin(page, credentials) {
+    const certificatePassword = credentials.certificatePassword;
     try {
       this.log('Starting certificate authentication...');
 
@@ -455,12 +534,36 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
       await certButton.click();
       await page.waitForTimeout(1775); // From spec file timing
 
-      // Step 3: Select certificate
-      this.log('Selecting certificate...');
-      // TODO: Certificate selection is machine-specific (serial number is unique)
-      // Commented out to allow manual selection or automatic first certificate
-      // await page.locator(this.config.xpaths.certificateItem).click();
-      await page.waitForTimeout(5000); // Wait for certificate list to load
+      // Step 3: Enumerate INIpay cert rows (div.cert-list table) and select one — Hometax-style listing
+      const rowSel = this.config.xpaths.certificateTableRow || 'div.cert-list table tbody tr';
+      this.log('Waiting for certificate list (INIpay table)...');
+      try {
+        await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 15000 });
+      } catch (e) {
+        this.warn('Cert table rows not visible yet, continuing after delay...');
+      }
+      await page.waitForTimeout(2000);
+
+      const certificates = await this.scrapeIniCertificateRows(page);
+      if (certificates.length === 0) {
+        this.warn('No rows found in div.cert-list table tbody — check certificateTableRow selector; using first table row fallback.');
+        await page.locator('table tbody tr').first().click({ timeout: 10000 });
+      } else {
+        this.log(`Available certificates (${certificates.length}) — pick with certificateIndex (1–${certificates.length}) or certificateExpiry / NH_BUSINESS_CERT_EXPIRY:`);
+        certificates.forEach((c, i) => {
+          if (c.만료일) {
+            this.log(
+              `  [${i + 1}] ${c.소유자명 || ''} | ${c.용도 || ''} | ${c.발급기관 || ''} | ${c.만료일}`
+            );
+          } else {
+            this.log(`  [${i + 1}] ${c.display}`);
+          }
+        });
+        const selectedIdx = this.resolveCertificateRowIndex(certificates, credentials);
+        this.log('Selecting certificate...');
+        await page.locator(rowSel).nth(selectedIdx).click({ timeout: 10000 });
+      }
+      await page.waitForTimeout(500);
 
       // Step 4: Click certificate password input field
       this.log('Clicking certificate password field...');
@@ -741,7 +844,7 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
       await this.page.waitForTimeout(this.config.delays.humanLike);
 
       // Step 3: Handle certificate login
-      const certResult = await this.handleCertificateLogin(this.page, certificatePassword);
+      const certResult = await this.handleCertificateLogin(this.page, credentials);
 
       if (!certResult.success) {
         return {
