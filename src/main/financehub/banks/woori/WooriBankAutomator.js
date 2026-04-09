@@ -466,6 +466,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       await this._ensureWooriTransactionInquiryPage();
       const accounts = await this._getWooriAccountsFromPage();
       const ai = this._indexForWooriAccount(accountNumber, accounts);
+      this.log(`Woori: account candidates=${accounts.length}, selectedIndex=${ai}`);
       await this._selectWooriAccountByIndex(ai);
 
       const now = new Date();
@@ -485,20 +486,25 @@ class WooriBankAutomator extends BaseBankAutomator {
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }, usedDate);
+      this.log(`Woori: startDate input set to ${usedDate}`);
       await this.page.waitForTimeout(800);
 
       try {
         await this.page.locator('[id="searchBtn"]').click({ timeout: 5000 });
+        this.log('Woori: search click via #searchBtn');
       } catch (e) {
         await this.page.getByRole('button', { name: '조회' }).click({ timeout: 5000 });
+        this.log('Woori: search click via role(button=조회)');
       }
       await this.page.waitForTimeout(3000);
+      this.log('Woori: search wait complete');
 
       const dateError = await this.page.evaluate(() => {
         const modal = document.querySelector('div[role="dialog"].open');
         return !!(modal && modal.textContent.includes('계좌 개설일보다 과거를 선택할 수 없습니다'));
       });
       if (dateError) {
+        this.warn('Woori: date error detected, retrying with yesterday');
         try {
           await this.page.locator('div[role="dialog"].open button:has-text("확인")').first().click({ timeout: 3000 });
         } catch (e) {}
@@ -515,28 +521,37 @@ class WooriBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(800);
         try {
           await this.page.locator('[id="searchBtn"]').click({ timeout: 5000 });
+          this.log('Woori: retry search click via #searchBtn');
         } catch (e) {
           await this.page.getByRole('button', { name: '조회' }).click({ timeout: 5000 });
+          this.log('Woori: retry search click via role(button=조회)');
         }
         await this.page.waitForTimeout(3000);
+        this.log(`Woori: retry search complete with startDate=${usedDate}`);
       }
 
       await this.focusPlaywrightPage();
+      this.log('Woori: focused page, waiting for next download event');
       const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await this.page.locator('[id="qcell_qcExportFile"]').click({ timeout: 5000 });
+        this.log('Woori: file-save menu click via #qcell_qcExportFile');
       } catch (e) {
         await this.page.getByRole('button', { name: '파일저장' }).click({ timeout: 5000 });
+        this.log('Woori: file-save menu click via role(button=파일저장)');
       }
       await this.page.waitForTimeout(2000);
 
       try {
         await this.page.locator('[id="excelExportBtn"]').click({ timeout: 5000 });
+        this.log('Woori: excel export click via #excelExportBtn');
       } catch (e) {
         await this.page.getByRole('button', { name: '엑셀저장' }).click({ timeout: 5000 });
+        this.log('Woori: excel export click via role(button=엑셀저장)');
       }
 
       const download = await downloadPromise;
+      this.log(`Woori: download event received (${download.suggestedFilename() || 'no-suggested-filename'})`);
       const suggested = download.suggestedFilename() || 'woori-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -544,6 +559,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       const finalName = `우리기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
       await download.saveAs(finalPath);
+      this.log(`Woori: download saved to ${finalPath}`);
 
       try {
         await this.page.evaluate(() => {
