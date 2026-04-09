@@ -187,6 +187,38 @@ class BaseBankAutomator {
     console.error(`[${this.config.bank.id.toUpperCase()}]`, ...args);
   }
 
+  /**
+   * Activate the Playwright-controlled tab (Chromium). Helps resync after the user
+   * focused another app or the session sat on a non–거래내역 screen.
+   */
+  async focusPlaywrightPage() {
+    if (!this.page || (typeof this.page.isClosed === 'function' && this.page.isClosed())) return;
+    try {
+      if (typeof this.page.bringToFront === 'function') {
+        await this.page.bringToFront();
+      }
+    } catch (e) {
+      this.warn('focusPlaywrightPage failed:', e?.message || e);
+    }
+  }
+
+  /** Prefer context over page — frames / embedded flows often emit download on the context. */
+  getPlaywrightContext() {
+    if (this.context) return this.context;
+    if (this.page && typeof this.page.context === 'function') return this.page.context();
+    return null;
+  }
+
+  /** @param {{ timeout?: number }} [options] */
+  waitForNextDownload(options = {}) {
+    const ctx = this.getPlaywrightContext();
+    if (!ctx || typeof ctx.waitForEvent !== 'function') {
+      throw new Error('No Playwright browser context for download');
+    }
+    const timeout = options.timeout ?? 120000;
+    return ctx.waitForEvent('download', { timeout });
+  }
+
   // ============================================================================
   // BROWSER SETUP
   // ============================================================================

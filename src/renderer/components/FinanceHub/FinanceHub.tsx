@@ -2153,7 +2153,18 @@ const FinanceHub: React.FC = () => {
       const result = await window.electron.financeHub.loginAndGetAccounts(bankId, loginCredentials);
       if (result.success && result.isLoggedIn) {
         setConnectionProgress('계좌 정보를 불러왔습니다!');
-        if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, { ...credentials, bankId });
+        if (saveCredentials) {
+          const credPayload: Record<string, unknown> = { ...credentials, bankId };
+          if (bankId === 'nh-business' && selectedNhBusinessCertificate) {
+            const c = selectedNhBusinessCertificate as Record<string, unknown>;
+            if (c.certificateIndex != null) credPayload.certificateIndex = c.certificateIndex;
+            const exp = c.expiry ?? c.matchedDate ?? c.만료일;
+            if (typeof exp === 'string' && exp.trim()) credPayload.certificateExpiry = exp.trim();
+            if (typeof c.display === 'string' && c.display.trim()) credPayload.certificateDisplay = c.display.trim();
+            if (typeof c.소유자명 === 'string' && c.소유자명.trim()) credPayload.certificateOwnerName = c.소유자명.trim();
+          }
+          await window.electron.financeHub.saveCredentials(bankId, credPayload as any);
+        }
 
         const newConnection: ConnectedBank = {
           bankId,

@@ -313,18 +313,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(3000);
 
-      try {
-        await this.page.getByRole('link', { name: '조회' }).click({ timeout: 5000 });
-      } catch (e) {
-        await this.page.locator('header a').filter({ hasText: '조회' }).first().click({ timeout: 5000 });
-      }
-      await this.page.waitForTimeout(2000);
-      try {
-        await this.page.getByRole('link', { name: '거래내역조회' }).click({ timeout: 5000 });
-      } catch (e) {
-        await this.page.locator('a').filter({ hasText: '거래내역조회' }).first().click({ timeout: 5000 });
-      }
-      await this.page.waitForTimeout(3000);
+      await this._navigateWooriToTransactionInquiryMenu();
 
       const accounts = await this._getWooriAccountsFromPage();
       this._wooriCorporateCertPhase = 'completed';
@@ -347,6 +336,38 @@ class WooriBankAutomator extends BaseBankAutomator {
       } catch (e) {}
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Same menu path as completeCorporateCertificateLogin — 조회 → 거래내역조회.
+   */
+  async _navigateWooriToTransactionInquiryMenu() {
+    if (!this.page || this.page.isClosed()) return;
+    try {
+      await this.page.getByRole('link', { name: '조회' }).click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('header a').filter({ hasText: '조회' }).first().click({ timeout: 5000 }).catch(() => {});
+    }
+    await this.page.waitForTimeout(2000);
+    try {
+      await this.page.getByRole('link', { name: '거래내역조회' }).click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('a').filter({ hasText: '거래내역조회' }).first().click({ timeout: 5000 }).catch(() => {});
+    }
+    await this.page.waitForTimeout(3000);
+  }
+
+  /** Resync often leaves the session on another page; inquiry needs #startDate / #noAccount. */
+  async _ensureWooriTransactionInquiryPage() {
+    await this.focusPlaywrightPage();
+    const ready = await this.page
+      .locator('#startDate, #noAccount')
+      .first()
+      .isVisible({ timeout: 2500 })
+      .catch(() => false);
+    if (ready) return;
+    this.log('[WOORI] Session not on 거래내역 — opening 조회 → 거래내역조회');
+    await this._navigateWooriToTransactionInquiryMenu();
   }
 
   async _getWooriAccountsFromPage() {
@@ -442,6 +463,7 @@ class WooriBankAutomator extends BaseBankAutomator {
     this.log(`Woori: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
 
     try {
+      await this._ensureWooriTransactionInquiryPage();
       const accounts = await this._getWooriAccountsFromPage();
       const ai = this._indexForWooriAccount(accountNumber, accounts);
       await this._selectWooriAccountByIndex(ai);
@@ -499,6 +521,8 @@ class WooriBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(3000);
       }
 
+      await this.focusPlaywrightPage();
+      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await this.page.locator('[id="qcell_qcExportFile"]').click({ timeout: 5000 });
       } catch (e) {
@@ -506,7 +530,6 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(2000);
 
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
       try {
         await this.page.locator('[id="excelExportBtn"]').click({ timeout: 5000 });
       } catch (e) {

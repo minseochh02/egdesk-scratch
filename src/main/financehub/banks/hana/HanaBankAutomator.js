@@ -570,7 +570,8 @@ class HanaBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(3000);
       }
 
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+      await this.focusPlaywrightPage();
+      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
       } catch (e) {
@@ -581,12 +582,10 @@ class HanaBankAutomator extends BaseBankAutomator {
         }
       }
 
-      const raced = await Promise.race([
-        downloadPromise.then((dl) => ({ type: 'download', data: dl })),
-        this.page.waitForTimeout(5000).then(() => ({ type: 'timeout' })),
-      ]);
-
-      if (raced.type === 'timeout') {
+      let download;
+      try {
+        download = await downloadPromise;
+      } catch (e) {
         const noDataMsg = await frame.evaluate(() => {
           const body = document.body.textContent || '';
           return (
@@ -600,14 +599,12 @@ class HanaBankAutomator extends BaseBankAutomator {
           this.log('Hana: no data to export');
           try {
             await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
-          } catch (e) {}
+          } catch (e2) {}
         } else {
-          this.warn('Hana: Excel download timed out');
+          this.warn('Hana: Excel download failed:', e?.message || e);
         }
         return [];
       }
-
-      const download = raced.data;
       const suggested = download.suggestedFilename() || 'hana-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
