@@ -739,34 +739,8 @@ class NHBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(500);
       }
 
-      if (endDate) {
-        this.log('Setting end date:', endDate);
-        const endDateClean = endDate.replace(/-/g, '');
-        const endYear = endDateClean.substring(0, 4);
-        const endMonth = endDateClean.substring(4, 6);
-        const endDay = endDateClean.substring(6, 8);
-        
-        // Click year dropdown and select year
-        await this.page.click(`xpath=${this.config.xpaths.endYearSelect}`);
-        await this.page.waitForTimeout(300);
-        await this.page.selectOption(`xpath=${this.config.xpaths.endYearSelect}`, endYear);
-        await this.page.click('body');
-        await this.page.waitForTimeout(300);
-        
-        // Click month dropdown and select month (keep leading zero)
-        await this.page.click(`xpath=${this.config.xpaths.endMonthSelect}`);
-        await this.page.waitForTimeout(300);
-        await this.page.selectOption(`xpath=${this.config.xpaths.endMonthSelect}`, endMonth);
-        await this.page.click('body');
-        await this.page.waitForTimeout(300);
-        
-        // Click day dropdown and select day (keep leading zero)
-        await this.page.click(`xpath=${this.config.xpaths.endDaySelect}`);
-        await this.page.waitForTimeout(300);
-        await this.page.selectOption(`xpath=${this.config.xpaths.endDaySelect}`, endDay);
-        await this.page.click('body');
-        await this.page.waitForTimeout(500);
-      }
+      // Intentionally do not set end date selectors for NH.
+      // Keep NH page default end date (typically "today") and only control the start date.
 
       // Click inquiry button
       this.log('Clicking inquiry button...');

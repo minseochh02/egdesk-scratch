@@ -80,6 +80,7 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [columnMappings, setColumnMappings] = useState<Record<string, string> | null>(null);
+  const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null);
   const [mergeConfig, setMergeConfig] = useState<Record<string, { sources: string[]; separator: string }> | null>(null);
   const [selectedTable, setSelectedTable] = useState<UserTable | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,9 +118,11 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
 
   const handleColumnMappingComplete = (
     mappings: Record<string, string>,
-    mergeConfiguration: Record<string, { sources: string[]; separator: string }>
+    mergeConfiguration: Record<string, { sources: string[]; separator: string }>,
+    types: Record<string, string>
   ) => {
     setColumnMappings(mappings);
+    setColumnTypes(types);
     setMergeConfig(mergeConfiguration);
 
     if (syncMode === 'create-new') {
@@ -168,6 +171,7 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
           displayName,
           description: description.trim() || undefined,
           columnMappings: columnMappings || undefined,
+          columnTypes: columnTypes || undefined,
           mergeConfig: mergeConfig || undefined,
         });
 
@@ -182,6 +186,7 @@ export const SyncWizard: React.FC<SyncWizardProps> = ({
           sheetIndex: selectedSheet,
           tableId: selectedTable.id,
           columnMappings: columnMappings || undefined,
+          columnTypes: columnTypes || undefined,
           mergeConfig: mergeConfig || undefined,
         });
 

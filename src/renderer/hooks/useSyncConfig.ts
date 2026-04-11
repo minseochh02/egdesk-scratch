@@ -5,11 +5,14 @@ interface SyncConfiguration {
   scriptFolderPath: string;
   scriptName: string;
   folderName: string;
+  source?: 'browser' | 'desktop';
   targetTableId: string;
   headerRow: number;
   skipBottomRows: number;
   sheetIndex: number;
   columnMappings: Record<string, string>;
+  uniqueKeyColumns?: string[];
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
   fileAction: 'keep' | 'archive' | 'delete';
   enabled: boolean;
   autoSyncEnabled: boolean;

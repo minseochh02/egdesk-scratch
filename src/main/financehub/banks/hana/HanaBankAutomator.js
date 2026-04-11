@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
@@ -461,6 +462,30 @@ class HanaBankAutomator extends BaseBankAutomator {
     return t.slice(0, 80);
   }
 
+  _findRecentHanaExportFileSince(sinceMs) {
+    const dirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+    const hits = [];
+    for (const dir of dirs) {
+      try {
+        if (!fs.existsSync(dir)) continue;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isFile()) continue;
+          if (!/\.(xls|xlsx|csv)$/i.test(ent.name)) continue;
+          const p = path.join(dir, ent.name);
+          const st = fs.statSync(p);
+          if (st.mtimeMs >= sinceMs - 2000) {
+            hits.push({ path: p, mtimeMs: st.mtimeMs, size: st.size });
+          }
+        }
+      } catch (e) {
+        this.warn('Hana: fallback file scan failed for', dir, e?.message || e);
+      }
+    }
+    hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return hits[0] || null;
+  }
+
   /**
    * hana.spec.js — frame, account select, sInqStrDt, 조회, 전체엑셀다운로드 / fallbacks
    */
@@ -580,6 +605,7 @@ class HanaBankAutomator extends BaseBankAutomator {
 
       await this.focusPlaywrightPage();
       this.log('Hana: focused page, waiting for next download event');
+      const exportStartedAt = Date.now();
       const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
@@ -595,10 +621,12 @@ class HanaBankAutomator extends BaseBankAutomator {
       }
 
       let download;
+      let fallbackFile = null;
       try {
         download = await downloadPromise;
         this.log(`Hana: download event received (${download.suggestedFilename() || 'no-suggested-filename'})`);
       } catch (e) {
+        this.warn('Hana: download event timeout/failure:', e?.message || e);
         const noDataMsg = await frame.evaluate(() => {
           const body = document.body.textContent || '';
           return (
@@ -614,17 +642,25 @@ class HanaBankAutomator extends BaseBankAutomator {
             await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
           } catch (e2) {}
         } else {
-          this.warn('Hana: Excel download failed:', e?.message || e);
+          fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+          if (!fallbackFile) {
+            this.warn('Hana: Excel download failed:', e?.message || e);
+            return [];
+          }
+          this.warn(`Hana: using filesystem fallback file (${fallbackFile.path}, ${fallbackFile.size} bytes)`);
         }
-        return [];
       }
-      const suggested = download.suggestedFilename() || 'hana-export.xls';
+      const suggested = (download && download.suggestedFilename()) || (fallbackFile && path.basename(fallbackFile.path)) || 'hana-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeHanaFilenamePart(accountNumber);
       const finalName = `하나기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
-      await download.saveAs(finalPath);
+      if (download) {
+        await download.saveAs(finalPath);
+      } else if (fallbackFile && fallbackFile.path !== finalPath) {
+        fs.copyFileSync(fallbackFile.path, finalPath);
+      }
       this.log(`Hana: download saved to ${finalPath}`);
 
       let extractedData;

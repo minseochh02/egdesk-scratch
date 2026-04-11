@@ -60,6 +60,7 @@ export const PreviewStep: React.FC<BaseStepProps> = ({
     parsedData,
     selectedSheet,
     columnMappings,
+    columnTypes,
     mergeConfig,
     tableName,
     displayName,
@@ -75,8 +76,23 @@ export const PreviewStep: React.FC<BaseStepProps> = ({
 
   // Build columns array with unique SQL names (needed for type lookup)
   const mappedColumns = uniqueDbColumns.map((dbColumnName) => {
-    // In upload mode, use the target table's schema type
-    // In import mode, use the Excel detected type
+    // Find the source Excel column name for this DB column
+    const sourceExcelColumn = Object.entries(columnMappings).find(
+      ([_, sqlName]) => sqlName === dbColumnName
+    );
+    const excelColumnName = sourceExcelColumn ? sourceExcelColumn[0] : null;
+
+    // PRIORITY 1: Use user-modified column types from VisualColumnMapper
+    // columnTypes is keyed by Excel column name
+    if (columnTypes && excelColumnName && columnTypes[excelColumnName]) {
+      console.log(`🎯 PreviewStep: Using user-modified type for "${dbColumnName}" (from Excel "${excelColumnName}"): ${columnTypes[excelColumnName]}`);
+      return {
+        name: dbColumnName,
+        type: columnTypes[excelColumnName],
+      };
+    }
+
+    // PRIORITY 2: In upload mode, use the target table's schema type
     if (mode === 'upload' && targetTable) {
       const targetColumn = targetTable.schema.find(col => col.name === dbColumnName);
       if (targetColumn) {
@@ -95,22 +111,17 @@ export const PreviewStep: React.FC<BaseStepProps> = ({
       }
     }
 
-    // For import mode OR if no match found in target table, use Excel detected type
-    const sourceExcelColumn = Object.entries(columnMappings).find(
-      ([_, sqlName]) => sqlName === dbColumnName
-    );
-
-    if (sourceExcelColumn) {
-      const [originalName] = sourceExcelColumn;
-      const originalIndex = currentSheet.headers.indexOf(originalName);
+    // PRIORITY 3: For import mode OR if no match found in target table, use Excel detected type
+    if (excelColumnName) {
+      const originalIndex = currentSheet.headers.indexOf(excelColumnName);
       const detectedType = currentSheet.detectedTypes[originalIndex];
 
       // Debug logging
-      if (dbColumnName === '일자' || originalName === '일자') {
+      if (dbColumnName === '일자' || excelColumnName === '일자') {
         console.log(`🔍 PreviewStep column mapping for 일자:`, {
           mode,
           dbColumnName,
-          originalName,
+          originalName: excelColumnName,
           originalIndex,
           detectedType,
           allHeaders: currentSheet.headers,

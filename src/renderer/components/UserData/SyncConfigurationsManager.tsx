@@ -14,6 +14,8 @@ interface SyncConfiguration {
   skipBottomRows: number;
   sheetIndex: number;
   columnMappings: Record<string, string>;
+  uniqueKeyColumns?: string[];
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
   fileAction: 'keep' | 'archive' | 'delete';
   enabled: boolean;
   autoSyncEnabled: boolean;
@@ -112,6 +114,23 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
     if (status === 'failed') return '❌';
     if (status === 'partial') return '⚠️';
     return '❓';
+  };
+
+  const formatDuplicateAction = (action?: SyncConfiguration['duplicateAction']): string => {
+    switch (action) {
+      case 'skip':
+        return '⏭️ Skip duplicates';
+      case 'update':
+        return '🔄 Update duplicates';
+      case 'allow':
+        return '✅ Allow duplicates';
+      case 'replace-date-range':
+        return '📅 Replace date range';
+      case 'replace-all':
+        return '🧹 Replace all';
+      default:
+        return '⏭️ Skip duplicates';
+    }
   };
 
   const handleExportAll = async () => {
@@ -363,6 +382,13 @@ export const SyncConfigurationsManager: React.FC<SyncConfigurationsManagerProps>
                           {config.fileAction === 'archive' && '🗂️ Archive'}
                           {config.fileAction === 'delete' && '🗑️ Delete'}
                           {config.fileAction === 'keep' && '📁 Keep'}
+                        </div>
+                      </div>
+
+                      <div className="sync-config-info-item">
+                        <div className="sync-config-info-label">Duplicate Handling</div>
+                        <div className="sync-config-info-value">
+                          {formatDuplicateAction(config.duplicateAction)}
                         </div>
                       </div>
 

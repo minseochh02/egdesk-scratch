@@ -55,7 +55,11 @@ interface VisualColumnMapperProps {
   excelColumns: Array<{ name: string; type: string }>;
   sampleRows: any[];
   targetTable?: { schema: Array<{ name: string; type: string }> }; // For upload mode: map to existing table
-  onMappingComplete: (mappings: Record<string, string>, mergeConfig: Record<string, { sources: string[]; separator: string }>) => void;
+  onMappingComplete: (
+    mappings: Record<string, string>,
+    mergeConfig: Record<string, { sources: string[]; separator: string }>,
+    columnTypes: Record<string, string>
+  ) => void;
   onBack: () => void;
 }
 
@@ -214,14 +218,21 @@ export const VisualColumnMapper: React.FC<VisualColumnMapperProps> = ({
 
     // Build final mapping
     const finalMappings: Record<string, string> = {};
+    const columnTypes: Record<string, string> = {};
     mappings.forEach((mapping) => {
       if (mapping.included) {
         finalMappings[mapping.excelName] = mapping.sqlName;
+        // IMPORTANT: Use Excel column name as key (backend expects this)
+        columnTypes[mapping.excelName] = mapping.type;
       }
     });
 
+    console.log('📋 [VisualColumnMapper] Completing with:');
+    console.log('   Column mappings:', finalMappings);
+    console.log('   Column types (keyed by Excel name):', columnTypes);
+
     // No merge config needed for this simpler design
-    onMappingComplete(finalMappings, {});
+    onMappingComplete(finalMappings, {}, columnTypes);
   };
 
   const duplicates = findDuplicates();

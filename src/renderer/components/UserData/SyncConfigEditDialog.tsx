@@ -5,6 +5,7 @@ interface SyncConfiguration {
   id: string;
   scriptName: string;
   folderName: string;
+  duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range' | 'replace-all';
   fileAction: 'keep' | 'archive' | 'delete';
   enabled: boolean;
   autoSyncEnabled: boolean;
@@ -27,6 +28,23 @@ export const SyncConfigEditDialog: React.FC<SyncConfigEditDialogProps> = ({
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(config.autoSyncEnabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const duplicateHandlingLabel = (() => {
+    switch (config.duplicateAction) {
+      case 'skip':
+        return '⏭️ Skip duplicates';
+      case 'update':
+        return '🔄 Update duplicates';
+      case 'allow':
+        return '✅ Allow duplicates';
+      case 'replace-date-range':
+        return '📅 Replace date range';
+      case 'replace-all':
+        return '🧹 Replace all';
+      default:
+        return '⏭️ Skip duplicates';
+    }
+  })();
 
   const handleSave = async () => {
     try {
@@ -67,6 +85,26 @@ export const SyncConfigEditDialog: React.FC<SyncConfigEditDialogProps> = ({
           </div>
 
           {error && <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div>}
+
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+              🔍 Duplicate Handling
+            </label>
+            <div style={{
+              width: '100%',
+              padding: '8px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              fontSize: '14px',
+              background: '#f8f9fa',
+              color: '#333',
+            }}>
+              {duplicateHandlingLabel}
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>
+              Configured during import setup. Edit this in the import wizard duplicate settings.
+            </p>
+          </div>
 
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>

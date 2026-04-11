@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
@@ -424,6 +425,30 @@ class WooriBankAutomator extends BaseBankAutomator {
     return t.slice(0, 80);
   }
 
+  _findRecentWooriExportFileSince(sinceMs) {
+    const dirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+    const hits = [];
+    for (const dir of dirs) {
+      try {
+        if (!fs.existsSync(dir)) continue;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isFile()) continue;
+          if (!/\.(xls|xlsx|csv)$/i.test(ent.name)) continue;
+          const p = path.join(dir, ent.name);
+          const st = fs.statSync(p);
+          if (st.mtimeMs >= sinceMs - 2000) {
+            hits.push({ path: p, mtimeMs: st.mtimeMs, size: st.size });
+          }
+        }
+      } catch (e) {
+        this.warn('Woori: fallback file scan failed for', dir, e?.message || e);
+      }
+    }
+    hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return hits[0] || null;
+  }
+
   async _selectWooriAccountByIndex(index) {
     await this.page.locator('[id="noAccount"]').click({ timeout: 5000 });
     await this.page.waitForTimeout(800);
@@ -532,6 +557,7 @@ class WooriBankAutomator extends BaseBankAutomator {
 
       await this.focusPlaywrightPage();
       this.log('Woori: focused page, waiting for next download event');
+      const exportStartedAt = Date.now();
       const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
       try {
         await this.page.locator('[id="qcell_qcExportFile"]').click({ timeout: 5000 });
@@ -550,15 +576,43 @@ class WooriBankAutomator extends BaseBankAutomator {
         this.log('Woori: excel export click via role(button=엑셀저장)');
       }
 
-      const download = await downloadPromise;
-      this.log(`Woori: download event received (${download.suggestedFilename() || 'no-suggested-filename'})`);
-      const suggested = download.suggestedFilename() || 'woori-export.xls';
+      let download = null;
+      let suggested = 'woori-export.xls';
+      let fallbackFile = null;
+      try {
+        download = await downloadPromise;
+        suggested = download.suggestedFilename() || suggested;
+        this.log(`Woori: download event received (${suggested || 'no-suggested-filename'})`);
+      } catch (e) {
+        this.warn('Woori: download event timeout/failure:', e?.message || e);
+        const noDataMsg = await this.page.evaluate(() => {
+          const body = document.body?.textContent || '';
+          return (
+            body.includes('저장할 데이터가 없습니다') ||
+            body.includes('조회결과가 없습니다') ||
+            body.includes('거래내역이 없습니다') ||
+            body.includes('조회된 데이터가 없습니다')
+          );
+        });
+        if (noDataMsg) {
+          this.log('Woori: no data to export');
+          return [];
+        }
+        fallbackFile = this._findRecentWooriExportFileSince(exportStartedAt);
+        if (!fallbackFile) throw e;
+        suggested = path.basename(fallbackFile.path) || suggested;
+        this.warn(`Woori: using filesystem fallback file (${fallbackFile.path}, ${fallbackFile.size} bytes)`);
+      }
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeWooriFilenamePart(accountNumber);
       const finalName = `우리기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
-      await download.saveAs(finalPath);
+      if (download) {
+        await download.saveAs(finalPath);
+      } else if (fallbackFile && fallbackFile.path !== finalPath) {
+        fs.copyFileSync(fallbackFile.path, finalPath);
+      }
       this.log(`Woori: download saved to ${finalPath}`);
 
       try {
