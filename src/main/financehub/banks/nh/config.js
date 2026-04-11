@@ -66,10 +66,10 @@ const NH_CONFIG = {
     // Account inquiry page
     inquiryUrl: 'https://banking.nonghyup.com/servlet/IPAIP0071I.view',
     accountDropdown: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[1]/td/span[1]/select',
-    // Date selectors - NH uses dropdown selects for dates
-    startYearSelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[1]/select[1]',
-    startMonthSelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[1]/select[2]',
-    startDaySelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[1]/select[3]',
+    // Date selectors - prefer stable IDs over positional XPaths
+    startYearSelect: '//select[@id="start_year"]',
+    startMonthSelect: '//select[@id="start_month"]',
+    startDaySelect: '//select[@id="start_date"]',
     endYearSelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[2]/select[1]',
     endMonthSelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[2]/select[2]',
     endDaySelect: '/html/body/div[8]/div[2]/div[2]/form/table/tbody/tr[2]/td/span[2]/select[3]',

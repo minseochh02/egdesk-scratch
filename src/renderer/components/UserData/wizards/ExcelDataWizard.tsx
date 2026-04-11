@@ -266,11 +266,17 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
   // Column mapping completion handler
   const handleColumnMappingComplete = (
     mappings: Record<string, string>,
-    mergeConfiguration: Record<string, { sources: string[]; separator: string }>
+    mergeConfiguration: Record<string, { sources: string[]; separator: string }>,
+    columnTypes: Record<string, string>
   ) => {
+    console.log('📋 [ExcelDataWizard] Received column mapping completion:');
+    console.log('   Column mappings:', mappings);
+    console.log('   Column types:', columnTypes);
+
     updateState({
       columnMappings: mappings,
       mergeConfig: mergeConfiguration,
+      columnTypes: columnTypes,
     });
     setCurrentStep('duplicate-detection');
   };
@@ -546,11 +552,13 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
         });
       } else {
         // Upload mode
+        console.log('[DEBUG] Uploading with columnTypes:', state.columnTypes);
         result = await syncToExistingTable({
           tableId: targetTable!.id,
           filePath: state.selectedFile!,
           sheetIndex: state.selectedSheet,
           columnMappings: state.columnMappings!,
+          columnTypes: state.columnTypes || undefined,
           mergeConfig: state.mergeConfig || undefined,
           headerRow: state.headerRow,
           skipBottomRows: state.skipBottomRows,

@@ -237,6 +237,7 @@ export function useUserData() {
       addTimestamp?: boolean;
     }) => {
       try {
+        console.log('[useUserData] importExcel called with columnTypes:', config.columnTypes);
         const result = await window.electron.invoke('user-data:import-excel', config);
 
         if (result.success) {
@@ -385,6 +386,7 @@ export function useUserData() {
       sheetIndex: number;
       tableId: string;
       columnMappings: Record<string, string>;
+      columnTypes?: Record<string, string>;
       mergeConfig?: Record<string, { sources: string[]; separator: string }>;
       headerRow?: number;
       skipRows?: number;
@@ -395,6 +397,7 @@ export function useUserData() {
       addTimestamp?: boolean;
     }) => {
       try {
+        console.log('[useUserData] syncToExistingTable called with columnTypes:', config.columnTypes);
         const result = await window.electron.invoke('user-data:sync-to-existing-table', config);
 
         if (result.success) {
