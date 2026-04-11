@@ -53,14 +53,26 @@ export async function discoverTables(
       })
     });
 
-    if (!listResponse.ok) {
-      throw new Error(`Failed to list tables: ${listResponse.statusText}`);
+    const listResult = await listResponse.json().catch(() => null);
+
+    if (listResult && typeof listResult === 'object' && listResult.success === false) {
+      throw new Error(listResult.error || 'Failed to list tables');
     }
 
-    const listResult = await listResponse.json();
+    if (!listResponse.ok) {
+      const fromBody =
+        listResult && typeof listResult === 'object' && typeof listResult.error === 'string'
+          ? listResult.error
+          : '';
+      throw new Error(fromBody || `Failed to list tables: ${listResponse.status} ${listResponse.statusText}`);
+    }
 
-    if (!listResult.success) {
-      throw new Error(listResult.error || 'Failed to list tables');
+    if (!listResult || !listResult.success) {
+      throw new Error(
+        listResult && typeof listResult === 'object' && listResult.error
+          ? String(listResult.error)
+          : 'Failed to list tables'
+      );
     }
 
     // Parse MCP response

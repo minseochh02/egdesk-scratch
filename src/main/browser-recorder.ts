@@ -4,6 +4,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { OSAutomation } from './utils/osAutomation';
+import {
+  getClickStrategyOrder,
+  getFillStrategyOrder,
+  type LocatorStrategyKind,
+} from './browser-recording-locator-strategies';
 
 interface RecordedAction {
   type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab' | 'fileUpload';
@@ -48,6 +53,119 @@ interface RecordedAction {
   filePath?: string; // Path to the file being uploaded
   fileName?: string; // Name of the file for display
   isChainedFile?: boolean; // Whether this is from a previous chain step
+  /** Learned from successful replay — reorder locator attempts */
+  preferredLocatorStrategy?: LocatorStrategyKind;
+}
+
+function escapeJsStringForCodegen(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    .replace(/'/g, "\\'");
+}
+
+/** Emits nested try/catch chain matching getClickStrategyOrder (same as in-app replay). */
+function appendGeneratedClickWithStrategyChain(
+  lines: string[],
+  action: RecordedAction,
+  actionIndex: number,
+  framePrefix: string
+): void {
+  const order = getClickStrategyOrder(action);
+  lines.push(
+    `    // Try multiple selector strategies for resilience (order: ${order.join(' → ')})`
+  );
+
+  const emitOne = (strat: LocatorStrategyKind, pad: string): void => {
+    const hasRole = action.role && (action.ariaLabel || action.innerText);
+    const hasText =
+      action.innerText && action.innerText.length > 0 && action.innerText.length < 50;
+
+    if (strat === 'semantic') {
+      if (action.role && action.ariaLabel) {
+        const escapedAriaLabel = escapeJsStringForCodegen(action.ariaLabel);
+        lines.push(`${pad}// getByRole + aria-label`);
+        lines.push(
+          `${pad}const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' });`
+        );
+        lines.push(`${pad}await locator.hover({ force: true });`);
+        lines.push(`${pad}await locator.click({ timeout: 5000 });`);
+      } else if (hasRole && hasText) {
+        const escapedText = escapeJsStringForCodegen(action.innerText!.trim());
+        lines.push(`${pad}// getByRole + text`);
+        lines.push(
+          `${pad}const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' });`
+        );
+        lines.push(`${pad}await locator.hover({ force: true });`);
+        lines.push(`${pad}await locator.click({ timeout: 5000 });`);
+      } else if (hasText) {
+        const escapedText = escapeJsStringForCodegen(action.innerText!.trim());
+        lines.push(`${pad}// getByText`);
+        lines.push(`${pad}const locator = ${framePrefix}.getByText('${escapedText}');`);
+        lines.push(`${pad}await locator.hover({ force: true });`);
+        lines.push(`${pad}await locator.click({ timeout: 5000 });`);
+      } else {
+        lines.push(`${pad}throw new Error('semantic locator strategy not available');`);
+      }
+    } else if (strat === 'css') {
+      lines.push(`${pad}// CSS selector`);
+      lines.push(`${pad}const locator = ${framePrefix}.locator('${action.selector}');`);
+      lines.push(`${pad}await locator.hover({ force: true });`);
+      lines.push(`${pad}await locator.click({ timeout: 5000 });`);
+    } else {
+      lines.push(`${pad}// XPath`);
+      lines.push(`${pad}const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
+      lines.push(`${pad}await xpathLocator.hover({ force: true });`);
+      lines.push(`${pad}await xpathLocator.click();`);
+    }
+  };
+
+  for (let d = 0; d < order.length; d++) {
+    const pad = '    ' + '  '.repeat(d);
+    lines.push(`${pad}try {`);
+    emitOne(order[d], pad + '  ');
+    lines.push(`${pad + '  '}__egdeskRecordStrategy(${actionIndex}, '${order[d]}');`);
+    if (d < order.length - 1) {
+      lines.push(`${pad}} catch (error${d}) {`);
+    }
+  }
+  for (let k = 0; k < order.length; k++) {
+    const pad = '    ' + '  '.repeat(order.length - 1 - k);
+    lines.push(`${pad}}`);
+  }
+}
+
+function appendGeneratedFillWithStrategyChain(
+  lines: string[],
+  action: RecordedAction,
+  actionIndex: number,
+  escapedValue: string
+): void {
+  const order = getFillStrategyOrder(action);
+  if (order.length <= 1) {
+    lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
+    return;
+  }
+  lines.push(`    // Fill strategies: ${order.join(' → ')}`);
+  for (let d = 0; d < order.length; d++) {
+    const pad = '    ' + '  '.repeat(d);
+    lines.push(`${pad}try {`);
+    if (order[d] === 'css') {
+      lines.push(`${pad}  await page.fill('${action.selector}', '${escapedValue}');`);
+    } else {
+      lines.push(`${pad}  await page.locator('xpath=${action.xpath}').fill('${escapedValue}');`);
+    }
+    lines.push(`${pad}  __egdeskRecordStrategy(${actionIndex}, '${order[d]}');`);
+    if (d < order.length - 1) {
+      lines.push(`${pad}} catch (error${d}) {`);
+    }
+  }
+  for (let k = 0; k < order.length; k++) {
+    const pad = '    ' + '  '.repeat(order.length - 1 - k);
+    lines.push(`${pad}}`);
+  }
 }
 
 export class BrowserRecorder {
@@ -6362,6 +6480,56 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       "  }",
       "}",
       "",
+      "/** Persist preferredLocatorStrategy into this file's RECORDED_ACTIONS comment after a successful run */",
+      "function __egdeskMergeSelectorPrefsIntoSpec(filePath, learnMap) {",
+      "  if (!learnMap || typeof learnMap !== 'object') return;",
+      "  const ks = Object.keys(learnMap);",
+      "  if (ks.length === 0) return;",
+      "  try {",
+      "    const raw = fs.readFileSync(filePath, 'utf8');",
+      "    const marker = 'RECORDED_ACTIONS:';",
+      "    const idx = raw.indexOf(marker);",
+      "    if (idx === -1) return;",
+      "    let pos = idx + marker.length;",
+      "    while (pos < raw.length && /\\s/.test(raw[pos])) pos++;",
+      "    while (pos < raw.length && (raw[pos] === '*' || raw[pos] === ' ')) {",
+      "      if (raw[pos] === '*') { pos++; while (pos < raw.length && raw[pos] === ' ') pos++; }",
+      "      else pos++;",
+      "    }",
+      "    if (pos >= raw.length || raw[pos] !== '[') return;",
+      "    const startBracket = pos;",
+      "    let depth = 0, inString = false, stringQuote = null, escape = false;",
+      "    let endBracket = -1;",
+      "    for (let i = startBracket; i < raw.length; i++) {",
+      "      const c = raw[i];",
+      "      if (inString) {",
+      "        if (escape) { escape = false; continue; }",
+      "        if (c === '\\') { escape = true; continue; }",
+      "        if (stringQuote && c === stringQuote) { inString = false; stringQuote = null; }",
+      "        continue;",
+      "      }",
+      "      if (c === '\"' || c === \"'\") { inString = true; stringQuote = c; continue; }",
+      "      if (c === '[') depth++;",
+      "      if (c === ']') {",
+      "        depth--;",
+      "        if (depth === 0) { endBracket = i + 1; break; }",
+      "      }",
+      "    }",
+      "    if (endBracket < 0) return;",
+      "    const jsonStr = raw.slice(startBracket, endBracket);",
+      "    const actions = JSON.parse(jsonStr);",
+      "    for (const k of ks) {",
+      "      const ix = parseInt(k, 10);",
+      "      if (actions[ix]) actions[ix].preferredLocatorStrategy = learnMap[k];",
+      "    }",
+      "    const newJson = JSON.stringify(actions);",
+      "    fs.writeFileSync(filePath, raw.slice(0, startBracket) + newJson + raw.slice(endBracket), 'utf8');",
+      "    console.log('[Replay] 📝 Saved preferredLocatorStrategy for', ks.length, 'action(s)');",
+      "  } catch (e) {",
+      "    console.warn('[Replay] Could not persist selector preferences:', e && e.message);",
+      "  }",
+      "}",
+      "",
       "(async () => {",
       "  console.log('🎬 Starting test replay...');",
       "  ",
@@ -6436,7 +6604,12 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       "    console.log('✅ Dialog accepted');",
       "  });",
       "",
-      "  try {"
+      "  try {",
+      "    const __selectorLearn = {};",
+      "    function __egdeskRecordStrategy(actionIndex, strategy) {",
+      "      if (strategy) __selectorLearn[actionIndex] = strategy;",
+      "    }",
+      ""
     ];
 
     let lastTimestamp = 0;
@@ -6535,93 +6708,9 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               lines.push(`    await page.mouse.click(${action.coordinates.x}, ${action.coordinates.y}); // Click at coordinates`);
             }
           } else {
-            // Use the generated selector which should be more specific
             console.log(`🎯 Generating selector click: ${action.selector}`);
-
-            // Generate robust click with multi-level fallback strategy
-            // Priority: getByRole > getByText > CSS Selector > XPath
-            const hasRole = action.role && (action.ariaLabel || action.innerText);
-            const hasText = action.innerText && action.innerText.length > 0 && action.innerText.length < 50;
-            const hasXPath = action.xpath;
-
             const framePrefix = action.frameSelector ? `page.frameLocator('${action.frameSelector}')` : 'page';
-
-            lines.push(`    // Try multiple selector strategies for resilience`);
-            lines.push(`    try {`);
-
-            if (hasRole && action.ariaLabel) {
-              // Strategy 1: getByRole with aria-label
-              const escapedAriaLabel = action.ariaLabel
-                .replace(/\\/g, '\\\\')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t')
-                .replace(/'/g, "\\'");
-              lines.push(`      // Try getByRole with aria-label (most reliable)`);
-              lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedAriaLabel}' });`);
-              lines.push(`      await locator.hover({ force: true });`);
-              lines.push(`      await locator.click({ timeout: 5000 });`);
-            } else if (hasRole && hasText) {
-              // Strategy 2: getByRole with text
-              const escapedText = action.innerText
-                .replace(/\\/g, '\\\\')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t')
-                .replace(/'/g, "\\'");
-              lines.push(`      // Try getByRole with text (most reliable)`);
-              lines.push(`      const locator = ${framePrefix}.getByRole('${action.role}', { name: '${escapedText}' });`);
-              lines.push(`      await locator.hover({ force: true });`);
-              lines.push(`      await locator.click({ timeout: 5000 });`);
-            } else if (hasText) {
-              // Strategy 3: getByText
-              const escapedText = action.innerText
-                .replace(/\\/g, '\\\\')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t')
-                .replace(/'/g, "\\'");
-              lines.push(`      // Try getByText (reliable for text elements)`);
-              lines.push(`      const locator = ${framePrefix}.getByText('${escapedText}');`);
-              lines.push(`      await locator.hover({ force: true });`);
-              lines.push(`      await locator.click({ timeout: 5000 });`);
-            } else {
-              // Strategy 4: CSS Selector
-              lines.push(`      // Try CSS selector`);
-              lines.push(`      const locator = ${framePrefix}.locator('${action.selector}');`);
-              lines.push(`      await locator.hover({ force: true });`);
-              lines.push(`      await locator.click({ timeout: 5000 });`);
-            }
-
-            lines.push(`    } catch (error) {`);
-
-            if (hasRole || hasText) {
-              // If we tried semantic selectors, fallback to CSS
-              lines.push(`      console.log('⚠️ Semantic selector failed, trying CSS selector...');`);
-              lines.push(`      try {`);
-              lines.push(`        const fallbackLocator = ${framePrefix}.locator('${action.selector}');`);
-              lines.push(`        await fallbackLocator.hover({ force: true });`);
-              lines.push(`        await fallbackLocator.click({ timeout: 5000 });`);
-              if (hasXPath) {
-                lines.push(`      } catch (error2) {`);
-                lines.push(`        console.log('⚠️ CSS selector also failed, trying XPath...');`);
-                lines.push(`        const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
-                lines.push(`        await xpathLocator.hover({ force: true });`);
-                lines.push(`        await xpathLocator.click(); // XPath last resort`);
-              }
-              lines.push(`      }`);
-            } else if (hasXPath) {
-              // If we started with CSS, fallback to XPath
-              lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
-              lines.push(`      const xpathLocator = ${framePrefix}.locator('xpath=${action.xpath}');`);
-              lines.push(`      await xpathLocator.hover({ force: true });`);
-              lines.push(`      await xpathLocator.click();`);
-            } else {
-              // No fallback available, re-throw
-              lines.push(`      throw error; // No fallback available`);
-            }
-
-            lines.push(`    }`);
+            appendGeneratedClickWithStrategyChain(lines, action, i, framePrefix);
           }
           break;
         case 'clickUntilGone':
@@ -6817,18 +6906,10 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           const escapedValue = action.value?.replace(/'/g, "\\'") || '';
           if (action.frameSelector) {
             lines.push(`    await page.frameLocator('${action.frameSelector}').locator('${action.selector}').fill('${escapedValue}'); // Fill in iframe`);
+          } else if (action.inputType === 'radio' && action.xpath) {
+            appendGeneratedFillWithStrategyChain(lines, action, i, escapedValue);
           } else {
-            // Add XPath fallback for radio buttons (they often have fragile/dynamic IDs)
-            if (action.inputType === 'radio' && action.xpath) {
-              lines.push(`    try {`);
-              lines.push(`      await page.fill('${action.selector}', '${escapedValue}');`);
-              lines.push(`    } catch (error) {`);
-              lines.push(`      console.log('⚠️ CSS selector failed, trying XPath fallback...');`);
-              lines.push(`      await page.locator('xpath=${action.xpath}').fill('${escapedValue}');`);
-              lines.push(`    }`);
-            } else {
-              lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
-            }
+            lines.push(`    await page.fill('${action.selector}', '${escapedValue}');`);
           }
           break;
         case 'keypress':
@@ -7176,6 +7257,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       }
     }
 
+    lines.push("    __egdeskMergeSelectorPrefsIntoSpec(__filename, __selectorLearn);");
     lines.push("  } finally {");
     lines.push("    await context.close();");
     lines.push("    // Clean up profile directory");

@@ -25,6 +25,7 @@ import { ConversationsMCPService } from '../conversations/conversations-mcp-serv
 import { SheetsMCPService } from '../sheets/sheets-mcp-service';
 import { UserDataMCPService } from '../user-data/user-data-mcp-service';
 import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
+import { BrowserRecordingMCPService } from '../browser-recording/browser-recording-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 import { getSQLiteManager } from '../../sqlite/manager';
@@ -127,6 +128,7 @@ export class LocalServerManager {
   private sheetsMCPService: SheetsMCPService | null = null;
   private userDataMCPService: UserDataMCPService | null = null;
   private financeHubMCPService: FinanceHubMCPService | null = null;
+  private browserRecordingMCPService: BrowserRecordingMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -476,6 +478,12 @@ export class LocalServerManager {
       return;
     }
 
+    // Browser Recording MCP Server endpoints (REST API)
+    if (url.startsWith('/browser-recording')) {
+      await this.handleBrowserRecordingEndpoint(req, res, url);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -514,6 +522,8 @@ export class LocalServerManager {
         '/user-data/tools/call - Call a User Data tool',
         '/financehub/tools - List FinanceHub tools',
         '/financehub/tools/call - Call a FinanceHub tool',
+        '/browser-recording/tools - List Browser Recording tools',
+        '/browser-recording/tools/call - Call a Browser Recording tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -634,6 +644,16 @@ export class LocalServerManager {
       this.financeHubMCPService = new FinanceHubMCPService(database);
     }
     return this.financeHubMCPService;
+  }
+
+  /**
+   * Get or create Browser Recording MCP Service (saved Playwright specs + optional date replay)
+   */
+  private getBrowserRecordingMCPService(): BrowserRecordingMCPService {
+    if (!this.browserRecordingMCPService) {
+      this.browserRecordingMCPService = new BrowserRecordingMCPService();
+    }
+    return this.browserRecordingMCPService;
   }
 
   /**
@@ -1515,6 +1535,81 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle Browser Recording MCP endpoint
+   */
+  private async handleBrowserRecordingEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    if (!this.isMCPServerEnabled('browser-recording')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Browser Recording MCP server is not enabled. Enable it first using the IPC handler "mcp-server-enable".',
+        serverName: 'browser-recording'
+      }));
+      return;
+    }
+
+    if (url === '/browser-recording/tools' && req.method === 'GET') {
+      this.handleBrowserRecordingToolsList(res);
+      return;
+    }
+
+    if (url === '/browser-recording/tools/call' && req.method === 'POST') {
+      await this.handleBrowserRecordingToolCall(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Browser Recording MCP endpoint not found',
+      availableEndpoints: [
+        '/browser-recording/tools - List available tools',
+        '/browser-recording/tools/call - Call a tool'
+      ]
+    }));
+  }
+
+  private handleBrowserRecordingToolsList(res: http.ServerResponse): void {
+    const service = this.getBrowserRecordingMCPService();
+    const tools = service.listTools();
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  private async handleBrowserRecordingToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Missing "tool" parameter in request body'
+        }));
+        return;
+      }
+
+      console.log(`🎬 Calling Browser Recording tool: ${tool}`);
+      const service = this.getBrowserRecordingMCPService();
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        result
+      }, null, 2));
+    } catch (error) {
+      console.error('Error calling Browser Recording tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle FileSystem tools list
    */
   private handleFilesystemToolsList(res: http.ServerResponse): void {
@@ -2141,6 +2236,11 @@ export class LocalServerManager {
         name: 'financehub',
         enabled: true, // Enabled by default per user preference
         description: 'FinanceHub MCP Server - Query Korean bank accounts and transactions (read-only)'
+      },
+      {
+        name: 'browser-recording',
+        enabled: false, // Opt-in: launches Chrome and runs recorded browser automation
+        description: 'Browser Recording MCP Server - List and replay saved EGDesk browser recorder tests with optional dates'
       }
     ];
   }

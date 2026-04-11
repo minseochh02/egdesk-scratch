@@ -446,7 +446,16 @@ interface DebugAPI {
   launchChrome: () => Promise<{ success: boolean; error?: string }>;
   launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => Promise<{ success: boolean; error?: string }>;
   getPlaywrightTests: () => Promise<{ success: boolean; tests: any[]; error?: string }>;
-  runPlaywrightTest: (testFile: string) => Promise<{ success: boolean; error?: string }>;
+  getBrowserRecordingReplayOptions: (testFile: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    datePickerGroupCount: number;
+    ui: 'none' | 'singleDate' | 'dateRange';
+  }>;
+  runPlaywrightTest: (
+    testFile: string,
+    replayParams?: { dateRange?: { start?: string; end?: string }; datePickersByIndex?: (string | undefined)[] }
+  ) => Promise<{ success: boolean; error?: string; message?: string }>;
   deletePlaywrightTest: (testPath: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   openInstagramWithProfile: (options: any) => Promise<{ success: boolean; error?: string }>;
   testYouTubeUpload: (options: any) => Promise<{ success: boolean; error?: string }>;

@@ -42,6 +42,9 @@ const BrowserRecorderPage: React.FC = () => {
   });
   const [showRenameModal, setShowRenameModal] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
+  const [replayModal, setReplayModal] = useState<{ path: string; name: string; ui: 'singleDate' | 'dateRange' } | null>(null);
+  const [replayStartDate, setReplayStartDate] = useState('');
+  const [replayEndDate, setReplayEndDate] = useState('');
   const [showExtensionSelector, setShowExtensionSelector] = useState(false);
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -233,6 +236,75 @@ const BrowserRecorderPage: React.FC = () => {
     } catch (error) {
       console.error('Error renaming test:', error);
       alert('Failed to rename test');
+    }
+  };
+
+  const closeReplayModal = () => {
+    setReplayModal(null);
+    setReplayStartDate('');
+    setReplayEndDate('');
+  };
+
+  const handleReplayTest = async (test: any) => {
+    const dbg = (window as any).electron.debug;
+    try {
+      const opts = await dbg.getBrowserRecordingReplayOptions(test.path);
+      if (!opts.ok) {
+        alert(`Could not read recording: ${opts.error || 'unknown error'}`);
+        return;
+      }
+      if (opts.ui === 'none') {
+        // Pass empty replayParams so main process uses in-process action replay (executeAction +
+        // preferredLocatorStrategy). Without this, replayParams is undefined and the handler runs
+        // the extracted script via Node, which ignores RECORDED_ACTIONS preferences.
+        const result = await dbg.runPlaywrightTest(test.path, {});
+        if (result.success) {
+          console.log(`🎬 Running test with timing: ${test.name}`);
+          addDebugLog(`🎬⏱️ Running test: ${test.name}`);
+        } else {
+          alert(`Failed to run test: ${result.error}`);
+        }
+        return;
+      }
+      setReplayStartDate('');
+      setReplayEndDate('');
+      setReplayModal({ path: test.path, name: test.name, ui: opts.ui });
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to prepare replay: ${e?.message || e}`);
+    }
+  };
+
+  /** Normalize YYYY/MM/DD or YYYY-MM-DD to YYYY-MM-DD for the main process */
+  const toReplayDateParam = (raw: string): string | undefined => {
+    const t = raw.trim();
+    if (!t) return undefined;
+    return t.replace(/\//g, '-');
+  };
+
+  const confirmReplayWithDates = async () => {
+    if (!replayModal) return;
+    const dbg = (window as any).electron.debug;
+    const start = toReplayDateParam(replayStartDate);
+    const end = toReplayDateParam(replayEndDate);
+    let replayParams: { dateRange?: { start?: string; end?: string }; datePickersByIndex?: (string | undefined)[] };
+    if (replayModal.ui === 'dateRange') {
+      replayParams = { dateRange: { start, end } };
+    } else {
+      replayParams = { datePickersByIndex: [start] };
+    }
+    const testName = replayModal.name;
+    try {
+      const result = await dbg.runPlaywrightTest(replayModal.path, replayParams);
+      closeReplayModal();
+      if (result.success) {
+        addDebugLog(`🎬 Replay with date options: ${testName}`);
+      } else {
+        alert(`Failed to run test: ${result.error}`);
+      }
+    } catch (e: any) {
+      closeReplayModal();
+      alert(`Failed to run test: ${e?.message || e}`);
     }
   };
 
@@ -957,15 +1029,7 @@ const BrowserRecorderPage: React.FC = () => {
                               📤 Export
                             </button>
                             <button
-                              onClick={async () => {
-                                const result = await (window as any).electron.debug.runPlaywrightTest(test.path);
-                                if (result.success) {
-                                  console.log(`🎬 Running test with timing: ${test.name}`);
-                                  addDebugLog(`🎬⏱️ Running test with timing: ${test.name}`);
-                                } else {
-                                  alert(`Failed to run test: ${result.error}`);
-                                }
-                              }}
+                              onClick={() => handleReplayTest(test)}
                               className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-replay"
                             >
                               ▶️ Replay
@@ -1190,6 +1254,64 @@ const BrowserRecorderPage: React.FC = () => {
                     </button>
                     <button onClick={saveSchedule} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
                       Save Schedule
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Replay dates modal */}
+            {replayModal && (
+              <div className="browser-recorder-modal-overlay" onClick={closeReplayModal}>
+                <div className="browser-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="browser-recorder-modal-header">
+                    <h3 className="browser-recorder-modal-title">📅 Replay: {replayModal.name}</h3>
+                    <button className="browser-recorder-modal-close" onClick={closeReplayModal}>✕</button>
+                  </div>
+                  <div className="browser-recorder-modal-body">
+                    <p style={{ color: '#666', marginBottom: 12 }}>
+                      {replayModal.ui === 'dateRange'
+                        ? 'Set start and end dates as YYYY/MM/DD. Leave blank to use the recorded relative offsets.'
+                        : 'Set the date as YYYY/MM/DD. Leave blank to use the recorded relative offset.'}
+                    </p>
+                    <div className="browser-recorder-form-group">
+                      <label className="browser-recorder-form-label">
+                        {replayModal.ui === 'dateRange' ? 'Start date' : 'Date'}{' '}
+                        <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="YYYY/MM/DD"
+                        value={replayStartDate}
+                        onChange={(e) => setReplayStartDate(e.target.value)}
+                        className="browser-recorder-form-input"
+                      />
+                    </div>
+                    {replayModal.ui === 'dateRange' && (
+                      <div className="browser-recorder-form-group">
+                        <label className="browser-recorder-form-label">
+                          End date <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          placeholder="YYYY/MM/DD"
+                          value={replayEndDate}
+                          onChange={(e) => setReplayEndDate(e.target.value)}
+                          className="browser-recorder-form-input"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="browser-recorder-modal-footer">
+                    <button onClick={closeReplayModal} className="browser-recorder-btn browser-recorder-btn-sm btn-secondary">
+                      Cancel
+                    </button>
+                    <button onClick={confirmReplayWithDates} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
+                      Run
                     </button>
                   </div>
                 </div>

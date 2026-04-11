@@ -7,11 +7,24 @@ import { pathToFileURL } from 'url';
 import { BrowserRecorder } from './browser-recorder';
 import { getChainMetadataStore } from './chain-metadata';
 import { codeViewerWindow } from './code-viewer-window';
-import { Browser, BrowserContext, Page } from 'playwright-core';
+import { Browser, BrowserContext, Download, Page } from 'playwright-core';
 import { ChromeExtensionScanner } from './chrome-extension-scanner';
 import { getStore } from './storage';
 import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 import AdmZip from 'adm-zip';
+import {
+  parseRecordedActionsFromSpecFile,
+  getReplayUiOptionsFromActions,
+  resolveDateForDatePickerGroup,
+  updateRecordedActionsInSpecFile,
+  type BrowserRecordingReplayParams,
+} from './browser-recording-spec';
+import { resolveBrowserRecordingTestFileInput } from './browser-recording-paths';
+import {
+  clickWithOrderedStrategies,
+  fillWithOrderedStrategies,
+  type LocatorStrategyKind,
+} from './browser-recording-locator-strategies';
 
 // ===== Paused Browser Session Management =====
 
@@ -45,6 +58,25 @@ interface RecordedAction {
   maxIterations?: number;
   checkCondition?: 'gone' | 'hidden' | 'disabled';
   waitBetweenClicks?: number;
+  role?: string;
+  ariaLabel?: string;
+  innerText?: string;
+  inputType?: string;
+  preferredLocatorStrategy?: LocatorStrategyKind;
+}
+
+/** Mutable bag for download replay — listener must be registered before the click that starts the download */
+interface DownloadReplayState {
+  pendingDownload?: Promise<Download>;
+}
+
+interface ExecuteActionReplayContext {
+  params?: BrowserRecordingReplayParams;
+  datePickerGroupOrdinal?: number;
+  recordLocatorStrategy?: (actionIndex: number, strategy: LocatorStrategyKind) => void;
+  /** Indices of click actions that immediately precede a `download-wait` marker (same as codegen) */
+  downloadTriggerIndices?: Set<number>;
+  downloadReplay?: DownloadReplayState;
 }
 
 interface PausedSession {
@@ -239,9 +271,21 @@ async function injectResumeUI(page: Page, sessionId: string, pausedAt: number, t
 }
 
 /**
+ * Playwright's locator() uses the CSS engine by default. Recorded XPaths (e.g. /html/body/... or //div)
+ * must use the xpath selector engine or Playwright throws while parsing the string as CSS.
+ */
+function normalizeSelectorForPlaywright(raw: string): string {
+  const s = raw.trim();
+  if (!s) return s;
+  if (/^[a-zA-Z][a-zA-Z0-9_-]*=/.test(s)) return s;
+  if (s.startsWith('/')) return `xpath=${s}`;
+  return s;
+}
+
+/**
  * Helper to execute a single action
  */
-async function executeAction(page: Page, context: BrowserContext, action: RecordedAction, index: number, allActions: RecordedAction[], pageStack: Page[], scriptName?: string): Promise<Page> {
+async function executeAction(page: Page, context: BrowserContext, action: RecordedAction, index: number, allActions: RecordedAction[], pageStack: Page[], scriptName?: string, replay?: ExecuteActionReplayContext): Promise<Page> {
   console.log(`  ▶️ Executing action ${index + 1}: ${action.type}`);
 
   switch (action.type) {
@@ -255,27 +299,27 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         await page.mouse.click(action.coordinates.x, action.coordinates.y);
         console.log(`    ✓ Clicked at coordinates: (${action.coordinates.x}, ${action.coordinates.y})`);
       } else {
-        const selector = action.xpath || action.selector!;
-        if (action.frameSelector) {
-          const frame = page.frameLocator(action.frameSelector);
-          await frame.locator(selector).click();
-          console.log(`    ✓ Clicked in iframe: ${action.frameSelector}`);
-        } else {
-          await page.locator(selector).click();
-          console.log(`    ✓ Clicked: ${selector}`);
+        if (replay?.downloadTriggerIndices?.has(index) && replay.downloadReplay) {
+          replay.downloadReplay.pendingDownload = page.waitForEvent('download', { timeout: 120000 });
+          console.log('    📎 Registered download listener before click (matches generated spec order)');
         }
+        await clickWithOrderedStrategies(page, action, {
+          onStrategyUsed: (strategy) => replay?.recordLocatorStrategy?.(index, strategy),
+        });
       }
       break;
 
     case 'fill':
-      const fillSelector = action.xpath || action.selector!;
       if (action.frameSelector) {
-        const frame = page.frameLocator(action.frameSelector);
+        const fillSelector = normalizeSelectorForPlaywright(action.xpath || action.selector!);
+        const frame = page.frameLocator(normalizeSelectorForPlaywright(action.frameSelector));
         await frame.locator(fillSelector).fill(action.value || '');
         console.log(`    ✓ Filled in iframe: ${action.frameSelector}`);
       } else {
-        await page.locator(fillSelector).fill(action.value || '');
-        console.log(`    ✓ Filled: ${fillSelector} = "${action.value}"`);
+        await fillWithOrderedStrategies(page, action, {
+          onStrategyUsed: (strategy) => replay?.recordLocatorStrategy?.(index, strategy),
+        });
+        console.log(`    ✓ Filled value for: ${action.selector}`);
       }
       break;
 
@@ -295,19 +339,53 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
       break;
 
     case 'waitForElement':
-      const waitSelector = action.xpath || action.selector!;
+      const waitSelector = normalizeSelectorForPlaywright(action.xpath || action.selector!);
       const condition = action.waitCondition || 'visible';
       const timeout = action.timeout || 30000;
       await page.locator(waitSelector).waitFor({ state: condition as any, timeout });
       console.log(`    ✓ Waited for element: ${waitSelector} (${condition})`);
       break;
 
-    case 'download':
+    case 'download': {
+      const sel = action.selector;
+      // Recording uses synthetic markers — not real DOM selectors (see browser-recorder.ts)
+      if (sel === 'download-wait') {
+        console.log(
+          '    ⏭️ download-wait marker (informational; listener was attached on the triggering click)'
+        );
+        break;
+      }
+      if (sel === 'download-complete') {
+        const pending = replay?.downloadReplay?.pendingDownload;
+        if (!pending) {
+          console.warn(
+            '    ⚠️ download-complete: no pending download — trigger click may not have run or listener was not registered'
+          );
+          break;
+        }
+        const download = await pending;
+        if (replay?.downloadReplay) {
+          replay.downloadReplay.pendingDownload = undefined;
+        }
+        const suggestedFilename = download.suggestedFilename();
+        const downloadsPath = scriptName
+          ? path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName)
+          : path.join(app.getPath('downloads'), 'EGDesk-Playwright');
+        if (!fs.existsSync(downloadsPath)) {
+          fs.mkdirSync(downloadsPath, { recursive: true });
+        }
+        const filePath = path.join(downloadsPath, suggestedFilename);
+        await download.saveAs(filePath);
+        console.log(`    ✓ Download saved: ${suggestedFilename} to ${filePath}`);
+        break;
+      }
+      // Legacy / unusual: wait for download then optional real click
       {
-        const downloadPromise = page.waitForEvent('download');
-        if (action.xpath || action.selector) {
-          const dlSelector = action.xpath || action.selector;
-          await page.locator(dlSelector).click();
+        const downloadPromise = page.waitForEvent('download', { timeout: 120000 });
+        if (action.xpath || (sel && sel !== 'download-wait' && sel !== 'download-complete')) {
+          await clickWithOrderedStrategies(page, action, {
+            onStrategyUsed: (strategy) => replay?.recordLocatorStrategy?.(index, strategy),
+          });
         }
         const download = await downloadPromise;
         const suggestedFilename = download.suggestedFilename();
@@ -322,12 +400,19 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         console.log(`    ✓ Downloaded: ${suggestedFilename} to ${filePath}`);
       }
       break;
+    }
 
     case 'datePickerGroup':
       if (action.dateComponents) {
         const dateOffset = action.dateOffset || 0;
-        const targetDate = new Date();
-        targetDate.setDate(targetDate.getDate() + dateOffset);
+        const targetDate =
+          replay?.params !== undefined && replay.datePickerGroupOrdinal !== undefined
+            ? resolveDateForDatePickerGroup(replay.datePickerGroupOrdinal, action.dateOffset, replay.params)
+            : (() => {
+                const d = new Date();
+                d.setDate(d.getDate() + dateOffset);
+                return d;
+              })();
         const year = targetDate.getFullYear().toString();
         const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
         const day = targetDate.getDate().toString().padStart(2, '0');
@@ -336,14 +421,15 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         // Execute year
         if (action.dateComponents.year) {
           const comp = action.dateComponents.year;
+          const ySel = normalizeSelectorForPlaywright(comp.selector);
           if (comp.elementType === 'select') {
-            await page.locator(comp.selector).selectOption(year);
+            await page.locator(ySel).selectOption(year);
           } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(comp.selector).click();
+            await page.locator(ySel).click();
             await page.waitForTimeout(500);
-            await page.locator(comp.dropdownSelector).locator(`text="${year}"`).first().click();
+            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${year}"`).first().click();
           } else if (comp.elementType === 'input') {
-            await page.locator(comp.selector).fill(year);
+            await page.locator(ySel).fill(year);
           }
           console.log(`    ✓ Selected year: ${year}`);
         }
@@ -351,14 +437,15 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         // Execute month
         if (action.dateComponents.month) {
           const comp = action.dateComponents.month;
+          const mSel = normalizeSelectorForPlaywright(comp.selector);
           if (comp.elementType === 'select') {
-            await page.locator(comp.selector).selectOption(month);
+            await page.locator(mSel).selectOption(month);
           } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(comp.selector).click();
+            await page.locator(mSel).click();
             await page.waitForTimeout(500);
-            await page.locator(comp.dropdownSelector).locator(`text="${month}"`).first().click();
+            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${month}"`).first().click();
           } else if (comp.elementType === 'input') {
-            await page.locator(comp.selector).fill(month);
+            await page.locator(mSel).fill(month);
           }
           console.log(`    ✓ Selected month: ${month}`);
         }
@@ -366,14 +453,15 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         // Execute day
         if (action.dateComponents.day) {
           const comp = action.dateComponents.day;
+          const dSel = normalizeSelectorForPlaywright(comp.selector);
           if (comp.elementType === 'select') {
-            await page.locator(comp.selector).selectOption(day);
+            await page.locator(dSel).selectOption(day);
           } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(comp.selector).click();
+            await page.locator(dSel).click();
             await page.waitForTimeout(500);
-            await page.locator(comp.dropdownSelector).locator(`text="${day}"`).first().click();
+            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${day}"`).first().click();
           } else if (comp.elementType === 'input') {
-            await page.locator(comp.selector).fill(day);
+            await page.locator(dSel).fill(day);
           }
           console.log(`    ✓ Selected day: ${day}`);
         }
@@ -425,7 +513,7 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
 
     case 'clickUntilGone':
       {
-        const cugSelector = action.xpath || action.selector!;
+        const cugSelector = normalizeSelectorForPlaywright(action.xpath || action.selector!);
         const maxIter = action.maxIterations || 10;
         const waitBetween = action.waitBetweenClicks || 500;
         console.log(`    🔄 Starting Click Until Gone: ${cugSelector}`);
@@ -464,6 +552,10 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
 
     case 'print':
       console.log(`    ✓ Print action (requires OS automation)`);
+      break;
+
+    default:
+      console.warn(`    ⚠️ Unsupported action type in replay: ${(action as RecordedAction).type}`);
       break;
   }
 
@@ -549,11 +641,216 @@ function normalizeUrl(url: string): string {
   return url;
 }
 
+
+/**
+ * Replay a saved spec by executing RECORDED_ACTIONS in-process so optional date
+ * parameters can override datePickerGroup steps.
+ */
+async function runBrowserRecordingActionReplay(
+  testFile: string,
+  replayParams: BrowserRecordingReplayParams,
+  event: { sender: { send: (channel: string, payload?: any) => void } }
+): Promise<{ success: boolean; error?: string; message?: string }> {
+  const { chromium } = require('playwright-core');
+  let resolvedTestFile: string;
+  try {
+    resolvedTestFile = resolveBrowserRecordingTestFileInput(testFile);
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) };
+  }
+  const parsed = parseRecordedActionsFromSpecFile(resolvedTestFile);
+  if (!parsed.ok) {
+    return { success: false, error: parsed.error };
+  }
+  const actions = parsed.actions as unknown as RecordedAction[];
+  const currentScriptName = path.basename(resolvedTestFile, '.spec.js');
+
+  event.sender.send('playwright-test-info', {
+    message: 'Starting recording replay with action engine (date overrides when set)...',
+    testFile: resolvedTestFile,
+  });
+
+  const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser', currentScriptName);
+  if (!fs.existsSync(downloadsPath)) {
+    fs.mkdirSync(downloadsPath, { recursive: true });
+  }
+
+  let profilesDir: string;
+  try {
+    const userData = app.getPath('userData');
+    if (!userData || userData === '/' || userData.length < 3) {
+      throw new Error('Invalid userData path');
+    }
+    profilesDir = path.join(userData, 'chrome-profiles');
+  } catch {
+    profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
+  }
+  if (!fs.existsSync(profilesDir)) {
+    fs.mkdirSync(profilesDir, { recursive: true });
+  }
+  const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-replay-actions-'));
+
+  const waitMultiplier = 1.0;
+  const maxDelay = 3000;
+
+  const context = await chromium.launchPersistentContext(profileDir, {
+    headless: false,
+    channel: 'chrome',
+    viewport: null,
+    permissions: ['clipboard-read', 'clipboard-write'],
+    acceptDownloads: true,
+    downloadsPath: downloadsPath,
+    args: [
+      '--no-default-browser-check',
+      '--disable-blink-features=AutomationControlled',
+      '--no-first-run',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--allow-running-insecure-content',
+      '--disable-features=PrivateNetworkAccessSendPreflights',
+      '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+    ],
+  });
+
+  let page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
+  page.on('dialog', async (dialog: any) => {
+    console.log(`    🔔 Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+    await dialog.accept();
+  });
+
+  const pageStack: Page[] = [];
+  let datePickerOrdinal = 0;
+  const learnedStrategies: Record<number, LocatorStrategyKind> = {};
+
+  const downloadTriggerIndices = new Set<number>();
+  for (let di = 0; di < actions.length; di++) {
+    if (actions[di].type === 'download' && actions[di].selector === 'download-wait') {
+      for (let j = di - 1; j >= 0; j--) {
+        if (actions[j].type === 'click') {
+          downloadTriggerIndices.add(j);
+          break;
+        }
+      }
+    }
+  }
+  const downloadReplay: DownloadReplayState = {};
+
+  try {
+    console.log('🎬 Starting action-based replay with', actions.length, 'steps');
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i];
+      if (i > 0) {
+        const waitTime =
+          (action.timestamp ?? 0) - (actions[i - 1].timestamp ?? 0);
+        const adjustedWait = Math.min(Math.round(waitTime * waitMultiplier), maxDelay);
+        if (adjustedWait > 0) {
+          await page.waitForTimeout(adjustedWait);
+        }
+      }
+
+      const replayCtx: ExecuteActionReplayContext = {
+        recordLocatorStrategy: (actionIndex, strategy) => {
+          learnedStrategies[actionIndex] = strategy;
+        },
+        downloadTriggerIndices,
+        downloadReplay,
+      };
+      if (action.type === 'datePickerGroup') {
+        replayCtx.params = replayParams;
+        replayCtx.datePickerGroupOrdinal = datePickerOrdinal;
+        datePickerOrdinal++;
+      }
+
+      page = await executeAction(page, context, action, i, actions, pageStack, currentScriptName, replayCtx);
+    }
+
+    if (Object.keys(learnedStrategies).length > 0) {
+      const persist = updateRecordedActionsInSpecFile(resolvedTestFile, (arr) => {
+        for (const [k, strat] of Object.entries(learnedStrategies)) {
+          const ix = parseInt(k, 10);
+          if (arr[ix]) (arr[ix] as { preferredLocatorStrategy?: LocatorStrategyKind }).preferredLocatorStrategy = strat;
+        }
+      });
+      if (persist.ok) {
+        console.log('📝 Updated preferredLocatorStrategy in spec file for', Object.keys(learnedStrategies).length, 'action(s)');
+      } else {
+        console.warn('Could not persist locator strategies:', persist.error);
+      }
+    }
+
+    console.log('✅ Action-based replay completed');
+
+    event.sender.send('playwright-test-completed', {
+      success: true,
+      testFile: resolvedTestFile,
+      exitCode: 0,
+    });
+
+    return { success: true, message: 'Recording replay completed (action mode)' };
+  } catch (error: any) {
+    console.error('❌ Action replay failed:', error);
+    event.sender.send('playwright-test-completed', {
+      success: false,
+      testFile: resolvedTestFile,
+      exitCode: 1,
+      error: error?.message || 'Recording replay failed',
+      stack: error?.stack,
+    });
+    return { success: false, error: error?.message || 'Recording replay failed' };
+  } finally {
+    await context.close();
+    try {
+      fs.rmSync(profileDir, { recursive: true, force: true });
+    } catch (e) {
+      console.warn('Failed to clean up profile directory:', e);
+    }
+  }
+}
+
+/** No renderer when replay is triggered from MCP / automation */
+const noopAutomationReplayEvent = {
+  sender: {
+    send: (_channel: string, _payload?: any) => {
+      /* no-op */
+    },
+  },
+};
+
+/**
+ * Run action-based browser recording replay (same as IPC with replayParams).
+ * For MCP and other callers without an IpcMain event target.
+ */
+export async function runBrowserRecordingReplayForAutomation(
+  testFile: string,
+  replayParams: BrowserRecordingReplayParams
+): Promise<{ success: boolean; error?: string; message?: string }> {
+  return runBrowserRecordingActionReplay(testFile, replayParams, noopAutomationReplayEvent);
+}
+
+
 /**
  * Register Chrome browser automation IPC handlers
  */
 export function registerChromeHandlers(): void {
   console.log('🌐 Registering Chrome browser automation IPC handlers...');
+
+  ipcMain.handle('get-browser-recording-replay-options', async (_event, { testFile }: { testFile: string }) => {
+    try {
+      if (!testFile || !fs.existsSync(testFile)) {
+        return { ok: false, error: 'Test file not found', datePickerGroupCount: 0, ui: 'none' as const };
+      }
+      const parsed = parseRecordedActionsFromSpecFile(testFile);
+      if (!parsed.ok) {
+        return { ok: false, error: parsed.error, datePickerGroupCount: 0, ui: 'none' as const };
+      }
+      const opts = getReplayUiOptionsFromActions(parsed.actions);
+      return { ok: true, datePickerGroupCount: opts.datePickerGroupCount, ui: opts.ui };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e), datePickerGroupCount: 0, ui: 'none' as const };
+    }
+  });
 
   // Launch Chrome with a specific URL
   ipcMain.handle('launch-chrome-with-url', async (event, { url, proxy, openDevTools, runLighthouse }) => {
@@ -1649,7 +1946,7 @@ test('recorded test', async ({ page }) => {
             }
 
             // Execute action
-            page = await executeAction(page, context, action, i, partialActions, pageStack, activeRecorder.scriptName);
+            page = await executeAction(page, context, action, i, partialActions, pageStack, activeRecorder.scriptName, undefined);
           }
 
           // Browser is now paused at action index
@@ -1989,7 +2286,7 @@ test('recorded test', async ({ page }) => {
   }
 
   // Run saved Playwright test
-  ipcMain.handle('run-playwright-test', async (event, { testFile }) => {
+  ipcMain.handle('run-playwright-test', async (event, { testFile, replayParams }: { testFile: string; replayParams?: BrowserRecordingReplayParams }) => {
     try {
       console.log('🎭 Running Playwright test:', testFile);
       console.log('📁 App packaged:', app.isPackaged);
@@ -2004,6 +2301,14 @@ test('recorded test', async ({ page }) => {
           userFriendly: true
         });
         throw new Error(`Test file not found: ${testFile}`);
+      }
+
+      if (replayParams !== undefined) {
+        console.log('📅 Action replay mode (date parameters object provided)');
+        const ar = await runBrowserRecordingActionReplay(testFile, replayParams, event);
+        return ar.success
+          ? { success: true, message: ar.message || 'Recording replay completed' }
+          : { success: false, error: ar.error };
       }
       
       // In production, run the test directly in the main process
