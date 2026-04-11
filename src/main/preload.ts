@@ -2100,7 +2100,10 @@ const electronHandler = {
     launchBrowserRecorderEnhanced: (params: { url: string; extensionPaths?: string[]; chainId?: string; previousDownload?: string; previousScriptPath?: string }) => ipcRenderer.invoke('launch-browser-recorder-enhanced', params),
     stopBrowserRecorderEnhanced: () => ipcRenderer.invoke('stop-browser-recorder-enhanced'),
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
-    runPlaywrightTest: (testFile: string) => ipcRenderer.invoke('run-playwright-test', { testFile }),
+    getBrowserRecordingReplayOptions: (testFile: string) =>
+      ipcRenderer.invoke('get-browser-recording-replay-options', { testFile }),
+    runPlaywrightTest: (testFile: string, replayParams?: { dateRange?: { start?: string; end?: string }; datePickersByIndex?: (string | undefined)[] }) =>
+      ipcRenderer.invoke('run-playwright-test', { testFile, replayParams }),
     runChain: (chainId: string) => ipcRenderer.invoke('run-chain', { chainId }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
     renamePlaywrightTest: (testPath: string, newName: string) => ipcRenderer.invoke('rename-playwright-test', { testPath, newName }),

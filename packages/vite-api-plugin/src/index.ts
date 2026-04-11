@@ -245,6 +245,53 @@ export function viteApiPlugin(options: ViteApiPluginOptions = {}): Plugin {
           return;
         }
 
+        // Browser Recording MCP proxy (same body shape as user-data: { tool, arguments })
+        if (url.includes('__browser_recording_proxy')) {
+          log(`Proxying browser-recording request: ${url}`);
+
+          let body = '';
+          req.on('data', chunk => {
+            body += chunk.toString();
+          });
+          req.on('end', async () => {
+            try {
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+              };
+
+              const projectPath = process.cwd();
+              const envVars = readEnvLocal(projectPath);
+              const actualApiKey = envVars.apiKey || egdeskApiKey;
+              const actualApiUrl = envVars.apiUrl || egdeskUrl;
+
+              if (actualApiKey) {
+                headers['X-Api-Key'] = actualApiKey;
+              }
+
+              const response = await fetch(`${actualApiUrl}/browser-recording/tools/call`, {
+                method: 'POST',
+                headers,
+                body
+              });
+
+              const result = await response.json();
+
+              res.statusCode = response.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(result));
+            } catch (error) {
+              console.error('[vite-api-plugin] Browser recording proxy error:', error);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                error: 'Proxy error',
+                message: error instanceof Error ? error.message : String(error)
+              }));
+            }
+          });
+          return;
+        }
+
         // Check if this is an API request
         const apiPath = routeMatcher(url);
 

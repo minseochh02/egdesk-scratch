@@ -52,14 +52,26 @@ export async function discoverTables(
       })
     });
 
-    if (!listResponse.ok) {
-      throw new Error(`Failed to list tables: ${listResponse.statusText}`);
+    const listResult = await listResponse.json().catch(() => null);
+
+    if (listResult && typeof listResult === 'object' && listResult.success === false) {
+      throw new Error(listResult.error || 'Failed to list tables');
     }
 
-    const listResult = await listResponse.json();
+    if (!listResponse.ok) {
+      const fromBody =
+        listResult && typeof listResult === 'object' && typeof listResult.error === 'string'
+          ? listResult.error
+          : '';
+      throw new Error(fromBody || `Failed to list tables: ${listResponse.status} ${listResponse.statusText}`);
+    }
 
-    if (!listResult.success) {
-      throw new Error(listResult.error || 'Failed to list tables');
+    if (!listResult || !listResult.success) {
+      throw new Error(
+        listResult && typeof listResult === 'object' && listResult.error
+          ? String(listResult.error)
+          : 'Failed to list tables'
+      );
     }
 
     // Parse MCP response
@@ -235,6 +247,46 @@ export function generateHelperFile(projectPath: string): void {
  */
 
 /**
+ * Parse EGDesk MCP \`/tools/call\` JSON so \`error\` is shown even when HTTP status is 500.
+ */
+async function parseEgdeskMcpToolResponse(response: Response): Promise<any> {
+  const result = await response.json().catch(() => null);
+
+  if (result && typeof result === 'object' && result.success === false) {
+    const errMsg =
+      typeof result.error === 'string'
+        ? result.error
+        : result.error != null
+          ? String(result.error)
+          : 'Tool call failed';
+    throw new Error(errMsg);
+  }
+
+  if (!response.ok) {
+    let fromBody = '';
+    if (result && typeof result === 'object') {
+      if (typeof (result as { error?: string }).error === 'string') {
+        fromBody = (result as { error: string }).error;
+      } else if (typeof (result as { message?: string }).message === 'string') {
+        fromBody = (result as { message: string }).message;
+      }
+    }
+    throw new Error(fromBody || \`HTTP \${response.status}: \${response.statusText}\`);
+  }
+
+  if (!result || result.success !== true) {
+    throw new Error(
+      result && typeof result === 'object' && typeof (result as { error?: string }).error === 'string'
+        ? (result as { error: string }).error
+        : 'Tool call failed'
+    );
+  }
+
+  const content = result.result?.content?.[0]?.text;
+  return content ? JSON.parse(content) : null;
+}
+
+/**
  * Call EGDesk user-data MCP tool
  *
  * Uses a proxy endpoint to work in both local and tunneled environments.
@@ -256,19 +308,7 @@ export async function callUserDataTool(
     body: JSON.stringify({ tool: toolName, arguments: args })
   });
 
-  if (!response.ok) {
-    throw new Error(\`HTTP \${response.status}: \${response.statusText}\`);
-  }
-
-  const result = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || 'Tool call failed');
-  }
-
-  // Parse MCP response format
-  const content = result.result?.content?.[0]?.text;
-  return content ? JSON.parse(content) : null;
+  return parseEgdeskMcpToolResponse(response);
 }
 
 /**
@@ -423,6 +463,60 @@ export async function renameTable(
     tableName,
     newTableName,
     newDisplayName
+  });
+}
+
+// ==========================================
+// BROWSER RECORDING (saved EGDesk recorder tests)
+// ==========================================
+
+/**
+ * Call Browser Recording MCP tool.
+ *
+ * Uses \`/__browser_recording_proxy\` (see @egdesk/vite-api-plugin) so it works when the app is tunneled.
+ * Enable the \`browser-recording\` MCP service in EGDesk and start the HTTP server first.
+ */
+export async function callBrowserRecordingTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const response = await fetch('/__browser_recording_proxy', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ tool: toolName, arguments: args })
+  });
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+/** List saved *.spec.js files under the EGDesk browser-recorder-tests output folder */
+export async function listBrowserRecordingTests() {
+  return callBrowserRecordingTool('browser_recording_list_saved_tests', {});
+}
+
+/** Inspect a spec for date-picker replay UI (none, single date, or range) */
+export async function getBrowserRecordingReplayOptions(testFile: string) {
+  return callBrowserRecordingTool('browser_recording_get_replay_options', { testFile });
+}
+
+export type BrowserRecordingRunOptions = {
+  startDate?: string;
+  endDate?: string;
+  datePickersByIndex?: string[];
+};
+
+/** Replay a saved recording in Chrome; optional dates use YYYY/MM/DD or YYYY-MM-DD */
+export async function runBrowserRecording(
+  testFile: string,
+  options: BrowserRecordingRunOptions = {}
+) {
+  return callBrowserRecordingTool('browser_recording_run', {
+    testFile,
+    ...options
   });
 }
 `;

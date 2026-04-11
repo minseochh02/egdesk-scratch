@@ -66,12 +66,20 @@ async function discoverTables(egdeskUrl = 'http://localhost:8080', apiKey) {
                 arguments: {}
             })
         });
-        if (!listResponse.ok) {
-            throw new Error(`Failed to list tables: ${listResponse.statusText}`);
-        }
-        const listResult = await listResponse.json();
-        if (!listResult.success) {
+        const listResult = await listResponse.json().catch(() => null);
+        if (listResult && typeof listResult === 'object' && listResult.success === false) {
             throw new Error(listResult.error || 'Failed to list tables');
+        }
+        if (!listResponse.ok) {
+            const fromBody = listResult && typeof listResult === 'object' && typeof listResult.error === 'string'
+                ? listResult.error
+                : '';
+            throw new Error(fromBody || `Failed to list tables: ${listResponse.status} ${listResponse.statusText}`);
+        }
+        if (!listResult || !listResult.success) {
+            throw new Error(listResult && typeof listResult === 'object' && listResult.error
+                ? String(listResult.error)
+                : 'Failed to list tables');
         }
         // Parse MCP response
         const content = listResult.result?.content?.[0]?.text;

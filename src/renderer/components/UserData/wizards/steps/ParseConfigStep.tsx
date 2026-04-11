@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BaseStepProps } from '../types';
 import { useUserData } from '../../../../hooks/useUserData';
 
@@ -22,14 +22,23 @@ export const ParseConfigStep: React.FC<BaseStepProps> = ({
   } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
-  // Fetch preview rows when headerRow or skipBottomRows changes
+  // Add debounce timer ref
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch preview rows when headerRow or skipBottomRows changes (with debouncing)
   useEffect(() => {
     if (!selectedFile) {
       setRowsPreview(null);
       return;
     }
 
-    const fetchPreviewRows = async () => {
+    // Clear any existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer for debounced fetch
+    debounceTimerRef.current = setTimeout(async () => {
       try {
         setLoadingPreview(true);
         const data = await getExcelRowsPreview(selectedFile, {
@@ -44,9 +53,14 @@ export const ParseConfigStep: React.FC<BaseStepProps> = ({
       } finally {
         setLoadingPreview(false);
       }
-    };
+    }, 300); // 300ms debounce delay
 
-    fetchPreviewRows();
+    // Cleanup function to clear timer on unmount
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, [selectedFile, headerRow, skipBottomRows, selectedSheet, getExcelRowsPreview]);
 
   // Calculate which rows will be skipped (if we have parsed data)
