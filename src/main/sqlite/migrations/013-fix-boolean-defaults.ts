@@ -49,8 +49,40 @@ export function migrate013FixBooleanDefaults(db: Database.Database): void {
       // SQLite doesn't support ALTER TABLE for changing defaults
       // We need to recreate the table with the corrected schema
 
-      // Create new table with corrected BOOLEAN defaults
+      // Check if old table has applied_splits column BEFORE starting transaction
+      const oldTableInfo = db.prepare(`PRAGMA table_info(sync_configurations)`).all() as any[];
+      const hasAppliedSplits = oldTableInfo.some((col: any) => col.name === 'applied_splits');
+
+      // Wrap ALL operations in a single transaction to prevent leaving DB in intermediate state
+      const insertQuery = hasAppliedSplits
+        ? `INSERT INTO sync_configurations_new
+           SELECT
+             id, script_folder_path, script_name, folder_name, target_table_id,
+             header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits,
+             COALESCE(file_action, 'archive'), enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
+             last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
+             last_sync_duplicates, last_sync_error, created_at, updated_at
+           FROM sync_configurations`
+        : `INSERT INTO sync_configurations_new (
+             id, script_folder_path, script_name, folder_name, target_table_id,
+             header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits,
+             file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
+             last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
+             last_sync_duplicates, last_sync_error, created_at, updated_at
+           )
+           SELECT
+             id, script_folder_path, script_name, folder_name, target_table_id,
+             header_row, skip_bottom_rows, sheet_index, column_mappings, NULL,
+             COALESCE(file_action, 'archive'), enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
+             last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
+             last_sync_duplicates, last_sync_error, created_at, updated_at
+           FROM sync_configurations`;
+
+      // Execute entire migration as a single transaction
       db.exec(`
+        BEGIN TRANSACTION;
+
+        -- Create new table with corrected BOOLEAN defaults
         CREATE TABLE sync_configurations_new (
           id TEXT PRIMARY KEY,
           script_folder_path TEXT UNIQUE NOT NULL,
@@ -76,65 +108,31 @@ export function migrate013FixBooleanDefaults(db: Database.Database): void {
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           FOREIGN KEY (target_table_id) REFERENCES user_tables(id) ON DELETE CASCADE
-        )
-      `);
+        );
 
-      // Check if old table has applied_splits column
-      const oldTableInfo = db.prepare(`PRAGMA table_info(sync_configurations)`).all() as any[];
-      const hasAppliedSplits = oldTableInfo.some((col: any) => col.name === 'applied_splits');
+        -- Copy data from old table
+        ${insertQuery};
 
-      // Copy data from old table
-      if (hasAppliedSplits) {
-        // Old table has applied_splits, copy all columns with COALESCE for file_action
-        db.exec(`
-          INSERT INTO sync_configurations_new
-          SELECT
-            id, script_folder_path, script_name, folder_name, target_table_id,
-            header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits,
-            COALESCE(file_action, 'archive'), enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
-            last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
-            last_sync_duplicates, last_sync_error, created_at, updated_at
-          FROM sync_configurations
-        `);
-      } else {
-        // Old table doesn't have applied_splits, insert NULL for it and default file_action
-        db.exec(`
-          INSERT INTO sync_configurations_new (
-            id, script_folder_path, script_name, folder_name, target_table_id,
-            header_row, skip_bottom_rows, sheet_index, column_mappings, applied_splits,
-            file_action, enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
-            last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
-            last_sync_duplicates, last_sync_error, created_at, updated_at
-          )
-          SELECT
-            id, script_folder_path, script_name, folder_name, target_table_id,
-            header_row, skip_bottom_rows, sheet_index, column_mappings, NULL,
-            COALESCE(file_action, 'archive'), enabled, auto_sync_enabled, unique_key_columns, duplicate_action,
-            last_sync_at, last_sync_status, last_sync_rows_imported, last_sync_rows_skipped,
-            last_sync_duplicates, last_sync_error, created_at, updated_at
-          FROM sync_configurations
-        `);
-      }
+        -- Drop old table
+        DROP TABLE sync_configurations;
 
-      // Drop old table
-      db.exec(`DROP TABLE sync_configurations`);
+        -- Rename new table
+        ALTER TABLE sync_configurations_new RENAME TO sync_configurations;
 
-      // Rename new table
-      db.exec(`ALTER TABLE sync_configurations_new RENAME TO sync_configurations`);
+        -- Recreate indexes
+        CREATE INDEX IF NOT EXISTS idx_sync_configs_script_folder ON sync_configurations(script_folder_path);
+        CREATE INDEX IF NOT EXISTS idx_sync_configs_table_id ON sync_configurations(target_table_id);
+        CREATE INDEX IF NOT EXISTS idx_sync_configs_enabled ON sync_configurations(enabled);
+        CREATE INDEX IF NOT EXISTS idx_sync_configs_auto_sync ON sync_configurations(auto_sync_enabled);
 
-      // Recreate indexes
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_configs_script_folder ON sync_configurations(script_folder_path)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_configs_table_id ON sync_configurations(target_table_id)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_configs_enabled ON sync_configurations(enabled)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_configs_auto_sync ON sync_configurations(auto_sync_enabled)`);
-
-      // Recreate trigger
-      db.exec(`
+        -- Recreate trigger
         CREATE TRIGGER IF NOT EXISTS update_sync_configs_timestamp
         AFTER UPDATE ON sync_configurations
         BEGIN
           UPDATE sync_configurations SET updated_at = datetime('now') WHERE id = NEW.id;
-        END
+        END;
+
+        COMMIT;
       `);
 
       migrationSuccess = true;

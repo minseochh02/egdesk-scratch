@@ -216,7 +216,8 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     // and prevents data loss on app shutdown with uncommitted changes
     userDataDb.pragma('journal_mode=DELETE');
     userDataDb.pragma('synchronous=FULL');
-    console.log('✅ User Data DB configured with DELETE journal mode and synchronous=FULL for immediate durability');
+    userDataDb.pragma('foreign_keys=ON');
+    console.log('✅ User Data DB configured with DELETE journal mode, synchronous=FULL, and foreign_keys=ON for immediate durability and referential integrity');
 
     // Initialize database schemas FIRST
     initializeConversationsDatabaseSchema(conversationsDb);
