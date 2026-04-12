@@ -32,7 +32,17 @@ import { FileStorageManager } from '../user-data/file-storage-manager';
 export class UserDataDbManager {
   private fileStorageManager: FileStorageManager | null = null;
 
-  constructor(public database: Database.Database) {}
+  constructor(public database: Database.Database) {
+    // Safety check: rollback any stuck transactions from failed migrations or operations
+    if (this.database.inTransaction) {
+      console.warn('⚠️ [UserDataDbManager] Database is in transaction state at construction - rolling back');
+      try {
+        this.database.exec('ROLLBACK');
+      } catch (e) {
+        console.error('❌ [UserDataDbManager] Failed to rollback stuck transaction:', e);
+      }
+    }
+  }
 
   /**
    * Get or create file storage manager instance
@@ -498,10 +508,15 @@ export class UserDataDbManager {
 
       // Use explicit BEGIN/COMMIT for proper fsync
       const wasInTransaction = this.database.inTransaction;
+      console.log(`🔍 [deleteTable] tableId=${tableId}, wasInTransaction=${wasInTransaction}, tableName=${table?.tableName}`);
 
       try {
         if (!wasInTransaction) {
+          console.log('🔍 [deleteTable] Starting new transaction with BEGIN IMMEDIATE');
           this.database.exec('BEGIN IMMEDIATE');
+          console.log('🔍 [deleteTable] inTransaction after BEGIN:', this.database.inTransaction);
+        } else {
+          console.log('🔍 [deleteTable] Already in transaction, skipping BEGIN');
         }
 
         // If we got the table, drop it
@@ -522,8 +537,12 @@ export class UserDataDbManager {
 
         // EXPLICIT COMMIT
         if (!wasInTransaction) {
+          console.log('🔍 [deleteTable] About to COMMIT, inTransaction before:', this.database.inTransaction);
           this.database.exec('COMMIT');
-          console.log('✅ [deleteTable] Explicit COMMIT executed, data flushed to disk');
+          console.log('✅ [deleteTable] Explicit COMMIT executed, inTransaction after:', this.database.inTransaction);
+          console.log('✅ [deleteTable] Data should be flushed to disk');
+        } else {
+          console.log('⚠️ [deleteTable] Skipping COMMIT because wasInTransaction=true');
         }
 
       } catch (txError) {
