@@ -144,10 +144,9 @@ const BANK_EXCEL_PARSE_SCHEMA = {
     ],
   },
   ibk: {
-    datetimeStyle: null,
+    datetimeStyle: 'hanaSpace',
     columns: [
-      { keys: ['거래일시'], role: 'date' },
-      { keys: ['거래시간'], role: 'time' },
+      { keys: ['거래일시'], role: '_dt' },
       { keys: ['거래내용'], role: 'description' },
       { keys: ['입금'], role: 'deposit' },
       { keys: ['출금'], role: 'withdrawal' },
