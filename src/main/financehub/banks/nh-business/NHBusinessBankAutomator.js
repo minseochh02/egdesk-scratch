@@ -1228,6 +1228,8 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(3000);
       }
 
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
       const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
       try {
         await this.page.locator('a:has-text("엑셀저장")').first().click({ timeout: 5000 });
@@ -1244,6 +1246,10 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
         this.page.waitForTimeout(5000).then(() => ({ type: 'timeout' })),
       ]);
 
+      let download = null;
+      let fallbackFile = null;
+      let suggested = 'nh-export.xls';
+
       if (raced.type === 'timeout') {
         const noDataMsg = await this.page.evaluate(() => {
           const body = document.body.textContent || '';
@@ -1258,20 +1264,34 @@ class NHBusinessBankAutomator extends BaseBankAutomator {
           try {
             await this.page.locator('button:has-text("확인"), a:has-text("확인")').first().click({ timeout: 3000 });
           } catch (e) {}
+          return [];
         } else {
-          this.warn('NH biz: Excel download timed out');
+          this.warn('NH biz: Excel download timed out via event, checking filesystem...');
+          fallbackFile = this.findRecentDownloadFile(
+            [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+            exportStartedAt
+          );
+          if (!fallbackFile) {
+            this.warn('NH biz: Fallback scan also found nothing.');
+            return [];
+          }
+          suggested = path.basename(fallbackFile.path);
         }
-        return [];
+      } else {
+        download = raced.data;
+        suggested = download.suggestedFilename() || suggested;
       }
 
-      const download = raced.data;
-      const suggested = download.suggestedFilename() || 'nh-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeNhFilenamePart(accountNumber);
       const finalName = `NH법인_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
-      await download.saveAs(finalPath);
+
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) {
+        throw new Error('Failed to save NH export file via all methods');
+      }
 
       let extractedData;
       try {

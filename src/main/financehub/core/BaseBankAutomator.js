@@ -998,6 +998,80 @@ class BaseBankAutomator {
     }
   }
 
+  /**
+   * Scans directories for recently created Excel/CSV files (fallback when download event fails)
+   * @param {string[]} searchDirs Array of directory paths to scan
+   * @param {number} sinceMs Minimum mtime in milliseconds
+   * @returns {{path: string, mtimeMs: number, size: number}|null}
+   */
+  findRecentDownloadFile(searchDirs, sinceMs) {
+    const hits = [];
+    for (const dir of searchDirs) {
+      try {
+        if (!fs.existsSync(dir)) continue;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isFile()) continue;
+          // Accept typical excel/csv extensions OR files without extension (Playwright temp downloads)
+          if (ent.name.includes('.') && !/\.(xls|xlsx|csv|txt)$/i.test(ent.name)) continue;
+          
+          const p = path.join(dir, ent.name);
+          const st = fs.statSync(p);
+          if (st.mtimeMs >= sinceMs - 2000) {
+            hits.push({ path: p, mtimeMs: st.mtimeMs, size: st.size });
+          }
+        }
+      } catch (e) {
+        this.warn(`Fallback scan failed for ${dir}: ${e.message}`);
+      }
+    }
+    hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return hits[0] || null;
+  }
+
+  /**
+   * Saves a download object or a fallback file to the target path safely.
+   * Uses copyFileSync as a last resort to bypass file lock/permission errors.
+   * @param {Object|null} download Playwright download object
+   * @param {string|null} fallbackPath Path to an already existing file
+   * @param {string} targetPath Final destination path
+   * @returns {Promise<boolean>} Success or failure
+   */
+  async saveDownloadSafely(download, fallbackPath, targetPath) {
+    if (download) {
+      try {
+        await download.saveAs(targetPath);
+        this.log(`Download saved via saveAs to: ${targetPath}`);
+        return true;
+      } catch (e) {
+        this.warn(`download.saveAs failed, attempting direct copy: ${e.message}`);
+        try {
+          const tempPath = await download.path();
+          if (tempPath && fs.existsSync(tempPath)) {
+            fs.copyFileSync(tempPath, targetPath);
+            this.log(`Download saved via copyFileSync from temp: ${targetPath}`);
+            return true;
+          }
+        } catch (copyErr) {
+          this.error(`Failed to copy from temp path: ${copyErr.message}`);
+        }
+      }
+    }
+    
+    if (fallbackPath && fs.existsSync(fallbackPath)) {
+      if (fallbackPath === targetPath) return true;
+      try {
+        fs.copyFileSync(fallbackPath, targetPath);
+        this.log(`Download saved via copyFileSync from fallback: ${targetPath}`);
+        return true;
+      } catch (e) {
+        this.error(`Failed to copy from fallback path: ${e.message}`);
+      }
+    }
+    
+    return false;
+  }
+
   async disconnectArduino() {
     if (this.arduino) {
       try {

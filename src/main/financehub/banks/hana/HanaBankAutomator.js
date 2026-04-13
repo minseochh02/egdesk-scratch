@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
@@ -19,6 +20,7 @@ class HanaBankAutomator extends BaseBankAutomator {
     };
     super(config);
     this.outputDir = options.outputDir || this.getSafeOutputDir('hana');
+    // 앱 전용 출력 폴더(AppData)로 경로 복구
     this.downloadDir = path.join(this.outputDir, 'hana-biz-downloads');
     this.ensureOutputDirectory(this.downloadDir);
     this.arduinoPort = options.arduinoPort || null;
@@ -106,10 +108,15 @@ class HanaBankAutomator extends BaseBankAutomator {
           '--no-default-browser-check',
           '--disable-blink-features=AutomationControlled',
           '--no-first-run',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--allow-running-insecure-content',
+          '--disable-features=PrivateNetworkAccessSendPreflights',
+          '--disable-features=PrivateNetworkAccessRespectPreflightResults',
         ],
         viewport: null,
         acceptDownloads: true,
-        downloadsPath: corpDownloadsPath,
+        downloadsPath: this.downloadDir, 
       });
       this.browser = browser;
       this.context = context;
@@ -384,7 +391,7 @@ class HanaBankAutomator extends BaseBankAutomator {
     }
 
     const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const acctSelect = scope.locator(`[id="${idEsc}"]`);
+    const acctSelect = scope.locator(`select[id="${idEsc}"]`);
     let rows = await acctSelect
       .evaluate((sel) =>
         Array.from(sel.options)
@@ -504,7 +511,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       const { scope, acctSelectId } = await this._findHanaAccountSelectScope();
       if (acctSelectId && scope) {
         const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        const acctSelect = scope.locator(`[id="${idEsc}"]`);
+        const acctSelect = scope.locator(`select[id="${idEsc}"]`);
         const picked = await scope.evaluate(
           ({ selectId, acc }) => {
             const el = document.getElementById(selectId);
@@ -603,65 +610,133 @@ class HanaBankAutomator extends BaseBankAutomator {
         this.log(`Hana: retry search complete with startDate=${yStr}`);
       }
 
+      // 조회 버튼 클릭 후 바로 '내역 없음' 팝업이 뜨는지 선제적 체크
+      const earlyNoData = await frame.evaluate(() => {
+        const body = document.body.textContent || '';
+        return (
+          body.includes('조회된 내역이 없습니다') ||
+          body.includes('조회 내역이 없습니다') ||
+          body.includes('거래내역이 존재하지 않습니다') ||
+          body.includes('조회된 결과가 없습니다')
+        );
+      });
+
+      if (earlyNoData) {
+        this.log('Hana: detected "no data" popup immediately after search');
+        try {
+          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch (e) {}
+        return [];
+      }
+
       await this.focusPlaywrightPage();
       this.log('Hana: focused page, waiting for next download event');
       const exportStartedAt = Date.now();
-      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
+      
+      // context 대신 page 이벤트를 기다리는 hana.spec.js 방식 시도
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 }).catch(() => null);
+
+      // 다운로드 버튼 클릭
       try {
         await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
-        this.log('Hana: excel export click via text("전체엑셀다운로드")');
+        this.log('Hana: clicked export button');
       } catch (e) {
         try {
           await frame.locator('button:has-text("엑셀다운로드")').click({ timeout: 5000 });
-          this.log('Hana: excel export click via text("엑셀다운로드")');
         } catch (e2) {
           await frame.locator('button:has-text("엑셀")').first().click({ timeout: 5000 });
-          this.log('Hana: excel export click via text("엑셀")');
         }
       }
 
-      let download;
+      let download = null;
       let fallbackFile = null;
-      try {
-        download = await downloadPromise;
-        this.log(`Hana: download event received (${download.suggestedFilename() || 'no-suggested-filename'})`);
-      } catch (e) {
-        this.warn('Hana: download event timeout/failure:', e?.message || e);
+
+      // 5초 동안 이벤트가 발생하는지 레이싱
+      const result = await Promise.race([
+        downloadPromise,
+        this.page.waitForTimeout(5000).then(() => 'timeout')
+      ]);
+
+      if (result === 'timeout' || !result) {
+        this.log('Hana: download event not received within 5s, checking for no-data popup...');
         const noDataMsg = await frame.evaluate(() => {
           const body = document.body.textContent || '';
           return (
+            body.includes('조회된 내역이 없습니다') ||
+            body.includes('조회 내역이 없습니다') ||
             body.includes('저장할 데이터가 없습니다') ||
             body.includes('조회결과가 없습니다') ||
             body.includes('거래내역이 없습니다') ||
             body.includes('조회된 데이터가 없습니다')
           );
         });
+
         if (noDataMsg) {
-          this.log('Hana: no data to export');
-          try {
-            await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
-          } catch (e2) {}
-        } else {
-          fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
-          if (!fallbackFile) {
-            this.warn('Hana: Excel download failed:', e?.message || e);
-            return [];
-          }
-          this.warn(`Hana: using filesystem fallback file (${fallbackFile.path}, ${fallbackFile.size} bytes)`);
+          this.log('Hana: confirmed no data, skipping.');
+          try { await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 }); } catch (e) {}
+          return [];
         }
+
+        this.log('Hana: no-data popup not found, checking filesystem for GUID files...');
+        // 이벤트는 안 떴지만 파일은 이미 생성되었을 수 있으므로 즉시 스캔
+        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+        
+        if (!fallbackFile) {
+          this.log('Hana: still no file, waiting a bit more for download event...');
+          download = await downloadPromise; // 최종 대기
+        }
+      } else {
+        download = result;
       }
+
+      if (!download && !fallbackFile) {
+        // 마지막 수단으로 다시 한번 파일 시스템 체크
+        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+      }
+
+      if (download) {
+        this.log(`Hana: download event received (${download.suggestedFilename()})`);
+      } else if (fallbackFile) {
+        this.log(`Hana: found fallback file on disk (${path.basename(fallbackFile.path)})`);
+      } else {
+        this.error('Hana: failed to catch download via event or filesystem');
+        return [];
+      }
+
       const suggested = (download && download.suggestedFilename()) || (fallbackFile && path.basename(fallbackFile.path)) || 'hana-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeHanaFilenamePart(accountNumber);
-      const finalName = `하나기업_${safeAcc}_${ts}${ext}`;
+      
+      // 한글 파일명 오류 방지를 위해 영문 접두사 사용
+      const finalName = `HanaBank_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
+      
       if (download) {
-        await download.saveAs(finalPath);
+        try {
+          const tempPath = await download.path();
+          if (tempPath && fs.existsSync(tempPath)) {
+            this.log(`Hana: Moving download from ${tempPath} to ${finalPath}`);
+            fs.copyFileSync(tempPath, finalPath);
+            // 복사 성공 후 임시 파일 삭제 시도 (실패해도 무방)
+            try { fs.unlinkSync(tempPath); } catch (e) {}
+          } else {
+            // tempPath가 없거나 접근 불가하면 saveAs 시도
+            await download.saveAs(finalPath);
+          }
+        } catch (saveErr) {
+          this.warn(`Hana: Primary save failed (${saveErr.message}), trying fallback saveAs...`);
+          await download.saveAs(finalPath).catch(e => this.error('Hana: saveAs also failed:', e.message));
+        }
       } else if (fallbackFile && fallbackFile.path !== finalPath) {
         fs.copyFileSync(fallbackFile.path, finalPath);
       }
-      this.log(`Hana: download saved to ${finalPath}`);
+      
+      if (fs.existsSync(finalPath)) {
+        this.log(`Hana: download successfully saved to ${finalPath}`);
+      } else {
+        this.error(`Hana: failed to save file at ${finalPath}`);
+      }
 
       let extractedData;
       try {

@@ -401,9 +401,15 @@ function parseWithBankSchema(rows, headerRowIndex, schema, ctx) {
     const row = rows[i];
     if (!row || row.length === 0) continue;
     const tx = parseTransactionRowWithSchema(row, headerNormToCol, schema);
+    
+    // 강제 날짜 정규화 및 유효성 검사
+    if (tx.date) tx.date = normalizeDateDigits(tx.date);
+    
     const hasAmount = (tx.deposit || tx.withdrawal) > 0 || tx.balance > 0;
-    if (!tx.date && !hasAmount) continue;
+    // 날짜가 없으면 정상적인 거래로 보지 않음 (중복 방지 핵심)
+    if (!tx.date) continue; 
     if (!hasAmount && !tx.description) continue;
+    
     transactions.push(tx);
   }
   if (ctx && ctx.log) {

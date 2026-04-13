@@ -425,30 +425,6 @@ class WooriBankAutomator extends BaseBankAutomator {
     return t.slice(0, 80);
   }
 
-  _findRecentWooriExportFileSince(sinceMs) {
-    const dirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
-    const hits = [];
-    for (const dir of dirs) {
-      try {
-        if (!fs.existsSync(dir)) continue;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const ent of entries) {
-          if (!ent.isFile()) continue;
-          if (!/\.(xls|xlsx|csv)$/i.test(ent.name)) continue;
-          const p = path.join(dir, ent.name);
-          const st = fs.statSync(p);
-          if (st.mtimeMs >= sinceMs - 2000) {
-            hits.push({ path: p, mtimeMs: st.mtimeMs, size: st.size });
-          }
-        }
-      } catch (e) {
-        this.warn('Woori: fallback file scan failed for', dir, e?.message || e);
-      }
-    }
-    hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return hits[0] || null;
-  }
-
   async _selectWooriAccountByIndex(index) {
     await this.page.locator('[id="noAccount"]').click({ timeout: 5000 });
     await this.page.waitForTimeout(800);
@@ -577,14 +553,12 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
 
       let download = null;
-      let suggested = 'woori-export.xls';
       let fallbackFile = null;
       try {
         download = await downloadPromise;
-        suggested = download.suggestedFilename() || suggested;
-        this.log(`Woori: download event received (${suggested || 'no-suggested-filename'})`);
+        this.log(`Woori: download event received (${download.suggestedFilename()})`);
       } catch (e) {
-        this.warn('Woori: download event timeout/failure:', e?.message || e);
+        this.warn('Woori: download event timeout/failure, searching filesystem fallback...');
         const noDataMsg = await this.page.evaluate(() => {
           const body = document.body?.textContent || '';
           return (
@@ -595,41 +569,48 @@ class WooriBankAutomator extends BaseBankAutomator {
           );
         });
         if (noDataMsg) {
-          this.log('Woori: no data to export');
+          this.log('Woori: no data to export determined by UI message');
           return [];
         }
-        fallbackFile = this._findRecentWooriExportFileSince(exportStartedAt);
-        if (!fallbackFile) throw e;
-        suggested = path.basename(fallbackFile.path) || suggested;
-        this.warn(`Woori: using filesystem fallback file (${fallbackFile.path}, ${fallbackFile.size} bytes)`);
+        
+        // Scan both corporate downloads and Woori specific downloads
+        const scanDirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+        fallbackFile = this.findRecentDownloadFile(exportStartedAt, scanDirs);
+        if (!fallbackFile) throw new Error('Failed to capture download or detect fallback file');
       }
-      const ext = path.extname(suggested) || '.xls';
-      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const safeAcc = this._sanitizeWooriFilenamePart(accountNumber);
-      const finalName = `우리기업_${safeAcc}_${ts}${ext}`;
+
+      const finalName = `우리기업_${this._sanitizeWooriFilenamePart(accountNumber)}_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.xls`;
       const finalPath = path.join(this.downloadDir, finalName);
-      if (download) {
-        await download.saveAs(finalPath);
-      } else if (fallbackFile && fallbackFile.path !== finalPath) {
-        fs.copyFileSync(fallbackFile.path, finalPath);
-      }
+      
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) throw new Error('Failed to save Woori export via all methods');
       this.log(`Woori: download saved to ${finalPath}`);
 
+      // Close download popup safely - Using the proven IBK pattern
       try {
         await this.page.evaluate(() => {
-          const modal = document.querySelector('div[role="dialog"].pop-modal1.open');
-          if (modal) {
-            const closeBtn = modal.querySelector(
-              'button.btn-close, button[aria-label="닫기"], .btn-pop-close, a.btn-close'
-            );
-            if (closeBtn) closeBtn.click();
-            else {
-              modal.classList.remove('open');
-              modal.style.display = 'none';
-            }
+          const closeSelectors = [
+            'img[src*="gnb_sub_close"]',
+            'img[src*="close"]',
+            '[title*="닫기"]',
+            'button.btn-close',
+            '.btn-pop-close',
+            'a.btn-close',
+            '.pop_close'
+          ].join(', ');
+
+          const closeBtn = document.querySelector(closeSelectors);
+          if (closeBtn) {
+            (closeBtn.closest('a, button') || closeBtn).click();
+          } else {
+            // Last resort: Force hide
+            document.querySelectorAll('div[role="dialog"].open, .pop-modal1.open').forEach(m => {
+              m.style.display = 'none';
+              m.style.visibility = 'hidden';
+            });
           }
         });
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(800);
       } catch (e) {}
 
       let extractedData;

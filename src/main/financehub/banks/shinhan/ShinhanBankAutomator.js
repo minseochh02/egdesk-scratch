@@ -995,6 +995,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       }
       await this.page.waitForTimeout(2000);
 
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
       const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
       try {
         await this.page.locator('input[value="파일저장"]').first().click({ timeout: 5000 });
@@ -1002,15 +1004,33 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         await this.page.locator('[id*="excel_download"][id*="btn_saveFile"]').click({ timeout: 5000 });
       }
 
-      const download = await downloadPromise;
-      const suggested = download.suggestedFilename() || 'shinhan-export.xls';
+      let download = null;
+      let suggested = 'shinhan-export.xls';
+      let fallbackFile = null;
+
+      try {
+        download = await downloadPromise;
+        suggested = download.suggestedFilename() || suggested;
+      } catch (e) {
+        this.warn('Shinhan biz: download event timeout/failure, trying fallback scan:', e.message);
+        fallbackFile = this.findRecentDownloadFile(
+          [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+          exportStartedAt
+        );
+        if (!fallbackFile) throw e;
+        suggested = path.basename(fallbackFile.path);
+      }
+
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeFilenamePart(accountNumber);
       const finalName = `신한기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
 
-      await download.saveAs(finalPath);
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) {
+        throw new Error('Failed to save Shinhan export file via all methods');
+      }
 
       let extractedData;
       try {
