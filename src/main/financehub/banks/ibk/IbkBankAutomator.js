@@ -41,25 +41,52 @@ class IbkBankAutomator extends BaseBankAutomator {
     return this.page.frame({ name: this.config.xpaths.mainFrameName });
   }
 
-  async _closeIbKPopups(frame) {
-    const popupSelectors = [
-      'button:has-text("닫기")',
-      'button:has-text("확인")',
-      'a:has-text("닫기")',
-      '.popup_close',
-      '.btn_close',
-    ];
-    for (const sel of popupSelectors) {
+  async _cleanupIbkPopups() {
+    const runCleanup = async (scope) => {
       try {
-        const btn = frame.locator(sel).first();
-        if (await btn.isVisible({ timeout: 800 }).catch(() => false)) {
-          await btn.click();
-          await this.page.waitForTimeout(800);
-        }
-      } catch (e) {
-        /* ignore */
-      }
-    }
+        await scope.evaluate(() => {
+          const TARGET_IMG = 'gnb_sub_close';
+          const closeSelectors = [
+            `img[src*="${TARGET_IMG}"]`,
+            '[title*="닫기"]',
+            'button[aria-label*="닫기"]',
+            '.btn-pop-close',
+            '.pop_close',
+            '.btn_close'
+          ].join(', ');
+
+          // Find visible targets
+          const targets = Array.from(document.querySelectorAll(closeSelectors))
+            .filter(el => {
+              const style = window.getComputedStyle(el);
+              return style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0;
+            });
+
+          targets.forEach(el => {
+            (el.closest('a, button') || el).click();
+          });
+
+          // Force hide common modal containers as fallback
+          const modals = document.querySelectorAll('div[role="dialog"].open, .pop-modal1.open, .popup_layer, [id*="Layer"][style*="display: block"]');
+          modals.forEach(m => { 
+            m.style.display = 'none'; 
+            m.style.visibility = 'hidden'; 
+            m.classList.remove('open');
+          });
+        });
+      } catch (e) {}
+    };
+
+    try {
+      const mf = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      if (mf) await runCleanup(mf);
+      await runCleanup(this.page);
+      await this.page.waitForTimeout(500);
+    } catch (e) {}
+  }
+
+  async _closeIbKPopups(frame) {
+    await this._cleanupIbkPopups();
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
@@ -520,52 +547,89 @@ class IbkBankAutomator extends BaseBankAutomator {
         await this.page.waitForTimeout(3000);
       }
 
-      const noData = await frame.evaluate(() => {
-        const body = document.body?.textContent || '';
-        return body.includes('저장할 데이터가 없습니다') || body.includes('조회된 데이터가 없습니다');
-      });
-      if (noData) {
-        this.log('IBK: no data to export');
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
+      const downloadPromise = this.waitForNextDownload({ timeout: 60000 });
+      
+      // Step 1: Trigger download sequence
+      try {
+        await frame.locator('span:has-text("저장")').first().click({ timeout: 5000 });
+        await this.page.waitForTimeout(800);
+        await frame.locator('span:has-text("엑셀파일저장")').first().click({ timeout: 5000 });
+        await this.page.waitForTimeout(800);
+        
+        // Handle radio button only if visible; it's often already checked but visually hidden
+        const radio = frame.locator('[id="DownloadExcel"]');
+        if (await radio.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await radio.click({ timeout: 2000 }).catch(() => {});
+        }
+        
+        await this.page.waitForTimeout(400);
+        await frame.locator('[id="DownloadButton"]').click({ timeout: 5000 });
+      } catch (e) {
+        this.warn('IBK: Error during download click sequence, will check for fallback anyway:', e.message);
+      }
+
+      // Step 2: Race download vs "No Data" message vs Timeout (shortened for faster failure/fallback)
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })),
+        this.page.waitForTimeout(15000).then(() => ({ type: 'timeout' })),
+        frame.evaluate(() => {
+          return new Promise((resolve) => {
+            const check = () => {
+              const checkPhrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다'];
+              const allElements = Array.from(document.querySelectorAll('body *'));
+              const found = allElements.some(el => {
+                const style = window.getComputedStyle(el);
+                const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0;
+                return isVisible && checkPhrases.some(phrase => (el.textContent || '').includes(phrase));
+              });
+              if (found) resolve({ type: 'nodata' });
+              else setTimeout(check, 500);
+            };
+            check();
+          });
+        }),
+      ]).catch(() => ({ type: 'timeout' }));
+
+      let download = null;
+      let suggested = 'ibk-export.xls';
+      let fallbackFile = null;
+
+      if (raced.type === 'nodata') {
+        this.log('IBK: confirmed no data to export via popup/message');
         try {
-          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 }).catch(() => {});
         } catch (e) {}
         return [];
       }
 
-      await this.focusPlaywrightPage();
-      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
-      try {
-        await frame.locator('span:has-text("저장")').first().click({ timeout: 5000 });
-        await this.page.waitForTimeout(800);
-      } catch (e) {
-        this.warn('IBK: 저장 click:', e.message);
-      }
-      try {
-        await frame.locator('span:has-text("엑셀파일저장")').first().click({ timeout: 5000 });
-        await this.page.waitForTimeout(600);
-      } catch (e) {
-        this.warn('IBK: 엑셀파일저장 click:', e.message);
-      }
-      try {
-        await frame.locator('[id="DownloadExcel"]').click({ timeout: 5000 });
-        await this.page.waitForTimeout(400);
-      } catch (e) {
-        this.warn('IBK: DownloadExcel:', e.message);
-      }
-      try {
-        await frame.locator('[id="DownloadButton"]').click({ timeout: 5000 });
-      } catch (e) {
-        this.warn('IBK: DownloadButton:', e.message);
+      if (raced.type === 'timeout' || !raced.type) {
+        this.warn('IBK: download event timed out or error occurred, checking file system fallback...');
+        fallbackFile = this.findRecentDownloadFile(
+          [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+          exportStartedAt
+        );
+        if (!fallbackFile) {
+          this.error('IBK: No download event and no fallback file found.');
+          return [];
+        }
+        suggested = path.basename(fallbackFile.path);
+      } else {
+        download = raced.data;
+        suggested = download.suggestedFilename() || suggested;
       }
 
-      const download = await downloadPromise;
-      const suggested = download.suggestedFilename() || 'ibk-export.xls';
       const ext = path.extname(suggested) || '.xls';
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeAcc = this._sanitizeIbkFilenamePart(accountNumber);
       const finalName = `IBK기업_${safeAcc}_${ts}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
-      await download.saveAs(finalPath);
+      
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) {
+        throw new Error('Failed to save IBK export file via all methods');
+      }
 
       let extractedData;
       try {
@@ -599,6 +663,9 @@ class IbkBankAutomator extends BaseBankAutomator {
           headers: [],
         };
       }
+      
+      // Clean up popups regardless of what happened
+      await this._cleanupIbkPopups();
 
       return [
         {
@@ -610,6 +677,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       ];
     } catch (error) {
       this.error('IBK getTransactions failed:', error.message);
+      await this._cleanupIbkPopups(); // Always cleanup on fail too
       return [];
     }
   }
