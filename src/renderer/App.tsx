@@ -31,6 +31,7 @@ import {
   faClock,
   faChessRook,
   faDatabase,
+  faCloud,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -297,7 +298,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.0.106</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.1.0</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2182,12 +2183,12 @@ function NavigationBar({
             isNarrow={isNarrow}
           >
             <Link to="/mcp-server" className={`nav-dropdown-item ${location.pathname.startsWith('/mcp-server') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faServer} fixedWidth />
+              <FontAwesomeIcon icon={faCloud} fixedWidth />
               <span>MCP Server</span>
             </Link>
             <Link to="/coding" className={`nav-dropdown-item ${location.pathname.startsWith('/coding') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faLaptopCode} fixedWidth />
-              <span>Coding</span>
+              <FontAwesomeIcon icon={faServer} fixedWidth />
+              <span>Hosting</span>
             </Link>
             <Link to="/docker" className={`nav-dropdown-item ${location.pathname.startsWith('/docker') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faDocker} fixedWidth />

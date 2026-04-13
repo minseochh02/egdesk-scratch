@@ -20,6 +20,8 @@ import {
   faDatabase,
   faRobot,
   faRecordVinyl,
+  faCode,
+  faCloud,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -150,7 +152,7 @@ const LandingPage: React.FC = () => {
 
             <Link to="/homepage-editor" className="egdesk-landing-action-card egdesk-landing-homepage-card">
               <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faCog} />
+                <FontAwesomeIcon icon={faCode} />
               </div>
               <h3 className="egdesk-landing-card-title">Coding</h3>
               <p className="egdesk-landing-card-description">
@@ -163,16 +165,17 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/coding" className="egdesk-landing-action-card egdesk-landing-coding-card">
+            <Link to="/coding" className="egdesk-landing-action-card egdesk-landing-hosting-card">
               <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faCog} />
+                <FontAwesomeIcon icon={faServer} />
               </div>
-              <h3 className="egdesk-landing-card-title">New Coding</h3>
+              <h3 className="egdesk-landing-card-title">Hosting</h3>
               <p className="egdesk-landing-card-description">
-                A lightweight coding workspace for development tasks.
+                Deploy and manage your web projects with ease.
               </p>
               <div className="egdesk-landing-card-features">
-                <span className="egdesk-landing-feature-tag">Development</span>
+                <span className="egdesk-landing-feature-tag">Deployment</span>
+                <span className="egdesk-landing-feature-tag">Live Server</span>
               </div>
             </Link>
 
@@ -193,7 +196,7 @@ const LandingPage: React.FC = () => {
 
             <Link to="/mcp-server" className="egdesk-landing-action-card egdesk-landing-mcp-card">
               <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faServer} />
+                <FontAwesomeIcon icon={faCloud} />
               </div>
               <h3 className="egdesk-landing-card-title">MCP Server</h3>
               <p className="egdesk-landing-card-description">
@@ -237,7 +240,7 @@ const LandingPage: React.FC = () => {
             </Link>
 
             <Link to="/browser-recorder" className="egdesk-landing-action-card egdesk-landing-browser-recorder-card">
-              <div className="egdesk-landing-card-icon">
+              <div className="egdesk-landing-card-icon egdesk-landing-browser-recorder-icon">
                 <FontAwesomeIcon icon={faVideo} />
               </div>
               <h3 className="egdesk-landing-card-title">Browser Recorder</h3>
