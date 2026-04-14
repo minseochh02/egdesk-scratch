@@ -195,19 +195,19 @@ const { ArduinoHID } = require('./arduino-typer');
     await page.waitForTimeout(3000);
 
     // ══════════════════════════════════════════════════════════════
-    // STEP 10: 날짜 범위 설정 (2022-01-01 ~ 어제)
+    // STEP 10: 날짜 범위 설정 (2022-01-01 ~ 당해 연말)
     // ══════════════════════════════════════════════════════════════
-    console.log('[STEP 10] 날짜 범위를 설정 중 (2022-01-01 ~ 어제)...');
-    
+    console.log('[STEP 10] 날짜 범위를 설정 중 (2022-01-01 ~ 올해 12/31)...');
+
     const startYY = '2022';
     const startMM = '01';
     const startDD = '01';
 
     const now = new Date();
-    const yesterday = new Date(now.getTime() - 86400000);
-    const endYY = String(yesterday.getFullYear());
-    const endMM = String(yesterday.getMonth() + 1).padStart(2, '0');
-    const endDD = String(yesterday.getDate()).padStart(2, '0');
+    const endOfYear = new Date(now.getFullYear(), 11, 31);
+    const endYY = String(endOfYear.getFullYear());
+    const endMM = String(endOfYear.getMonth() + 1).padStart(2, '0');
+    const endDD = String(endOfYear.getDate()).padStart(2, '0');
 
     console.log(`[STEP 10] 설정 범위: ${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD}`);
 

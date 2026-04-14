@@ -90,6 +90,8 @@ function parseAmount(val) {
 
 /**
  * Map Korean status text to DB CHECK values.
+ * IBK 외상매출채권 `상태` column (observed): **활동** = still valid / outstanding, **완제** = paid (settled).
+ * **미완제** must be checked before **완제** — otherwise `t.includes('완제')` would misclassify 미완제 as collected.
  * @param {string} text
  * @returns {'active'|'collected'|'dishonored'|'cancelled'|'endorsed'|'discounted'}
  */
@@ -100,11 +102,15 @@ function mapStatusToDb(text) {
     ['취소', 'cancelled'],
     ['배서', 'endorsed'],
     ['할인', 'discounted'],
+    ['미완제', 'active'],
     ['추심완료', 'collected'],
     ['결제완료', 'collected'],
     ['만기', 'collected'],
     ['종결', 'collected'],
+    ['완결', 'collected'],
+    ['완제', 'collected'],
     ['정상', 'active'],
+    ['활동', 'active'],
   ];
   for (const [ko, en] of pairs) {
     if (t.includes(ko)) return /** @type {const} */ (en);

@@ -530,15 +530,15 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
 
-      // Date range: wide default (2022-01-01 ~ 어제) — same as recorded spec
+      // Date range: wide default (2022-01-01 ~ 당해 연말) — includes future-dated receivables IBK may show
       const startYY = '2022';
       const startMM = '01';
       const startDD = '01';
       const now = new Date();
-      const yesterday = new Date(now.getTime() - 86400000);
-      const endYY = String(yesterday.getFullYear());
-      const endMM = String(yesterday.getMonth() + 1).padStart(2, '0');
-      const endDD = String(yesterday.getDate()).padStart(2, '0');
+      const endOfYear = new Date(now.getFullYear(), 11, 31);
+      const endYY = String(endOfYear.getFullYear());
+      const endMM = String(endOfYear.getMonth() + 1).padStart(2, '0');
+      const endDD = String(endOfYear.getDate()).padStart(2, '0');
 
       try {
         await mainframe.locator('[id="inqy_sttg_ymd_yy"]').selectOption(startYY);
