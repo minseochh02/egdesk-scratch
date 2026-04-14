@@ -7,7 +7,7 @@ import { WizardState, WizardMode } from '../types';
 function createInitialState(
   mode: WizardMode,
   suggestedTableName?: string,
-  isBrowserSync?: boolean
+  isSourceSync?: boolean
 ): WizardState {
   return {
     // File and parsing
@@ -27,6 +27,7 @@ function createInitialState(
     // Table info (import mode only)
     tableName: suggestedTableName || '',
     displayName: suggestedTableName ? suggestedTableName.replace(/_/g, ' ') : '',
+    tableKind: 'sql',
     description: '',
 
     // Island selection (import mode only)
@@ -54,27 +55,19 @@ function createInitialState(
     showErrors: false,
     error: null,
 
-    // Browser-sync specific state
-    downloadFolders: [],
-    downloadFiles: [],
-    selectedFolder: null,
-    selectedBrowserFile: null,
-    importMode: null,
-    selectedTableId: null,
-    existingTableColumnMappings: null,
+    // Source-sync configuration
     deleteAfterImport: false,
-    archiveAfterImport: isBrowserSync || false,
-    saveAsConfiguration: isBrowserSync || false,
-    enableAutoSync: isBrowserSync || false,
-    loadingBrowserFiles: isBrowserSync || false,
+    archiveAfterImport: isSourceSync || false,
+    saveAsConfiguration: isSourceSync || false,
+    enableAutoSync: isSourceSync || false,
   };
 }
 
 /**
  * Hook for managing wizard state
  */
-export function useWizardState(mode: WizardMode, isBrowserSync?: boolean) {
-  const [state, setState] = useState<WizardState>(() => createInitialState(mode, undefined, isBrowserSync));
+export function useWizardState(mode: WizardMode, isSourceSync?: boolean) {
+  const [state, setState] = useState<WizardState>(() => createInitialState(mode, undefined, isSourceSync));
 
   /**
    * Update wizard state with partial updates
@@ -87,8 +80,8 @@ export function useWizardState(mode: WizardMode, isBrowserSync?: boolean) {
    * Reset wizard state
    */
   const resetState = useCallback((suggestedTableName?: string) => {
-    setState(createInitialState(mode, suggestedTableName, isBrowserSync));
-  }, [mode, isBrowserSync]);
+    setState(createInitialState(mode, suggestedTableName, isSourceSync));
+  }, [mode, isSourceSync]);
 
   return {
     state,

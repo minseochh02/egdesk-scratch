@@ -6,10 +6,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { X, Download, FileSpreadsheet, Upload, Clock, HardDrive, Database, Plus, Settings } from 'lucide-react';
-import { ExcelDataWizard } from '../UserData/wizards/ExcelDataWizard';
+import { X, Download, FileSpreadsheet, Upload, Clock, HardDrive, Settings } from 'lucide-react';
 import { DesktopDownloadsSyncWizard } from '../UserData/DesktopDownloadsSyncWizard';
-import { useUserData, UserTable } from '../../hooks/useUserData';
+import { useUserData } from '../../hooks/useUserData';
 import './DownloadedFilesDialog.css';
 
 interface DownloadedFileInfo {
@@ -43,11 +42,7 @@ export const DownloadedFilesDialog: React.FC<DownloadedFilesDialogProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<DownloadedFileInfo | null>(null);
-  const [showImportWizard, setShowImportWizard] = useState(false);
-  const [showModeSelection, setShowModeSelection] = useState(false);
   const [showSyncWizard, setShowSyncWizard] = useState(false);
-  const [importMode, setImportMode] = useState<'import' | 'upload'>('import');
-  const [targetTable, setTargetTable] = useState<UserTable | undefined>(undefined);
 
   useEffect(() => {
     loadDownloadedFiles();
@@ -78,21 +73,7 @@ export const DownloadedFilesDialog: React.FC<DownloadedFilesDialogProps> = ({
 
   const handleImportFile = (file: DownloadedFileInfo) => {
     setSelectedFile(file);
-    setShowModeSelection(true);
-  };
-
-  const handleModeSelect = (mode: 'import' | 'upload', table?: UserTable) => {
-    setImportMode(mode);
-    setTargetTable(table);
-    setShowModeSelection(false);
-    setShowImportWizard(true);
-  };
-
-  const handleImportComplete = () => {
-    setShowImportWizard(false);
-    setShowModeSelection(false);
-    setSelectedFile(null);
-    setTargetTable(undefined);
+    setShowSyncWizard(true);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -119,86 +100,17 @@ export const DownloadedFilesDialog: React.FC<DownloadedFilesDialogProps> = ({
     return date.toLocaleString();
   };
 
-  // Show mode selection dialog
-  if (showModeSelection && selectedFile) {
-    return (
-      <div className="modal-overlay" onClick={() => setShowModeSelection(false)}>
-        <div className="modal-dialog mode-selection-dialog" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header">
-            <div className="modal-title-group">
-              <FileSpreadsheet className="modal-icon" size={20} />
-              <h2 className="modal-title">Import {selectedFile.filename}</h2>
-            </div>
-            <button className="icon-button" onClick={() => setShowModeSelection(false)} title="Close">
-              <X size={20} />
-            </button>
-          </div>
-
-          <div className="modal-body">
-            <p className="mode-selection-description">
-              How would you like to import this file?
-            </p>
-
-            <div className="mode-options">
-              <button
-                className="mode-option"
-                onClick={() => handleModeSelect('import')}
-              >
-                <div className="mode-icon">
-                  <Plus size={32} />
-                </div>
-                <h3>Create New Table</h3>
-                <p>Import this file as a new database table with its own structure</p>
-              </button>
-
-              <button
-                className="mode-option"
-                onClick={() => {
-                  // Show table selector
-                  const tableId = prompt('Enter target table ID (temporary - will add UI):');
-                  if (tableId) {
-                    const selectedTable = tables.find(t => t.id === tableId || t.displayName === tableId);
-                    handleModeSelect('upload', selectedTable);
-                  }
-                }}
-              >
-                <div className="mode-icon">
-                  <Database size={32} />
-                </div>
-                <h3>Add to Existing Table</h3>
-                <p>Upload this data to an existing table in your database</p>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Show sync wizard
   if (showSyncWizard) {
     return (
       <DesktopDownloadsSyncWizard
-        onClose={() => setShowSyncWizard(false)}
+        onClose={() => {
+          setShowSyncWizard(false);
+          setSelectedFile(null);
+        }}
         userTables={tables}
         initialFolder={recordingInfo?.downloadsFolder}
-      />
-    );
-  }
-
-  // Show import wizard
-  if (showImportWizard && selectedFile && recordingInfo) {
-    return (
-      <ExcelDataWizard
-        mode={importMode}
-        isBrowserSync={true}
-        scriptFolderPath={recordingInfo.downloadsFolder}
-        scriptName={recordingInfo.platform}
-        folderName={recordingInfo.downloadsFolder?.split('/').pop() || 'unknown'}
-        preSelectedFile={selectedFile.filePath}
-        targetTable={targetTable}
-        onClose={handleImportComplete}
-        onComplete={handleImportComplete}
+        initialFilePath={selectedFile?.filePath}
       />
     );
   }

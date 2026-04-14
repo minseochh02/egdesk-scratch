@@ -23,7 +23,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
   targetTable,
   onClose,
   onComplete,
-  isBrowserSync,
+  sourceType,
   scriptFolderPath,
   scriptName,
   folderName,
@@ -36,7 +36,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
     validateTableName,
   } = useUserData();
 
-  const { state, updateState } = useWizardState(mode, isBrowserSync);
+  const { state, updateState } = useWizardState(mode, Boolean(sourceType));
   const [currentStep, setCurrentStep] = useState<WizardStep>(
     preSelectedFile ? 'parse-config' : 'file-selection'
   );
@@ -144,7 +144,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
 
     state.acceptedSplits.forEach((originalColumn) => {
       const suggestion = currentSheet.splitSuggestions?.find(
-        (s) => s.originalColumn === originalColumn
+        (s: any) => s.originalColumn === originalColumn
       );
 
       if (suggestion) {
@@ -363,7 +363,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
               console.error(`Island ${idx} has ${island.headers.length} columns, expected ${firstHeaders.length}`);
               return true;
             }
-            const mismatch = island.headers.some((h, i) => h !== firstHeaders[i]);
+            const mismatch = island.headers.some((h: any, i: number) => h !== firstHeaders[i]);
             if (mismatch) {
               console.error(`Island ${idx} has different header names:`, island.headers);
             }
@@ -394,7 +394,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
         // Merge all rows
         const mergedRows: any[] = [];
         selectedIslandObjects.forEach((island, islandIndex) => {
-          island.rows.forEach(row => {
+          island.rows.forEach((row: any) => {
             const mergedRow = { ...row };
 
             // Add metadata columns if requested
@@ -519,11 +519,17 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
 
       if (mode === 'import') {
         console.log('[DEBUG] Importing with appliedSplits:', state.appliedSplits);
+        const normalizedDuplicateAction =
+          state.duplicateDetectionSettings.duplicateAction === 'replace-all'
+            ? 'replace-date-range'
+            : state.duplicateDetectionSettings.duplicateAction;
+
         result = await importExcel({
           filePath: state.selectedFile!,
           sheetIndex: state.selectedSheet,
           tableName: state.tableName,
           displayName: state.displayName,
+          tableKind: state.tableKind,
           description: state.description.trim() || undefined,
           columnMappings: state.columnMappings || undefined,
           columnTypes: state.columnTypes || undefined,
@@ -534,10 +540,11 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0
             ? state.duplicateDetectionSettings.uniqueKeyColumns
             : undefined,
-          duplicateAction: state.duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
-            state.duplicateDetectionSettings.duplicateAction === 'replace-date-range'
-            ? state.duplicateDetectionSettings.duplicateAction
-            : undefined,
+          duplicateAction:
+            state.duplicateDetectionSettings.uniqueKeyColumns.length > 0 ||
+            normalizedDuplicateAction === 'replace-date-range'
+              ? normalizedDuplicateAction
+              : undefined,
           addTimestamp: state.duplicateDetectionSettings.addTimestamp,
         });
 
@@ -553,6 +560,11 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
       } else {
         // Upload mode
         console.log('[DEBUG] Uploading with columnTypes:', state.columnTypes);
+        const normalizedDuplicateAction =
+          state.duplicateDetectionSettings.duplicateAction === 'replace-all'
+            ? 'replace-date-range'
+            : state.duplicateDetectionSettings.duplicateAction;
+
         result = await syncToExistingTable({
           tableId: targetTable!.id,
           filePath: state.selectedFile!,
@@ -564,7 +576,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           skipBottomRows: state.skipBottomRows,
           appliedSplits: state.appliedSplits.length > 0 ? state.appliedSplits : undefined,
           uniqueKeyColumns: state.duplicateDetectionSettings.uniqueKeyColumns,
-          duplicateAction: state.duplicateDetectionSettings.duplicateAction,
+          duplicateAction: normalizedDuplicateAction,
           addTimestamp: state.duplicateDetectionSettings.addTimestamp,
         });
 
@@ -579,14 +591,14 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
         });
       }
 
-      // Create sync configuration for browser-sync mode
+      // Create sync configuration for source-based sync flows
       console.log('🔍 [SYNC CONFIG DEBUG] Checking conditions:');
       console.log('   state.saveAsConfiguration:', state.saveAsConfiguration);
       console.log('   state.selectedFile:', state.selectedFile);
       console.log('   scriptFolderPath:', scriptFolderPath);
       console.log('   scriptName:', scriptName);
       console.log('   folderName:', folderName);
-      console.log('   isBrowserSync prop:', isBrowserSync);
+      console.log('   sourceType prop:', sourceType);
 
       if (state.saveAsConfiguration && state.selectedFile && scriptFolderPath && scriptName && folderName) {
         try {
@@ -606,8 +618,7 @@ export const ExcelDataWizard: React.FC<ExcelDataWizardProps> = ({
           console.log('   Applied splits:', state.appliedSplits);
           console.log('   Number of mappings:', Object.keys(state.columnMappings || {}).length);
 
-          // Determine source based on folder path
-          const source = scriptFolderPath?.includes('EGDesk-Desktop') ? 'desktop' : 'browser';
+          const source = sourceType || 'browser';
 
           const configResult = await (window as any).electron.invoke('sync-config:create', {
             scriptFolderPath,
