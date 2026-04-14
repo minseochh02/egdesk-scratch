@@ -7,16 +7,12 @@ import { initializeActivityDatabaseSchema } from './activity';
 import { initializeTemplateCopiesDatabaseSchema } from './template-copies';
 import { initializeDockerSchedulerSchema } from './docker-scheduler';
 import { initializeCompanyResearchSchema } from './company-research';
-import { migrateToUnifiedSchema } from './migrations/001-unified-schema';
-import { createHometaxSchema } from './migrations/002-hometax-schema';
-import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema';
-import { addHometaxSpreadsheetUrlColumns } from './migrations/003-hometax-spreadsheet-urls';
 import { createSyncDatabase } from './sheet-sync-init';
-import { initializeShinhanTransactionsSchema } from './shinhan-transactions';
 import { initializeSchedulerDatabaseSchema } from './scheduler-init';
 import { initializeUserDataDatabaseSchema } from './user-data-init';
 import { initializeSyncConfigurationSchema } from './sync-config-init';
 import { initializeEGChattingSchema } from './egchatting-init';
+import { runSqliteMigrations } from './migration-runner';
 
 /**
  * SQLite Database Initialization
@@ -232,196 +228,11 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     initializeUserDataDatabaseSchema(userDataDb); // Dedicated database for user data tables
     initializeSyncConfigurationSchema(userDataDb); // Browser automation sync configurations
 
-    // =============================================
-    // Migration 007: Add replace-date-range to sync_configurations
-    // =============================================
-    try {
-      const { migrate007SyncConfigReplaceDateRange } = await import('./migrations/007-sync-config-replace-date-range');
-      migrate007SyncConfigReplaceDateRange(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 007 error:', migrationError.message);
-    }
-
-    // =============================================
-    // Migration 013: Fix BOOLEAN DEFAULT values
-    // =============================================
-    try {
-      const { migrate013FixBooleanDefaults } = await import('./migrations/013-fix-boolean-defaults');
-      migrate013FixBooleanDefaults(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 013 error:', migrationError.message);
-    }
-
-    // =============================================
-    // Migration 014: Add source column to sync_configurations
-    // =============================================
-    try {
-      const { migrate } = await import('./migrations/014-add-sync-source-column');
-      migrate(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 014 error:', migrationError.message);
-    }
-
-    // =============================================
-    // NOTE: transaction_datetime migration handled by migration 006
-    // =============================================
-    // Migration 006 (006-combine-datetime.ts) handles:
-    // - Adding transaction_datetime column
-    // - Migrating data from date+time to transaction_datetime
-    // - Creating UNIQUE index for deduplication
-    // See lines 271-281 above where migrate006CombineDateTime() is called
-
-    // ========================================
-    // FinanceHub Database Separation
-    // ========================================
-    const { separateFinanceHubDatabase, hasFinanceHubSeparation } = await import('./migrations/004-separate-financehub-database');
-
-    if (!hasFinanceHubSeparation(conversationsDb)) {
-      console.log('🔄 FinanceHub tables found in conversations.db - running separation migration...');
-
-      // First initialize old schema in conversations.db (if needed for migration)
-      initializeShinhanTransactionsSchema(conversationsDb);
-      migrateToUnifiedSchema(conversationsDb); // Initialize FinanceHub schema in conversations.db
-      createHometaxSchema(conversationsDb);
-      createCashReceiptsSchema(conversationsDb);
-      addHometaxSpreadsheetUrlColumns(conversationsDb);
-
-      // Now migrate to new database
-      const migrationResult = separateFinanceHubDatabase(conversationsDb, financeHubDb);
-
-      if (!migrationResult.success) {
-        console.error('❌ FinanceHub separation failed:', migrationResult.error);
-        console.error('⚠️ Continuing with FinanceHub in conversations.db (fallback)');
-      } else {
-        console.log('✅ FinanceHub successfully separated into dedicated database');
-      }
-    } else {
-      console.log('✅ FinanceHub already in dedicated database - initializing schema...');
-      // Just ensure schema exists in financehub.db
-      const { initializeFinanceHubSchema } = await import('./financehub');
-      const { createHometaxSchema } = await import('./migrations/002-hometax-schema');
-      const { createCashReceiptsSchema } = await import('./migrations/005-cash-receipts-schema');
-      const { migrate006CombineDateTime } = await import('./migrations/006-combine-datetime');
-      initializeFinanceHubSchema(financeHubDb);
-      createHometaxSchema(financeHubDb);
-      createCashReceiptsSchema(financeHubDb);
-
-      // Run datetime migration
-      try {
-        migrate006CombineDateTime(financeHubDb);
-      } catch (migrationError: any) {
-        console.error('⚠️ Migration 006 error:', migrationError.message);
-      }
-    }
-
-    // =============================================
-    // Migration 015-019: Separate bank and card transaction tables
-    // =============================================
-    try {
-      const { migrate015CreateBankTransactions } = await import('./migrations/015-create-bank-transactions');
-      const { migrate016CreateCardTransactions } = await import('./migrations/016-create-card-transactions');
-      const { migrate017MigrateBankData } = await import('./migrations/017-migrate-bank-data');
-      const { migrate018MigrateCardData } = await import('./migrations/018-migrate-card-data');
-      const { migrate019VerifyMigration } = await import('./migrations/019-verify-migration');
-
-      migrate015CreateBankTransactions(financeHubDb);
-      migrate016CreateCardTransactions(financeHubDb);
-      migrate017MigrateBankData(financeHubDb);
-      migrate018MigrateCardData(financeHubDb);
-      migrate019VerifyMigration(financeHubDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migrations 015-019 error:', migrationError.message);
-    }
-
-    try {
-      const { migrate021NormalizeAccountDisplayNames } = await import('./migrations/021-normalize-account-display-names');
-      migrate021NormalizeAccountDisplayNames(financeHubDb);
-    } catch (migration021Error: any) {
-      console.error('⚠️ Migration 021 error:', migration021Error.message);
-    }
-
-    try {
-      const { migrate022ReapplyAccountDisplayNameRules } = await import('./migrations/022-reapply-account-display-name-rules');
-      migrate022ReapplyAccountDisplayNameRules(financeHubDb);
-    } catch (migration022Error: any) {
-      console.error('⚠️ Migration 022 error:', migration022Error.message);
-    }
-
-    try {
-      const { migrate023CreatePromissoryNotes } = await import('./migrations/023-create-promissory-notes');
-      migrate023CreatePromissoryNotes(financeHubDb);
-    } catch (migration023Error: any) {
-      console.error('⚠️ Migration 023 error:', migration023Error.message);
-    }
-
-    // =============================================
-    // Migration 009: Add vector embeddings support
-    // =============================================
-    try {
-      const { loadVectorExtension } = await import('./vector-extension');
-      const vectorLoaded = loadVectorExtension(conversationsDb);
-
-      if (vectorLoaded) {
-        const { migrate009AddVectorEmbeddings } = await import('./migrations/009-add-vector-embeddings');
-        migrate009AddVectorEmbeddings(conversationsDb);
-      } else {
-        console.warn('⚠️ Vector extension not available - skipping vector embeddings migration');
-      }
-    } catch (vectorError: any) {
-      console.error('⚠️ Vector setup error:', vectorError.message);
-      // Don't fail initialization if vector support unavailable
-    }
-
-    // =============================================
-    // Migration 010: Add user data vector embeddings support
-    // =============================================
-    try {
-      const { loadVectorExtension } = await import('./vector-extension');
-      const vectorLoaded = loadVectorExtension(userDataDb);
-
-      if (vectorLoaded) {
-        const { migrate010AddUserDataVectorEmbeddings } = await import(
-          './migrations/010-add-userdata-vector-embeddings'
-        );
-        migrate010AddUserDataVectorEmbeddings(userDataDb);
-        console.log('✅ User Data vector embeddings enabled');
-      } else {
-        console.warn('⚠️ Vector extension not available - skipping user data vector embeddings migration');
-      }
-    } catch (vectorError: any) {
-      console.error('⚠️ User Data vector setup error:', vectorError.message);
-      // Don't fail initialization if vector support unavailable
-    }
-
-    // =============================================
-    // Migration 011: Add applied_splits to sync_configurations
-    // =============================================
-    try {
-      const { migrate011AddAppliedSplitsToSyncConfig } = await import('./migrations/011-add-applied-splits-to-sync-config');
-      migrate011AddAppliedSplitsToSyncConfig(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 011 error:', migrationError.message);
-    }
-
-    // =============================================
-    // Migration 012: Fix date column types (DEV ONLY)
-    // =============================================
-    try {
-      const { migrate012FixDateColumnTypesDev } = await import('./migrations/012-fix-date-column-types-dev-only');
-      migrate012FixDateColumnTypesDev(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 012 error:', migrationError.message);
-    }
-
-    // =============================================
-    // Migration 020: Add replace-all duplicate action mode
-    // =============================================
-    try {
-      const { migrate020AddReplaceAllMode } = await import('./migrations/020-add-replace-all-mode');
-      migrate020AddReplaceAllMode(userDataDb);
-    } catch (migrationError: any) {
-      console.error('⚠️ Migration 020 error:', migrationError.message);
-    }
+    await runSqliteMigrations({
+      conversationsDb,
+      financeHubDb,
+      userDataDb,
+    });
 
     // Initialize task manager
     const taskManager = new SQLiteTaskManager(taskDb);

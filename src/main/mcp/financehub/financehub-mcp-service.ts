@@ -376,6 +376,65 @@ export class FinanceHubMCPService implements IMCPService {
           },
           required: []
         }
+      },
+      {
+        name: 'financehub_query_promissory_notes',
+        description:
+          'Query promissory notes (어음, promissory_notes table): issued/received notes with amounts, maturity, status, bank/account context',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bankId: {
+              type: 'string',
+              description: 'Filter by bank id (e.g. ibk, shinhan)'
+            },
+            accountId: {
+              type: 'string',
+              description: 'Filter by FinanceHub account id'
+            },
+            status: {
+              type: 'string',
+              description:
+                'Filter by status: active, collected, dishonored, cancelled, endorsed, discounted'
+            },
+            noteType: {
+              type: 'string',
+              enum: ['issued', 'received'],
+              description: 'Issued vs received note'
+            },
+            maturityStart: {
+              type: 'string',
+              description: 'Minimum maturity_date (YYYY-MM-DD)'
+            },
+            maturityEnd: {
+              type: 'string',
+              description: 'Maximum maturity_date (YYYY-MM-DD)'
+            },
+            issueStart: {
+              type: 'string',
+              description: 'Minimum issue_date (YYYY-MM-DD)'
+            },
+            issueEnd: {
+              type: 'string',
+              description: 'Maximum issue_date (YYYY-MM-DD)'
+            },
+            searchText: {
+              type: 'string',
+              description: 'Search in note number, issuer/payee names, memo (substring match)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum rows (max 1000)',
+              default: 100
+            },
+            offset: {
+              type: 'number',
+              description: 'Pagination offset',
+              default: 0
+            }
+          },
+          required: []
+        }
       }
     ];
   }
@@ -751,6 +810,51 @@ export class FinanceHubMCPService implements IMCPService {
           result = {
             totalReturned: ops.length,
             syncOperations: ops
+          };
+          break;
+        }
+
+        case 'financehub_query_promissory_notes': {
+          const {
+            bankId,
+            accountId,
+            status,
+            noteType,
+            maturityStart,
+            maturityEnd,
+            issueStart,
+            issueEnd,
+            searchText,
+            limit = 100,
+            offset = 0
+          } = args;
+
+          const enforcedLimit = Math.min(Math.max(Number(limit) || 100, 1), 1000);
+          const enforcedOffset = Math.max(Number(offset) || 0, 0);
+
+          const q = this.manager.queryPromissoryNotes({
+            bankId,
+            accountId,
+            status,
+            noteType,
+            maturityStart,
+            maturityEnd,
+            issueStart,
+            issueEnd,
+            searchText,
+            limit: enforcedLimit,
+            offset: enforcedOffset
+          });
+
+          if (q.error) {
+            throw new Error(q.error);
+          }
+
+          result = {
+            totalMatching: q.total,
+            limit: enforcedLimit,
+            offset: enforcedOffset,
+            notes: q.notes
           };
           break;
         }

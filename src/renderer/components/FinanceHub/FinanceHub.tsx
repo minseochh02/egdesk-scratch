@@ -2507,10 +2507,7 @@ const FinanceHub: React.FC = () => {
             <button className={`finance-hub__nav-item ${currentView === 'account-management' ? 'active' : ''}`} onClick={() => setCurrentView('account-management')}>계좌 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'bank-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('bank-transactions')}>은행 전체 거래내역</button>
             <button className={`finance-hub__nav-item ${currentView === 'card-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('card-transactions')}>카드 전체 거래 내역</button>
-            <button className={`finance-hub__nav-item ${currentView === 'promissory-notes' ? 'active' : ''}`} onClick={() => setCurrentView('promissory-notes')}>
-              <FontAwesomeIcon icon={faFileInvoice} style={{ marginRight: '6px' }} />
-              어음 관리
-            </button>
+            <button className={`finance-hub__nav-item ${currentView === 'promissory-notes' ? 'active' : ''}`} onClick={() => setCurrentView('promissory-notes')}>어음 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-invoices' ? 'active' : ''}`} onClick={() => setCurrentView('tax-invoices')}>전자세금계산서</button>
             <button className={`finance-hub__nav-item ${currentView === 'data-management' ? 'active' : ''}`} onClick={() => setCurrentView('data-management')}>데이터 관리</button>

@@ -2525,6 +2525,206 @@ export class FinanceHubDbManager {
   }
 
   /**
+   * Query promissory notes (promissory_notes) with filters and pagination — read-only, for MCP/UI.
+   */
+  queryPromissoryNotes(filters: {
+    bankId?: string;
+    accountId?: string;
+    status?: string;
+    noteType?: 'issued' | 'received';
+    maturityStart?: string;
+    maturityEnd?: string;
+    issueStart?: string;
+    issueEnd?: string;
+    searchText?: string;
+    limit: number;
+    offset: number;
+  }): {
+    notes: Array<{
+      id: string;
+      accountId: string;
+      bankId: string;
+      bankName: string;
+      accountNumber: string;
+      noteNumber: string;
+      noteType: string;
+      issuerName: string;
+      issuerRegistrationNumber?: string;
+      payeeName: string;
+      payeeRegistrationNumber?: string;
+      amount: number;
+      currency: string;
+      issueDate: string;
+      maturityDate: string;
+      collectionDate?: string;
+      status: string;
+      processingBank?: string;
+      bankBranch?: string;
+      category?: string;
+      memo?: string;
+      isManual: boolean;
+      createdAt: string;
+      updatedAt: string;
+      endorsementInfo?: string;
+      discountInfo?: string;
+      metadata?: Record<string, unknown>;
+    }>;
+    total: number;
+    error?: string;
+  } {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='promissory_notes' LIMIT 1`)
+        .get();
+      if (!exists) {
+        return { notes: [], total: 0 };
+      }
+
+      let where = 'WHERE 1=1';
+      const params: unknown[] = [];
+
+      if (filters.bankId) {
+        where += ' AND pn.bank_id = ?';
+        params.push(filters.bankId);
+      }
+      if (filters.accountId) {
+        where += ' AND pn.account_id = ?';
+        params.push(filters.accountId);
+      }
+      if (filters.status) {
+        where += ' AND pn.status = ?';
+        params.push(filters.status);
+      }
+      if (filters.noteType) {
+        where += ' AND pn.note_type = ?';
+        params.push(filters.noteType);
+      }
+      if (filters.maturityStart) {
+        where += ' AND pn.maturity_date >= ?';
+        params.push(filters.maturityStart);
+      }
+      if (filters.maturityEnd) {
+        where += ' AND pn.maturity_date <= ?';
+        params.push(filters.maturityEnd);
+      }
+      if (filters.issueStart) {
+        where += ' AND pn.issue_date >= ?';
+        params.push(filters.issueStart);
+      }
+      if (filters.issueEnd) {
+        where += ' AND pn.issue_date <= ?';
+        params.push(filters.issueEnd);
+      }
+      if (filters.searchText && String(filters.searchText).trim()) {
+        const t = `%${String(filters.searchText).trim().replace(/%/g, '')}%`;
+        where +=
+          ' AND (pn.note_number LIKE ? OR pn.issuer_name LIKE ? OR pn.payee_name LIKE ? OR pn.memo LIKE ?)';
+        params.push(t, t, t, t);
+      }
+
+      const from = `
+        FROM promissory_notes pn
+        LEFT JOIN banks b ON b.id = pn.bank_id
+        LEFT JOIN accounts a ON a.id = pn.account_id
+        ${where}
+      `;
+
+      const countRow = this.db
+        .prepare(`SELECT COUNT(*) AS total ${from}`)
+        .get(...params) as { total: number };
+      const total = countRow?.total ?? 0;
+
+      const limit = Math.min(Math.max(filters.limit, 1), 1000);
+      const offset = Math.max(filters.offset, 0);
+
+      const stmt = this.db.prepare(`
+        SELECT
+          pn.id,
+          pn.account_id,
+          pn.bank_id,
+          pn.note_number,
+          pn.note_type,
+          pn.issuer_name,
+          pn.issuer_registration_number,
+          pn.payee_name,
+          pn.payee_registration_number,
+          pn.amount,
+          pn.currency,
+          pn.issue_date,
+          pn.maturity_date,
+          pn.collection_date,
+          pn.status,
+          pn.processing_bank,
+          pn.bank_branch,
+          pn.category,
+          pn.memo,
+          pn.is_manual,
+          pn.created_at,
+          pn.updated_at,
+          pn.endorsement_info,
+          pn.discount_info,
+          pn.metadata,
+          b.name_ko AS bank_name_ko,
+          a.account_number AS account_number
+        ${from}
+        ORDER BY pn.maturity_date ASC, pn.created_at DESC
+        LIMIT ? OFFSET ?
+      `);
+
+      const rows = stmt.all(...params, limit, offset) as any[];
+
+      const notes = rows.map((row) => {
+        let metadata: Record<string, unknown> | undefined;
+        if (row.metadata) {
+          try {
+            metadata = JSON.parse(row.metadata) as Record<string, unknown>;
+          } catch {
+            metadata = undefined;
+          }
+        }
+        return {
+          id: row.id,
+          accountId: row.account_id,
+          bankId: row.bank_id,
+          bankName: row.bank_name_ko || row.bank_id,
+          accountNumber: row.account_number || '',
+          noteNumber: row.note_number,
+          noteType: row.note_type,
+          issuerName: row.issuer_name,
+          issuerRegistrationNumber: row.issuer_registration_number ?? undefined,
+          payeeName: row.payee_name,
+          payeeRegistrationNumber: row.payee_registration_number ?? undefined,
+          amount: row.amount,
+          currency: row.currency || 'KRW',
+          issueDate: row.issue_date,
+          maturityDate: row.maturity_date,
+          collectionDate: row.collection_date ?? undefined,
+          status: row.status,
+          processingBank: row.processing_bank ?? undefined,
+          bankBranch: row.bank_branch ?? undefined,
+          category: row.category ?? undefined,
+          memo: row.memo ?? undefined,
+          isManual: !!row.is_manual,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          endorsementInfo: row.endorsement_info ?? undefined,
+          discountInfo: row.discount_info ?? undefined,
+          metadata,
+        };
+      });
+
+      return { notes, total };
+    } catch (e: any) {
+      console.error('[FinanceHubDb] queryPromissoryNotes:', e?.message || e);
+      return {
+        notes: [],
+        total: 0,
+        error: e instanceof Error ? e.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
    * Stable primary key for promissory_notes upserts (same bank + note number → same id).
    */
   private stablePromissoryNoteId(bankId: string, noteNumber: string): string {
