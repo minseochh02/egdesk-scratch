@@ -2634,4 +2634,5 @@ export function registerUserDataIPCHandlers(): void {
       };
     }
   });
+
 }

@@ -3,69 +3,22 @@ import { UserTable } from '../../../hooks/useUserData';
 /**
  * Wizard mode determines which flow to use
  */
-export type WizardMode = 'import' | 'upload' | 'browser-sync';
+export type WizardMode = 'import' | 'upload';
 
 /**
  * All possible wizard steps across all modes
  */
 export type WizardStep =
-  | 'browser-folder-selection'  // browser-sync only
-  | 'browser-file-selection'    // browser-sync only
   | 'file-selection'
   | 'parse-config'
-  | 'island-selection'  // import/browser-sync only
+  | 'island-selection'
   | 'column-split'
-  | 'import-mode-selection'     // browser-sync only
-  | 'table-info'        // import/browser-sync only (create-new mode)
-  | 'existing-table-selection'  // browser-sync only (sync-existing mode)
+  | 'table-info'
   | 'column-mapping'
   | 'duplicate-detection'
   | 'preview'
   | 'importing'
   | 'complete';
-
-/**
- * Step flow configuration for each mode
- */
-export const STEP_FLOWS: Record<WizardMode, WizardStep[]> = {
-  import: [
-    'file-selection',
-    'parse-config',
-    'island-selection',  // conditional
-    'column-split',      // conditional
-    'table-info',
-    'column-mapping',
-    'duplicate-detection',
-    'preview',
-    'importing',
-    'complete',
-  ],
-  upload: [
-    'file-selection',
-    'parse-config',
-    'column-split',      // conditional
-    'column-mapping',
-    'duplicate-detection',
-    'preview',
-    'importing',
-    'complete',
-  ],
-  'browser-sync': [
-    'browser-folder-selection',
-    'browser-file-selection',
-    'parse-config',
-    'island-selection',  // conditional
-    'column-split',      // conditional
-    'import-mode-selection',
-    'table-info',        // conditional (create-new mode)
-    'existing-table-selection', // conditional (sync-existing mode)
-    'column-mapping',
-    'duplicate-detection',
-    'preview',
-    'importing',
-    'complete',
-  ],
-};
 
 /**
  * Duplicate detection configuration
@@ -113,34 +66,7 @@ export interface AppliedSplit {
   numberColumn: string;
 }
 
-/**
- * Browser download folder (browser-sync mode only)
- */
-export interface BrowserDownloadFolder {
-  scriptName: string;
-  folderName: string;
-  path: string;
-  fileCount: number;
-  excelFileCount: number;
-  lastModified: Date;
-  size: number;
-}
-
-/**
- * Browser download file (browser-sync mode only)
- */
-export interface BrowserDownloadFile {
-  name: string;
-  path: string;
-  scriptFolder: string;
-  size: number;
-  modified: Date;
-}
-
-/**
- * Import mode selection (browser-sync only)
- */
-export type ImportMode = 'create-new' | 'sync-existing' | null;
+export type TableKind = 'sql' | 'bucket';
 
 /**
  * Centralized wizard state
@@ -163,6 +89,7 @@ export interface WizardState {
   // Table info (import mode only)
   tableName: string;
   displayName: string;
+  tableKind: TableKind;
   description: string;
 
   // Island selection (import mode only)
@@ -186,19 +113,11 @@ export interface WizardState {
   showErrors: boolean;
   error: string | null;
 
-  // Browser-sync specific state
-  downloadFolders: BrowserDownloadFolder[];
-  downloadFiles: BrowserDownloadFile[];
-  selectedFolder: BrowserDownloadFolder | null;
-  selectedBrowserFile: BrowserDownloadFile | null;
-  importMode: ImportMode;
-  selectedTableId: string | null;
-  existingTableColumnMappings: Record<string, string> | null;
+  // Sync configuration flags used by source-based sync launchers
   deleteAfterImport: boolean;
   archiveAfterImport: boolean;
   saveAsConfiguration: boolean;
   enableAutoSync: boolean;
-  loadingBrowserFiles: boolean;
 }
 
 /**
@@ -219,14 +138,14 @@ export interface BaseStepProps {
  * Props for the unified wizard component
  */
 export interface ExcelDataWizardProps {
-  mode: 'import' | 'upload';  // browser-sync handled separately
+  mode: 'import' | 'upload';
   preSelectedFile?: string;   // Skip file selection if provided
   targetTable?: UserTable;    // Required for upload mode
   onClose: () => void;
   onComplete: () => void;
 
-  // Browser-sync specific props
-  isBrowserSync?: boolean;    // Indicates this is a browser sync import
+  // Source-based sync metadata
+  sourceType?: 'browser' | 'desktop';
   scriptFolderPath?: string;  // Path to browser automation script folder
   scriptName?: string;        // Name of the browser script
   folderName?: string;        // Name of the download folder
@@ -246,15 +165,11 @@ export interface StepConfig {
  * Step configurations with labels
  */
 export const STEP_CONFIGS: StepConfig[] = [
-  { id: 'browser-folder-selection', label: 'Select Automation', modesApplicable: ['browser-sync'] },
-  { id: 'browser-file-selection', label: 'Select File', modesApplicable: ['browser-sync'] },
   { id: 'file-selection', label: 'Select File', modesApplicable: ['import', 'upload'] },
   { id: 'parse-config', label: 'Configure' },
-  { id: 'island-selection', label: 'Select Islands', isConditional: true, modesApplicable: ['import', 'browser-sync'] },
+  { id: 'island-selection', label: 'Select Islands', isConditional: true, modesApplicable: ['import'] },
   { id: 'column-split', label: 'Split Columns', isConditional: true },
-  { id: 'import-mode-selection', label: 'Import Mode', modesApplicable: ['browser-sync'] },
-  { id: 'table-info', label: 'Table Info', modesApplicable: ['import', 'browser-sync'], isConditional: true },
-  { id: 'existing-table-selection', label: 'Select Table', modesApplicable: ['browser-sync'], isConditional: true },
+  { id: 'table-info', label: 'Table Info', modesApplicable: ['import'], isConditional: true },
   { id: 'column-mapping', label: 'Map Columns' },
   { id: 'duplicate-detection', label: 'Duplicates' },
   { id: 'preview', label: 'Preview' },

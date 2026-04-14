@@ -209,6 +209,10 @@ function testConnection() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const getTableKindLabel = (table: UserTable): 'SQL' | 'Bucket' => {
+    return table.tableKind === 'bucket' ? 'Bucket' : 'SQL';
+  };
+
   if (tables.length === 0) {
     return (
       <div className="empty-state">
@@ -274,7 +278,14 @@ function testConnection() {
                 <>
                   <div className="table-card-title-wrap">
                     <h3 className="table-card-title">{table.displayName}</h3>
-                    <div className="table-card-subtitle">{table.tableName}</div>
+                    <div className="table-card-subtitle-row">
+                      <div className="table-card-subtitle">{table.tableName}</div>
+                      <span
+                        className={`table-kind-badge ${table.tableKind === 'bucket' ? 'bucket' : 'sql'}`}
+                      >
+                        {getTableKindLabel(table)}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="table-card-utility-row">

@@ -9,7 +9,7 @@ export const TableInfoStep: React.FC<BaseStepProps> = ({
   onStateChange,
   error,
 }) => {
-  const { selectedFile, tableName, displayName, description } = wizardState;
+  const { selectedFile, tableName, displayName, tableKind, description } = wizardState;
 
   const handleTableNameChange = (value: string) => {
     // Convert to lowercase and remove invalid characters
@@ -58,6 +58,20 @@ export const TableInfoStep: React.FC<BaseStepProps> = ({
         />
         <small style={{ color: '#999', fontSize: '12px' }}>
           Human-readable name shown in the UI
+        </small>
+      </div>
+
+      <div className="form-group">
+        <label>Table Type *</label>
+        <select
+          value={tableKind}
+          onChange={(e) => onStateChange({ tableKind: e.target.value as 'sql' | 'bucket' })}
+        >
+          <option value="sql">SQL Table</option>
+          <option value="bucket">Bucket Table</option>
+        </select>
+        <small style={{ color: '#999', fontSize: '12px' }}>
+          Bucket tables use the same grid model for now, with a different type tag in the UI.
         </small>
       </div>
 

@@ -301,7 +301,9 @@ export const TableViewer: React.FC<TableViewerProps> = ({ table, onBack }) => {
 
       <div className="table-viewer-footer">
         <div style={{ fontSize: '14px', color: '#666' }}>
-          Showing {page * limit + 1} to {Math.min((page + 1) * limit, total)} of {total.toLocaleString()} rows
+          {total === 0
+            ? 'Showing 0 rows'
+            : `Showing ${page * limit + 1} to ${Math.min((page + 1) * limit, total)} of ${total.toLocaleString()} rows`}
         </div>
 
         <div className="table-viewer-pagination">

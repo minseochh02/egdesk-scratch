@@ -4,6 +4,7 @@
  */
 
 export { FileStorageManager } from './file-storage-manager';
+export { BucketManager } from './bucket-manager';
 export type {
   UserDataFile,
   StoreFileOptions,

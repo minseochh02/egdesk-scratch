@@ -9,7 +9,6 @@
 
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
-import { promises as fs } from 'fs';
 import path from 'path';
 import { gzip, gunzip } from 'zlib';
 import { promisify } from 'util';
@@ -24,6 +23,7 @@ import {
   StorageType,
   CompressionType,
 } from './file-storage-types';
+import { BucketManager } from './bucket-manager';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
@@ -44,7 +44,7 @@ const DEFAULT_CONFIG: FileStorageConfig = {
  */
 export class FileStorageManager {
   private config: FileStorageConfig;
-  private baseDir: string;
+  private bucketManager: BucketManager;
 
   constructor(
     private database: Database.Database,
@@ -52,7 +52,8 @@ export class FileStorageManager {
     config?: Partial<FileStorageConfig>
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.baseDir = path.join(userDataDir, this.config.filesystemBaseDir);
+    const baseDir = path.join(userDataDir, this.config.filesystemBaseDir);
+    this.bucketManager = new BucketManager(baseDir, this.config.useHashedDirectories);
   }
 
   /**
@@ -97,8 +98,8 @@ export class FileStorageManager {
         ON user_data_files(storage_type);
     `);
 
-    // Create filesystem base directory if needed
-    await this.ensureDirectoryExists(this.baseDir);
+    // Initialize filesystem bucket
+    await this.bucketManager.initialize();
   }
 
   /**
@@ -179,7 +180,7 @@ export class FileStorageManager {
       );
     } else {
       // Store in filesystem
-      const filePath = await this.writeToFilesystem(fileId, finalData);
+      const filePath = await this.bucketManager.put(fileId, finalData);
 
       const stmt = this.database.prepare(`
         INSERT INTO user_data_files (
@@ -249,7 +250,7 @@ export class FileStorageManager {
       data = row.file_data;
     } else {
       // Read from filesystem
-      data = await fs.readFile(row.file_path);
+      data = await this.bucketManager.get(row.file_path);
     }
 
     // Decompress if needed
@@ -295,7 +296,7 @@ export class FileStorageManager {
     // Delete from filesystem if needed
     if (row.storage_type === 'filesystem' && row.file_path) {
       try {
-        await fs.unlink(row.file_path);
+        await this.bucketManager.delete(row.file_path);
       } catch (error) {
         console.error('Failed to delete file from filesystem:', error);
       }
@@ -359,46 +360,6 @@ export class FileStorageManager {
   }
 
   /**
-   * Write data to filesystem with hash-based directory structure
-   */
-  private async writeToFilesystem(fileId: string, data: Buffer): Promise<string> {
-    let filePath: string;
-
-    if (this.config.useHashedDirectories) {
-      // Use first 4 chars of UUID for subdirectory (ab/cd/abcd1234...)
-      const hash = fileId.replace(/-/g, '').substring(0, 4);
-      const dir1 = hash.substring(0, 2);
-      const dir2 = hash.substring(2, 4);
-      const dirPath = path.join(this.baseDir, dir1, dir2);
-      await this.ensureDirectoryExists(dirPath);
-      filePath = path.join(dirPath, fileId);
-    } else {
-      filePath = path.join(this.baseDir, fileId);
-    }
-
-    // Atomic write: write to temp file, then rename
-    const tempPath = `${filePath}.tmp`;
-    await fs.writeFile(tempPath, data);
-    await fs.rename(tempPath, filePath);
-
-    return filePath;
-  }
-
-  /**
-   * Ensure directory exists
-   */
-  private async ensureDirectoryExists(dirPath: string): Promise<void> {
-    try {
-      await fs.mkdir(dirPath, { recursive: true });
-    } catch (error) {
-      // Ignore if directory already exists
-      if ((error as any).code !== 'EEXIST') {
-        throw error;
-      }
-    }
-  }
-
-  /**
    * Map database row to UserDataFile
    */
   private mapRowToFile(row: any): UserDataFile {
@@ -432,31 +393,17 @@ export class FileStorageManager {
     const stmt = this.database.prepare('SELECT file_path FROM user_data_files WHERE storage_type = "filesystem"');
     const dbFiles = new Set((stmt.all() as any[]).map((row) => row.file_path).filter(Boolean));
 
-    // Walk filesystem and check each file
-    const walkDir = async (dirPath: string): Promise<void> => {
-      try {
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const fullPath = path.join(dirPath, entry.name);
-
-          if (entry.isDirectory()) {
-            await walkDir(fullPath);
-          } else if (entry.isFile()) {
-            if (!dbFiles.has(fullPath)) {
-              // Orphaned file - delete it
-              await fs.unlink(fullPath);
-              cleanedCount++;
-              console.log(`Cleaned up orphaned file: ${fullPath}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Error walking directory ${dirPath}:`, error);
-      }
-    };
-
-    await walkDir(this.baseDir);
+    try {
+      const bucketFiles = await this.bucketManager.listAllFiles();
+      const orphanedFiles = bucketFiles.filter((filePath) => !dbFiles.has(filePath));
+      await Promise.all(orphanedFiles.map((filePath) => this.bucketManager.delete(filePath)));
+      cleanedCount = orphanedFiles.length;
+      orphanedFiles.forEach((filePath) => {
+        console.log(`Cleaned up orphaned file: ${filePath}`);
+      });
+    } catch (error) {
+      console.error('Error during orphaned file cleanup:', error);
+    }
     return cleanedCount;
   }
 }

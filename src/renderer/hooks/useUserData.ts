@@ -10,6 +10,7 @@ export interface UserTable {
   id: string;
   tableName: string;
   displayName: string;
+  tableKind?: 'sql' | 'bucket';
   description?: string;
   createdFromFile?: string;
   rowCount: number;
@@ -224,6 +225,7 @@ export function useUserData() {
       sheetIndex: number;
       tableName: string;
       displayName: string;
+      tableKind?: 'sql' | 'bucket';
       description?: string;
       columnMappings?: Record<string, string>;
       columnTypes?: Record<string, string>;

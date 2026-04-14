@@ -212,6 +212,39 @@
   white-space: nowrap;
 }
 
+.table-card-subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.table-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.table-kind-badge.sql {
+  color: #2f5fbf;
+  background: #ebf2ff;
+  border-color: #cbdafb;
+}
+
+.table-kind-badge.bucket {
+  color: #7a4f07;
+  background: #fff4df;
+  border-color: #f2d7a7;
+}
+
 .table-card-actions {
   display: flex;
   gap: 4px;
@@ -442,7 +475,7 @@
 }
 
 .import-wizard-header {
-  padding: 24px;
+  padding: 16px 20px;
   border-bottom: 1px solid #e0e0e0;
   display: flex;
   justify-content: space-between;
@@ -451,18 +484,18 @@
 
 .import-wizard-header h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 18px;
   color: #333;
 }
 
 .import-wizard-body {
   flex: 1;
-  padding: 24px;
+  padding: 16px 20px;
   overflow-y: auto;
 }
 
 .import-wizard-footer {
-  padding: 24px;
+  padding: 12px 20px;
   border-top: 1px solid #e0e0e0;
   display: flex;
   justify-content: space-between;
@@ -471,29 +504,41 @@
 
 .import-wizard-steps {
   display: flex;
-  justify-content: center;
-  margin-bottom: 32px;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 16px;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0 8px 2px;
+  box-sizing: border-box;
+}
+
+.import-wizard-steps > * {
+  flex-shrink: 0;
 }
 
 .import-wizard-step {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  justify-content: center;
 }
 
 .import-wizard-step-number {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 11px;
   background: #e0e0e0;
   color: #999;
   transition: all 0.3s;
+  flex-shrink: 0;
 }
 
 .import-wizard-step.active .import-wizard-step-number {
@@ -507,9 +552,13 @@
 }
 
 .import-wizard-step-label {
-  font-size: 14px;
+  font-size: 11px;
   color: #999;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .import-wizard-step.active .import-wizard-step-label {
@@ -518,9 +567,10 @@
 }
 
 .import-wizard-step-separator {
-  width: 40px;
+  width: 10px;
   height: 2px;
   background: #e0e0e0;
+  flex-shrink: 0;
 }
 
 /* File Selection Step */
@@ -1132,74 +1182,6 @@
   padding: 2px;
 }
 
-.browser-sync-header-row {
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.browser-sync-title {
-  margin: 0 0 4px 0;
-  font-size: 14px;
-  color: var(--ud-text);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.browser-sync-subtitle {
-  margin: 0;
-  font-size: 12px;
-  color: var(--ud-text-muted);
-}
-
-.browser-sync-selected-card {
-  background: #eaf1ff;
-  border: 1px solid #c9dafc;
-  padding: 10px 12px;
-  border-radius: 7px;
-  margin-bottom: 10px;
-}
-
-.browser-sync-selected-title {
-  margin: 0 0 4px 0;
-  color: var(--ud-text);
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Browser sync modal-specific spacing/alignment fixes */
-.browser-sync-wizard-dialog .import-wizard-header {
-  padding: 14px 18px;
-}
-
-.browser-sync-wizard-dialog .import-wizard-body {
-  padding: 14px 18px;
-}
-
-.browser-sync-wizard-dialog .import-wizard-footer {
-  padding: 12px 18px;
-}
-
-.browser-sync-wizard-steps {
-  margin: 8px 0 14px;
-  padding: 0 18px;
-  align-items: center;
-}
-
-.browser-sync-wizard-steps .import-wizard-step {
-  align-items: center;
-}
-
-.browser-sync-wizard-steps .import-wizard-step-separator {
-  align-self: center;
-  margin-top: 0;
-}
-
 /* Desktop sync modal-specific spacing/alignment + compact cards */
 .desktop-sync-wizard-dialog {
   max-width: 800px;
@@ -1362,6 +1344,108 @@
   margin: 0;
   font-size: 12px;
   color: var(--ud-text-muted);
+}
+
+/* Compact density overrides for unified source/file sync wizard */
+.source-sync-wizard-dialog {
+  max-width: 860px;
+}
+
+.source-sync-wizard-dialog .import-wizard-header {
+  padding: 12px 16px;
+}
+
+.source-sync-wizard-dialog .import-wizard-steps {
+  margin: 6px 0 10px;
+  padding: 0 16px;
+}
+
+.source-sync-wizard-dialog .import-wizard-step-number {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.source-sync-wizard-dialog .import-wizard-step-label {
+  font-size: 11px;
+}
+
+.source-sync-wizard-dialog .import-wizard-body {
+  padding: 12px 16px;
+}
+
+.source-sync-wizard-dialog .import-wizard-footer {
+  padding: 10px 16px;
+}
+
+.source-sync-wizard-dialog .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 7px;
+  min-height: 30px;
+}
+
+.source-sync-wizard-dialog .btn-icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.source-sync-wizard-dialog .browser-downloads-list {
+  gap: 6px;
+  max-height: 420px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-row {
+  gap: 8px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-icon {
+  font-size: 15px;
+  width: 18px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-title {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-subtitle {
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-select-meta {
+  gap: 8px;
+  font-size: 10px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-mode-grid {
+  gap: 8px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-mode-card {
+  padding: 10px;
+  border-radius: 7px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-mode-icon {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-mode-title {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.source-sync-wizard-dialog .desktop-sync-mode-desc {
+  font-size: 11px;
 }
 
 .browser-download-file-card {
