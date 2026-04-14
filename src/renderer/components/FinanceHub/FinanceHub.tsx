@@ -6,12 +6,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './FinanceHub.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faSync, 
-  faTimes, 
-  faBank, 
-  faChartLine, 
-  faPlus, 
+import {
+  faSync,
+  faTimes,
+  faBank,
+  faChartLine,
+  faPlus,
   faWallet,
   faLink,
   faUnlink,
@@ -21,7 +21,8 @@ import {
   faTimesCircle,
   faExclamationTriangle,
   faSpinner,
-  faTrash
+  faTrash,
+  faFileInvoice
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hooks
@@ -53,8 +54,9 @@ import {
 import { formatAccountNumber, formatCurrency, getBankInfo } from './utils';
 import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
-// Sub-component
+// Sub-components
 import TransactionsPage from './TransactionsPage';
+import PromissoryNotesPage from './PromissoryNotesPage';
 
 // ============================================
 // Main Component
@@ -102,7 +104,7 @@ const FinanceHub: React.FC = () => {
   // Local State
   // ============================================
   
-  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management' | 'data-management'>('account-management');
+  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management' | 'data-management' | 'promissory-notes'>('account-management');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -127,6 +129,9 @@ const FinanceHub: React.FC = () => {
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [recentSyncOps, setRecentSyncOps] = useState<SyncOperation[]>([]);
   const [showSyncOptions, setShowSyncOptions] = useState<string | null>(null); // accountNumber that's showing options
+  /** Bank-level 어음 menu (no per-account ranges). */
+  const [showPromissorySyncOptions, setShowPromissorySyncOptions] = useState<string | null>(null);
+  const [isSyncingPromissory, setIsSyncingPromissory] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
 
   // Card-related state
@@ -489,12 +494,19 @@ const FinanceHub: React.FC = () => {
 
   const checkExistingConnections = async () => {
     try {
+      const cardCompanyIds = new Set(KOREAN_CARD_COMPANIES.map((c) => c.id));
       const savedResult = await window.electron.financeHubDb.getAllAccounts();
       let savedBanks: ConnectedBank[] = [];
 
       if (savedResult.success && savedResult.data && savedResult.data.length > 0) {
+        // Card issuers use the same accounts.bank_id column; only show real banks here
+        // (matches checkExistingCardConnections, which keeps card companies separate).
+        const bankOnlyAccounts = savedResult.data.filter(
+          (account: any) => !cardCompanyIds.has(account.bankId)
+        );
+
         // Group accounts by bankId
-        const accountsByBank = savedResult.data.reduce((acc: any, account: any) => {
+        const accountsByBank = bankOnlyAccounts.reduce((acc: any, account: any) => {
           const bankId = account.bankId;
           if (!acc[bankId]) {
             acc[bankId] = [];
@@ -545,6 +557,9 @@ const FinanceHub: React.FC = () => {
 
       if (connectedBanksList && connectedBanksList.length > 0) {
         connectedBanksList.forEach((active: any) => {
+          if (cardCompanyIds.has(active.bankId)) {
+            return;
+          }
           if (!mergedBanks.find(b => b.bankId === active.bankId)) {
             // Migration: New active connection defaults to 'personal'
             mergedBanks.push({
@@ -1015,6 +1030,76 @@ const FinanceHub: React.FC = () => {
       alert(`거래내역 동기화 실패: ${error?.message || error}`);
     } finally {
       setIsSyncing(null);
+    }
+  };
+
+  /**
+   * 어음: one action per bank (not tied to a single account or date range).
+   * Backend uses active automator session; optional `syncPromissoryNotes()` on automator.
+   */
+  const handleSyncPromissoryNotes = async (bankId: string) => {
+    setIsSyncingPromissory(bankId);
+    try {
+      const connection = connectedBanks.find(b => b.bankId === bankId);
+      const needsRestore =
+        !connection || connection.status === 'disconnected' || connection.status === 'error';
+      if (needsRestore) {
+        const ok = await reconnectBankFromSavedCredentials(bankId);
+        if (!ok) return;
+      }
+
+      let result = await window.electron.financeHub.syncPromissoryNotes(bankId);
+      if (!result.success) {
+        const errMsg = String(result.error || '');
+        if (
+          /no active browser session|active browser session|Please open browser|login first|활성 브라우저 세션/i.test(
+            errMsg,
+          )
+        ) {
+          const ok = await reconnectBankFromSavedCredentials(bankId);
+          if (!ok) {
+            alert(`❌ 어음 동기화 실패: ${errMsg}`);
+            return;
+          }
+          result = await window.electron.financeHub.syncPromissoryNotes(bankId);
+        }
+      }
+
+      if (result.success) {
+        const importError =
+          'importError' in result && typeof (result as { importError?: string }).importError === 'string'
+            ? (result as { importError: string }).importError
+            : '';
+        if (importError) {
+          const fileHint = result.filePath ? `\n\n파일: ${result.filePath}` : '';
+          alert(`⚠️ 다운로드는 완료되었으나 DB 반영 실패:\n${importError}${fileHint}`);
+        } else {
+          const n = typeof result.imported === 'number' ? result.imported : undefined;
+          const fileHint = result.filePath ? `\n\n${result.filePath}` : '';
+          const importWarnings =
+            'importWarnings' in result && Array.isArray((result as { importWarnings?: string[] }).importWarnings)
+              ? (result as { importWarnings: string[] }).importWarnings.filter(Boolean).join('\n')
+              : '';
+          const warnHint = importWarnings ? `\n\n참고:\n${importWarnings}` : '';
+          const msg =
+            n != null && n > 0
+              ? `✅ 어음 ${n}건 DB 반영${fileHint}${warnHint}`
+              : result.filePath
+                ? `✅ 파일 저장 완료${fileHint}${warnHint}`
+                : `✅ 어음 동기화가 완료되었습니다.${fileHint}${warnHint}`;
+          alert(msg);
+        }
+        setConnectedBanks(prev =>
+          prev.map(b => (b.bankId === bankId ? { ...b, lastSync: new Date() } : b)),
+        );
+      } else {
+        alert(`❌ 어음 동기화 실패: ${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error: unknown) {
+      console.error('[FinanceHub] Promissory notes sync error:', error);
+      alert(`❌ 어음 동기화 실패: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsSyncingPromissory(null);
     }
   };
 
@@ -2422,6 +2507,10 @@ const FinanceHub: React.FC = () => {
             <button className={`finance-hub__nav-item ${currentView === 'account-management' ? 'active' : ''}`} onClick={() => setCurrentView('account-management')}>계좌 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'bank-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('bank-transactions')}>은행 전체 거래내역</button>
             <button className={`finance-hub__nav-item ${currentView === 'card-transactions' ? 'active' : ''}`} onClick={() => setCurrentView('card-transactions')}>카드 전체 거래 내역</button>
+            <button className={`finance-hub__nav-item ${currentView === 'promissory-notes' ? 'active' : ''}`} onClick={() => setCurrentView('promissory-notes')}>
+              <FontAwesomeIcon icon={faFileInvoice} style={{ marginRight: '6px' }} />
+              어음 관리
+            </button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-invoices' ? 'active' : ''}`} onClick={() => setCurrentView('tax-invoices')}>전자세금계산서</button>
             <button className={`finance-hub__nav-item ${currentView === 'data-management' ? 'active' : ''}`} onClick={() => setCurrentView('data-management')}>데이터 관리</button>
@@ -2615,6 +2704,41 @@ const FinanceHub: React.FC = () => {
                           <div className="finance-hub__bank-actions">
                             {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}><FontAwesomeIcon icon={faSync} /> 재연결</button>}
                             {connection.status === 'connected' && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleFetchAccounts(connection.bankId)} disabled={isFetchingAccounts === connection.bankId}>{isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}</button>}
+                            {connection.status === 'connected' && (
+                              <div className="finance-hub__sync-dropdown">
+                                <button
+                                  type="button"
+                                  className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                                  onClick={() =>
+                                    setShowPromissorySyncOptions(
+                                      showPromissorySyncOptions === connection.bankId ? null : connection.bankId,
+                                    )
+                                  }
+                                  disabled={isSyncingPromissory === connection.bankId || connection.status === 'pending'}
+                                  title="어음 동기화"
+                                >
+                                  <FontAwesomeIcon
+                                    icon={isSyncingPromissory === connection.bankId ? faSpinner : faFileInvoice}
+                                    spin={isSyncingPromissory === connection.bankId}
+                                  />{' '}
+                                  어음
+                                </button>
+                                {showPromissorySyncOptions === connection.bankId && !isSyncingPromissory && (
+                                  <div className="finance-hub__sync-options">
+                                    <button
+                                      type="button"
+                                      className="finance-hub__sync-option"
+                                      onClick={() => {
+                                        handleSyncPromissoryNotes(connection.bankId);
+                                        setShowPromissorySyncOptions(null);
+                                      }}
+                                    >
+                                      <FontAwesomeIcon icon={faSync} /> 어음 재동기화
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--danger" onClick={() => handleDisconnect(connection.bankId)}>연결 해제</button>
                           </div>
                         </div>
@@ -3048,6 +3172,19 @@ const FinanceHub: React.FC = () => {
               </section>
 
             </div>
+          </div>
+        ) : currentView === 'promissory-notes' ? (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <PromissoryNotesPage
+              onSyncPromissoryNotes={handleSyncPromissoryNotes}
+              syncingBankId={isSyncingPromissory}
+              promissorySyncBanks={connectedBanks
+                .filter((b) => b.status === 'connected')
+                .map((b) => ({
+                  bankId: b.bankId,
+                  displayName: getBankConfigById(b.bankId)?.nameKo ?? b.alias ?? b.bankId,
+                }))}
+            />
           </div>
         ) : currentView === 'data-management' ? (
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>

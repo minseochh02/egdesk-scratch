@@ -4,6 +4,7 @@ const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const { WOORI_CONFIG } = require('./config');
+const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
 
 /**
  * Woori 기업: INI cert UI is in-page (xwup_*). Arduino for TAB/password; Playwright for 확인 / navigation.
@@ -384,7 +385,7 @@ class WooriBankAutomator extends BaseBankAutomator {
 
     const accounts = [];
     const seen = new Set();
-    const re = /(\d{3}-\d{2,4}-\d{4,7})/;
+    const re = /(\d{3}-\d{2,6}-\d{4,7})/;
     for (const row of raw) {
       const m = row.text.match(re);
       if (!m) continue;
@@ -394,7 +395,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       seen.add(key);
       accounts.push({
         accountNumber,
-        accountName: row.text.replace(accountNumber, '').trim() || '우리 기업 계좌',
+        accountName: accountDisplayNameFromOptionText(row.text, '우리 기업 계좌'),
         bankId: 'woori',
         balance: 0,
         currency: 'KRW',

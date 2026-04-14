@@ -10,6 +10,7 @@ const {
   HANA_NATIVE_CERT_STEPS,
 } = require('../../utils/corporate-cert-native-steps');
 const { HANA_CONFIG } = require('./config');
+const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
 
 class HanaBankAutomator extends BaseBankAutomator {
   constructor(options = {}) {
@@ -359,7 +360,7 @@ class HanaBankAutomator extends BaseBankAutomator {
    */
   _parseAccountNumberFromOptionText(text) {
     const t = (text || '').trim();
-    const dashed = t.match(/(\d{3})-(\d{2,4})-(\d{4,7})/);
+    const dashed = t.match(/(\d{3})-(\d{2,6})-(\d{4,7})/);
     if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
     const digits = t.replace(/\D/g, '');
     if (digits.length >= 10 && digits.length <= 16) {
@@ -423,7 +424,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       seen.add(key);
       accounts.push({
         accountNumber,
-        accountName: row.text.replace(accountNumber, '').trim() || '하나 기업 계좌',
+        accountName: accountDisplayNameFromOptionText(row.text, '하나 기업 계좌'),
         bankId: 'hana',
         balance: 0,
         currency: 'KRW',

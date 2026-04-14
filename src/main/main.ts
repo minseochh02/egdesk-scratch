@@ -663,6 +663,65 @@ const createWindow = async () => {
         }
       });
 
+      /**
+       * 어음: bank-level resync (no account list). Automators may implement `syncPromissoryNotes()`.
+       */
+      ipcMain.handle(
+        'finance-hub:sync-promissory-notes',
+        async (_event, { bankId }: { bankId: string }) => {
+          try {
+            const automator = activeAutomators.get(bankId);
+            if (!automator) {
+              return {
+                success: false,
+                error:
+                  '활성 브라우저 세션이 없습니다. 은행 연결 후 거래 동기화를 한 번 실행하거나 다시 로그인해 주세요.',
+              };
+            }
+            if (typeof (automator as { syncPromissoryNotes?: () => Promise<unknown> }).syncPromissoryNotes === 'function') {
+              const result = (await (automator as { syncPromissoryNotes: () => Promise<unknown> }).syncPromissoryNotes()) as Record<string, unknown>;
+              if (result && typeof result === 'object' && 'success' in result) {
+                if (
+                  result.success === true &&
+                  typeof result.filePath === 'string' &&
+                  bankId === 'ibk'
+                ) {
+                  try {
+                    const financeHubManager = getSQLiteManager().getFinanceHubManager();
+                    const imp = financeHubManager.importIbkPromissoryNotesFromExcel(result.filePath as string);
+                    return {
+                      ...result,
+                      imported: imp.imported ?? 0,
+                      skipped: imp.skipped ?? 0,
+                      importWarnings: imp.warnings,
+                      ...(imp.success === false && imp.error ? { importError: imp.error } : {}),
+                    };
+                  } catch (importErr: unknown) {
+                    return {
+                      ...result,
+                      imported: 0,
+                      importError: importErr instanceof Error ? importErr.message : String(importErr),
+                    };
+                  }
+                }
+                return result;
+              }
+              return { success: true, imported: 0 };
+            }
+            return {
+              success: false,
+              error: '이 은행의 어음 자동 수집은 아직 연결되지 않았습니다.',
+            };
+          } catch (error) {
+            console.error(`[FINANCE-HUB] sync-promissory-notes failed for ${bankId}:`, error);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance

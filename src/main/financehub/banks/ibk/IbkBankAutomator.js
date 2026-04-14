@@ -8,6 +8,7 @@ const {
   IBK_NATIVE_CERT_STEPS,
 } = require('../../utils/corporate-cert-native-steps');
 const { IBK_CONFIG } = require('./config');
+const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
 
 class IbkBankAutomator extends BaseBankAutomator {
   constructor(options = {}) {
@@ -19,7 +20,9 @@ class IbkBankAutomator extends BaseBankAutomator {
     super(config);
     this.outputDir = options.outputDir || this.getSafeOutputDir('ibk');
     this.downloadDir = path.join(this.outputDir, 'ibk-biz-downloads');
+    this.promissoryDownloadDir = path.join(this.outputDir, 'ibk-promissory-downloads');
     this.ensureOutputDirectory(this.downloadDir);
+    this.ensureOutputDirectory(this.promissoryDownloadDir);
     this.arduinoPort = options.arduinoPort || null;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
@@ -282,7 +285,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   _parseIbkAccountFromOption(text, value) {
     const t = (text || '').trim();
-    const dashed = t.match(/(\d{3})-(\d{2,4})-(\d{4,7})/);
+    const dashed = t.match(/(\d{3})-(\d{2,6})-(\d{4,7})/);
     if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
     const digits = t.replace(/\D/g, '');
     if (digits.length >= 10 && digits.length <= 16) {
@@ -398,13 +401,9 @@ class IbkBankAutomator extends BaseBankAutomator {
         accountNumber.startsWith('value:') ? `${accountNumber}:${row.index}` : accountNumber.replace(/-/g, '');
       if (seen.has(key)) continue;
       seen.add(key);
-      const nameFromText = row.text
-        .replace(/\d{3}-\d{2,4}-\d{4,7}/g, '')
-        .replace(/\d{10,16}/g, '')
-        .trim();
       accounts.push({
         accountNumber,
-        accountName: nameFromText || 'IBK 기업 계좌',
+        accountName: accountDisplayNameFromOptionText(row.text, 'IBK 기업 계좌'),
         bankId: 'ibk',
         balance: 0,
         currency: 'KRW',
@@ -429,6 +428,206 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   async getAccounts() {
     return this._getIbKAccounts();
+  }
+
+  /**
+   * DOM helper from ibkpromissory_notes.spec.js — JS click + physical mouse for stubborn IBK menus.
+   * @param {import('playwright-core').Frame} frame
+   * @param {string} selector
+   * @param {string|null} matchText
+   * @returns {Promise<boolean>}
+   */
+  async _robustClickMainframe(frame, selector, matchText = null) {
+    if (!this.page || !frame) return false;
+    const result = await frame.evaluate(
+      ([sel, text]) => {
+        let el;
+        if (text) {
+          el = Array.from(document.querySelectorAll(sel)).find(
+            (e) => e.textContent && e.textContent.includes(text),
+          );
+        } else {
+          el = document.querySelector(sel);
+        }
+        if (!el) return null;
+        el.scrollIntoView();
+        const rect = el.getBoundingClientRect();
+        ['mousedown', 'mouseup', 'click'].forEach((type) => {
+          el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        });
+        if (typeof el.onclick === 'function') el.onclick();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      },
+      [selector, matchText],
+    );
+    if (result) {
+      try {
+        await this.page.mouse.click(result.x, result.y);
+      } catch (e) {
+        /* ignore */
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * IBK 기업뱅킹 — 외상매출채권 (promissory notes / receivables) export.
+   * Flow mirrors egdesk-scratch/ibkpromissory_notes.spec.js: 판매기업 → 외상매출채권 → 채권조회/취소신청 → 조회 → Excel save.
+   * Excel parsing / DB upsert is intentionally left blank; returns saved file path and imported: 0.
+   *
+   * @returns {Promise<{ success: boolean, imported?: number, filePath?: string|null, error?: string, message?: string }>}
+   */
+  async syncPromissoryNotes() {
+    if (!this.page) {
+      return { success: false, error: '브라우저 페이지가 없습니다.' };
+    }
+    this.ensureOutputDirectory(this.promissoryDownloadDir);
+    this.log('IBK: syncPromissoryNotes (외상매출채권) 시작...');
+
+    try {
+      await this._cleanupIbkPopups();
+
+      let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      if (!mainframe) {
+        await this.page.waitForTimeout(2000);
+        mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      }
+      if (!mainframe) {
+        return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
+      }
+
+      const popupSelectors = ['button:has-text("닫기")', 'button:has-text("확인")', '.popup_close', '.btn_close'];
+      for (const sel of popupSelectors) {
+        try {
+          const btn = mainframe.locator(sel).first();
+          if (await btn.isVisible({ timeout: 800 }).catch(() => false)) await btn.click();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      await this.page.waitForTimeout(500);
+
+      // STEP 9: B2B → 판매기업 → 외상매출채권 → 채권조회/취소신청
+      try {
+        const b2bImg = mainframe.locator('img[alt="B2B"]').first();
+        await b2bImg.hover();
+        await this.page.waitForTimeout(500);
+        await b2bImg.click();
+      } catch (e) {
+        this.warn('IBK promissory: B2B menu click optional failed:', e.message);
+      }
+      await this.page.waitForTimeout(2000);
+
+      await this._robustClickMainframe(mainframe, 'a[efncmenuid="E0303000000"]');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, 'a[efncmenuid="E0303040000"]');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, 'a', '채권조회/취소신청');
+      await this.page.waitForTimeout(3000);
+
+      mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+      // Date range: wide default (2022-01-01 ~ 어제) — same as recorded spec
+      const startYY = '2022';
+      const startMM = '01';
+      const startDD = '01';
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 86400000);
+      const endYY = String(yesterday.getFullYear());
+      const endMM = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const endDD = String(yesterday.getDate()).padStart(2, '0');
+
+      try {
+        await mainframe.locator('[id="inqy_sttg_ymd_yy"]').selectOption(startYY);
+        await mainframe.locator('[id="inqy_sttg_ymd_mm"]').selectOption(startMM);
+        await mainframe.locator('[id="inqy_sttg_ymd_dd"]').selectOption(startDD);
+        await mainframe.locator('[id="inqy_eymd_yy"]').selectOption(endYY);
+        await mainframe.locator('[id="inqy_eymd_mm"]').selectOption(endMM);
+        await mainframe.locator('[id="inqy_eymd_dd"]').selectOption(endDD);
+        this.log(`IBK promissory: date range ${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD}`);
+      } catch (e) {
+        this.warn('IBK promissory: date selects failed:', e.message);
+      }
+      await this.page.waitForTimeout(1000);
+
+      const searchOk = await this._robustClickMainframe(mainframe, 'a.btn_ok', '조회');
+      if (!searchOk) {
+        await mainframe.locator('a:has-text("조회")').first().click({ force: true }).catch(() => {});
+      }
+      await this.page.waitForTimeout(4000);
+
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
+      const downloadPromise = this.waitForNextDownload({ timeout: 60000 });
+
+      await this._robustClickMainframe(mainframe, '#save_to_file');
+      await this._robustClickMainframe(mainframe, 'a', '저장');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, 'span', '엑셀파일저장');
+      await this._robustClickMainframe(mainframe, 'a', '엑셀');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, '#DownloadExcel');
+      await this.page.waitForTimeout(1000);
+      await this._robustClickMainframe(mainframe, '#DownloadButton');
+
+      let download = await downloadPromise.catch(() => null);
+      let suggested = 'ibk-promissory.xls';
+      let fallbackFile = null;
+
+      if (!download) {
+        this.warn('IBK promissory: no download event; checking filesystem fallback...');
+        fallbackFile = this.findRecentDownloadFile(
+          [this.promissoryDownloadDir, this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+          exportStartedAt,
+        );
+        if (!fallbackFile) {
+          await this._cleanupIbkPopups();
+          return {
+            success: false,
+            error: '엑셀 다운로드를 확인할 수 없습니다. 화면에서 조회 결과와 저장 버튼을 확인해 주세요.',
+          };
+        }
+        suggested = path.basename(fallbackFile.path);
+      } else {
+        suggested = download.suggestedFilename() || suggested;
+      }
+
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const finalName = `IBK_외상매출채권_${ts}${ext}`;
+      const finalPath = path.join(this.promissoryDownloadDir, finalName);
+
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) {
+        await this._cleanupIbkPopups();
+        return { success: false, error: '다운로드 파일 저장에 실패했습니다.' };
+      }
+
+      await this._cleanupIbkPopups();
+
+      return {
+        success: true,
+        imported: 0,
+        filePath: finalPath,
+        message: 'Download complete; IBK Excel is imported in the main process after this call.',
+      };
+    } catch (error) {
+      this.error('IBK syncPromissoryNotes failed:', error.message);
+      try {
+        await this._cleanupIbkPopups();
+      } catch (e) {
+        /* ignore */
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**

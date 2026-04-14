@@ -15,6 +15,7 @@ const {
   SHINHAN_NATIVE_CERT_STEPS,
 } = require('../../utils/corporate-cert-native-steps');
 const { SHINHAN_CONFIG } = require('./config');
+const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
 const { handleSecurityPopup } = require('./securityPopup');
 const { typePasswordWithKeyboard } = require('./virtualKeyboard');
 const {
@@ -286,7 +287,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         // Format: XXX-XXX-XXXXXX or XXXXXXXXXXXX (12 digits)
         const accountPatterns = [
           /(\d{3}-\d{3}-\d{6})/g,           // 110-451-909119
-          /(\d{3}-\d{2,4}-\d{4,6})/g,       // 110-45-909119 or 110-4519-091
+          /(\d{3}-\d{2,6}-\d{4,6})/g,       // middle segment can be 6 digits (기업 등)
           /(\d{12,14})/g,                    // 110451909119 (no dashes)
         ];
         
@@ -485,7 +486,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     const accounts = [];
     const seen = new Set();
     for (const row of rows) {
-      const m = row.text.match(/(\d{3}-\d{2,4}-\d{4,7})/);
+      const m = row.text.match(/(\d{3}-\d{2,6}-\d{4,7})/);
       if (!m) continue;
       const accountNumber = m[1];
       const key = accountNumber.replace(/-/g, '');
@@ -493,7 +494,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       seen.add(key);
       accounts.push({
         accountNumber,
-        accountName: row.text.replace(accountNumber, '').trim() || '신한 기업 계좌',
+        accountName: accountDisplayNameFromOptionText(row.text, '신한 기업 계좌'),
         bankId: 'shinhan',
         balance: 0,
         currency: 'KRW',

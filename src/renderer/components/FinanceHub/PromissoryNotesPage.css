@@ -1,0 +1,941 @@
+/* ============================================
+   Promissory Notes Page — 어음 관리
+   Class names match PromissoryNotesPage.tsx
+   ============================================ */
+
+.promissory-notes-page {
+  --pnp-primary: #0046ff;
+  --pnp-primary-dark: #0035cc;
+  --pnp-bg: #0a0e1a;
+  --pnp-bg-card: #111827;
+  --pnp-bg-card-elevated: #161f32;
+  --pnp-bg-hover: #1f2937;
+  --pnp-text: #f9fafb;
+  --pnp-text-secondary: #9ca3af;
+  --pnp-text-muted: #6b7280;
+  --pnp-border: #1f2937;
+  --pnp-border-light: #374151;
+  --pnp-success: #10b981;
+  --pnp-warning: #f59e0b;
+  --pnp-error: #ef4444;
+  --pnp-issued: #ff6b35;
+  --pnp-received: #14b8a6;
+  --pnp-radius: 12px;
+  --pnp-radius-sm: 8px;
+  --pnp-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --pnp-font: 'Pretendard', 'SF Pro Text', -apple-system, BlinkMacSystemFont, sans-serif;
+  --pnp-font-display: 'Pretendard', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  box-sizing: border-box;
+  position: relative;
+  min-height: 100%;
+  width: 100%;
+  padding: 24px 28px 40px;
+  color: var(--pnp-text);
+  font-family: var(--pnp-font);
+  background:
+    radial-gradient(ellipse 70% 45% at 15% 0%, rgba(0, 70, 255, 0.12), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 90% 20%, rgba(20, 184, 166, 0.08), transparent 50%),
+    linear-gradient(180deg, #0c1220 0%, var(--pnp-bg) 45%);
+}
+
+.promissory-notes-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 85% 65% at 50% 0%, black, transparent 72%);
+  opacity: 0.6;
+  z-index: 0;
+}
+
+.promissory-notes-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Header ---------- */
+.promissory-notes-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--pnp-border);
+}
+
+.promissory-notes-page-header__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.promissory-notes-page-header__title > svg {
+  font-size: 26px;
+  color: var(--pnp-primary);
+  opacity: 0.95;
+}
+
+.promissory-notes-page-header__title h2 {
+  margin: 0;
+  font-family: var(--pnp-font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.promissory-notes-page-header__note-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pnp-text-secondary);
+  background: var(--pnp-bg-card);
+  border: 1px solid var(--pnp-border);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.promissory-notes-page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.promissory-notes-page-header__resync {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.promissory-notes-page-header__resync-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pnp-text-muted);
+  margin: 0;
+}
+
+.promissory-notes-page-header__resync-select {
+  min-width: 120px;
+  max-width: 200px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pnp-text);
+  background: var(--pnp-bg-card);
+  border: 1px solid var(--pnp-border);
+  border-radius: var(--pnp-radius-sm);
+  cursor: pointer;
+}
+
+.promissory-notes-page-header__resync-select:focus {
+  outline: none;
+  border-color: rgba(0, 70, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(0, 70, 255, 0.2);
+}
+
+.promissory-notes-page-header__resync-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------- Buttons ---------- */
+.promissory-notes-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--pnp-radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.promissory-notes-page-btn--primary {
+  background: linear-gradient(135deg, var(--pnp-primary) 0%, var(--pnp-primary-dark) 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 70, 255, 0.35);
+}
+
+.promissory-notes-page-btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 70, 255, 0.45);
+}
+
+.promissory-notes-page-btn--outline {
+  background: transparent;
+  border-color: rgba(0, 70, 255, 0.45);
+  color: #93c5fd;
+}
+
+.promissory-notes-page-btn--outline:hover:not(:disabled) {
+  background: rgba(0, 70, 255, 0.12);
+  border-color: var(--pnp-primary);
+  color: var(--pnp-text);
+}
+
+.promissory-notes-page-btn--outline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.promissory-notes-page-btn--icon {
+  background: var(--pnp-bg-card);
+  border-color: var(--pnp-border);
+  color: var(--pnp-text-secondary);
+  padding: 10px 14px;
+}
+
+.promissory-notes-page-btn--icon:hover {
+  background: var(--pnp-bg-hover);
+  border-color: var(--pnp-border-light);
+  color: var(--pnp-text);
+}
+
+.promissory-notes-page-btn--icon-small {
+  background: var(--pnp-bg-card-elevated);
+  border: 1px solid var(--pnp-border);
+  color: var(--pnp-text-secondary);
+  padding: 8px 10px;
+  border-radius: var(--pnp-radius-sm);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.promissory-notes-page-btn--icon-small:hover {
+  background: var(--pnp-bg-hover);
+  border-color: var(--pnp-border-light);
+  color: var(--pnp-primary);
+}
+
+.promissory-notes-page-btn--expand {
+  background: var(--pnp-bg-card-elevated);
+  border: 1px solid var(--pnp-border);
+  color: var(--pnp-text-secondary);
+  padding: 8px 10px;
+  border-radius: var(--pnp-radius-sm);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.promissory-notes-page-btn--expand:hover {
+  background: var(--pnp-bg-hover);
+  border-color: var(--pnp-border-light);
+  color: var(--pnp-text);
+}
+
+.promissory-notes-page-btn--action {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--pnp-bg-card-elevated);
+  border: 1px solid var(--pnp-border);
+  color: var(--pnp-text-secondary);
+}
+
+.promissory-notes-page-btn--action:hover {
+  background: var(--pnp-bg-hover);
+  color: var(--pnp-text);
+}
+
+.promissory-notes-page-btn--success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: var(--pnp-success);
+}
+
+.promissory-notes-page-btn--success:hover {
+  background: rgba(16, 185, 129, 0.22);
+  color: #34d399;
+}
+
+.promissory-notes-page-btn--danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--pnp-error);
+}
+
+.promissory-notes-page-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.promissory-notes-page-btn--secondary {
+  background: var(--pnp-bg-hover);
+  border-color: var(--pnp-border);
+  color: var(--pnp-text-secondary);
+}
+
+.promissory-notes-page-btn--icon:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Load error (IPC / DB) */
+.promissory-notes-page-load-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--pnp-radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.promissory-notes-page-load-error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--pnp-error);
+}
+
+/* ---------- Summary cards ---------- */
+.promissory-notes-page-stats__cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 1200px) {
+  .promissory-notes-page-stats__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .promissory-notes-page-stats__cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.promissory-notes-page-stats__card {
+  background: var(--pnp-bg-card);
+  border: 1px solid var(--pnp-border);
+  border-radius: var(--pnp-radius);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--pnp-shadow);
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.promissory-notes-page-stats__card:hover {
+  border-color: var(--pnp-border-light);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.promissory-notes-page-stats__card--alert {
+  background: linear-gradient(145deg, rgba(239, 68, 68, 0.08) 0%, var(--pnp-bg-card) 55%);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.promissory-notes-page-stats__card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.promissory-notes-page-stats__card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pnp-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.promissory-notes-page-stats__badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.promissory-notes-page-stats__badge--issued {
+  background: rgba(255, 107, 53, 0.15);
+  color: var(--pnp-issued);
+  border: 1px solid rgba(255, 107, 53, 0.35);
+}
+
+.promissory-notes-page-stats__badge--received {
+  background: rgba(20, 184, 166, 0.15);
+  color: var(--pnp-received);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+}
+
+.promissory-notes-page-stats__amount {
+  font-family: var(--pnp-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.promissory-notes-page-stats__amount--issued {
+  color: var(--pnp-issued);
+}
+
+.promissory-notes-page-stats__amount--received {
+  color: var(--pnp-received);
+}
+
+.promissory-notes-page-stats__amount--positive {
+  color: var(--pnp-success);
+}
+
+.promissory-notes-page-stats__amount--negative {
+  color: var(--pnp-error);
+}
+
+.promissory-notes-page-stats__card-footer {
+  font-size: 12px;
+  color: var(--pnp-text-muted);
+}
+
+.promissory-notes-page-stats__alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+.promissory-notes-page-stats__alert-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--pnp-radius-sm);
+}
+
+.promissory-notes-page-stats__alert-item svg {
+  flex-shrink: 0;
+}
+
+.promissory-notes-page-stats__alert-item--overdue {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.promissory-notes-page-stats__alert-item--urgent {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.promissory-notes-page-stats__alert-item--warning {
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--pnp-warning);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+}
+
+.promissory-notes-page-stats__alert-item--ok {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--pnp-success);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+/* ---------- Filters panel ---------- */
+.promissory-notes-page-filters {
+  background: var(--pnp-bg-card);
+  border: 1px solid var(--pnp-border);
+  border-radius: var(--pnp-radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--pnp-shadow);
+}
+
+.promissory-notes-page-filters__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px 16px;
+  align-items: end;
+}
+
+.promissory-notes-page-filters__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.promissory-notes-page-filters__group label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pnp-text-muted);
+}
+
+.promissory-notes-page-filters__group select,
+.promissory-notes-page-filters__group input[type='date'],
+.promissory-notes-page-filters__group input[type='text'] {
+  padding: 10px 12px;
+  border-radius: var(--pnp-radius-sm);
+  border: 1px solid var(--pnp-border);
+  background: var(--pnp-bg-hover);
+  color: var(--pnp-text);
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.promissory-notes-page-filters__group select:focus,
+.promissory-notes-page-filters__group input:focus {
+  outline: none;
+  border-color: var(--pnp-primary);
+  box-shadow: 0 0 0 3px rgba(0, 70, 255, 0.2);
+}
+
+.promissory-notes-page-filters__btn-reset {
+  align-self: end;
+  padding: 10px 16px;
+  border-radius: var(--pnp-radius-sm);
+  border: 1px solid var(--pnp-border);
+  background: var(--pnp-bg-card-elevated);
+  color: var(--pnp-text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.promissory-notes-page-filters__btn-reset:hover {
+  background: var(--pnp-bg-hover);
+  color: var(--pnp-text);
+  border-color: var(--pnp-border-light);
+}
+
+/* ---------- Quick filter chips ---------- */
+.promissory-notes-page-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.promissory-notes-page-quick-filters__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--pnp-border);
+  background: var(--pnp-bg-card);
+  color: var(--pnp-text-secondary);
+  transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.promissory-notes-page-quick-filters__chip:hover {
+  background: var(--pnp-bg-hover);
+  border-color: var(--pnp-border-light);
+  color: var(--pnp-text);
+}
+
+.promissory-notes-page-quick-filters__chip--active {
+  background: rgba(0, 70, 255, 0.2);
+  border-color: rgba(0, 70, 255, 0.55);
+  color: #e0e7ff;
+  box-shadow: 0 0 0 1px rgba(0, 70, 255, 0.25);
+}
+
+.promissory-notes-page-quick-filters__chip svg {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* ---------- Notes list ---------- */
+.promissory-notes-page-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.promissory-notes-page-empty-state {
+  text-align: center;
+  padding: 56px 24px;
+  background: var(--pnp-bg-card);
+  border: 1px dashed var(--pnp-border-light);
+  border-radius: var(--pnp-radius);
+  color: var(--pnp-text-muted);
+}
+
+.promissory-notes-page-empty-state svg {
+  margin-bottom: 16px;
+  opacity: 0.35;
+}
+
+.promissory-notes-page-empty-state h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--pnp-text-secondary);
+}
+
+.promissory-notes-page-empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ---------- Note card ---------- */
+.promissory-notes-page-note-card {
+  background: var(--pnp-bg-card);
+  border: 1px solid var(--pnp-border);
+  border-radius: var(--pnp-radius);
+  overflow: hidden;
+  box-shadow: var(--pnp-shadow);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.promissory-notes-page-note-card:hover {
+  border-color: var(--pnp-border-light);
+}
+
+.promissory-notes-page-note-card--overdue {
+  border-left: 4px solid var(--pnp-error);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.06) 0%, var(--pnp-bg-card) 32%);
+}
+
+.promissory-notes-page-note-card--urgent {
+  border-left: 4px solid var(--pnp-warning);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.06) 0%, var(--pnp-bg-card) 32%);
+}
+
+.promissory-notes-page-note-card--warning {
+  border-left: 4px solid #fbbf24;
+}
+
+.promissory-notes-page-note-card--expanded {
+  border-color: rgba(0, 70, 255, 0.35);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+}
+
+.promissory-notes-page-note-card__header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.promissory-notes-page-note-card__header:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.promissory-notes-page-note-card__main-info {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(140px, 0.85fr) auto auto;
+  gap: 16px 20px;
+  align-items: center;
+  padding: 18px 20px;
+}
+
+@media (max-width: 1100px) {
+  .promissory-notes-page-note-card__main-info {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto;
+  }
+
+  .promissory-notes-page-note-card__amount-section {
+    grid-column: 2;
+  }
+
+  .promissory-notes-page-note-card__dates {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .promissory-notes-page-note-card__status-section {
+    grid-column: 2;
+    grid-row: 2;
+    align-items: flex-start;
+  }
+
+  .promissory-notes-page-note-card__actions {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .promissory-notes-page-note-card__main-info {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .promissory-notes-page-note-card__type-indicator {
+    grid-column: 1;
+  }
+
+  .promissory-notes-page-note-card__core-info {
+    grid-column: 1 / -1;
+  }
+
+  .promissory-notes-page-note-card__amount-section {
+    grid-column: 1;
+  }
+
+  .promissory-notes-page-note-card__dates {
+    grid-column: 1 / -1;
+  }
+
+  .promissory-notes-page-note-card__status-section {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .promissory-notes-page-note-card__actions {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: column;
+  }
+}
+
+.promissory-notes-page-note-card__type-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.promissory-notes-page-note-card__type-badge--issued {
+  background: rgba(255, 107, 53, 0.15);
+  color: var(--pnp-issued);
+  border: 1px solid rgba(255, 107, 53, 0.35);
+}
+
+.promissory-notes-page-note-card__type-badge--received {
+  background: rgba(20, 184, 166, 0.15);
+  color: var(--pnp-received);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+}
+
+.promissory-notes-page-note-card__core-info {
+  min-width: 0;
+}
+
+.promissory-notes-page-note-card__note-number {
+  font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pnp-text);
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.promissory-notes-page-note-card__counterparty {
+  font-size: 13px;
+  color: var(--pnp-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.promissory-notes-page-note-card__amount-section {
+  text-align: right;
+}
+
+.promissory-notes-page-note-card__amount {
+  font-family: var(--pnp-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.promissory-notes-page-note-card__amount--issued {
+  color: var(--pnp-issued);
+}
+
+.promissory-notes-page-note-card__amount--received {
+  color: var(--pnp-received);
+}
+
+.promissory-notes-page-note-card__bank-info {
+  font-size: 12px;
+  color: var(--pnp-text-muted);
+  margin-top: 4px;
+}
+
+.promissory-notes-page-note-card__dates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.promissory-notes-page-note-card__date-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.promissory-notes-page-note-card__date-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--pnp-text-muted);
+  min-width: 40px;
+}
+
+.promissory-notes-page-note-card__date-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pnp-text-secondary);
+}
+
+.promissory-notes-page-note-card__status-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.promissory-notes-page-note-card__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--pnp-radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  max-width: 100%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.promissory-notes-page-note-card__urgency-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.promissory-notes-page-note-card__urgency-badge--overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.promissory-notes-page-note-card__urgency-badge--urgent {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.promissory-notes-page-note-card__urgency-badge--warning {
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.promissory-notes-page-note-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Expanded details */
+.promissory-notes-page-note-card__details {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--pnp-border);
+  animation: pnp-slide 0.25s ease-out;
+}
+
+@keyframes pnp-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.promissory-notes-page-note-card__details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.promissory-notes-page-note-card__detail-section {
+  background: var(--pnp-bg-card-elevated);
+  border: 1px solid var(--pnp-border);
+  border-radius: var(--pnp-radius-sm);
+  padding: 14px 16px;
+}
+
+.promissory-notes-page-note-card__detail-section h4 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pnp-text-muted);
+}
+
+.promissory-notes-page-note-card__detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.promissory-notes-page-note-card__detail-label {
+  color: var(--pnp-text-muted);
+  flex-shrink: 0;
+}
+
+.promissory-notes-page-note-card__detail-value {
+  font-weight: 600;
+  color: var(--pnp-text);
+  text-align: right;
+  word-break: break-word;
+}
+
+.promissory-notes-page-note-card__memo-section {
+  grid-column: 1 / -1;
+  border-left: 3px solid var(--pnp-warning);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.promissory-notes-page-note-card__memo-section p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--pnp-text-secondary);
+}
+
+.promissory-notes-page-note-card__detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--pnp-border);
+}

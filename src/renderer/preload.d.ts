@@ -743,6 +743,16 @@ interface FinanceHubAPI {
   getSavedCredentials: (bankId: string) => Promise<{ success: boolean; credentials?: any; error?: string }>;
   removeCredentials: (bankId: string) => Promise<{ success: boolean; error?: string }>;
   cleanupDownloadedFiles: (bankOrCardId: string) => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
+  syncPromissoryNotes: (bankId: string) => Promise<{
+    success: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    filePath?: string | null;
+    message?: string;
+    importError?: string;
+    importWarnings?: string[];
+  }>;
 }
 
 /**
@@ -752,6 +762,7 @@ interface FinanceHubDbAPI {
   getAllBanks: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getPromissoryNotes: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   queryTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
