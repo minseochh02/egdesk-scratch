@@ -72,6 +72,7 @@ const SCHEMA_VERSION = '019';
 const ALL_TABLES = [
   'banks',
   'accounts',
+  'promissory_notes',
   'bank_transactions',
   'card_transactions',
   'transactions',
@@ -93,6 +94,7 @@ const TABLES_WITH_ACCOUNT_FK = new Set([
   'card_transactions',
   'transactions',
   'sync_operations',
+  'promissory_notes',
 ]);
 
 // ============================================
@@ -512,6 +514,7 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
     const importOrder = [
       'banks',
       'accounts',
+      'promissory_notes',
       'bank_transactions',
       'card_transactions',
       'transactions',
