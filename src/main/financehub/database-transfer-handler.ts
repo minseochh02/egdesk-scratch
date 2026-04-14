@@ -10,7 +10,6 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import zlib from 'zlib';
-import { SQLiteManager } from '../sqlite/manager';
 
 // ============================================
 // Types
@@ -88,6 +87,14 @@ const ALL_TABLES = [
 // Tables to exclude by default (credentials)
 const SENSITIVE_TABLES = ['saved_credentials'];
 
+/** Import merges by INSERT OR IGNORE on accounts can skip rows (UNIQUE bank_id+account_number) while child rows still reference exported account ids — remap those to the local account id. */
+const TABLES_WITH_ACCOUNT_FK = new Set([
+  'bank_transactions',
+  'card_transactions',
+  'transactions',
+  'sync_operations',
+]);
+
 // ============================================
 // Helper Functions
 // ============================================
@@ -137,6 +144,80 @@ function tableExists(db: Database.Database, tableName: string): boolean {
     .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
     .get(tableName);
   return !!result;
+}
+
+/**
+ * Insert exported account rows, building exportId -> local accounts.id map.
+ * When the DB already has the same bank_id + account_number, map to that row's id
+ * so transaction rows (which reference export ids) satisfy FOREIGN KEY.
+ */
+function importAccountsWithRemap(db: Database.Database, exportedAccountRows: any[]): {
+  map: Map<string, string>;
+  inserted: number;
+} {
+  const map = new Map<string, string>();
+  if (!exportedAccountRows?.length) {
+    return { map, inserted: 0 };
+  }
+
+  const columns = Object.keys(exportedAccountRows[0]);
+  const placeholders = columns.map(() => '?').join(', ');
+  const insert = db.prepare(
+    `INSERT INTO accounts (${columns.join(', ')}) VALUES (${placeholders})`
+  );
+  const findByKey = db.prepare(
+    `SELECT id FROM accounts WHERE bank_id = ? AND account_number = ?`
+  );
+
+  let inserted = 0;
+  let merged = 0;
+
+  for (const row of exportedAccountRows) {
+    const existing = findByKey.get(row.bank_id, row.account_number) as { id: string } | undefined;
+    if (existing) {
+      map.set(row.id, existing.id);
+      merged++;
+      continue;
+    }
+    try {
+      const values = columns.map((c) => row[c]);
+      insert.run(...values);
+      map.set(row.id, row.id);
+      inserted++;
+    } catch (e: any) {
+      const again = findByKey.get(row.bank_id, row.account_number) as { id: string } | undefined;
+      if (again) {
+        map.set(row.id, again.id);
+        merged++;
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  console.log(
+    `[DatabaseTransfer] accounts: inserted ${inserted}, merged to existing ${merged} (id remap size ${map.size})`
+  );
+  return { map, inserted };
+}
+
+function remapAccountIdInRow(
+  tableName: string,
+  row: Record<string, any>,
+  accountIdMap: Map<string, string>
+): Record<string, any> {
+  if (!TABLES_WITH_ACCOUNT_FK.has(tableName) || accountIdMap.size === 0) {
+    return row;
+  }
+  const aid = row.account_id;
+  if (typeof aid !== 'string') {
+    return row;
+  }
+  const mapped = accountIdMap.get(aid);
+  if (mapped === undefined || mapped === aid) {
+    return row;
+  }
+  return { ...row, account_id: mapped };
 }
 
 /**
@@ -425,6 +506,7 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
 
     // 3. Open database and begin transaction
     const db = getFinanceHubDatabase();
+    db.pragma('foreign_keys = ON');
 
     // Import tables in dependency order (excluding saved_credentials for now)
     const importOrder = [
@@ -443,6 +525,8 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
 
     let totalImported = 0;
     const tablesImported: string[] = [];
+
+    let accountIdMap = new Map<string, string>();
 
     const transaction = db.transaction(() => {
       for (const tableName of importOrder) {
@@ -464,18 +548,25 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
 
         console.log(`[DatabaseTransfer] Importing ${tableName}: ${rows.length} rows...`);
 
-        // Regular import for other tables
+        if (tableName === 'accounts') {
+          const { map, inserted } = importAccountsWithRemap(db, rows);
+          accountIdMap = map;
+          totalImported += inserted;
+          tablesImported.push(tableName);
+          continue;
+        }
+
         const columns = Object.keys(rows[0]);
         const placeholders = columns.map(() => '?').join(', ');
 
-        // Use INSERT OR IGNORE to skip duplicates
         const stmt = db.prepare(
           `INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`
         );
 
         let imported = 0;
         for (const row of rows) {
-          const values = columns.map((col) => row[col]);
+          const remapped = remapAccountIdInRow(tableName, row, accountIdMap);
+          const values = columns.map((col) => remapped[col]);
           const result = stmt.run(...values);
           if (result.changes > 0) {
             imported++;

@@ -2227,6 +2227,9 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:clear-persistent-spreadsheet', key),
     cleanupDownloadedFiles: (bankOrCardId: string) =>
       ipcRenderer.invoke('finance-hub:cleanup-downloaded-files', bankOrCardId),
+    /** Bank-scoped 어음 sync (no per-account range; one action per connected bank). */
+    syncPromissoryNotes: (bankId: string) =>
+      ipcRenderer.invoke('finance-hub:sync-promissory-notes', { bankId }),
     // Card company methods
     card: {
       loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string, manualPassword?: boolean) =>
@@ -2342,6 +2345,7 @@ const electronHandler = {
     getAllBanks: () => ipcRenderer.invoke('sqlite-financehub-get-all-banks'),
     getAllAccounts: () => ipcRenderer.invoke('sqlite-financehub-get-all-accounts'),
     getAccountsByBank: (bankId: string) => ipcRenderer.invoke('sqlite-financehub-get-accounts-by-bank', bankId),
+    getPromissoryNotes: () => ipcRenderer.invoke('sqlite-financehub-get-promissory-notes'),
     queryTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-query-transactions', options),
     getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
     getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),

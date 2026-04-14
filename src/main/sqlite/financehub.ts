@@ -3,8 +3,10 @@
 // ============================================
 // Supports all Korean banks with a single flexible schema
 
+import path from 'path';
 import Database from 'better-sqlite3';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { getTaxInvoices, getCashReceipts } from './hometax';
 
 // ============================================
 // Types (Bank-Agnostic)
@@ -2026,6 +2028,81 @@ export class FinanceHubDbManager {
   }
 
   // ========================================
+  // Hometax (read-only; same DB as FinanceHub)
+  // ========================================
+
+  /**
+   * List rows from hometax_connections (business registry, spreadsheet URLs, counts).
+   */
+  listHometaxConnections(): Record<string, unknown>[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM hometax_connections ORDER BY business_number ASC
+    `);
+    return stmt.all() as Record<string, unknown>[];
+  }
+
+  queryTaxInvoices(filters: {
+    businessNumber?: string;
+    invoiceType?: 'sales' | 'purchase';
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { invoices: Record<string, unknown>[]; total: number; error?: string } {
+    const r = getTaxInvoices(this.db, {
+      businessNumber: filters.businessNumber,
+      invoiceType: filters.invoiceType,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+    if (!r.success) {
+      return { invoices: [], total: 0, error: r.error };
+    }
+    return {
+      invoices: (r.data ?? []) as Record<string, unknown>[],
+      total: r.total ?? 0
+    };
+  }
+
+  queryCashReceipts(filters: {
+    businessNumber?: string;
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { receipts: Record<string, unknown>[]; total: number; error?: string } {
+    const r = getCashReceipts(this.db, {
+      businessNumber: filters.businessNumber,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+    if (!r.success) {
+      return { receipts: [], total: 0, error: r.error };
+    }
+    return {
+      receipts: (r.data ?? []) as Record<string, unknown>[],
+      total: r.total ?? 0
+    };
+  }
+
+  /**
+   * Hometax Excel sync history (table hometax_sync_operations), not bank sync_operations.
+   */
+  getHometaxSyncOperations(limit: number = 50): Record<string, unknown>[] {
+    const capped = Math.min(Math.max(limit, 1), 1000);
+    const stmt = this.db.prepare(`
+      SELECT * FROM hometax_sync_operations
+      ORDER BY started_at DESC, id DESC
+      LIMIT ?
+    `);
+    return stmt.all(capped) as Record<string, unknown>[];
+  }
+
+  // ========================================
   // High-Level Import Method
   // ========================================
 
@@ -2344,6 +2421,267 @@ export class FinanceHubDbManager {
       errorMessage: row.error_message,
       createdAt: row.created_at,
     };
+  }
+
+  /**
+   * List promissory notes for the UI (joins bank display name and account number).
+   */
+  getPromissoryNotes(): Array<{
+    id: string;
+    accountId: string;
+    bankId: string;
+    bankName: string;
+    accountNumber: string;
+    noteNumber: string;
+    noteType: string;
+    issuerName: string;
+    issuerRegistrationNumber?: string;
+    payeeName: string;
+    payeeRegistrationNumber?: string;
+    amount: number;
+    currency: string;
+    issueDate: string;
+    maturityDate: string;
+    collectionDate?: string;
+    status: string;
+    processingBank?: string;
+    bankBranch?: string;
+    category?: string;
+    memo?: string;
+    isManual: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='promissory_notes' LIMIT 1`)
+        .get();
+      if (!exists) {
+        return [];
+      }
+
+      const stmt = this.db.prepare(`
+        SELECT
+          pn.id,
+          pn.account_id,
+          pn.bank_id,
+          pn.note_number,
+          pn.note_type,
+          pn.issuer_name,
+          pn.issuer_registration_number,
+          pn.payee_name,
+          pn.payee_registration_number,
+          pn.amount,
+          pn.currency,
+          pn.issue_date,
+          pn.maturity_date,
+          pn.collection_date,
+          pn.status,
+          pn.processing_bank,
+          pn.bank_branch,
+          pn.category,
+          pn.memo,
+          pn.is_manual,
+          pn.created_at,
+          pn.updated_at,
+          b.name_ko AS bank_name_ko,
+          a.account_number AS account_number
+        FROM promissory_notes pn
+        LEFT JOIN banks b ON b.id = pn.bank_id
+        LEFT JOIN accounts a ON a.id = pn.account_id
+        ORDER BY pn.maturity_date ASC, pn.created_at DESC
+      `);
+      const rows = stmt.all() as any[];
+      return rows.map((row) => ({
+        id: row.id,
+        accountId: row.account_id,
+        bankId: row.bank_id,
+        bankName: row.bank_name_ko || row.bank_id,
+        accountNumber: row.account_number || '',
+        noteNumber: row.note_number,
+        noteType: row.note_type,
+        issuerName: row.issuer_name,
+        issuerRegistrationNumber: row.issuer_registration_number ?? undefined,
+        payeeName: row.payee_name,
+        payeeRegistrationNumber: row.payee_registration_number ?? undefined,
+        amount: row.amount,
+        currency: row.currency || 'KRW',
+        issueDate: row.issue_date,
+        maturityDate: row.maturity_date,
+        collectionDate: row.collection_date ?? undefined,
+        status: row.status,
+        processingBank: row.processing_bank ?? undefined,
+        bankBranch: row.bank_branch ?? undefined,
+        category: row.category ?? undefined,
+        memo: row.memo ?? undefined,
+        isManual: !!row.is_manual,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getPromissoryNotes:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Stable primary key for promissory_notes upserts (same bank + note number → same id).
+   */
+  private stablePromissoryNoteId(bankId: string, noteNumber: string): string {
+    const h = createHash('sha256').update(`${bankId}\n${noteNumber}`).digest('hex');
+    return `pn_${h.slice(0, 40)}`;
+  }
+
+  /**
+   * Parse IBK 외상매출채권 Excel (header row 3) and upsert into `promissory_notes`.
+   * Uses first active IBK account for `account_id` and `customer_name` / `account_name` for `payee_name`.
+   */
+  importIbkPromissoryNotesFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkPromissoryNotesExcel } = require('../financehub/utils/ibk-promissory-notes-excel.js');
+
+    const bankId = 'ibk';
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='promissory_notes'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return { success: false, imported: 0, skipped: 0, error: 'promissory_notes 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.' };
+      }
+
+      const accounts = this.getAccountsByBank(bankId);
+      if (!accounts.length) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'IBK 활성 계좌가 없습니다. 먼저 기업뱅킹에서 계좌를 연결하세요.',
+        };
+      }
+      const account = accounts[0];
+      const payeeName =
+        (account.customerName && account.customerName.trim()) ||
+        (account.accountName && account.accountName.trim()) ||
+        '본인';
+
+      const { rows, warnings } = parseIbkPromissoryNotesExcel(filePath) as {
+        rows: Array<{
+          noteNumber: string;
+          issuerName: string;
+          issuerRegistrationNumber: string | null;
+          amount: number;
+          issueDate: string;
+          maturityDate: string;
+          collectionDate: string | null;
+          status: string;
+          category: string | null;
+          bankBranch: string | null;
+          memo: string | null;
+          metadata: Record<string, unknown>;
+        }>;
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO promissory_notes (
+          id, account_id, bank_id, note_number, note_type,
+          issuer_name, issuer_registration_number, payee_name, payee_registration_number,
+          amount, currency, issue_date, maturity_date, collection_date,
+          status, endorsement_info, discount_info, processing_bank, bank_branch,
+          category, memo, is_manual, created_at, updated_at, metadata
+        ) VALUES (
+          @id, @account_id, @bank_id, @note_number, @note_type,
+          @issuer_name, @issuer_registration_number, @payee_name, @payee_registration_number,
+          @amount, @currency, @issue_date, @maturity_date, @collection_date,
+          @status, @endorsement_info, @discount_info, @processing_bank, @bank_branch,
+          @category, @memo, @is_manual, datetime('now'), datetime('now'), @metadata
+        )
+        ON CONFLICT(note_number, bank_id) DO UPDATE SET
+          account_id = excluded.account_id,
+          issuer_name = excluded.issuer_name,
+          issuer_registration_number = excluded.issuer_registration_number,
+          payee_name = excluded.payee_name,
+          payee_registration_number = excluded.payee_registration_number,
+          amount = excluded.amount,
+          issue_date = excluded.issue_date,
+          maturity_date = excluded.maturity_date,
+          collection_date = excluded.collection_date,
+          status = excluded.status,
+          processing_bank = excluded.processing_bank,
+          bank_branch = excluded.bank_branch,
+          category = excluded.category,
+          memo = excluded.memo,
+          metadata = excluded.metadata,
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stablePromissoryNoteId(bankId, r.noteNumber);
+          upsert.run({
+            id,
+            account_id: account.id,
+            bank_id: bankId,
+            note_number: r.noteNumber,
+            note_type: 'received',
+            issuer_name: r.issuerName,
+            issuer_registration_number: r.issuerRegistrationNumber,
+            payee_name: payeeName,
+            payee_registration_number: null,
+            amount: r.amount,
+            currency: 'KRW',
+            issue_date: r.issueDate,
+            maturity_date: r.maturityDate,
+            collection_date: r.collectionDate,
+            status: r.status,
+            endorsement_info: null,
+            discount_info: null,
+            processing_bank: null,
+            bank_branch: r.bankBranch,
+            category: r.category,
+            memo: r.memo,
+            is_manual: 0,
+            metadata: JSON.stringify({ ...r.metadata, importSourceFile: path.basename(filePath) }),
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkPromissoryNotesFromExcel: ${imported} rows from ${filePath}`);
+
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkPromissoryNotesFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
   }
 
   /**

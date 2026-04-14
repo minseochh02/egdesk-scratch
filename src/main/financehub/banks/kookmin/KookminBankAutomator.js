@@ -19,6 +19,7 @@ const {
   extractTransactionsFromPage,
   createExcelFromData
 } = require('../../utils/transactionParser');
+const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
 
 /**
  * Kookmin Bank Automator
@@ -203,7 +204,7 @@ class KookminBankAutomator extends BaseBankAutomator {
         // Kookmin Bank format: XXXXXX-XX-XXXXXXX or similar
         const accountPatterns = [
           /(\d{6}-\d{2}-\d{7})/g,           // 123456-12-1234567
-          /(\d{3,6}-\d{2,4}-\d{4,7})/g,     // Flexible format
+          /(\d{3,6}-\d{2,6}-\d{4,7})/g,     // Flexible format (middle up to 6 digits)
           /(\d{13,16})/g,                    // No dashes
         ];
         
@@ -291,7 +292,7 @@ class KookminBankAutomator extends BaseBankAutomator {
                 seenAccounts.add(normalized);
                 
                 // Extract account name from option text
-                const accountName = text.replace(accountNum, '').trim() || '국민은행 계좌';
+                const accountName = accountDisplayNameFromOptionText(text, '국민은행 계좌');
                 
                 results.push({
                   accountNumber: accountNum,
@@ -834,7 +835,7 @@ class KookminBankAutomator extends BaseBankAutomator {
     );
     const accounts = [];
     const seen = new Set();
-    const re = /(\d{3}-\d{2,4}-\d{4,7})/;
+    const re = /(\d{3}-\d{2,6}-\d{4,7})/;
     for (const row of rows) {
       const m = row.text.match(re);
       if (!m) continue;
@@ -844,7 +845,7 @@ class KookminBankAutomator extends BaseBankAutomator {
       seen.add(key);
       accounts.push({
         accountNumber,
-        accountName: row.text.replace(accountNumber, '').trim() || 'KB 기업 계좌',
+        accountName: accountDisplayNameFromOptionText(row.text, 'KB 기업 계좌'),
         bankId: 'kookmin',
         balance: 0,
         currency: 'KRW',

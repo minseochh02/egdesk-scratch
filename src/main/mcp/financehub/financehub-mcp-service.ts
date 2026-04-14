@@ -2,7 +2,7 @@
  * FinanceHub MCP Service
  * Implements the IMCPService interface for FinanceHub database operations
  *
- * Provides read-only access to Korean bank accounts and transaction data
+ * Provides read-only access to Korean bank accounts, transactions, and Hometax tables
  * All credential operations are explicitly excluded for security
  */
 
@@ -267,13 +267,110 @@ export class FinanceHubMCPService implements IMCPService {
       },
       {
         name: 'financehub_get_sync_history',
-        description: 'Get sync operation history with status and timing information',
+        description:
+          'Get bank/card sync operation history (sync_operations table). For Hometax Excel syncs use financehub_get_hometax_sync_history.',
         inputSchema: {
           type: 'object',
           properties: {
             limit: {
               type: 'number',
               description: 'Maximum number of sync operations to return',
+              default: 50
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: 'financehub_list_hometax_connections',
+        description:
+          'List Hometax business connections (business number, name, status, invoice counts, spreadsheet URLs)',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      },
+      {
+        name: 'financehub_query_tax_invoices',
+        description:
+          'Query tax invoices (tax_invoices table: sales/purchase electronic tax invoices synced from Hometax)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            businessNumber: {
+              type: 'string',
+              description: 'Filter by business registration number'
+            },
+            invoiceType: {
+              type: 'string',
+              enum: ['sales', 'purchase'],
+              description: 'Sales or purchase invoices'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date filter on 작성일자 (YYYY-MM-DD)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date filter on 작성일자 (YYYY-MM-DD)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum rows to return (max 1000)',
+              default: 100
+            },
+            offset: {
+              type: 'number',
+              description: 'Pagination offset',
+              default: 0
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: 'financehub_query_cash_receipts',
+        description: 'Query cash receipt rows (cash_receipts table) synced from Hometax',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            businessNumber: {
+              type: 'string',
+              description: 'Filter by business registration number'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start filter on 매출일시 (string compare as stored)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End filter on 매출일시'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum rows to return (max 1000)',
+              default: 100
+            },
+            offset: {
+              type: 'number',
+              description: 'Pagination offset',
+              default: 0
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: 'financehub_get_hometax_sync_history',
+        description:
+          'Get Hometax sync history (hometax_sync_operations: Excel import runs). Not the same as financehub_get_sync_history (banks/cards).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: 'Maximum number of operations to return (max 1000)',
               default: 50
             }
           },
@@ -551,7 +648,8 @@ export class FinanceHubMCPService implements IMCPService {
         case 'financehub_get_sync_history': {
           const { limit = 50 } = args;
 
-          const syncOps = this.manager.getRecentSyncOperations(limit);
+          const capped = Math.min(Number(limit) || 50, 1000);
+          const syncOps = this.manager.getRecentSyncOperations(capped);
 
           result = {
             totalReturned: syncOps.length,
@@ -570,6 +668,89 @@ export class FinanceHubMCPService implements IMCPService {
               transactionsSkipped: op.transactionsSkipped,
               errorMessage: op.errorMessage
             }))
+          };
+          break;
+        }
+
+        case 'financehub_list_hometax_connections': {
+          const rows = this.manager.listHometaxConnections();
+          result = {
+            totalConnections: rows.length,
+            connections: rows
+          };
+          break;
+        }
+
+        case 'financehub_query_tax_invoices': {
+          const {
+            businessNumber,
+            invoiceType,
+            startDate,
+            endDate,
+            limit = 100,
+            offset = 0
+          } = args;
+
+          const enforcedLimit = Math.min(Math.max(Number(limit) || 100, 1), 1000);
+          const enforcedOffset = Math.max(Number(offset) || 0, 0);
+
+          const q = this.manager.queryTaxInvoices({
+            businessNumber,
+            invoiceType,
+            startDate,
+            endDate,
+            limit: enforcedLimit,
+            offset: enforcedOffset
+          });
+
+          if (q.error) {
+            throw new Error(q.error);
+          }
+
+          result = {
+            totalMatching: q.total,
+            limit: enforcedLimit,
+            offset: enforcedOffset,
+            invoices: q.invoices
+          };
+          break;
+        }
+
+        case 'financehub_query_cash_receipts': {
+          const { businessNumber, startDate, endDate, limit = 100, offset = 0 } = args;
+
+          const enforcedLimit = Math.min(Math.max(Number(limit) || 100, 1), 1000);
+          const enforcedOffset = Math.max(Number(offset) || 0, 0);
+
+          const q = this.manager.queryCashReceipts({
+            businessNumber,
+            startDate,
+            endDate,
+            limit: enforcedLimit,
+            offset: enforcedOffset
+          });
+
+          if (q.error) {
+            throw new Error(q.error);
+          }
+
+          result = {
+            totalMatching: q.total,
+            limit: enforcedLimit,
+            offset: enforcedOffset,
+            receipts: q.receipts
+          };
+          break;
+        }
+
+        case 'financehub_get_hometax_sync_history': {
+          const { limit = 50 } = args;
+          const capped = Math.min(Math.max(Number(limit) || 50, 1), 1000);
+          const ops = this.manager.getHometaxSyncOperations(capped);
+
+          result = {
+            totalReturned: ops.length,
+            syncOperations: ops
           };
           break;
         }

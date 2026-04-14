@@ -760,6 +760,15 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-financehub-get-promissory-notes', async () => {
+      try {
+        const notes = this.getFinanceHubManager().getPromissoryNotes();
+        return { success: true, data: notes };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
+      }
+    });
+
     // Query transactions
     ipcMain.handle('sqlite-financehub-query-transactions', async (event, options) => {
       try {

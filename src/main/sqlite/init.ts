@@ -333,6 +333,27 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
       console.error('⚠️ Migrations 015-019 error:', migrationError.message);
     }
 
+    try {
+      const { migrate021NormalizeAccountDisplayNames } = await import('./migrations/021-normalize-account-display-names');
+      migrate021NormalizeAccountDisplayNames(financeHubDb);
+    } catch (migration021Error: any) {
+      console.error('⚠️ Migration 021 error:', migration021Error.message);
+    }
+
+    try {
+      const { migrate022ReapplyAccountDisplayNameRules } = await import('./migrations/022-reapply-account-display-name-rules');
+      migrate022ReapplyAccountDisplayNameRules(financeHubDb);
+    } catch (migration022Error: any) {
+      console.error('⚠️ Migration 022 error:', migration022Error.message);
+    }
+
+    try {
+      const { migrate023CreatePromissoryNotes } = await import('./migrations/023-create-promissory-notes');
+      migrate023CreatePromissoryNotes(financeHubDb);
+    } catch (migration023Error: any) {
+      console.error('⚠️ Migration 023 error:', migration023Error.message);
+    }
+
     // =============================================
     // Migration 009: Add vector embeddings support
     // =============================================
