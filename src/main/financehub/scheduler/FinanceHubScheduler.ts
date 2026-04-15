@@ -67,6 +67,15 @@ interface TaxSyncResult {
 }
 
 export class FinanceHubScheduler extends EventEmitter {
+  /** 기업 공동인증서 (Arduino HID) — must match `CORPORATE_NATIVE_CERT_BANK_IDS` in main.ts */
+  private static readonly CORPORATE_NATIVE_CERT_BANK_IDS = new Set([
+    'shinhan',
+    'kookmin',
+    'ibk',
+    'hana',
+    'woori',
+  ]);
+
   private static instance: FinanceHubScheduler | null = null;
   private scheduleTimers: Map<string, NodeJS.Timeout> = new Map(); // entityKey -> timer
   private syncTimers: Map<string, NodeJS.Timeout> = new Map(); // entityKey -> retry timer
@@ -1441,6 +1450,37 @@ export class FinanceHubScheduler extends EventEmitter {
     }
   }
 
+  /**
+   * Arduino serial port for corporate certificate login (same behavior as main.ts getArduinoPort).
+   */
+  private async resolveArduinoPortForBankSync(): Promise<string> {
+    const store = getStore();
+    try {
+      const { SerialPort } = require('serialport');
+      const ports = await SerialPort.list();
+      const arduinoPort = ports.find((port: any) => {
+        if (port.vendorId === '2341' || port.vendorId === '0x2341') return true;
+        if (port.manufacturer?.toLowerCase().includes('arduino')) return true;
+        if (port.vendorId === '0403' || port.manufacturer?.toLowerCase().includes('ftdi')) return true;
+        if (port.vendorId === '1a86' || port.manufacturer?.toLowerCase().includes('ch340')) return true;
+        if (port.vendorId === '10c4' || port.manufacturer?.toLowerCase().includes('silicon labs')) return true;
+        if (port.path?.includes('usbserial') || port.path?.includes('usbmodem')) return true;
+        return false;
+      });
+      if (arduinoPort) {
+        store.set('financeHub.arduinoPort', arduinoPort.path);
+        console.log(`[FinanceHubScheduler] Auto-detected Arduino on port: ${arduinoPort.path}`);
+        return arduinoPort.path;
+      }
+      const savedPort = store.get('financeHub.arduinoPort', 'COM3') as string;
+      console.log(`[FinanceHubScheduler] No Arduino detected; using saved port: ${savedPort}`);
+      return savedPort;
+    } catch (error) {
+      console.error('[FinanceHubScheduler] Error detecting Arduino port:', error);
+      return store.get('financeHub.arduinoPort', 'COM3') as string;
+    }
+  }
+
   private async syncBank(bankId: string): Promise<{ success: boolean; error?: string; inserted?: number; skipped?: number }> {
     console.log(`[FinanceHubScheduler] Syncing bank: ${bankId}`);
 
@@ -1494,24 +1534,87 @@ export class FinanceHubScheduler extends EventEmitter {
         }
       }
 
-      // Create bank automator
+      const certPw = String(savedCredentials.certificatePassword ?? '').trim();
+      const authMethod = (savedCredentials as { bankAuthMethod?: string }).bankAuthMethod;
+      const useCorporateNativeCert =
+        FinanceHubScheduler.CORPORATE_NATIVE_CERT_BANK_IDS.has(bankId) &&
+        savedCredentials.accountType === 'corporate' &&
+        certPw.length > 0 &&
+        (authMethod == null || authMethod === 'certificate');
+
       const { createAutomator } = require('../index');
-      automator = createAutomator(bankId, {
-        headless: false // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
-      });
 
-      // Track active browser
-      this.activeBrowsers.set(entityKey, automator);
+      const safeCancelCorporateCert = async () => {
+        if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+          try {
+            await automator.cancelCorporateCertificateLogin(true);
+          } catch (e) {
+            console.warn(`[FinanceHubScheduler] cancelCorporateCertificateLogin:`, e);
+          }
+        }
+      };
 
-      // Login
-      console.log(`[FinanceHubScheduler] Logging in to ${bankId}...`);
-      const loginResult = await automator.login(savedCredentials);
+      let loginUserName = '';
 
-      if (!loginResult.success) {
-        return {
-          success: false,
-          error: `Login failed: ${loginResult.error || 'Unknown error'}`
-        };
+      if (useCorporateNativeCert) {
+        console.log(`[FinanceHubScheduler] Corporate certificate flow for ${bankId} (prepare → complete, matches UI)`);
+        const arduinoPort = await this.resolveArduinoPortForBankSync();
+        automator = createAutomator(bankId, {
+          headless: false,
+          arduinoPort,
+        });
+        this.activeBrowsers.set(entityKey, automator);
+
+        if (
+          typeof automator.prepareCorporateCertificateLogin !== 'function' ||
+          typeof automator.completeCorporateCertificateLogin !== 'function'
+        ) {
+          return {
+            success: false,
+            error: 'Corporate certificate login is not implemented for this bank automator',
+          };
+        }
+
+        const prep = await automator.prepareCorporateCertificateLogin(undefined);
+        if (!prep?.success) {
+          await safeCancelCorporateCert();
+          return {
+            success: false,
+            error: prep?.error || 'Corporate certificate prepare failed',
+          };
+        }
+
+        const complete = await automator.completeCorporateCertificateLogin({
+          certificatePassword: certPw,
+        });
+
+        if (!complete?.success || !complete.isLoggedIn) {
+          await safeCancelCorporateCert();
+          return {
+            success: false,
+            error: complete?.error || 'Corporate certificate login failed',
+          };
+        }
+
+        loginUserName = (complete.userName as string) || '';
+      } else {
+        automator = createAutomator(bankId, {
+          headless: false, // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
+        });
+
+        this.activeBrowsers.set(entityKey, automator);
+
+        console.log(`[FinanceHubScheduler] ID/password login to ${bankId}...`);
+        const loginResult = await automator.login(savedCredentials);
+
+        if (!loginResult.success) {
+          return {
+            success: false,
+            error: `Login failed: ${loginResult.error || 'Unknown error'}`,
+          };
+        }
+
+        loginUserName = loginResult.userName || '';
       }
 
       // Get accounts
@@ -1580,7 +1683,7 @@ export class FinanceHubScheduler extends EventEmitter {
             const accountData = {
               accountNumber,
               accountName: account.accountName || '계좌',
-              customerName: loginResult.userName || '',
+              customerName: loginUserName || '',
               balance: result.metadata?.balance || account.balance || 0,
               availableBalance: result.metadata?.availableBalance || 0,
               openDate: result.metadata?.openDate || '',
