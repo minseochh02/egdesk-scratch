@@ -3,9 +3,14 @@
  * Implements the IMCPService interface for file system operations
  */
 
+import path from 'path';
+
 import { IMCPService, MCPTool, MCPServerInfo, MCPCapabilities, MCPToolResult } from '../types/mcp-service';
 import { FileSystemService } from './file-system-service';
 import { SecurityConfig } from './security-exclusions';
+
+/** Default cap for fs_read_image (bytes). User maxBytes cannot exceed this. */
+const FS_READ_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 
 /**
  * File System MCP Service
@@ -276,6 +281,25 @@ export class FileSystemMCPService implements IMCPService {
         }
       },
       {
+        name: 'fs_read_image',
+        description:
+          'Read a local image file from disk and return JSON with path, mimeType, byteLength, and base64. Use this to analyze, describe, or OCR photos on disk. Do not use fs_read_file for binary images (it expects text). After locating the file with fs_search_files if needed, call fs_read_image with the full path.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Full path to an image file (.jpg, .png, .webp, .gif, etc.)'
+            },
+            maxBytes: {
+              type: 'number',
+              description: `Optional size cap in bytes (default ${FS_READ_IMAGE_MAX_BYTES}, max ${FS_READ_IMAGE_MAX_BYTES})`
+            }
+          },
+          required: ['path']
+        }
+      },
+      {
         name: 'fs_upload_file',
         description: 'Upload and save a file directly to the user\'s Downloads folder. Use this to save generated content (documents, images, code files, etc.) for easy user access. Supports both text files (utf8) and binary files (base64 encoded). Returns the full path where the file was saved.',
         inputSchema: {
@@ -421,6 +445,38 @@ export class FileSystemMCPService implements IMCPService {
             }]
           };
 
+        case 'fs_read_image': {
+          const imagePath = args.path;
+          if (!imagePath || typeof imagePath !== 'string') {
+            throw new Error('fs_read_image requires a string path');
+          }
+          const mimeType = this.getImageMimeTypeForPath(imagePath);
+          const maxBytes =
+            typeof args.maxBytes === 'number' && args.maxBytes > 0
+              ? Math.min(args.maxBytes, FS_READ_IMAGE_MAX_BYTES)
+              : FS_READ_IMAGE_MAX_BYTES;
+          const imageBuffer = await this.fsService.downloadFile(imagePath);
+          if (imageBuffer.length > maxBytes) {
+            throw new Error(
+              `Image is ${imageBuffer.length} bytes; max allowed is ${maxBytes} bytes.`
+            );
+          }
+          const payload = {
+            path: imagePath,
+            mimeType,
+            byteLength: imageBuffer.length,
+            base64: imageBuffer.toString('base64'),
+          };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(payload),
+              },
+            ],
+          };
+        }
+
         case 'fs_upload_file':
           const uploadedPath = await this.fsService.uploadFile(
             args.filename,
@@ -534,6 +590,33 @@ export class FileSystemMCPService implements IMCPService {
     }
 
     throw new Error(`Resource not found: ${uri}`);
+  }
+
+  /**
+   * Allowed image extensions for fs_read_image; returns MIME or throws.
+   */
+  private getImageMimeTypeForPath(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
+    const allowed: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      svg: 'image/svg+xml',
+      bmp: 'image/bmp',
+      ico: 'image/x-icon',
+      heic: 'image/heic',
+      heif: 'image/heif',
+      avif: 'image/avif',
+    };
+    const mime = allowed[ext];
+    if (!mime) {
+      throw new Error(
+        `fs_read_image only supports image files (e.g. .jpg, .png, .webp, .gif). Got: .${ext || 'none'}`
+      );
+    }
+    return mime;
   }
 
   /**

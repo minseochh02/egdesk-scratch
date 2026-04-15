@@ -451,10 +451,18 @@ interface DebugAPI {
     error?: string;
     datePickerGroupCount: number;
     ui: 'none' | 'singleDate' | 'dateRange';
+    /** YYYY/MM/DD per datePickerGroup — pre-fill replay modal */
+    defaultReplayDates?: string[];
+    /** Per captureLabeledFields block — labels + defaults for replay value inputs */
+    labeledFieldReplayBlocks?: Array<{ labels: string[]; defaults?: (string | undefined)[] }>;
   }>;
   runPlaywrightTest: (
     testFile: string,
-    replayParams?: { dateRange?: { start?: string; end?: string }; datePickersByIndex?: (string | undefined)[] }
+    replayParams?: {
+      dateRange?: { start?: string; end?: string };
+      datePickersByIndex?: (string | undefined)[];
+      labeledFieldFills?: (string | undefined)[][];
+    }
   ) => Promise<{ success: boolean; error?: string; message?: string }>;
   deletePlaywrightTest: (testPath: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   openInstagramWithProfile: (options: any) => Promise<{ success: boolean; error?: string }>;
@@ -467,6 +475,33 @@ interface DebugAPI {
   crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => Promise<{ success: boolean; data?: any; filepath?: string; error?: string }>;
   generateLighthouseReports: (urls: string[], proxy?: string) => Promise<{ success: boolean; reports?: any[]; error?: string }>;
   testPasteComponent: () => Promise<{ success: boolean; error?: string }>;
+  exportSingleTest: (testPath: string) => Promise<{
+    success: boolean;
+    error?: string;
+    data?: { filePath: string; testName: string; scheduleExported?: boolean };
+  }>;
+  exportAllTests: () => Promise<{
+    success: boolean;
+    error?: string;
+    data?: {
+      filePath: string;
+      testCount: number;
+      chainCount: number;
+      scheduleCount: number;
+      downloadFolders: number;
+    };
+  }>;
+  importTests: () => Promise<{
+    success: boolean;
+    error?: string;
+    data?: {
+      imported: number;
+      skipped: number;
+      chains: number;
+      schedules: number;
+      downloadFolders: number;
+    };
+  }>;
 }
 
 /**

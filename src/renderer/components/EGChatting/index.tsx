@@ -1358,7 +1358,8 @@ IMPORTANT INSTRUCTIONS:
 2. Common user commands and their tool mappings:
    - "upload this file" / "save this file" → use fs_upload_file
    - "download [filename]" → FIRST fs_search_files to find it, THEN fs_download_file with full path
-   - "read [filename]" → FIRST fs_search_files to find it, THEN fs_read_file with full path
+   - "read [filename]" (text/code) → FIRST fs_search_files to find it, THEN fs_read_file with full path
+   - "analyze / describe / OCR an image" or reading a photo on disk (.jpg, .png, etc.) → FIRST fs_search_files if needed, THEN fs_read_image with full path (returns base64 JSON). Do NOT use fs_read_file for binary images.
    - "convert this file to X" → use file-conversion service tools (if available)
    - "list files" / "show directory" → use fs_list_directory
    - "search for X" → use fs_search_files
@@ -1374,7 +1375,7 @@ IMPORTANT INSTRUCTIONS:
      * IMMEDIATELY use fs_search_files with the filename as pattern
      * Search in "/" or "~" (user's home directory) to cover all locations
      * DO NOT ask "where is the file?" - JUST SEARCH!
-   - Only use fs_download_file or fs_read_file AFTER getting the full path from search results
+   - Only use fs_download_file, fs_read_file, or fs_read_image AFTER getting the full path from search results (use fs_read_image for image files, not fs_read_file)
    - If multiple matches found, list them and ask user which one
    - If NO matches found, THEN tell user you couldn't find it
    - Example flow: User says "download report.xlsx" → You immediately call fs_search_files → Then download
@@ -2218,14 +2219,14 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
                     </div>
                   ) : !hasGemma ? (
                     <div className="eg-chatting__ollama-model">
-                      <p>Gemma 4B model is not installed. Pull it to start chatting.</p>
+                      <p>Gemma 4 (E4B) is not installed. Pull it to start chatting.</p>
                       <button
                         type="button"
                         className="eg-chatting__ollama-action"
                         onClick={handlePullGemma}
                         disabled={isPullingModel}
                       >
-                        {isPullingModel ? 'Pulling Gemma 4B...' : 'Pull Gemma 4B'}
+                        {isPullingModel ? 'Pulling Gemma 4 (E4B)...' : 'Pull Gemma 4 (E4B)'}
                       </button>
                     </div>
                   ) : null}

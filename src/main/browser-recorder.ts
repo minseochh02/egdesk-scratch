@@ -11,7 +11,7 @@ import {
 } from './browser-recording-locator-strategies';
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab' | 'fileUpload';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'captureLabeledFields' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab' | 'fileUpload';
   selector?: string;
   xpath?: string; // XPath as fallback selector
   value?: string;
@@ -42,6 +42,16 @@ interface RecordedAction {
     sampleRow: string[];
     rowCount: number;
   }>;
+  /** Region-scoped label + control snapshot (no <form> required) */
+  labeledFields?: Array<{
+    labelText: string;
+    selector: string;
+    xpath: string;
+    tagName: string;
+    inputType?: string;
+    sampleValue?: string;
+  }>;
+  labeledFieldsContainer?: { xpath: string; cssSelector: string };
   // New tab fields
   newTabUrl?: string; // URL of the newly opened tab
   closedTabUrl?: string; // URL of the tab that was closed
@@ -985,6 +995,18 @@ export class BrowserRecorder {
       `;
       captureTableBtn.style.cssText = btnStyle.replace('#333', '#FF9800').replace('#444', '#F57C00');
 
+      // Capture labeled fields (region pick — not limited to <form>)
+      const captureLabeledFieldsBtn = document.createElement('button');
+      captureLabeledFieldsBtn.setAttribute('data-capture-labeled-fields', 'true');
+      captureLabeledFieldsBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 7h16M4 12h10M4 17h14"></path>
+          <rect x="14" y="10" width="6" height="4" rx="1"></rect>
+        </svg>
+        <span>Fields</span>
+      `;
+      captureLabeledFieldsBtn.style.cssText = btnStyle.replace('#333', '#4CAF50').replace('#444', '#388E3C');
+
       // Create click until gone button
       const clickUntilGoneBtn = document.createElement('button');
       clickUntilGoneBtn.setAttribute('data-click-until-gone', 'false');
@@ -1084,6 +1106,7 @@ export class BrowserRecorder {
       controller.appendChild(waitBtn);
       controller.appendChild(markDateBtn);
       controller.appendChild(captureTableBtn);
+      controller.appendChild(captureLabeledFieldsBtn);
       controller.appendChild(clickUntilGoneBtn);
       controller.appendChild(stopBtn);
       controller.appendChild(geminiBtn);
@@ -2038,6 +2061,354 @@ export class BrowserRecorder {
         document.body.appendChild(notification);
         setTimeout(() => notification.remove(), 2000);
       });
+
+      // --- Labeled fields capture: pick a region, scan label + input associations ---
+      let labeledFieldsPickMode = false;
+
+      const getXPathForLabeledFieldElement = (element: Element): string => {
+        if (element.id) {
+          return '//*[@id="' + element.id.replace(/"/g, '\\"') + '"]';
+        }
+        const parts: string[] = [];
+        let currentElement: Element | null = element;
+        while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
+          let index = 1;
+          let sibling: Element | null = currentElement.previousElementSibling;
+          while (sibling) {
+            if (sibling.tagName === currentElement.tagName) index++;
+            sibling = sibling.previousElementSibling;
+          }
+          const tagName = currentElement.tagName.toLowerCase();
+          const pathIndex = index > 1 ? '[' + index + ']' : '';
+          parts.unshift(tagName + pathIndex);
+          currentElement = currentElement.parentElement;
+        }
+        return parts.length ? '/' + parts.join('/') : '';
+      };
+
+      const generateCSSSelectorLabeled = (element: Element): string => {
+        if (element.id) {
+          return '[id="' + element.id.replace(/"/g, '\\"') + '"]';
+        }
+        const path: string[] = [];
+        let currentElement: Element | null = element;
+        while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
+          let selector = currentElement.tagName.toLowerCase();
+          if (currentElement.className && typeof (currentElement as HTMLElement).className === 'string') {
+            const classes = (currentElement as HTMLElement).className.trim().split(/\s+/);
+            if (classes.length > 0 && classes[0]) {
+              selector += '.' + classes[0];
+            }
+          }
+          path.unshift(selector);
+          currentElement = currentElement.parentElement;
+          if (path.length >= 3) break;
+        }
+        return path.join(' > ');
+      };
+
+      const pickLabeledFieldsContainerRoot = (target: Element): Element => {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+          const form = (target as HTMLElement).closest('form');
+          if (form) return form;
+          let p: Element | null = target.parentElement;
+          for (let d = 0; d < 10 && p; d++) {
+            const n = p.querySelectorAll('input:not([type="hidden"]), select, textarea').length;
+            if (n >= 2) return p;
+            p = p.parentElement;
+          }
+          return target.parentElement || target;
+        }
+        const f = (target as HTMLElement).closest('form');
+        if (f) return f;
+        return target;
+      };
+
+      const LABELED_FIELD_MAX_LABEL_LEN = 80;
+
+      const sanitizeLabelText = (raw: string | null | undefined): string | null => {
+        if (raw == null) return null;
+        const t = raw.replace(/\s+/g, ' ').trim();
+        if (!t || t.length > LABELED_FIELD_MAX_LABEL_LEN) return null;
+        return t;
+      };
+
+      const getInnerTextNoInputs = (node: Element): string => {
+        const clone = node.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('input,select,textarea,button,svg,img').forEach((n) => n.remove());
+        return clone.textContent || '';
+      };
+
+      /** y/m/d under a datepicker wrapper: reuse the row's leading column (e.g. 일자). */
+      const getDatepickerRowLabel = (el: HTMLElement, root: Element): string | null => {
+        const wrap = el.closest(
+          '[class*="wrapper-datepicker"], [class*="wrapper-date"], [class*="datepicker"], [class*="date-picker"]'
+        );
+        if (!wrap || !root.contains(wrap)) return null;
+        const li = wrap.closest('li');
+        if (!li || !root.contains(li)) return null;
+        for (let i = 0; i < li.children.length; i++) {
+          const ch = li.children[i];
+          if (ch.contains(wrap)) continue;
+          const t = sanitizeLabelText(getInnerTextNoInputs(ch));
+          if (t) return t;
+        }
+        const first = li.firstElementChild;
+        if (first && !wrap.contains(first)) {
+          const t = sanitizeLabelText(getInnerTextNoInputs(first));
+          if (t) return t;
+        }
+        return null;
+      };
+
+      /** Grid / ERP: label in sibling column or first cell of li|row. */
+      const findRowLabelFromLayout = (el: HTMLElement, root: Element): string | null => {
+        const row =
+          el.closest('li') ||
+          el.closest('[class*="control-set"]') ||
+          el.closest('[class*="form-row"]') ||
+          el.closest('[class*="form_row"]') ||
+          el.closest('tr');
+
+        if (!row || !root.contains(row)) return null;
+
+        for (let i = 0; i < row.children.length; i++) {
+          const ch = row.children[i];
+          if (ch.contains(el)) continue;
+          const t = sanitizeLabelText(getInnerTextNoInputs(ch));
+          if (t) return t;
+        }
+
+        // Single wrapper under li/div: columns inside one flex/grid container
+        if (row.tagName === 'LI' && row.children.length === 1) {
+          const wrap = row.children[0] as HTMLElement;
+          if (wrap.contains(el) && wrap.children.length >= 2) {
+            const col0 = wrap.children[0];
+            if (!col0.contains(el)) {
+              const t = sanitizeLabelText(getInnerTextNoInputs(col0));
+              if (t) return t;
+            }
+          }
+        }
+
+        const firstDirect = row.firstElementChild;
+        if (firstDirect && !firstDirect.contains(el)) {
+          const t = sanitizeLabelText(getInnerTextNoInputs(firstDirect));
+          if (t) return t;
+        }
+
+        const hints = row.querySelectorAll(
+          '[class*="label"], [class*="title"], [class*="caption"], th'
+        );
+        for (let i = 0; i < hints.length; i++) {
+          const h = hints[i] as HTMLElement;
+          if (h.contains(el) || el.contains(h)) continue;
+          if (!row.contains(h)) continue;
+          const t = sanitizeLabelText(getInnerTextNoInputs(h));
+          if (t) return t;
+        }
+
+        let p: HTMLElement | null = el.parentElement;
+        for (let d = 0; d < 6 && p && row.contains(p); d++) {
+          const prev = p.previousElementSibling;
+          if (prev && !prev.contains(el)) {
+            const t = sanitizeLabelText(getInnerTextNoInputs(prev));
+            if (t) return t;
+          }
+          if (p === row) break;
+          p = p.parentElement;
+        }
+
+        return null;
+      };
+
+      const getLabelTextForControl = (el: HTMLElement, root: Element): string => {
+        const aria = el.getAttribute('aria-label');
+        if (aria && aria.trim()) return aria.trim();
+        const labelledBy = el.getAttribute('aria-labelledby');
+        if (labelledBy) {
+          const parts: string[] = [];
+          labelledBy.split(/\s+/).forEach((id) => {
+            const node = root.ownerDocument!.getElementById(id);
+            if (node && node.textContent) parts.push(node.textContent.trim());
+          });
+          if (parts.length) return parts.join(' ').replace(/\s+/g, ' ');
+        }
+        if (el.id) {
+          let lab: Element | null = null;
+          try {
+            const fs = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(el.id) : el.id.replace(/"/g, '\\"');
+            lab = root.querySelector('label[for="' + fs + '"]') || document.querySelector('label[for="' + fs + '"]');
+          } catch (_) {
+            /* ignore */
+          }
+          if (lab && lab.textContent) return lab.textContent.trim().replace(/\s+/g, ' ');
+        }
+        const wrapLabel = el.closest('label');
+        if (wrapLabel) {
+          const clone = wrapLabel.cloneNode(true) as HTMLElement;
+          clone.querySelectorAll('input,select,textarea,button').forEach((n) => n.remove());
+          const txt = clone.textContent?.trim();
+          if (txt) return txt.replace(/\s+/g, ' ');
+        }
+
+        const titleAttr = el.getAttribute('title');
+        const fromTitle = sanitizeLabelText(titleAttr);
+        if (fromTitle) return fromTitle;
+
+        const datepickerRow = getDatepickerRowLabel(el, root);
+        if (datepickerRow) return datepickerRow;
+
+        const layoutRow = findRowLabelFromLayout(el, root);
+        if (layoutRow) return layoutRow;
+
+        const ph = el.getAttribute('placeholder');
+        if (ph && ph.trim()) return ph.trim();
+
+        const name = el.getAttribute('name');
+        if (name) return '[name] ' + name;
+        if (el.id) return '[id] ' + el.id;
+        return '(unlabeled)';
+      };
+
+      const isFieldElementVisible = (el: HTMLElement): boolean => {
+        if (el instanceof HTMLInputElement && el.type === 'hidden') return false;
+        const st = window.getComputedStyle(el);
+        if (st.display === 'none' || st.visibility === 'hidden' || parseFloat(st.opacity || '1') === 0)
+          return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+
+      captureLabeledFieldsBtn.addEventListener('click', () => {
+        labeledFieldsPickMode = !labeledFieldsPickMode;
+        (window as any).__playwrightRecorderLabeledFieldsPickMode = labeledFieldsPickMode;
+        captureLabeledFieldsBtn.classList.toggle('active', labeledFieldsPickMode);
+        const existing = document.getElementById('labeled-fields-instructions');
+        if (existing) existing.remove();
+        if (labeledFieldsPickMode) {
+          const inst = document.createElement('div');
+          inst.id = 'labeled-fields-instructions';
+          inst.style.cssText = `
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            max-width: 300px;
+            pointer-events: none;
+          `;
+          inst.innerHTML =
+            '<strong>📋 Fields mode</strong><br/>Click a <strong>section, card, or form</strong> that contains inputs. We record label text + selectors for each field.';
+          document.body.appendChild(inst);
+        }
+      });
+
+      document.addEventListener(
+        'mousedown',
+        (e: MouseEvent) => {
+          if (!(window as any).__playwrightRecorderLabeledFieldsPickMode) return;
+          const target = e.target as HTMLElement;
+          if (
+            target.closest('#browser-recorder-controller') ||
+            target.closest('#labeled-fields-instructions') ||
+            target.closest('#playwright-date-offset-modal')
+          ) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          const rawTarget = e.target as Element;
+          const root = pickLabeledFieldsContainerRoot(rawTarget);
+
+          const nodes = root.querySelectorAll('input, select, textarea, [contenteditable="true"]');
+          const fields: Array<{
+            labelText: string;
+            selector: string;
+            xpath: string;
+            tagName: string;
+            inputType?: string;
+            sampleValue?: string;
+          }> = [];
+
+          nodes.forEach((node) => {
+            const el = node as HTMLElement;
+            if (!root.contains(el)) return;
+            if (!isFieldElementVisible(el)) return;
+            if (el.closest('#browser-recorder-controller')) return;
+
+            const labelText = getLabelTextForControl(el, root);
+            const xpath = getXPathForLabeledFieldElement(el);
+            const selector = generateCSSSelectorLabeled(el);
+            let sampleValue = '';
+            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+              sampleValue = el.value || '';
+            } else if (el instanceof HTMLSelectElement) {
+              sampleValue = el.options[el.selectedIndex]?.text || el.value || '';
+            } else {
+              sampleValue = el.textContent?.trim().substring(0, 80) || '';
+            }
+            let inputType: string | undefined;
+            if (el instanceof HTMLInputElement) inputType = el.type;
+            fields.push({
+              labelText,
+              selector,
+              xpath,
+              tagName: el.tagName.toLowerCase(),
+              inputType,
+              sampleValue: sampleValue.substring(0, 200),
+            });
+          });
+
+          const containerPayload = {
+            xpath: getXPathForLabeledFieldElement(root),
+            cssSelector: generateCSSSelectorLabeled(root),
+          };
+
+          labeledFieldsPickMode = false;
+          (window as any).__playwrightRecorderLabeledFieldsPickMode = false;
+          captureLabeledFieldsBtn.classList.remove('active');
+          document.getElementById('labeled-fields-instructions')?.remove();
+
+          if ((window as any).__playwrightRecorderOnCaptureLabeledFields) {
+            const payload = cleanForPlaywright({
+              labeledFields: fields,
+              labeledFieldsContainer: containerPayload,
+            });
+            callPlaywrightFunction((window as any).__playwrightRecorderOnCaptureLabeledFields, payload);
+          }
+
+          const toast = document.createElement('div');
+          toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${fields.length ? '#4CAF50' : '#FF9800'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 999999;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+          `;
+          toast.textContent = fields.length
+            ? '✅ Captured ' + fields.length + ' labeled field' + (fields.length === 1 ? '' : 's')
+            : '⚠️ No inputs in region — try a larger area';
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 2500);
+        },
+        true
+      );
 
       // Set up Click Until Gone button functionality
       let clickUntilGoneMode = false;
@@ -4124,6 +4495,11 @@ export class BrowserRecorder {
             return;
           }
 
+          if ((window as any).__playwrightRecorderLabeledFieldsPickMode) {
+            console.log('⏭️ Skipping click — labeled fields pick mode (mousedown handled capture)');
+            return;
+          }
+
           // Skip clicks on elements that were just marked in date marking mode
           if ((window as any).__dateMarkedElements && (window as any).__dateMarkedElements.has(target)) {
             console.log('📅 Skipping click on date marked element');
@@ -5814,6 +6190,21 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       this.updateGeneratedCode();
     });
 
+    await this.page.exposeFunction('__playwrightRecorderOnCaptureLabeledFields', async (payload: any) => {
+      const labeledFields = payload?.labeledFields as RecordedAction['labeledFields'];
+      const labeledFieldsContainer = payload?.labeledFieldsContainer as RecordedAction['labeledFieldsContainer'];
+      console.log('📋 Labeled fields capture:', labeledFields?.length ?? 0, 'field(s)');
+
+      this.actions.push({
+        type: 'captureLabeledFields',
+        labeledFields: labeledFields || [],
+        labeledFieldsContainer,
+        timestamp: Date.now() - this.startTime,
+      });
+
+      this.updateGeneratedCode();
+    });
+
     // Expose function for print action
     await this.page.exposeFunction('__playwrightRecorderOnPrint', async () => {
       console.log('🖨️ Print action recorded');
@@ -7174,6 +7565,34 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             });
           }
           break;
+        case 'captureLabeledFields':
+          if (action.labeledFields && action.labeledFields.length > 0) {
+            lines.push(`    // ========================================`);
+            lines.push(`    // LABELED FIELDS - ${action.labeledFields.length} control(s) in region`);
+            lines.push(`    // ========================================`);
+            if (action.labeledFieldsContainer) {
+              lines.push(
+                `    // Container XPath: ${action.labeledFieldsContainer.xpath}`
+              );
+              lines.push(
+                `    // Container CSS: ${action.labeledFieldsContainer.cssSelector}`
+              );
+            }
+            lines.push(``);
+            action.labeledFields.forEach((field, index) => {
+              const lt = escapeJsStringForCodegen(field.labelText || '');
+              lines.push(`    // Field ${index + 1}: "${lt}"`);
+              lines.push(`    //   ${field.tagName}${field.inputType ? '[' + field.inputType + ']' : ''}  CSS: ${field.selector}`);
+              lines.push(`    //   XPath: ${field.xpath}`);
+              if (field.sampleValue) {
+                lines.push(
+                  `    //   sample: "${escapeJsStringForCodegen(field.sampleValue.substring(0, 120))}"`
+                );
+              }
+              lines.push(``);
+            });
+          }
+          break;
         case 'newTab':
           lines.push(`    // New tab/popup detected during recording`);
           if (action.newTabUrl) {
@@ -7279,10 +7698,6 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
     lines.push("})().catch(console.error);");
     
     return lines.join('\n');
-  }
-
-  getActions(): RecordedAction[] {
-    return this.actions;
   }
 
   /**
@@ -7659,6 +8074,13 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
         case 'captureTable':
           lines.push(`    // Table capture recorded (${action.tables?.length || 0} tables)`);
           lines.push(`    console.log('✓ Table capture action (skipped in replay)');`);
+          break;
+
+        case 'captureLabeledFields':
+          lines.push(
+            `    // Labeled fields capture (${action.labeledFields?.length || 0} field(s), informational)`
+          );
+          lines.push(`    console.log('✓ Labeled fields capture (skipped in replay)');`);
           break;
 
         case 'newTab':

@@ -1,5 +1,5 @@
 /**
- * Browser Recording MCP Service — list saved tests, replay options, and run replays with optional dates.
+ * Browser Recording MCP Service — list saved tests, replay options, and run replays with optional dates and labeled-field fills.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,20 +22,32 @@ function toReplayDateParam(raw: string | undefined): string | undefined {
 }
 
 function buildReplayParams(args: Record<string, any>): BrowserRecordingReplayParams {
+  const out: BrowserRecordingReplayParams = {};
+
   const datePickersByIndex = args.datePickersByIndex;
   if (Array.isArray(datePickersByIndex) && datePickersByIndex.length > 0) {
-    return {
-      datePickersByIndex: datePickersByIndex.map((x: unknown) =>
-        x == null || String(x).trim() === '' ? undefined : toReplayDateParam(String(x))
-      ),
-    };
+    out.datePickersByIndex = datePickersByIndex.map((x: unknown) =>
+      x == null || String(x).trim() === '' ? undefined : toReplayDateParam(String(x))
+    );
+  } else {
+    const start = toReplayDateParam(args.startDate);
+    const end = toReplayDateParam(args.endDate);
+    if (start || end) {
+      out.dateRange = { start, end };
+    }
   }
-  const start = toReplayDateParam(args.startDate);
-  const end = toReplayDateParam(args.endDate);
-  if (start || end) {
-    return { dateRange: { start, end } };
+
+  const lff = args.labeledFieldFills;
+  if (Array.isArray(lff) && lff.length > 0) {
+    out.labeledFieldFills = lff.map((block: unknown) => {
+      if (!Array.isArray(block)) return [];
+      return block.map((v: unknown) =>
+        v == null || String(v).trim() === '' ? undefined : String(v).trim()
+      );
+    });
   }
-  return {};
+
+  return out;
 }
 
 export class BrowserRecordingMCPService implements IMCPService {
@@ -64,7 +76,7 @@ export class BrowserRecordingMCPService implements IMCPService {
       {
         name: 'browser_recording_get_replay_options',
         description:
-          'Inspect a saved spec: returns datePickerGroup count and UI hint (none, singleDate, or dateRange).',
+          'Inspect a saved spec: returns datePickerGroup count, UI hint (none, singleDate, dateRange), defaultReplayDates, and labeledFieldReplayBlocks (per captureLabeledFields step with labels and sample defaults for replay).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -80,7 +92,7 @@ export class BrowserRecordingMCPService implements IMCPService {
       {
         name: 'browser_recording_run',
         description:
-          'Run a saved recording in Chrome (action replay). Optional startDate/endDate (YYYY/MM/DD or YYYY-MM-DD) map to first/second date pickers, or pass datePickersByIndex for per-picker overrides. Empty dates use recorded offsets.',
+          'Run a saved recording in Chrome (action replay). Optional startDate/endDate (YYYY/MM/DD or YYYY-MM-DD) map to first/second date pickers, or datePickersByIndex for per datePickerGroup. Optional labeledFieldFills: array of string arrays — one inner array per captureLabeledFields step in recording order; inner order matches labeled fields in that step. Empty strings skip a field. Omit labeledFieldFills to skip filling captured fields. Combine with date options when the script has both.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -95,6 +107,15 @@ export class BrowserRecordingMCPService implements IMCPService {
               type: 'array',
               items: { type: 'string' },
               description: 'Optional explicit ISO-like dates per 0-based datePickerGroup index',
+            },
+            labeledFieldFills: {
+              type: 'array',
+              description:
+                'Optional; one sub-array per captureLabeledFields action (in order). Each sub-array has one string per field in that capture (same order as labeledFieldReplayBlocks from get_replay_options). Use empty string to skip a field.',
+              items: {
+                type: 'array',
+                items: { type: 'string' },
+              },
             },
           },
           required: ['testFile'],

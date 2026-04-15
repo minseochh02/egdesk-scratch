@@ -785,6 +785,7 @@ test('recorded test', async ({ page }) => {
         'download': '📥 Download',
         'datePickerGroup': '📅 Date Picker',
         'captureTable': '📊 Capture Table',
+        'captureLabeledFields': '📋 Labeled Fields',
         'newTab': '🆕 New Tab',
         'closeTab': '🚪 Close Tab',
         'print': '🖨️ Print'
@@ -828,6 +829,8 @@ test('recorded test', async ({ page }) => {
           return action.value || 'Download event';
         case 'captureTable':
           return \`\${action.tables?.length || 0} table(s)\`;
+        case 'captureLabeledFields':
+          return \`\${action.labeledFields?.length || 0} field(s)\`;
         case 'newTab':
           return action.newTabUrl || 'New tab opened';
         case 'closeTab':
