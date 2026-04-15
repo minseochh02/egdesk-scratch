@@ -289,6 +289,7 @@ export async function connectToHometax(
   selectedCertificate: any,
   certificatePassword: string,
   invoiceType: 'sales' | 'purchase' = 'sales',
+  invoiceCategory: 'tax' | 'tax-exempt' = 'tax',
   year?: number,
   month?: number
 ): Promise<HometaxConnectionResult & { downloadedFile?: string }> {
@@ -707,6 +708,14 @@ export async function connectToHometax(
       }, { xpath: monthXPath, monthToSelect: targetMonth });
       await page.waitForTimeout(1000);
 
+    // Tax exempt mode requires selecting "전자계산서" first.
+    if (invoiceCategory === 'tax-exempt') {
+      console.log('[Hometax] Selecting 전자계산서 radio...');
+      const taxExemptSelector = 'label[for="mf_txppWframe_wf01_radioEtxivClsfCd_input_1"]';
+      await page.locator(taxExemptSelector).click({ timeout: 180000 });
+      await page.waitForTimeout(800);
+    }
+
     // Click radio button for 매출 or 매입
     const radioIndex = invoiceType === 'sales' ? 0 : 1;
     const radioSelector = `#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_${radioIndex} > label`;
@@ -767,7 +776,9 @@ export async function connectToHometax(
 
     // Click excel download button and handle confirmations automatically
     console.log('[Hometax] Starting download with auto-confirmations...');
-    const excelButtonXPath = '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]';
+    const excelButtonXPath = invoiceCategory === 'tax-exempt'
+      ? '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[2]/div[6]/div/div/span[1]/input'
+      : '/html/body/div[1]/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]/input';
     await page.evaluate((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const element = result.singleNodeValue as HTMLElement;
@@ -908,7 +919,7 @@ export async function connectToHometax(
       console.error(`[Hometax] ⚠️⚠️⚠️  This means the radio button is clicking the WRONG option!`);
     }
 
-    const newFileName = `${fileBase}_${targetYear}${targetMonth.toString().padStart(2, '0')}_${actualType}_${timestamp}${fileExt}`;
+    const newFileName = `${fileBase}_${targetYear}${targetMonth.toString().padStart(2, '0')}_${actualType}_${invoiceCategory}_${timestamp}${fileExt}`;
     const newFilePath = path.join(downloadsPath, newFileName);
     fs.renameSync(downloadedFile, newFilePath);
     downloadedFile = newFilePath;
@@ -1205,6 +1216,10 @@ export async function collectTaxInvoices(
   lastMonthSalesFile?: string;
   thisMonthPurchaseFile?: string;
   lastMonthPurchaseFile?: string;
+  thisMonthTaxExemptSalesFile?: string;
+  lastMonthTaxExemptSalesFile?: string;
+  thisMonthTaxExemptPurchaseFile?: string;
+  lastMonthTaxExemptPurchaseFile?: string;
   cashReceiptFile?: string;
   error?: string
 }> {
@@ -1224,11 +1239,11 @@ export async function collectTaxInvoices(
     }
 
     console.log(`[Hometax] Target months - This: ${thisYear}-${thisMonth.toString().padStart(2, '0')}, Last: ${lastYear}-${lastMonth.toString().padStart(2, '0')}`);
-    console.log('[Hometax] ==================== Starting 5-part collection ====================');
+    console.log('[Hometax] ==================== Starting 9-part collection ====================');
 
     // 1. Collect this month 매출 (sales)
     console.log('[Hometax] ▶ (1/5) Collecting this month 매출...');
-    const thisMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', thisYear, thisMonth);
+    const thisMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax', thisYear, thisMonth);
     if (!thisMonthSalesResult.success) {
       return { success: false, error: thisMonthSalesResult.error };
     }
@@ -1237,7 +1252,7 @@ export async function collectTaxInvoices(
 
     // 2. Collect last month 매출 (sales)
     console.log('[Hometax] ▶ (2/5) Collecting last month 매출...');
-    const lastMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', lastYear, lastMonth);
+    const lastMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax', lastYear, lastMonth);
     if (!lastMonthSalesResult.success) {
       return { success: false, error: lastMonthSalesResult.error };
     }
@@ -1246,7 +1261,7 @@ export async function collectTaxInvoices(
 
     // 3. Collect this month 매입 (purchases)
     console.log('[Hometax] ▶ (3/5) Collecting this month 매입...');
-    const thisMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', thisYear, thisMonth);
+    const thisMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax', thisYear, thisMonth);
     if (!thisMonthPurchaseResult.success) {
       return { success: false, error: thisMonthPurchaseResult.error };
     }
@@ -1255,30 +1270,98 @@ export async function collectTaxInvoices(
 
     // 4. Collect last month 매입 (purchases)
     console.log('[Hometax] ▶ (4/5) Collecting last month 매입...');
-    const lastMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', lastYear, lastMonth);
+    const lastMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax', lastYear, lastMonth);
     if (!lastMonthPurchaseResult.success) {
       return { success: false, error: lastMonthPurchaseResult.error };
     }
     const lastMonthPurchaseFile = lastMonthPurchaseResult.downloadedFile;
     console.log('[Hometax] ✓ (4/5) Completed:', lastMonthPurchaseFile);
 
-    // 5. Collect current week cash receipts (현금영수증)
-    console.log('[Hometax] ▶ (5/5) Collecting current week 현금영수증...');
+    // 5. Collect this month tax-exempt sales (전자계산서 매출)
+    console.log('[Hometax] ▶ (5/9) Collecting this month 전자계산서 매출...');
+    const thisMonthTaxExemptSalesResult = await connectToHometax(
+      certificateData,
+      certificatePassword,
+      'sales',
+      'tax-exempt',
+      thisYear,
+      thisMonth
+    );
+    if (!thisMonthTaxExemptSalesResult.success) {
+      return { success: false, error: thisMonthTaxExemptSalesResult.error };
+    }
+    const thisMonthTaxExemptSalesFile = thisMonthTaxExemptSalesResult.downloadedFile;
+    console.log('[Hometax] ✓ (5/9) Completed:', thisMonthTaxExemptSalesFile);
+
+    // 6. Collect last month tax-exempt sales (전자계산서 매출)
+    console.log('[Hometax] ▶ (6/9) Collecting last month 전자계산서 매출...');
+    const lastMonthTaxExemptSalesResult = await connectToHometax(
+      certificateData,
+      certificatePassword,
+      'sales',
+      'tax-exempt',
+      lastYear,
+      lastMonth
+    );
+    if (!lastMonthTaxExemptSalesResult.success) {
+      return { success: false, error: lastMonthTaxExemptSalesResult.error };
+    }
+    const lastMonthTaxExemptSalesFile = lastMonthTaxExemptSalesResult.downloadedFile;
+    console.log('[Hometax] ✓ (6/9) Completed:', lastMonthTaxExemptSalesFile);
+
+    // 7. Collect this month tax-exempt purchase (전자계산서 매입)
+    console.log('[Hometax] ▶ (7/9) Collecting this month 전자계산서 매입...');
+    const thisMonthTaxExemptPurchaseResult = await connectToHometax(
+      certificateData,
+      certificatePassword,
+      'purchase',
+      'tax-exempt',
+      thisYear,
+      thisMonth
+    );
+    if (!thisMonthTaxExemptPurchaseResult.success) {
+      return { success: false, error: thisMonthTaxExemptPurchaseResult.error };
+    }
+    const thisMonthTaxExemptPurchaseFile = thisMonthTaxExemptPurchaseResult.downloadedFile;
+    console.log('[Hometax] ✓ (7/9) Completed:', thisMonthTaxExemptPurchaseFile);
+
+    // 8. Collect last month tax-exempt purchase (전자계산서 매입)
+    console.log('[Hometax] ▶ (8/9) Collecting last month 전자계산서 매입...');
+    const lastMonthTaxExemptPurchaseResult = await connectToHometax(
+      certificateData,
+      certificatePassword,
+      'purchase',
+      'tax-exempt',
+      lastYear,
+      lastMonth
+    );
+    if (!lastMonthTaxExemptPurchaseResult.success) {
+      return { success: false, error: lastMonthTaxExemptPurchaseResult.error };
+    }
+    const lastMonthTaxExemptPurchaseFile = lastMonthTaxExemptPurchaseResult.downloadedFile;
+    console.log('[Hometax] ✓ (8/9) Completed:', lastMonthTaxExemptPurchaseFile);
+
+    // 9. Collect current week cash receipts (현금영수증)
+    console.log('[Hometax] ▶ (9/9) Collecting current week 현금영수증...');
     const cashReceiptResult = await downloadCashReceipts(certificateData, certificatePassword);
     if (!cashReceiptResult.success) {
       console.warn('[Hometax] ⚠️  Cash receipt download failed, but continuing:', cashReceiptResult.error);
       // Don't fail the entire collection if cash receipts fail - they might not have any
     }
     const cashReceiptFile = cashReceiptResult.downloadedFile;
-    console.log('[Hometax] ✓ (5/5) Completed:', cashReceiptFile);
+    console.log('[Hometax] ✓ (9/9) Completed:', cashReceiptFile);
 
-    console.log('[Hometax] ==================== ✅ All 5 collections completed! ====================');
+    console.log('[Hometax] ==================== ✅ All 9 collections completed! ====================');
     return {
       success: true,
       thisMonthSalesFile,
       lastMonthSalesFile,
       thisMonthPurchaseFile,
       lastMonthPurchaseFile,
+      thisMonthTaxExemptSalesFile,
+      lastMonthTaxExemptSalesFile,
+      thisMonthTaxExemptPurchaseFile,
+      lastMonthTaxExemptPurchaseFile,
       cashReceiptFile
     };
 

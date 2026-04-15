@@ -894,22 +894,26 @@ export class FinanceHubScheduler extends EventEmitter {
 
         console.log(`[FinanceHubScheduler] ${entityKey} sync ${success ? 'completed' : 'failed'}: ${error || 'OK'}`);
 
-        // After successful sync: export to spreadsheet and cleanup files
-        if (success && this.settings.spreadsheetSyncEnabled) {
-          try {
-            console.log(`[FinanceHubScheduler] 📊 Exporting ${entityKey} to spreadsheet...`);
-            const exportResult = await this.exportToSpreadsheet(entityType, entityId);
+        // After successful sync: export to spreadsheet (optional) and cleanup files
+        if (success) {
+          if (this.settings.spreadsheetSyncEnabled) {
+            try {
+              console.log(`[FinanceHubScheduler] 📊 Exporting ${entityKey} to spreadsheet...`);
+              const exportResult = await this.exportToSpreadsheet(entityType, entityId);
 
-            if (exportResult.success) {
-              console.log(`[FinanceHubScheduler] ✅ Spreadsheet updated: ${exportResult.spreadsheetUrl}`);
-
-              // Cleanup downloaded files only after successful spreadsheet export
-              await this.cleanupDownloadedFiles(entityType, entityId);
-            } else {
-              console.warn(`[FinanceHubScheduler] ⚠️  Spreadsheet export failed: ${exportResult.error}`);
+              if (exportResult.success) {
+                console.log(`[FinanceHubScheduler] ✅ Spreadsheet updated: ${exportResult.spreadsheetUrl}`);
+                // Cleanup downloaded files only after successful spreadsheet export
+                await this.cleanupDownloadedFiles(entityType, entityId);
+              } else {
+                console.warn(`[FinanceHubScheduler] ⚠️  Spreadsheet export failed: ${exportResult.error}`);
+              }
+            } catch (exportError) {
+              console.error(`[FinanceHubScheduler] Error during post-sync export/cleanup:`, exportError);
             }
-          } catch (exportError) {
-            console.error(`[FinanceHubScheduler] Error during post-sync export/cleanup:`, exportError);
+          } else {
+            // Spreadsheet sync is disabled: cleanup files immediately after successful sync.
+            await this.cleanupDownloadedFiles(entityType, entityId);
           }
         }
 

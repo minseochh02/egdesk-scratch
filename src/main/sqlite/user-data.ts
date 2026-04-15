@@ -23,6 +23,7 @@ import {
   UserDataEmbeddingStats,
 } from './user-data-vector-manager';
 import { FileStorageManager } from '../user-data/file-storage-manager';
+import { notifyUserDataTablesChanged } from '../coding/regenerate-egdesk-config';
 
 /**
  * User Data Database Manager
@@ -35,11 +36,16 @@ export class UserDataDbManager {
   constructor(public database: Database.Database) {
     // Safety check: rollback any stuck transactions from failed migrations or operations
     if (this.database.inTransaction) {
-      console.warn('⚠️ [UserDataDbManager] Database is in transaction state at construction - rolling back');
+      console.warn(
+        '⚠️ [UserDataDbManager] Database is in transaction state at construction - rolling back',
+      );
       try {
         this.database.exec('ROLLBACK');
       } catch (e) {
-        console.error('❌ [UserDataDbManager] Failed to rollback stuck transaction:', e);
+        console.error(
+          '❌ [UserDataDbManager] Failed to rollback stuck transaction:',
+          e,
+        );
       }
     }
   }
@@ -50,7 +56,10 @@ export class UserDataDbManager {
   public getFileStorageManager(): FileStorageManager {
     if (!this.fileStorageManager) {
       const userDataDir = app.getPath('userData');
-      this.fileStorageManager = new FileStorageManager(this.database, userDataDir);
+      this.fileStorageManager = new FileStorageManager(
+        this.database,
+        userDataDir,
+      );
     }
     return this.fileStorageManager;
   }
@@ -68,7 +77,7 @@ export class UserDataDbManager {
    */
   private validateTableName(tableName: string): boolean {
     const stmt = this.database.prepare(
-      'SELECT table_name FROM user_tables WHERE table_name = ?'
+      'SELECT table_name FROM user_tables WHERE table_name = ?',
     );
     const result = stmt.get(tableName);
     return !!result;
@@ -87,7 +96,7 @@ export class UserDataDbManager {
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
       hasImportedAtColumn?: boolean; // Whether this table has imported_at column
-    }
+    },
   ): UserTableWithSchema {
     // Validate input schema
     if (!schema || schema.length === 0) {
@@ -107,7 +116,9 @@ export class UserDataDbManager {
     const now = new Date().toISOString();
 
     // Check if user provided their own id column
-    const hasUserIdColumn = schema.some((col) => col.name.toLowerCase() === 'id');
+    const hasUserIdColumn = schema.some(
+      (col) => col.name.toLowerCase() === 'id',
+    );
 
     let fullSchema: ColumnSchema[];
     if (hasUserIdColumn) {
@@ -137,22 +148,21 @@ export class UserDataDbManager {
           if (!hasUserIdColumn && col.type === 'INTEGER') {
             // Auto-generated INTEGER id
             return 'id INTEGER PRIMARY KEY AUTOINCREMENT';
-          } else {
-            // User-defined id column (could be TEXT, INTEGER without autoincrement, etc.)
-            const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
-            const parts = [`"${col.name}"`, sqliteType, 'PRIMARY KEY'];
-            if (col.notNull) parts.push('NOT NULL');
-            if (col.defaultValue !== undefined) {
-              if (typeof col.defaultValue === 'string') {
-                parts.push(`DEFAULT '${col.defaultValue}'`);
-              } else if (col.defaultValue === null) {
-                parts.push('DEFAULT NULL');
-              } else {
-                parts.push(`DEFAULT ${col.defaultValue}`);
-              }
-            }
-            return parts.join(' ');
           }
+          // User-defined id column (could be TEXT, INTEGER without autoincrement, etc.)
+          const sqliteType = col.type === 'DATE' ? 'TEXT' : col.type;
+          const parts = [`"${col.name}"`, sqliteType, 'PRIMARY KEY'];
+          if (col.notNull) parts.push('NOT NULL');
+          if (col.defaultValue !== undefined) {
+            if (typeof col.defaultValue === 'string') {
+              parts.push(`DEFAULT '${col.defaultValue}'`);
+            } else if (col.defaultValue === null) {
+              parts.push('DEFAULT NULL');
+            } else {
+              parts.push(`DEFAULT ${col.defaultValue}`);
+            }
+          }
+          return parts.join(' ');
         }
 
         // Convert DATE type to TEXT for SQLite storage
@@ -199,14 +209,16 @@ export class UserDataDbManager {
       this.database.exec(createTableSql);
 
       // Insert metadata (store full schema including ID column)
-      const uniqueKeyColumnsJson = options?.uniqueKeyColumns && options.uniqueKeyColumns.length > 0
-        ? JSON.stringify(options.uniqueKeyColumns)
-        : null;
+      const uniqueKeyColumnsJson =
+        options?.uniqueKeyColumns && options.uniqueKeyColumns.length > 0
+          ? JSON.stringify(options.uniqueKeyColumns)
+          : null;
 
       // Detect if this table has imported_at column
-      const hasImportedAtColumn = options?.hasImportedAtColumn !== undefined
-        ? options.hasImportedAtColumn
-        : schema.some(col => col.name === 'imported_at');
+      const hasImportedAtColumn =
+        options?.hasImportedAtColumn !== undefined
+          ? options.hasImportedAtColumn
+          : schema.some((col) => col.name === 'imported_at');
 
       const insertMetadata = this.database.prepare(`
         INSERT INTO user_tables (
@@ -232,20 +244,28 @@ export class UserDataDbManager {
         schemaJson, // Use pre-validated JSON string
         uniqueKeyColumnsJson,
         options?.duplicateAction || 'skip',
-        hasImportedAtColumn ? 1 : 0
+        hasImportedAtColumn ? 1 : 0,
       );
 
       // Verify insertion
-      const verify = this.database.prepare('SELECT schema_json FROM user_tables WHERE id = ?');
-      const verifyResult = verify.get(id) as { schema_json: string } | undefined;
-      console.log('Verification - schema_json stored as:', verifyResult?.schema_json);
+      const verify = this.database.prepare(
+        'SELECT schema_json FROM user_tables WHERE id = ?',
+      );
+      const verifyResult = verify.get(id) as
+        | { schema_json: string }
+        | undefined;
+      console.log(
+        'Verification - schema_json stored as:',
+        verifyResult?.schema_json,
+      );
 
       // EXPLICIT COMMIT - this forces fsync to disk
       if (!wasInTransaction) {
         this.database.exec('COMMIT');
-        console.log('✅ [createTable] Explicit COMMIT executed, data flushed to disk');
+        console.log(
+          '✅ [createTable] Explicit COMMIT executed, data flushed to disk',
+        );
       }
-
     } catch (error) {
       // Rollback on error only if we started the transaction
       if (!wasInTransaction) {
@@ -257,6 +277,13 @@ export class UserDataDbManager {
       }
       throw error;
     }
+
+    notifyUserDataTablesChanged().catch((err) =>
+      console.warn(
+        '[egdesk-config] Failed to refresh linked projects after create table:',
+        err,
+      ),
+    );
 
     return {
       id,
@@ -299,8 +326,17 @@ export class UserDataDbManager {
     // Safely parse schema JSON
     let schema: ColumnSchema[];
     try {
-      if (!schemaJsonStr || schemaJsonStr === 'undefined' || schemaJsonStr === 'null') {
-        console.error('Invalid schema JSON for table:', tableId, 'Value:', schemaJsonStr);
+      if (
+        !schemaJsonStr ||
+        schemaJsonStr === 'undefined' ||
+        schemaJsonStr === 'null'
+      ) {
+        console.error(
+          'Invalid schema JSON for table:',
+          tableId,
+          'Value:',
+          schemaJsonStr,
+        );
         return null;
       }
       schema = JSON.parse(schemaJsonStr) as ColumnSchema[];
@@ -322,7 +358,8 @@ export class UserDataDbManager {
       updatedAt: row.updated_at || row.updatedAt,
       uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
       duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
-      hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
+      hasImportedAtColumn:
+        (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
       schema,
     };
   }
@@ -344,8 +381,17 @@ export class UserDataDbManager {
     // Safely parse schema JSON
     let schema: ColumnSchema[];
     try {
-      if (!schemaJsonStr || schemaJsonStr === 'undefined' || schemaJsonStr === 'null') {
-        console.error('Invalid schema JSON for table:', tableName, 'Value:', schemaJsonStr);
+      if (
+        !schemaJsonStr ||
+        schemaJsonStr === 'undefined' ||
+        schemaJsonStr === 'null'
+      ) {
+        console.error(
+          'Invalid schema JSON for table:',
+          tableName,
+          'Value:',
+          schemaJsonStr,
+        );
         return null;
       }
       schema = JSON.parse(schemaJsonStr) as ColumnSchema[];
@@ -366,7 +412,8 @@ export class UserDataDbManager {
       updatedAt: row.updated_at || row.updatedAt,
       uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
       duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
-      hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
+      hasImportedAtColumn:
+        (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
       schema,
     };
   }
@@ -387,7 +434,11 @@ export class UserDataDbManager {
 
         // Safely parse schema JSON
         try {
-          if (!schemaJsonStr || schemaJsonStr === 'undefined' || schemaJsonStr === 'null') {
+          if (
+            !schemaJsonStr ||
+            schemaJsonStr === 'undefined' ||
+            schemaJsonStr === 'null'
+          ) {
             console.error('Invalid schema JSON for table:', row.id);
             return null;
           }
@@ -403,13 +454,19 @@ export class UserDataDbManager {
             createdAt: row.created_at || row.createdAt,
             updatedAt: row.updated_at || row.updatedAt,
             uniqueKeyColumns: row.unique_key_columns || row.uniqueKeyColumns,
-            duplicateAction: row.duplicate_action || row.duplicateAction || 'skip',
+            duplicateAction:
+              row.duplicate_action || row.duplicateAction || 'skip',
             replaceColumn: row.replace_column || row.replaceColumn,
-            hasImportedAtColumn: (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
+            hasImportedAtColumn:
+              (row.has_imported_at_column || row.hasImportedAtColumn) === 1,
             schema,
           };
         } catch (error) {
-          console.error('Failed to parse schema JSON for table:', row.id, error);
+          console.error(
+            'Failed to parse schema JSON for table:',
+            row.id,
+            error,
+          );
           return null;
         }
       })
@@ -419,7 +476,11 @@ export class UserDataDbManager {
   /**
    * Rename a table (both the actual table and metadata)
    */
-  renameTable(tableId: string, newTableName: string, newDisplayName?: string): { success: boolean; error?: string; table?: UserTableWithSchema } {
+  renameTable(
+    tableId: string,
+    newTableName: string,
+    newDisplayName?: string,
+  ): { success: boolean; error?: string; table?: UserTableWithSchema } {
     try {
       // Get the existing table
       const table = this.getTable(tableId);
@@ -428,17 +489,25 @@ export class UserDataDbManager {
       }
 
       // Sanitize the new table name for SQL safety
-      const sanitizedNewTableName = newTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+      const sanitizedNewTableName = newTableName
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .toLowerCase();
 
       // Check if the new table name already exists
       const existingTable = this.getTableByName(sanitizedNewTableName);
       if (existingTable && existingTable.id !== tableId) {
-        return { success: false, error: `A table with name "${sanitizedNewTableName}" already exists` };
+        return {
+          success: false,
+          error: `A table with name "${sanitizedNewTableName}" already exists`,
+        };
       }
 
       // If names are the same, just update display name
       if (table.tableName === sanitizedNewTableName && !newDisplayName) {
-        return { success: false, error: 'New table name is the same as the current name' };
+        return {
+          success: false,
+          error: 'New table name is the same as the current name',
+        };
       }
 
       // Use explicit BEGIN/COMMIT for proper fsync
@@ -451,7 +520,9 @@ export class UserDataDbManager {
 
         // Rename the actual SQLite table (only if name changed)
         if (table.tableName !== sanitizedNewTableName) {
-          this.database.exec(`ALTER TABLE "${table.tableName}" RENAME TO "${sanitizedNewTableName}"`);
+          this.database.exec(
+            `ALTER TABLE "${table.tableName}" RENAME TO "${sanitizedNewTableName}"`,
+          );
         }
 
         // Update metadata
@@ -460,13 +531,13 @@ export class UserDataDbManager {
            SET table_name = ?,
                display_name = ?,
                updated_at = ?
-           WHERE id = ?`
+           WHERE id = ?`,
         );
         updateStmt.run(
           sanitizedNewTableName,
           newDisplayName || newTableName,
           new Date().toISOString(),
-          tableId
+          tableId,
         );
 
         // EXPLICIT COMMIT
@@ -474,7 +545,6 @@ export class UserDataDbManager {
           this.database.exec('COMMIT');
           console.log('✅ [renameTable] Explicit COMMIT executed');
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -493,7 +563,8 @@ export class UserDataDbManager {
       console.error('Error renaming table:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to rename table',
+        error:
+          error instanceof Error ? error.message : 'Failed to rename table',
       };
     }
   }
@@ -508,15 +579,24 @@ export class UserDataDbManager {
 
       // Use explicit BEGIN/COMMIT for proper fsync
       const wasInTransaction = this.database.inTransaction;
-      console.log(`🔍 [deleteTable] tableId=${tableId}, wasInTransaction=${wasInTransaction}, tableName=${table?.tableName}`);
+      console.log(
+        `🔍 [deleteTable] tableId=${tableId}, wasInTransaction=${wasInTransaction}, tableName=${table?.tableName}`,
+      );
 
       try {
         if (!wasInTransaction) {
-          console.log('🔍 [deleteTable] Starting new transaction with BEGIN IMMEDIATE');
+          console.log(
+            '🔍 [deleteTable] Starting new transaction with BEGIN IMMEDIATE',
+          );
           this.database.exec('BEGIN IMMEDIATE');
-          console.log('🔍 [deleteTable] inTransaction after BEGIN:', this.database.inTransaction);
+          console.log(
+            '🔍 [deleteTable] inTransaction after BEGIN:',
+            this.database.inTransaction,
+          );
         } else {
-          console.log('🔍 [deleteTable] Already in transaction, skipping BEGIN');
+          console.log(
+            '🔍 [deleteTable] Already in transaction, skipping BEGIN',
+          );
         }
 
         // If we got the table, drop it
@@ -531,20 +611,27 @@ export class UserDataDbManager {
 
         // Always delete metadata (cascades to import_operations)
         const deleteMetadata = this.database.prepare(
-          'DELETE FROM user_tables WHERE id = ?'
+          'DELETE FROM user_tables WHERE id = ?',
         );
         deleteMetadata.run(tableId);
 
         // EXPLICIT COMMIT
         if (!wasInTransaction) {
-          console.log('🔍 [deleteTable] About to COMMIT, inTransaction before:', this.database.inTransaction);
+          console.log(
+            '🔍 [deleteTable] About to COMMIT, inTransaction before:',
+            this.database.inTransaction,
+          );
           this.database.exec('COMMIT');
-          console.log('✅ [deleteTable] Explicit COMMIT executed, inTransaction after:', this.database.inTransaction);
+          console.log(
+            '✅ [deleteTable] Explicit COMMIT executed, inTransaction after:',
+            this.database.inTransaction,
+          );
           console.log('✅ [deleteTable] Data should be flushed to disk');
         } else {
-          console.log('⚠️ [deleteTable] Skipping COMMIT because wasInTransaction=true');
+          console.log(
+            '⚠️ [deleteTable] Skipping COMMIT because wasInTransaction=true',
+          );
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -556,15 +643,28 @@ export class UserDataDbManager {
         throw txError;
       }
 
+      notifyUserDataTablesChanged().catch((err) =>
+        console.warn(
+          '[egdesk-config] Failed to refresh linked projects after drop table:',
+          err,
+        ),
+      );
+
       return true;
     } catch (error) {
       console.error('Error in deleteTable:', error);
       // Try to at least clean up metadata
       try {
         const deleteMetadata = this.database.prepare(
-          'DELETE FROM user_tables WHERE id = ?'
+          'DELETE FROM user_tables WHERE id = ?',
         );
         deleteMetadata.run(tableId);
+        notifyUserDataTablesChanged().catch((err) =>
+          console.warn(
+            '[egdesk-config] Failed to refresh linked projects after drop table:',
+            err,
+          ),
+        );
         return true;
       } catch (cleanupError) {
         console.error('Failed to clean up metadata:', cleanupError);
@@ -586,12 +686,19 @@ export class UserDataDbManager {
     let skipped = 0;
     let duplicates = 0;
     const errors: string[] = [];
-    const duplicateDetails: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }> = [];
-    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+    const duplicateDetails: Array<{
+      rowIndex: number;
+      uniqueKeyValues: Record<string, any>;
+    }> = [];
+    const errorDetails: Array<{
+      rowIndex: number;
+      error: string;
+      rowData?: Record<string, any>;
+    }> = [];
 
     // Parse duplicate detection settings
-    const uniqueKeyColumns: string[] = table.uniqueKeyColumns 
-      ? JSON.parse(table.uniqueKeyColumns) 
+    const uniqueKeyColumns: string[] = table.uniqueKeyColumns
+      ? JSON.parse(table.uniqueKeyColumns)
       : [];
     const duplicateAction = table.duplicateAction || 'skip';
     const hasDuplicateDetection = uniqueKeyColumns.length > 0;
@@ -608,7 +715,8 @@ export class UserDataDbManager {
 
     // Check if id column is AUTOINCREMENT (first column is INTEGER with autoincrement)
     const idColumn = table.schema.find((col) => col.name === 'id');
-    const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+    const isAutoIncrementId =
+      idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
 
     // Filter out the ID column only if it's auto-increment
     // If user defined their own id column (e.g., TEXT), include it in inserts
@@ -621,11 +729,11 @@ export class UserDataDbManager {
     const placeholders = dataColumns.map(() => '?').join(', ');
 
     const insertStmt = this.database.prepare(
-      `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+      `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`,
     );
 
     // Prepare duplicate check statement if needed
-    let checkDuplicateStmt: any = null;
+    const checkDuplicateStmt: any = null;
     if (hasDuplicateDetection) {
       // We'll build the query dynamically to handle NULLs properly
       console.log(`🔍 Unique key columns: [${uniqueKeyColumns.join(', ')}]`);
@@ -635,23 +743,27 @@ export class UserDataDbManager {
     let updateStmt: any = null;
     if (hasDuplicateDetection && duplicateAction === 'update') {
       const updateColumns = dataColumns
-        .filter(col => !uniqueKeyColumns.includes(col.name))
-        .map(col => `"${col.name}" = ?`)
+        .filter((col) => !uniqueKeyColumns.includes(col.name))
+        .map((col) => `"${col.name}" = ?`)
         .join(', ');
       const whereClause = uniqueKeyColumns
-        .map(col => `"${col}" = ?`)
+        .map((col) => `"${col}" = ?`)
         .join(' AND ');
-      
+
       if (updateColumns) {
         updateStmt = this.database.prepare(
-          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`
+          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`,
         );
       }
     }
 
     // Process rows in batches of 500
     const batchSize = 500;
-    for (let batchStart = 0; batchStart < rows.length; batchStart += batchSize) {
+    for (
+      let batchStart = 0;
+      batchStart < rows.length;
+      batchStart += batchSize
+    ) {
       const batch = rows.slice(batchStart, batchStart + batchSize);
 
       // Use explicit BEGIN/COMMIT for proper fsync
@@ -670,14 +782,14 @@ export class UserDataDbManager {
             // Check for duplicate if duplicate detection is enabled
             if (hasDuplicateDetection) {
               // Convert unique key values using the same logic as insertStmt to ensure consistency
-              const uniqueKeyValues = uniqueKeyColumns.map(col => {
-                const colSchema = dataColumns.find(c => c.name === col);
+              const uniqueKeyValues = uniqueKeyColumns.map((col) => {
+                const colSchema = dataColumns.find((c) => c.name === col);
                 if (colSchema) {
                   return this.convertValue(colSchema, row[col]);
                 }
                 return row[col]; // Fallback to raw value
               });
-              
+
               // Build dynamic query that handles NULL values properly
               const whereClauses = uniqueKeyColumns.map((col, idx) => {
                 const value = uniqueKeyValues[idx];
@@ -685,26 +797,33 @@ export class UserDataDbManager {
               });
               const whereClause = whereClauses.join(' AND ');
               const sqlQuery = `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`;
-              
+
               // Prepare query parameters (excluding NULL values since they're handled with IS NULL)
-              const queryParams = uniqueKeyValues.filter(val => val !== null);
-              
+              const queryParams = uniqueKeyValues.filter((val) => val !== null);
+
               // Debug logging for duplicate detection
-              if (rowIndex < 3) { // Log first 3 rows to avoid spam
+              if (rowIndex < 3) {
+                // Log first 3 rows to avoid spam
                 console.log(`🔍 Duplicate check for row ${rowIndex}:`);
-                console.log(`   uniqueKeyColumns: [${uniqueKeyColumns.join(', ')}]`);
+                console.log(
+                  `   uniqueKeyColumns: [${uniqueKeyColumns.join(', ')}]`,
+                );
                 console.log(`   row keys: [${Object.keys(row).join(', ')}]`);
-                console.log(`   uniqueKeyValues (converted): [${uniqueKeyValues.join(', ')}]`);
+                console.log(
+                  `   uniqueKeyValues (converted): [${uniqueKeyValues.join(', ')}]`,
+                );
                 console.log(`   🔍 Dynamic SQL: ${sqlQuery}`);
                 console.log(`   🔍 Query params: [${queryParams.join(', ')}]`);
               }
-              
+
               const checkStmt = this.database.prepare(sqlQuery);
               const existingRow = checkStmt.get(...queryParams);
 
               // Debug logging for duplicate detection results
               if (rowIndex < 3) {
-                console.log(`   🔍 Query result: ${existingRow ? 'DUPLICATE FOUND' : 'No match'}`);
+                console.log(
+                  `   🔍 Query result: ${existingRow ? 'DUPLICATE FOUND' : 'No match'}`,
+                );
                 if (existingRow) {
                   console.log(`   📎 Existing row ID: ${existingRow.id}`);
                 }
@@ -713,13 +832,16 @@ export class UserDataDbManager {
               if (existingRow) {
                 // Duplicate found!
                 duplicates++;
-                
+
                 // Track duplicate details
                 const uniqueKeyValuesObj: Record<string, any> = {};
                 uniqueKeyColumns.forEach((col, idx) => {
                   uniqueKeyValuesObj[col] = uniqueKeyValues[idx];
                 });
-                duplicateDetails.push({ rowIndex, uniqueKeyValues: uniqueKeyValuesObj });
+                duplicateDetails.push({
+                  rowIndex,
+                  uniqueKeyValues: uniqueKeyValuesObj,
+                });
 
                 if (duplicateAction === 'skip') {
                   // Skip this row
@@ -737,8 +859,8 @@ export class UserDataDbManager {
                   });
 
                   // Add unique key values for WHERE clause (convert them same as insert)
-                  const whereValues = uniqueKeyColumns.map(col => {
-                    const colSchema = dataColumns.find(c => c.name === col);
+                  const whereValues = uniqueKeyColumns.map((col) => {
+                    const colSchema = dataColumns.find((c) => c.name === col);
                     if (colSchema) {
                       return this.convertValue(colSchema, row[col]);
                     }
@@ -761,7 +883,8 @@ export class UserDataDbManager {
             inserted++;
           } catch (error) {
             skipped++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
             errors.push(errorMessage);
 
             // Log first 3 errors for debugging
@@ -774,7 +897,7 @@ export class UserDataDbManager {
             errorDetails.push({
               rowIndex,
               error: errorMessage,
-              rowData: row
+              rowData: row,
             });
           }
         }
@@ -783,7 +906,6 @@ export class UserDataDbManager {
         if (!wasInTransaction) {
           this.database.exec('COMMIT');
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -800,7 +922,14 @@ export class UserDataDbManager {
     // Update row count
     this.updateRowCount(tableId);
 
-    return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
+    return {
+      inserted,
+      skipped,
+      duplicates,
+      errors,
+      duplicateDetails,
+      errorDetails,
+    };
   }
 
   /**
@@ -812,9 +941,15 @@ export class UserDataDbManager {
     tempSettings?: {
       uniqueKeyColumns?: string[];
       duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
-    }
-  ): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
-    
+    },
+  ): {
+    inserted: number;
+    skipped: number;
+    duplicates: number;
+    errors: string[];
+    duplicateDetails: any[];
+    errorDetails: any[];
+  } {
     const table = this.getTable(tableId);
     if (!table) {
       throw new Error(`Table not found: ${tableId}`);
@@ -823,7 +958,7 @@ export class UserDataDbManager {
     // Use temporary settings if provided, otherwise fall back to table's settings
     let uniqueKeyColumns: string[];
     let duplicateAction: string;
-    
+
     if (tempSettings && tempSettings.uniqueKeyColumns !== undefined) {
       uniqueKeyColumns = tempSettings.uniqueKeyColumns;
       duplicateAction = tempSettings.duplicateAction || 'skip';
@@ -832,9 +967,11 @@ export class UserDataDbManager {
       console.log('  Duplicate Action:', duplicateAction);
     } else {
       // Fall back to table's stored settings
-      uniqueKeyColumns = table.uniqueKeyColumns ? JSON.parse(table.uniqueKeyColumns) : [];
+      uniqueKeyColumns = table.uniqueKeyColumns
+        ? JSON.parse(table.uniqueKeyColumns)
+        : [];
       duplicateAction = table.duplicateAction || 'skip';
-      console.log('📋 Using table\'s existing settings:');
+      console.log("📋 Using table's existing settings:");
       console.log('  Unique Key Columns:', uniqueKeyColumns);
       console.log('  Duplicate Action:', duplicateAction);
     }
@@ -856,12 +993,20 @@ export class UserDataDbManager {
     let skipped = 0;
     let duplicates = 0;
     const errors: string[] = [];
-    const duplicateDetails: Array<{ rowIndex: number; uniqueKeyValues: Record<string, any> }> = [];
-    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+    const duplicateDetails: Array<{
+      rowIndex: number;
+      uniqueKeyValues: Record<string, any>;
+    }> = [];
+    const errorDetails: Array<{
+      rowIndex: number;
+      error: string;
+      rowData?: Record<string, any>;
+    }> = [];
 
     // Check if id column is AUTOINCREMENT (first column is INTEGER with autoincrement)
     const idColumn = table.schema.find((col) => col.name === 'id');
-    const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+    const isAutoIncrementId =
+      idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
 
     // Filter out the ID column only if it's auto-increment
     // If user defined their own id column (e.g., TEXT), include it in inserts
@@ -874,11 +1019,11 @@ export class UserDataDbManager {
     const placeholders = dataColumns.map(() => '?').join(', ');
 
     const insertStmt = this.database.prepare(
-      `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+      `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`,
     );
 
     // Prepare duplicate check statement if needed
-    let checkDuplicateStmt: any = null;
+    const checkDuplicateStmt: any = null;
     if (hasDuplicateDetection) {
       // We'll build the query dynamically to handle NULLs properly
       console.log(`🔍 Unique key columns: [${uniqueKeyColumns.join(', ')}]`);
@@ -888,23 +1033,27 @@ export class UserDataDbManager {
     let updateStmt: any = null;
     if (hasDuplicateDetection && duplicateAction === 'update') {
       const updateColumns = dataColumns
-        .filter(col => !uniqueKeyColumns.includes(col.name))
-        .map(col => `"${col.name}" = ?`)
+        .filter((col) => !uniqueKeyColumns.includes(col.name))
+        .map((col) => `"${col.name}" = ?`)
         .join(', ');
       const whereClause = uniqueKeyColumns
-        .map(col => `"${col}" = ?`)
+        .map((col) => `"${col}" = ?`)
         .join(' AND ');
 
       if (updateColumns) {
         updateStmt = this.database.prepare(
-          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`
+          `UPDATE "${table.tableName}" SET ${updateColumns} WHERE ${whereClause}`,
         );
       }
     }
 
     // Process rows in batches of 500
     const batchSize = 500;
-    for (let batchStart = 0; batchStart < rows.length; batchStart += batchSize) {
+    for (
+      let batchStart = 0;
+      batchStart < rows.length;
+      batchStart += batchSize
+    ) {
       const batch = rows.slice(batchStart, batchStart + batchSize);
 
       // Use explicit BEGIN/COMMIT for proper fsync
@@ -923,8 +1072,8 @@ export class UserDataDbManager {
             // Check for duplicate if duplicate detection is enabled
             if (hasDuplicateDetection) {
               // Convert unique key values using the same logic as insertStmt to ensure consistency
-              const uniqueKeyValues = uniqueKeyColumns.map(col => {
-                const colSchema = dataColumns.find(c => c.name === col);
+              const uniqueKeyValues = uniqueKeyColumns.map((col) => {
+                const colSchema = dataColumns.find((c) => c.name === col);
                 if (colSchema) {
                   return this.convertValue(colSchema, row[col]);
                 }
@@ -940,7 +1089,7 @@ export class UserDataDbManager {
               const sqlQuery = `SELECT id FROM "${table.tableName}" WHERE ${whereClause}`;
 
               // Prepare query parameters (excluding NULL values since they're handled with IS NULL)
-              const queryParams = uniqueKeyValues.filter(val => val !== null);
+              const queryParams = uniqueKeyValues.filter((val) => val !== null);
 
               const checkStmt = this.database.prepare(sqlQuery);
               const existingRow = checkStmt.get(...queryParams);
@@ -954,7 +1103,10 @@ export class UserDataDbManager {
                 uniqueKeyColumns.forEach((col, idx) => {
                   uniqueKeyValuesObj[col] = uniqueKeyValues[idx];
                 });
-                duplicateDetails.push({ rowIndex, uniqueKeyValues: uniqueKeyValuesObj });
+                duplicateDetails.push({
+                  rowIndex,
+                  uniqueKeyValues: uniqueKeyValuesObj,
+                });
 
                 if (duplicateAction === 'skip') {
                   // Skip this row
@@ -972,8 +1124,8 @@ export class UserDataDbManager {
                   });
 
                   // Add unique key values for WHERE clause (convert them same as insert)
-                  const whereValues = uniqueKeyColumns.map(col => {
-                    const colSchema = dataColumns.find(c => c.name === col);
+                  const whereValues = uniqueKeyColumns.map((col) => {
+                    const colSchema = dataColumns.find((c) => c.name === col);
                     if (colSchema) {
                       return this.convertValue(colSchema, row[col]);
                     }
@@ -996,14 +1148,15 @@ export class UserDataDbManager {
             inserted++;
           } catch (error) {
             skipped++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
             errors.push(errorMessage);
 
             // Track error details with row info
             errorDetails.push({
               rowIndex,
               error: errorMessage,
-              rowData: row
+              rowData: row,
             });
           }
         }
@@ -1012,7 +1165,6 @@ export class UserDataDbManager {
         if (!wasInTransaction) {
           this.database.exec('COMMIT');
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -1029,14 +1181,30 @@ export class UserDataDbManager {
     // Update row count
     this.updateRowCount(tableId);
 
-    return { inserted, skipped, duplicates, errors, duplicateDetails, errorDetails };
+    return {
+      inserted,
+      skipped,
+      duplicates,
+      errors,
+      duplicateDetails,
+      errorDetails,
+    };
   }
-
 
   /**
    * Replace data by date range - deletes existing data in the date range and inserts new data
    */
-  replaceByDateRange(tableId: string, rows: any[]): { inserted: number; skipped: number; duplicates: number; errors: string[]; duplicateDetails: any[]; errorDetails: any[] } {
+  replaceByDateRange(
+    tableId: string,
+    rows: any[],
+  ): {
+    inserted: number;
+    skipped: number;
+    duplicates: number;
+    errors: string[];
+    duplicateDetails: any[];
+    errorDetails: any[];
+  } {
     const table = this.getTable(tableId);
     if (!table) {
       throw new Error(`Table not found: ${tableId}`);
@@ -1044,21 +1212,30 @@ export class UserDataDbManager {
 
     // Find date columns in the schema (exclude id and imported_at)
     const dateColumns = table.schema.filter(
-      col => col.type === 'DATE' && col.name !== 'id' && col.name !== 'imported_at'
+      (col) =>
+        col.type === 'DATE' && col.name !== 'id' && col.name !== 'imported_at',
     );
 
     if (dateColumns.length === 0) {
-      throw new Error('No date columns found in table. Replace-date-range mode requires at least one date column (excluding imported_at).');
+      throw new Error(
+        'No date columns found in table. Replace-date-range mode requires at least one date column (excluding imported_at).',
+      );
     }
 
     // Use the first date column as the primary date column for range calculation
     const primaryDateColumn = dateColumns[0].name;
-    console.log(`📅 Using "${primaryDateColumn}" as primary date column for range replacement`);
+    console.log(
+      `📅 Using "${primaryDateColumn}" as primary date column for range replacement`,
+    );
 
     let inserted = 0;
     let skipped = 0;
     const errors: string[] = [];
-    const errorDetails: Array<{ rowIndex: number; error: string; rowData?: Record<string, any> }> = [];
+    const errorDetails: Array<{
+      rowIndex: number;
+      error: string;
+      rowData?: Record<string, any>;
+    }> = [];
 
     try {
       // Convert all incoming row dates and find the date range
@@ -1066,58 +1243,73 @@ export class UserDataDbManager {
 
       // Check if id column is AUTOINCREMENT
       const idColumn = table.schema.find((col) => col.name === 'id');
-      const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+      const isAutoIncrementId =
+        idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
 
       const dataColumns = isAutoIncrementId
         ? table.schema.filter((col) => col.name !== 'id')
         : table.schema;
-      
+
       rows.forEach((row, idx) => {
         try {
           // Debug logging for first few rows
           if (idx < 3) {
             console.log(`🔍 Row ${idx} keys:`, Object.keys(row));
-            console.log(`🔍 Row ${idx}["${primaryDateColumn}"]:`, row[primaryDateColumn]);
+            console.log(
+              `🔍 Row ${idx}["${primaryDateColumn}"]:`,
+              row[primaryDateColumn],
+            );
           }
 
           const rawValue = row[primaryDateColumn];
           if (rawValue === undefined || rawValue === null || rawValue === '') {
             if (idx < 3) {
-              console.warn(`⚠️ Row ${idx}: Empty date value for column "${primaryDateColumn}"`);
+              console.warn(
+                `⚠️ Row ${idx}: Empty date value for column "${primaryDateColumn}"`,
+              );
             }
             return; // Skip this row
           }
 
-          const dateValue = this.convertValue(dateColumns.find(c => c.name === primaryDateColumn)!, rawValue);
+          const dateValue = this.convertValue(
+            dateColumns.find((c) => c.name === primaryDateColumn)!,
+            rawValue,
+          );
           if (dateValue) {
             dateValues.push(new Date(dateValue));
             if (idx < 3) {
-              console.log(`✓ Row ${idx}: Parsed date: ${new Date(dateValue).toISOString()}`);
+              console.log(
+                `✓ Row ${idx}: Parsed date: ${new Date(dateValue).toISOString()}`,
+              );
             }
-          } else {
-            if (idx < 3) {
-              console.warn(`⚠️ Row ${idx}: convertValue returned null/undefined for "${rawValue}"`);
-            }
+          } else if (idx < 3) {
+            console.warn(
+              `⚠️ Row ${idx}: convertValue returned null/undefined for "${rawValue}"`,
+            );
           }
         } catch (error) {
           if (idx < 3) {
             console.warn(`⚠️ Could not parse date for row ${idx}:`, {
               rawValue: row[primaryDateColumn],
-              error: error instanceof Error ? error.message : String(error)
+              error: error instanceof Error ? error.message : String(error),
             });
           }
         }
       });
 
       if (dateValues.length === 0) {
-        throw new Error(`No valid dates found in column "${primaryDateColumn}". Cannot determine date range.`);
+        throw new Error(
+          `No valid dates found in column "${primaryDateColumn}". Cannot determine date range.`,
+        );
       }
 
       // Calculate date range
-      const minDate = new Date(Math.min(...dateValues.map(d => d.getTime())));
-      const maxDate = new Date(Math.max(...dateValues.map(d => d.getTime())));
-      
-      console.log(`📅 Excel date range: ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`);
+      const minDate = new Date(Math.min(...dateValues.map((d) => d.getTime())));
+      const maxDate = new Date(Math.max(...dateValues.map((d) => d.getTime())));
+
+      console.log(
+        `📅 Excel date range: ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`,
+      );
 
       // Use explicit BEGIN/COMMIT for proper fsync
       const wasInTransaction = this.database.inTransaction;
@@ -1129,16 +1321,23 @@ export class UserDataDbManager {
 
         // Delete existing data in the date range - use DATE() function to handle rows with time components
         const deleteStmt = this.database.prepare(
-          `DELETE FROM "${table.tableName}" WHERE DATE("${primaryDateColumn}") >= ? AND DATE("${primaryDateColumn}") <= ?`
+          `DELETE FROM "${table.tableName}" WHERE DATE("${primaryDateColumn}") >= ? AND DATE("${primaryDateColumn}") <= ?`,
         );
-        const deletedRows = deleteStmt.run(minDate.toISOString().split('T')[0], maxDate.toISOString().split('T')[0]);
-        console.log(`🗑️ Deleted ${deletedRows.changes} existing rows in date range`);
+        const deletedRows = deleteStmt.run(
+          minDate.toISOString().split('T')[0],
+          maxDate.toISOString().split('T')[0],
+        );
+        console.log(
+          `🗑️ Deleted ${deletedRows.changes} existing rows in date range`,
+        );
 
         // Insert all new rows
-        const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
+        const columnNames = dataColumns
+          .map((col) => `"${col.name}"`)
+          .join(', ');
         const placeholders = dataColumns.map(() => '?').join(', ');
         const insertStmt = this.database.prepare(
-          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`,
         );
 
         rows.forEach((row, idx) => {
@@ -1151,13 +1350,14 @@ export class UserDataDbManager {
             inserted++;
           } catch (error) {
             skipped++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
             errors.push(errorMessage);
 
             errorDetails.push({
               rowIndex: idx,
               error: errorMessage,
-              rowData: row
+              rowData: row,
             });
           }
         });
@@ -1167,7 +1367,6 @@ export class UserDataDbManager {
           this.database.exec('COMMIT');
           console.log('✅ [replaceByDateRange] Explicit COMMIT executed');
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -1182,17 +1381,18 @@ export class UserDataDbManager {
       // Update row count
       this.updateRowCount(tableId);
 
-      console.log(`✅ Date range replacement complete: ${inserted} inserted, ${skipped} errors`);
+      console.log(
+        `✅ Date range replacement complete: ${inserted} inserted, ${skipped} errors`,
+      );
 
-      return { 
-        inserted, 
-        skipped, 
+      return {
+        inserted,
+        skipped,
         duplicates: 0, // No duplicates in replace mode
-        errors, 
+        errors,
         duplicateDetails: [], // No duplicate tracking in replace mode
-        errorDetails 
+        errorDetails,
       };
-
     } catch (error) {
       console.error('❌ Date range replacement failed:', error);
       throw error;
@@ -1209,7 +1409,9 @@ export class UserDataDbManager {
    * @returns Insert result with counts
    */
   replaceAll(tableId: string, rows: any[]): InsertResult {
-    console.log(`🔄 Replace all mode: Deleting ALL data and inserting ${rows.length} new rows into table ${tableId}...`);
+    console.log(
+      `🔄 Replace all mode: Deleting ALL data and inserting ${rows.length} new rows into table ${tableId}...`,
+    );
 
     try {
       // Get table metadata
@@ -1220,15 +1422,20 @@ export class UserDataDbManager {
 
       // Determine which columns to insert (exclude auto-increment id)
       const idColumn = table.schema.find((col) => col.name === 'id');
-      const isAutoIncrementId = idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
+      const isAutoIncrementId =
+        idColumn?.type === 'INTEGER' && table.schema.indexOf(idColumn) === 0;
       const dataColumns = isAutoIncrementId
-        ? table.schema.filter(col => col.name !== 'id')
+        ? table.schema.filter((col) => col.name !== 'id')
         : table.schema;
 
       let inserted = 0;
       let skipped = 0;
       const errors: string[] = [];
-      const errorDetails: Array<{ rowIndex: number; error: string; rowData: any }> = [];
+      const errorDetails: Array<{
+        rowIndex: number;
+        error: string;
+        rowData: any;
+      }> = [];
 
       // Use explicit BEGIN/COMMIT for proper fsync
       const wasInTransaction = this.database.inTransaction;
@@ -1239,15 +1446,19 @@ export class UserDataDbManager {
         }
 
         // Step 1: Delete ALL existing rows
-        const deleteStmt = this.database.prepare(`DELETE FROM "${table.tableName}"`);
+        const deleteStmt = this.database.prepare(
+          `DELETE FROM "${table.tableName}"`,
+        );
         const deleteResult = deleteStmt.run();
         console.log(`  🗑️ Deleted ${deleteResult.changes} existing rows`);
 
         // Step 2: Insert all new rows
-        const columnNames = dataColumns.map((col) => `"${col.name}"`).join(', ');
+        const columnNames = dataColumns
+          .map((col) => `"${col.name}"`)
+          .join(', ');
         const placeholders = dataColumns.map(() => '?').join(', ');
         const insertStmt = this.database.prepare(
-          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`
+          `INSERT INTO "${table.tableName}" (${columnNames}) VALUES (${placeholders})`,
         );
 
         rows.forEach((row, idx) => {
@@ -1260,13 +1471,14 @@ export class UserDataDbManager {
             inserted++;
           } catch (error) {
             skipped++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
             errors.push(errorMessage);
 
             errorDetails.push({
               rowIndex: idx,
               error: errorMessage,
-              rowData: row
+              rowData: row,
             });
           }
         });
@@ -1276,7 +1488,6 @@ export class UserDataDbManager {
           this.database.exec('COMMIT');
           console.log('✅ [replaceAll] Explicit COMMIT executed');
         }
-
       } catch (txError) {
         if (!wasInTransaction) {
           try {
@@ -1291,7 +1502,9 @@ export class UserDataDbManager {
       // Update row count
       this.updateRowCount(tableId);
 
-      console.log(`✅ Replace all complete: ${inserted} inserted, ${skipped} errors`);
+      console.log(
+        `✅ Replace all complete: ${inserted} inserted, ${skipped} errors`,
+      );
 
       return {
         inserted,
@@ -1299,9 +1512,8 @@ export class UserDataDbManager {
         duplicates: 0, // No duplicates in replace mode
         errors,
         duplicateDetails: [], // No duplicate tracking in replace mode
-        errorDetails
+        errorDetails,
       };
-
     } catch (error) {
       console.error('❌ Replace all failed:', error);
       throw error;
@@ -1318,28 +1530,39 @@ export class UserDataDbManager {
     if (typeof value === 'string') {
       processedValue = value.trim();
     }
-    
+
     // Handle null/undefined/empty (after trimming)
-    if (processedValue === undefined || processedValue === null || processedValue === '') {
+    if (
+      processedValue === undefined ||
+      processedValue === null ||
+      processedValue === ''
+    ) {
       if (col.notNull) {
         throw new Error(`Column "${col.name}" cannot be null`);
       }
       return null;
     }
-    
+
     // Type conversions with validation
     if (col.type === 'INTEGER') {
       const stringValue = String(processedValue);
 
       // Reject values with dashes (like "123-45-67890")
-      if (stringValue.includes('-') && !/^-?\d+$/.test(stringValue.replace(/,/g, ''))) {
-        throw new Error(`Cannot convert "${processedValue}" to INTEGER for column "${col.name}" (contains dashes)`);
+      if (
+        stringValue.includes('-') &&
+        !/^-?\d+$/.test(stringValue.replace(/,/g, ''))
+      ) {
+        throw new Error(
+          `Cannot convert "${processedValue}" to INTEGER for column "${col.name}" (contains dashes)`,
+        );
       }
 
       const cleanValue = stringValue.replace(/,/g, '').trim();
       const num = parseInt(cleanValue, 10);
       if (isNaN(num)) {
-        throw new Error(`Cannot convert "${processedValue}" to INTEGER for column "${col.name}"`);
+        throw new Error(
+          `Cannot convert "${processedValue}" to INTEGER for column "${col.name}"`,
+        );
       }
       return num;
     }
@@ -1348,18 +1571,25 @@ export class UserDataDbManager {
       const stringValue = String(processedValue);
 
       // Reject values with dashes (like "123-45-67890")
-      if (stringValue.includes('-') && !/^-?\d+(\.\d+)?$/.test(stringValue.replace(/,/g, ''))) {
-        throw new Error(`Cannot convert "${processedValue}" to REAL for column "${col.name}" (contains dashes)`);
+      if (
+        stringValue.includes('-') &&
+        !/^-?\d+(\.\d+)?$/.test(stringValue.replace(/,/g, ''))
+      ) {
+        throw new Error(
+          `Cannot convert "${processedValue}" to REAL for column "${col.name}" (contains dashes)`,
+        );
       }
 
       const cleanValue = stringValue.replace(/,/g, '').trim();
       const num = parseFloat(cleanValue);
       if (isNaN(num)) {
-        throw new Error(`Cannot convert "${processedValue}" to REAL for column "${col.name}"`);
+        throw new Error(
+          `Cannot convert "${processedValue}" to REAL for column "${col.name}"`,
+        );
       }
       return num;
     }
-    
+
     if (col.type === 'DATE') {
       let dateObj: Date;
 
@@ -1391,7 +1621,10 @@ export class UserDataDbManager {
             // Remove day of week like (월)
             normalized = normalized.replace(/\([^)]+\)/, '').trim();
             // Remove Korean AM/PM
-            normalized = normalized.replace('오전', '').replace('오후', '').trim();
+            normalized = normalized
+              .replace('오전', '')
+              .replace('오후', '')
+              .trim();
             // Add standard AM/PM at the end for JS Date
             normalized += isPM ? ' PM' : ' AM';
           }
@@ -1425,7 +1658,11 @@ export class UserDataDbManager {
         }
       } else if (typeof processedValue === 'number') {
         // Check if it's YYYYMMDD format (8-digit integer)
-        if (Number.isInteger(processedValue) && processedValue >= 19000101 && processedValue <= 21991231) {
+        if (
+          Number.isInteger(processedValue) &&
+          processedValue >= 19000101 &&
+          processedValue <= 21991231
+        ) {
           const valueStr = String(processedValue);
           if (valueStr.length === 8) {
             const year = parseInt(valueStr.substring(0, 4), 10);
@@ -1441,11 +1678,15 @@ export class UserDataDbManager {
           dateObj = new Date((processedValue - 25569) * 86400 * 1000);
         }
       } else {
-        throw new Error(`Cannot convert "${processedValue}" to DATE for column "${col.name}"`);
+        throw new Error(
+          `Cannot convert "${processedValue}" to DATE for column "${col.name}"`,
+        );
       }
 
       if (isNaN(dateObj.getTime())) {
-        throw new Error(`Invalid date "${processedValue}" for column "${col.name}"`);
+        throw new Error(
+          `Invalid date "${processedValue}" for column "${col.name}"`,
+        );
       }
 
       const year = dateObj.getFullYear();
@@ -1461,12 +1702,12 @@ export class UserDataDbManager {
       }
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     }
-    
+
     // TEXT: convert everything to string and trim
     if (processedValue instanceof Date) {
       return processedValue.toISOString();
     }
-    
+
     return String(processedValue).trim();
   }
 
@@ -1478,12 +1719,12 @@ export class UserDataDbManager {
     if (!table) return;
 
     const countStmt = this.database.prepare(
-      `SELECT COUNT(*) as count FROM "${table.tableName}"`
+      `SELECT COUNT(*) as count FROM "${table.tableName}"`,
     );
     const result = countStmt.get() as { count: number };
 
     const updateStmt = this.database.prepare(
-      'UPDATE user_tables SET row_count = ? WHERE id = ?'
+      'UPDATE user_tables SET row_count = ? WHERE id = ?',
     );
     updateStmt.run(result.count, tableId);
   }
@@ -1500,8 +1741,8 @@ export class UserDataDbManager {
     const limit = Math.min(options.limit || 100, 1000);
     const offset = options.offset || 0;
 
-    let whereClauses: string[] = [];
-    let params: any[] = [];
+    const whereClauses: string[] = [];
+    const params: any[] = [];
 
     // Build filter conditions
     if (options.filters) {
@@ -1545,7 +1786,7 @@ export class UserDataDbManager {
     let orderByClause = '';
     if (options.orderBy) {
       const columnExists = table.schema.some(
-        (col) => col.name === options.orderBy
+        (col) => col.name === options.orderBy,
       );
       if (columnExists) {
         const direction = options.orderDirection || 'ASC';
@@ -1573,7 +1814,7 @@ export class UserDataDbManager {
   searchData(
     tableId: string,
     searchQuery: string,
-    limit: number = 100
+    limit: number = 100,
   ): QueryResult {
     const table = this.getTable(tableId);
     if (!table) {
@@ -1599,14 +1840,14 @@ export class UserDataDbManager {
 
     // Validate column exists
     const columnExists = table.schema.some(
-      (col) => col.name === options.column
+      (col) => col.name === options.column,
     );
     if (!columnExists) {
       throw new Error(`Column not found: ${options.column}`);
     }
 
-    let whereClauses: string[] = [];
-    let params: any[] = [];
+    const whereClauses: string[] = [];
+    const params: any[] = [];
 
     // Build filter conditions
     if (options.filters) {
@@ -1640,7 +1881,7 @@ export class UserDataDbManager {
 
     // Aggregation with grouping
     const groupByExists = table.schema.some(
-      (col) => col.name === options.groupBy
+      (col) => col.name === options.groupBy,
     );
     if (!groupByExists) {
       throw new Error(`Group by column not found: ${options.groupBy}`);
@@ -1664,7 +1905,10 @@ export class UserDataDbManager {
       value: row.value || 0,
     }));
 
-    const totalValue = groupedResults.reduce((sum, item) => sum + item.value, 0);
+    const totalValue = groupedResults.reduce(
+      (sum, item) => sum + item.value,
+      0,
+    );
 
     return {
       value: totalValue,
@@ -1714,7 +1958,9 @@ export class UserDataDbManager {
 
     // Get column names
     const columns =
-      rows.length > 0 ? Object.keys(rows[0]) : stmt.columns().map((c) => c.name);
+      rows.length > 0
+        ? Object.keys(rows[0])
+        : stmt.columns().map((c) => c.name);
 
     return { rows, columns };
   }
@@ -1735,17 +1981,20 @@ export class UserDataDbManager {
   /**
    * Delete rows from a table by filter or by ID
    */
-  deleteRows(tableId: string, options: {
-    ids?: number[];
-    filters?: Record<string, string>;
-  }): { deleted: number } {
+  deleteRows(
+    tableId: string,
+    options: {
+      ids?: number[];
+      filters?: Record<string, string>;
+    },
+  ): { deleted: number } {
     const table = this.getTable(tableId);
     if (!table) {
       throw new Error(`Table not found: ${tableId}`);
     }
 
-    let whereClauses: string[] = [];
-    let params: any[] = [];
+    const whereClauses: string[] = [];
+    const params: any[] = [];
 
     // Delete by IDs
     if (options.ids && options.ids.length > 0) {
@@ -1775,7 +2024,9 @@ export class UserDataDbManager {
     }
 
     if (whereClauses.length === 0) {
-      throw new Error('No deletion criteria provided (ids or filters required)');
+      throw new Error(
+        'No deletion criteria provided (ids or filters required)',
+      );
     }
 
     const whereClause = whereClauses.join(' AND ');
@@ -1793,10 +2044,14 @@ export class UserDataDbManager {
   /**
    * Update rows in a table by filter or by ID
    */
-  updateRows(tableId: string, updates: Record<string, any>, options: {
-    ids?: number[];
-    filters?: Record<string, string>;
-  }): { updated: number } {
+  updateRows(
+    tableId: string,
+    updates: Record<string, any>,
+    options: {
+      ids?: number[];
+      filters?: Record<string, string>;
+    },
+  ): { updated: number } {
     const table = this.getTable(tableId);
     if (!table) {
       throw new Error(`Table not found: ${tableId}`);
@@ -1828,8 +2083,8 @@ export class UserDataDbManager {
     }
 
     // Build WHERE clause
-    let whereClauses: string[] = [];
-    let whereParams: any[] = [];
+    const whereClauses: string[] = [];
+    const whereParams: any[] = [];
 
     // Update by IDs
     if (options.ids && options.ids.length > 0) {
@@ -1917,7 +2172,7 @@ export class UserDataDbManager {
       results.rowsImported,
       results.rowsSkipped,
       results.errorMessage || null,
-      id
+      id,
     );
   }
 
@@ -1958,7 +2213,7 @@ export class UserDataDbManager {
     tableId: string,
     columnNames: string[],
     embeddingService: GeminiEmbeddingService,
-    options?: { batchSize?: number }
+    options?: { batchSize?: number },
   ): AsyncGenerator<{
     progress: number;
     total: number;
@@ -1986,7 +2241,7 @@ export class UserDataDbManager {
 
     // Count total rows
     const countStmt = this.database.prepare(
-      `SELECT COUNT(*) as count FROM "${table.tableName}"`
+      `SELECT COUNT(*) as count FROM "${table.tableName}"`,
     );
     const countRow = countStmt.get() as any;
     const totalRows = countRow.count;
@@ -2011,7 +2266,7 @@ export class UserDataDbManager {
       let offset = 0;
       while (offset < totalRows) {
         const dataStmt = this.database.prepare(
-          `SELECT id as rowId, "${columnName}" as value FROM "${table.tableName}" LIMIT ? OFFSET ?`
+          `SELECT id as rowId, "${columnName}" as value FROM "${table.tableName}" LIMIT ? OFFSET ?`,
         );
         const rows = dataStmt.all(batchSize, offset) as any[];
 
@@ -2019,7 +2274,8 @@ export class UserDataDbManager {
 
         // Filter out null/empty values
         const validRows = rows.filter(
-          (row) => row.value && typeof row.value === 'string' && row.value.trim()
+          (row) =>
+            row.value && typeof row.value === 'string' && row.value.trim(),
         );
 
         if (validRows.length > 0) {
@@ -2042,7 +2298,7 @@ export class UserDataDbManager {
               embedding: embeddings[idx].embedding,
               model: embeddings[idx].model,
               dimensions: embeddings[idx].dimensions,
-            })
+            }),
           );
 
           // Bulk insert embeddings
@@ -2072,7 +2328,7 @@ export class UserDataDbManager {
         columnName,
         firstEmbedding.model,
         firstEmbedding.dimensions,
-        estimatedCostForColumn
+        estimatedCostForColumn,
       );
     }
 
@@ -2097,7 +2353,7 @@ export class UserDataDbManager {
       limit?: number;
       threshold?: number;
       columnNames?: string[];
-    }
+    },
   ): Promise<{
     rows: any[];
     total: number;
@@ -2161,7 +2417,7 @@ export class UserDataDbManager {
     const rowIds = sortedRows.map(([rowId]) => rowId);
     const placeholders = rowIds.map(() => '?').join(',');
     const dataStmt = this.database.prepare(
-      `SELECT rowid, * FROM "${table.tableName}" WHERE rowid IN (${placeholders})`
+      `SELECT rowid, * FROM "${table.tableName}" WHERE rowid IN (${placeholders})`,
     );
     const rows = dataStmt.all(...rowIds) as any[];
 

@@ -43,6 +43,8 @@ export interface TaxInvoiceData {
   품목비고: string;
 }
 
+export interface TaxExemptInvoiceData extends TaxInvoiceData {}
+
 export interface ParsedExcelResult {
   success: boolean;
   businessNumber?: string;
@@ -53,6 +55,18 @@ export interface ParsedExcelResult {
   totalSupplyValue?: number;
   totalTax?: number;
   detectedType?: 'sales' | 'purchase'; // Detected from Excel file name/content
+  error?: string;
+}
+
+export interface ParsedTaxExemptExcelResult {
+  success: boolean;
+  businessNumber?: string;
+  businessName?: string;
+  representativeName?: string;
+  invoices?: TaxExemptInvoiceData[];
+  totalAmount?: number;
+  totalSupplyValue?: number;
+  detectedType?: 'sales' | 'purchase';
   error?: string;
 }
 
@@ -337,6 +351,126 @@ export function parseCashReceiptExcel(filePath: string): ParsedCashReceiptResult
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Parse Hometax tax-exempt invoice (전자계산서) Excel file
+ * Header row: row 6 (1-indexed)
+ */
+export function parseTaxExemptExcel(filePath: string): ParsedTaxExemptExcelResult {
+  try {
+    console.log('[Hometax Parser] Parsing tax exempt Excel file:', filePath);
+
+    const fileName = path.basename(filePath);
+    let detectedType: 'sales' | 'purchase' | undefined;
+    if (fileName.includes('매출')) {
+      detectedType = 'sales';
+    } else if (fileName.includes('매입')) {
+      detectedType = 'purchase';
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found: ' + filePath };
+    }
+
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) {
+      return { success: false, error: 'File is empty' };
+    }
+
+    const buffer = fs.readFileSync(filePath);
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+    const businessInfo = data[0] || [];
+    const businessNumber = businessInfo[1] || '';
+    const businessName = businessInfo[3] || '';
+    const representativeName = businessInfo[5] || '';
+
+    const totals = data[2] || [];
+    const totalAmount = parseInt(String(totals[1] || '0').replace(/,/g, '')) || 0;
+    const totalSupplyValue = parseInt(String(totals[3] || '0').replace(/,/g, '')) || 0;
+
+    const detectedHeaderRowIndex = data.findIndex(
+      (row) =>
+        Array.isArray(row) &&
+        String(row[0] || '').trim() === '작성일자' &&
+        String(row[1] || '').trim() === '승인번호'
+    );
+    const headerRowIndex = detectedHeaderRowIndex >= 0 ? detectedHeaderRowIndex : 5;
+    const dataStartIndex = Math.max(headerRowIndex + 1, 6);
+
+    const parseNumber = (val: any): number => {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/,/g, '');
+        return parseInt(cleaned) || 0;
+      }
+      return 0;
+    };
+
+    const invoices: TaxExemptInvoiceData[] = [];
+    for (let i = dataStartIndex; i < data.length; i++) {
+      const row = data[i];
+      if (!row || row.length < 31) continue;
+      if (!row[1]) continue; // 승인번호 없는 행 skip
+
+      invoices.push({
+        작성일자: row[0] || '',
+        승인번호: row[1] || '',
+        발급일자: row[2] || '',
+        전송일자: row[3] || '',
+        공급자사업자등록번호: row[4] || '',
+        공급자종사업장번호: row[5] || '',
+        공급자상호: row[6] || '',
+        공급자대표자명: row[7] || '',
+        공급자주소: row[8] || '',
+        공급받는자사업자등록번호: row[9] || '',
+        공급받는자종사업장번호: row[10] || '',
+        공급받는자상호: row[11] || '',
+        공급받는자대표자명: row[12] || '',
+        공급받는자주소: row[13] || '',
+        합계금액: parseNumber(row[14]),
+        공급가액: parseNumber(row[15]),
+        세액: 0,
+        전자세금계산서분류: row[16] || '',
+        전자세금계산서종류: row[17] || '',
+        발급유형: row[18] || '',
+        비고: row[19] || '',
+        영수청구구분: row[20] || '',
+        공급자이메일: row[21] || '',
+        공급받는자이메일1: row[22] || '',
+        공급받는자이메일2: row[23] || '',
+        품목일자: row[24] || '',
+        품목명: row[25] || '',
+        품목규격: row[26] || '',
+        품목수량: row[27] || '',
+        품목단가: row[28] || '',
+        품목공급가액: parseNumber(row[29]),
+        품목세액: 0,
+        품목비고: row[30] || '',
+      });
+    }
+
+    return {
+      success: true,
+      businessNumber,
+      businessName,
+      representativeName,
+      invoices,
+      totalAmount,
+      totalSupplyValue,
+      detectedType,
+    };
+  } catch (error) {
+    console.error('[Hometax Parser] Error parsing tax exempt Excel:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }

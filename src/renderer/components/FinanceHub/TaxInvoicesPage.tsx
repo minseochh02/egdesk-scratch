@@ -21,13 +21,15 @@ interface ConnectedBusiness {
   businessName: string;
   salesCount: number;
   purchaseCount: number;
+  taxExemptSalesCount: number;
+  taxExemptPurchaseCount: number;
   cashReceiptCount: number;
 }
 
 interface TaxInvoicesPageProps {
   invoices: TaxInvoice[]; // Filtered and sorted invoices for display
   allInvoices: TaxInvoice[]; // All invoices for building filter options
-  invoiceType: 'sales' | 'purchase' | 'cash-receipt';
+  invoiceType: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt';
   stats: TaxInvoiceStatsData;
   filters: TaxInvoiceFiltersType;
   isLoading: boolean;
@@ -37,7 +39,7 @@ interface TaxInvoicesPageProps {
   showGoogleAuth: boolean;
   signingIn: boolean;
   savedSpreadsheetUrl?: string | null;
-  onInvoiceTypeChange: (type: 'sales' | 'purchase' | 'cash-receipt') => void;
+  onInvoiceTypeChange: (type: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt') => void;
   onFilterChange: (key: keyof TaxInvoiceFiltersType, value: string) => void;
   onResetFilters: () => void;
   onSort: (key: string) => void;
@@ -83,6 +85,8 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   // Calculate total counts
   const totalSalesCount = businesses.reduce((sum, b) => sum + (b.salesCount || 0), 0);
   const totalPurchaseCount = businesses.reduce((sum, b) => sum + (b.purchaseCount || 0), 0);
+  const totalTaxExemptSalesCount = businesses.reduce((sum, b) => sum + (b.taxExemptSalesCount || 0), 0);
+  const totalTaxExemptPurchaseCount = businesses.reduce((sum, b) => sum + (b.taxExemptPurchaseCount || 0), 0);
   const totalCashReceiptCount = businesses.reduce((sum, b) => sum + (b.cashReceiptCount || 0), 0);
 
   return (
@@ -138,7 +142,15 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
             onClick={onExport}
             disabled={!onExport}
           >
-            📊 {invoiceType === 'sales' ? '매출' : invoiceType === 'purchase' ? '매입' : '현금영수증'} 스프레드시트 열기 {savedSpreadsheetUrl && '(기존 시트 업데이트)'}
+            📊 {invoiceType === 'sales'
+              ? '세금계산서 매출'
+              : invoiceType === 'purchase'
+                ? '세금계산서 매입'
+                : invoiceType === 'tax-exempt-sales'
+                  ? '면세계산서 매출'
+                  : invoiceType === 'tax-exempt-purchase'
+                    ? '면세계산서 매입'
+                    : '현금영수증'} 스프레드시트 열기 {savedSpreadsheetUrl && '(기존 시트 업데이트)'}
           </button>
           {savedSpreadsheetUrl && onClearSpreadsheet && (
             <button
@@ -202,6 +214,22 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
           <span className="tip-invoice-type-tab__count">{totalPurchaseCount}건</span>
         </button>
         <button
+          className={`tip-invoice-type-tab ${invoiceType === 'tax-exempt-sales' ? 'tip-invoice-type-tab--active' : ''}`}
+          onClick={() => onInvoiceTypeChange('tax-exempt-sales')}
+        >
+          <span className="tip-invoice-type-tab__icon">🧾</span>
+          <span className="tip-invoice-type-tab__label">면세 매출</span>
+          <span className="tip-invoice-type-tab__count">{totalTaxExemptSalesCount}건</span>
+        </button>
+        <button
+          className={`tip-invoice-type-tab ${invoiceType === 'tax-exempt-purchase' ? 'tip-invoice-type-tab--active' : ''}`}
+          onClick={() => onInvoiceTypeChange('tax-exempt-purchase')}
+        >
+          <span className="tip-invoice-type-tab__icon">🧾</span>
+          <span className="tip-invoice-type-tab__label">면세 매입</span>
+          <span className="tip-invoice-type-tab__count">{totalTaxExemptPurchaseCount}건</span>
+        </button>
+        <button
           className={`tip-invoice-type-tab ${invoiceType === 'cash-receipt' ? 'tip-invoice-type-tab--active' : ''}`}
           onClick={() => onInvoiceTypeChange('cash-receipt')}
         >
@@ -215,9 +243,17 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
       {invoices.length === 0 && !isLoading ? (
         <div className="tip-empty">
           <div className="tip-empty__icon">{invoiceType === 'cash-receipt' ? '💵' : '🧾'}</div>
-          <h3>수집된 {invoiceType === 'sales' ? '매출 세금계산서' : invoiceType === 'purchase' ? '매입 세금계산서' : '현금영수증'}
+          <h3>수집된 {invoiceType === 'sales'
+            ? '매출 세금계산서'
+            : invoiceType === 'purchase'
+              ? '매입 세금계산서'
+              : invoiceType === 'tax-exempt-sales'
+                ? '매출 면세계산서'
+                : invoiceType === 'tax-exempt-purchase'
+                  ? '매입 면세계산서'
+                  : '현금영수증'}
           {invoiceType === 'cash-receipt' ? '이' : '가'} 없습니다</h3>
-          <p>세금 관리 탭에서 사업자를 연결하고 수집하면 {invoiceType === 'cash-receipt' ? '현금영수증' : '전자세금계산서'} 목록이 표시됩니다</p>
+          <p>세금 관리 탭에서 사업자를 연결하고 수집하면 {invoiceType === 'cash-receipt' ? '현금영수증' : '전자세금계산서/전자계산서'} 목록이 표시됩니다</p>
         </div>
       ) : (
         <TaxInvoiceTable

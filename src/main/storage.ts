@@ -1476,8 +1476,8 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 // ============================================
 
 import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
-import { parseHometaxExcel, parseCashReceiptExcel } from './hometax-excel-parser';
-import { importTaxInvoices, recordSyncOperation, getTaxInvoices, getSpreadsheetUrl, saveSpreadsheetUrl, importCashReceipts, getCashReceipts, getCashReceiptSpreadsheetUrl, saveCashReceiptSpreadsheetUrl } from './sqlite/hometax';
+import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } from './hometax-excel-parser';
+import { importTaxInvoices, importTaxExemptInvoices, recordSyncOperation, getTaxInvoices, getTaxExemptInvoices, getSpreadsheetUrl, saveSpreadsheetUrl, getTaxExemptSpreadsheetUrl, saveTaxExemptSpreadsheetUrl, importCashReceipts, getCashReceipts, getCashReceiptSpreadsheetUrl, saveCashReceiptSpreadsheetUrl } from './sqlite/hometax';
 import { getConversationsDatabase, getFinanceHubDatabase } from './sqlite/init';
 
 /**
@@ -1700,6 +1700,23 @@ ipcMain.handle('hometax:get-invoices', async (event, filters: any) => {
 });
 
 /**
+ * Get tax-exempt invoices from database
+ */
+ipcMain.handle('hometax:get-tax-exempt-invoices', async (event, filters: any) => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = getTaxExemptInvoices(db, filters);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-tax-exempt-invoices error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
  * Get cash receipts from database
  */
 ipcMain.handle('hometax:get-cash-receipts', async (event, filters: any) => {
@@ -1751,6 +1768,40 @@ ipcMain.handle('hometax:save-spreadsheet-url', async (event, businessNumber: str
 });
 
 /**
+ * Get saved spreadsheet URL for tax-exempt invoices
+ */
+ipcMain.handle('hometax:get-tax-exempt-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase') => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = getTaxExemptSpreadsheetUrl(db, businessNumber, invoiceType);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:get-tax-exempt-spreadsheet-url error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Save spreadsheet URL for tax-exempt invoices
+ */
+ipcMain.handle('hometax:save-tax-exempt-spreadsheet-url', async (event, businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) => {
+  try {
+    const db = getFinanceHubDatabase();
+    const result = saveTaxExemptSpreadsheetUrl(db, businessNumber, invoiceType, spreadsheetUrl);
+    return result;
+  } catch (error) {
+    console.error('[IPC] hometax:save-tax-exempt-spreadsheet-url error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
  * Get saved cash receipt spreadsheet URL for a business
  */
 ipcMain.handle('hometax:get-cash-receipt-spreadsheet-url', async (event, businessNumber: string) => {
@@ -1794,6 +1845,7 @@ ipcMain.handle('hometax:drop-all-data', async () => {
 
     // Delete all tax invoices and sync operations
     db.prepare('DELETE FROM tax_invoices').run();
+    db.prepare('DELETE FROM tax_exempt_invoices').run();
     db.prepare('DELETE FROM hometax_sync_operations').run();
     db.prepare('VACUUM').run();
 
@@ -1828,6 +1880,10 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     let salesDuplicate = 0;
     let purchaseInserted = 0;
     let purchaseDuplicate = 0;
+    let taxExemptSalesInserted = 0;
+    let taxExemptSalesDuplicate = 0;
+    let taxExemptPurchaseInserted = 0;
+    let taxExemptPurchaseDuplicate = 0;
 
     // Wait a bit for files to be fully written
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1940,6 +1996,74 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     let cashReceiptInserted = 0;
     let cashReceiptDuplicate = 0;
 
+    // Parse this month tax exempt sales Excel
+    if (result.thisMonthTaxExemptSalesFile) {
+      console.log('[IPC] Parsing this month tax exempt sales Excel:', result.thisMonthTaxExemptSalesFile);
+      const parsed = parseTaxExemptExcel(result.thisMonthTaxExemptSalesFile);
+      if (parsed.success && parsed.invoices && parsed.businessNumber) {
+        const importResult = importTaxExemptInvoices(
+          db,
+          parsed.businessNumber,
+          'sales',
+          parsed.invoices,
+          result.thisMonthTaxExemptSalesFile
+        );
+        taxExemptSalesInserted += importResult.inserted;
+        taxExemptSalesDuplicate += importResult.duplicate;
+      }
+    }
+
+    // Parse last month tax exempt sales Excel
+    if (result.lastMonthTaxExemptSalesFile) {
+      console.log('[IPC] Parsing last month tax exempt sales Excel:', result.lastMonthTaxExemptSalesFile);
+      const parsed = parseTaxExemptExcel(result.lastMonthTaxExemptSalesFile);
+      if (parsed.success && parsed.invoices && parsed.businessNumber) {
+        const importResult = importTaxExemptInvoices(
+          db,
+          parsed.businessNumber,
+          'sales',
+          parsed.invoices,
+          result.lastMonthTaxExemptSalesFile
+        );
+        taxExemptSalesInserted += importResult.inserted;
+        taxExemptSalesDuplicate += importResult.duplicate;
+      }
+    }
+
+    // Parse this month tax exempt purchase Excel
+    if (result.thisMonthTaxExemptPurchaseFile) {
+      console.log('[IPC] Parsing this month tax exempt purchase Excel:', result.thisMonthTaxExemptPurchaseFile);
+      const parsed = parseTaxExemptExcel(result.thisMonthTaxExemptPurchaseFile);
+      if (parsed.success && parsed.invoices && parsed.businessNumber) {
+        const importResult = importTaxExemptInvoices(
+          db,
+          parsed.businessNumber,
+          'purchase',
+          parsed.invoices,
+          result.thisMonthTaxExemptPurchaseFile
+        );
+        taxExemptPurchaseInserted += importResult.inserted;
+        taxExemptPurchaseDuplicate += importResult.duplicate;
+      }
+    }
+
+    // Parse last month tax exempt purchase Excel
+    if (result.lastMonthTaxExemptPurchaseFile) {
+      console.log('[IPC] Parsing last month tax exempt purchase Excel:', result.lastMonthTaxExemptPurchaseFile);
+      const parsed = parseTaxExemptExcel(result.lastMonthTaxExemptPurchaseFile);
+      if (parsed.success && parsed.invoices && parsed.businessNumber) {
+        const importResult = importTaxExemptInvoices(
+          db,
+          parsed.businessNumber,
+          'purchase',
+          parsed.invoices,
+          result.lastMonthTaxExemptPurchaseFile
+        );
+        taxExemptPurchaseInserted += importResult.inserted;
+        taxExemptPurchaseDuplicate += importResult.duplicate;
+      }
+    }
+
     if (result.cashReceiptFile) {
       console.log('[IPC] Parsing cash receipt Excel:', result.cashReceiptFile);
       const cashReceiptParsed = parseCashReceiptExcel(result.cashReceiptFile);
@@ -1986,7 +2110,13 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
       console.log('[IPC] ⚠️  No cash receipt file - skipping (no data for this period)');
     }
 
-    console.log(`[IPC] Import complete - Sales: ${salesInserted} new (${salesDuplicate} duplicate), Purchase: ${purchaseInserted} new (${purchaseDuplicate} duplicate), Cash Receipts: ${cashReceiptInserted} new (${cashReceiptDuplicate} duplicate)`);
+    console.log(
+      `[IPC] Import complete - Sales: ${salesInserted} new (${salesDuplicate} duplicate), ` +
+      `Purchase: ${purchaseInserted} new (${purchaseDuplicate} duplicate), ` +
+      `TaxExempt Sales: ${taxExemptSalesInserted} new (${taxExemptSalesDuplicate} duplicate), ` +
+      `TaxExempt Purchase: ${taxExemptPurchaseInserted} new (${taxExemptPurchaseDuplicate} duplicate), ` +
+      `Cash Receipts: ${cashReceiptInserted} new (${cashReceiptDuplicate} duplicate)`
+    );
 
     // Clean up downloaded Excel files after successful import
     console.log('[IPC] Cleaning up downloaded Excel files...');
@@ -1995,6 +2125,10 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
       result.lastMonthSalesFile,
       result.thisMonthPurchaseFile,
       result.lastMonthPurchaseFile,
+      result.thisMonthTaxExemptSalesFile,
+      result.lastMonthTaxExemptSalesFile,
+      result.thisMonthTaxExemptPurchaseFile,
+      result.lastMonthTaxExemptPurchaseFile,
       result.cashReceiptFile
     ].filter(Boolean); // Remove undefined/null values
 
@@ -2046,6 +2180,10 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
       salesDuplicate,
       purchaseInserted,
       purchaseDuplicate,
+      taxExemptSalesInserted,
+      taxExemptSalesDuplicate,
+      taxExemptPurchaseInserted,
+      taxExemptPurchaseDuplicate,
       cashReceiptInserted,
       cashReceiptDuplicate
     };

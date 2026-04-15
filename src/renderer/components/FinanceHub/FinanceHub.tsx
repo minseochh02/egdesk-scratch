@@ -166,7 +166,7 @@ const FinanceHub: React.FC = () => {
   const [saveHometaxCredentials, setSaveHometaxCredentials] = useState(true);
 
   // Tax invoice list state
-  const [taxInvoiceType, setTaxInvoiceType] = useState<'sales' | 'purchase' | 'cash-receipt'>('sales');
+  const [taxInvoiceType, setTaxInvoiceType] = useState<'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt'>('sales');
   const [taxInvoices, setTaxInvoices] = useState<any[]>([]);
   const [isLoadingTaxInvoices, setIsLoadingTaxInvoices] = useState(false);
   const [selectedBusinessFilter, setSelectedBusinessFilter] = useState<string>('all');
@@ -174,6 +174,8 @@ const FinanceHub: React.FC = () => {
   const [showTaxFilters, setShowTaxFilters] = useState(false);
   const [taxSalesSpreadsheetUrl, setTaxSalesSpreadsheetUrl] = useState<string | null>(null);
   const [taxPurchaseSpreadsheetUrl, setTaxPurchaseSpreadsheetUrl] = useState<string | null>(null);
+  const [taxExemptSalesSpreadsheetUrl, setTaxExemptSalesSpreadsheetUrl] = useState<string | null>(null);
+  const [taxExemptPurchaseSpreadsheetUrl, setTaxExemptPurchaseSpreadsheetUrl] = useState<string | null>(null);
   const [cashReceiptSpreadsheetUrl, setCashReceiptSpreadsheetUrl] = useState<string | null>(null);
   const [taxInvoiceFilters, setTaxInvoiceFilters] = useState<TaxInvoiceFiltersType>({
     businessNumber: 'all',
@@ -257,7 +259,8 @@ const FinanceHub: React.FC = () => {
     }
 
     if (taxInvoiceFilters.companyName !== 'all') {
-      const field = taxInvoiceType === 'sales' ? '공급받는자상호' : '공급자상호';
+      const isSalesLike = taxInvoiceType === 'sales' || taxInvoiceType === 'tax-exempt-sales';
+      const field = isSalesLike ? '공급받는자상호' : '공급자상호';
       filtered = filtered.filter(inv => inv[field] === taxInvoiceFilters.companyName);
     }
 
@@ -464,6 +467,14 @@ const FinanceHub: React.FC = () => {
               businessNumber,
               invoiceType: 'purchase'
             });
+            const taxExemptSalesResult = await window.electron.hometax.getTaxExemptInvoices({
+              businessNumber,
+              invoiceType: 'sales'
+            });
+            const taxExemptPurchaseResult = await window.electron.hometax.getTaxExemptInvoices({
+              businessNumber,
+              invoiceType: 'purchase'
+            });
             const cashReceiptsResult = await window.electron.hometax.getCashReceipts({
               businessNumber
             });
@@ -477,6 +488,8 @@ const FinanceHub: React.FC = () => {
               lastSync: certData.savedAt ? new Date(certData.savedAt) : undefined,
               salesCount: salesResult.success ? (salesResult.total || 0) : 0,
               purchaseCount: purchaseResult.success ? (purchaseResult.total || 0) : 0,
+              taxExemptSalesCount: taxExemptSalesResult.success ? (taxExemptSalesResult.total || 0) : 0,
+              taxExemptPurchaseCount: taxExemptPurchaseResult.success ? (taxExemptPurchaseResult.total || 0) : 0,
               cashReceiptCount: cashReceiptsResult.success ? (cashReceiptsResult.total || 0) : 0,
               소유자명: certData.소유자명,
               용도: certData.용도,
@@ -1612,6 +1625,17 @@ const FinanceHub: React.FC = () => {
         } else {
           setTaxInvoices([]);
         }
+      } else if (taxInvoiceType === 'tax-exempt-sales' || taxInvoiceType === 'tax-exempt-purchase') {
+        const result = await window.electron.hometax.getTaxExemptInvoices({
+          businessNumber: selectedBusinessFilter === 'all' ? undefined : selectedBusinessFilter,
+          invoiceType: taxInvoiceType === 'tax-exempt-sales' ? 'sales' : 'purchase'
+        });
+
+        if (result.success) {
+          setTaxInvoices(result.data || []);
+        } else {
+          setTaxInvoices([]);
+        }
       } else {
         // Load tax invoices (sales or purchase)
         const result = await window.electron.hometax.getInvoices({
@@ -1646,7 +1670,7 @@ const FinanceHub: React.FC = () => {
 
       // Get existing spreadsheet URL
       const urlResult = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
-      const existingUrl = urlResult.success && urlResult.url ? urlResult.url : undefined;
+      const existingUrl = urlResult.success && urlResult.spreadsheetUrl ? urlResult.spreadsheetUrl : undefined;
 
       console.log(`[FinanceHub] Exporting ${invoicesResult.data.length} ${invoiceType} invoices (existing URL: ${existingUrl ? 'yes' : 'no'})`);
 
@@ -1676,6 +1700,40 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const exportTaxExemptInvoicesForType = async (businessNumber: string, invoiceType: 'sales' | 'purchase') => {
+    try {
+      const invoicesResult = await window.electron.hometax.getTaxExemptInvoices({
+        businessNumber,
+        invoiceType
+      });
+
+      if (!invoicesResult.success || !invoicesResult.data || invoicesResult.data.length === 0) {
+        console.log(`[FinanceHub] No tax-exempt ${invoiceType} invoices to export for ${businessNumber}`);
+        return;
+      }
+
+      const urlResult = await window.electron.hometax.getTaxExemptSpreadsheetUrl(businessNumber, invoiceType);
+      const existingUrl = urlResult.success && urlResult.spreadsheetUrl ? urlResult.spreadsheetUrl : undefined;
+
+      const exportResult = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
+        invoices: invoicesResult.data,
+        invoiceType,
+        existingSpreadsheetUrl: existingUrl,
+      });
+
+      if (exportResult.success && exportResult.spreadsheetUrl) {
+        if (invoiceType === 'sales') {
+          setTaxExemptSalesSpreadsheetUrl(exportResult.spreadsheetUrl);
+        } else {
+          setTaxExemptPurchaseSpreadsheetUrl(exportResult.spreadsheetUrl);
+        }
+        await window.electron.hometax.saveTaxExemptSpreadsheetUrl(businessNumber, invoiceType, exportResult.spreadsheetUrl);
+      }
+    } catch (error) {
+      console.error(`[FinanceHub] Error exporting tax-exempt ${invoiceType} invoices:`, error);
+    }
+  };
+
   // Helper function to export cash receipts (without alerts or opening tabs)
   const exportCashReceiptsForBusiness = async (businessNumber: string) => {
     try {
@@ -1691,7 +1749,7 @@ const FinanceHub: React.FC = () => {
 
       // Get existing spreadsheet URL from database (not from state)
       const urlResult = await window.electron.hometax.getCashReceiptSpreadsheetUrl(businessNumber);
-      const existingUrl = urlResult.success && urlResult.url ? urlResult.url : undefined;
+      const existingUrl = urlResult.success && urlResult.spreadsheetUrl ? urlResult.spreadsheetUrl : undefined;
 
       console.log(`[FinanceHub] Exporting ${receiptsResult.data.length} cash receipts (existing URL: ${existingUrl ? 'yes' : 'no'})`);
 
@@ -1742,6 +1800,8 @@ const FinanceHub: React.FC = () => {
         console.log('[FinanceHub] Auto-exporting to spreadsheets...');
         await exportInvoicesForType(businessNumber, 'sales');
         await exportInvoicesForType(businessNumber, 'purchase');
+        await exportTaxExemptInvoicesForType(businessNumber, 'sales');
+        await exportTaxExemptInvoicesForType(businessNumber, 'purchase');
         await exportCashReceiptsForBusiness(businessNumber);
       } else {
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
@@ -1752,7 +1812,7 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  const handleTaxInvoiceTabChange = async (type: 'sales' | 'purchase') => {
+  const handleTaxInvoiceTabChange = async (type: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt') => {
     setTaxInvoiceType(type);
     // Reset company name filter when switching between sales/purchase
     setTaxInvoiceFilters(prev => ({
@@ -1764,19 +1824,36 @@ const FinanceHub: React.FC = () => {
   };
 
   // Load saved spreadsheet URL for the current business and invoice type
-  const loadTaxSpreadsheetUrl = async (invoiceType: 'sales' | 'purchase') => {
+  const loadTaxSpreadsheetUrl = async (invoiceType: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt') => {
     if (filteredAndSortedTaxInvoices.length === 0) return;
 
     const businessNumber = filteredAndSortedTaxInvoices[0].business_number;
     if (!businessNumber) return;
 
     try {
-      const result = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
-      if (result.success && result.spreadsheetUrl) {
-        if (invoiceType === 'sales') {
-          setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
-        } else {
-          setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+      if (invoiceType === 'sales' || invoiceType === 'purchase') {
+        const result = await window.electron.hometax.getSpreadsheetUrl(businessNumber, invoiceType);
+        if (result.success && result.spreadsheetUrl) {
+          if (invoiceType === 'sales') {
+            setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
+          } else {
+            setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+          }
+        }
+      } else if (invoiceType === 'tax-exempt-sales' || invoiceType === 'tax-exempt-purchase') {
+        const mappedType = invoiceType === 'tax-exempt-sales' ? 'sales' : 'purchase';
+        const result = await window.electron.hometax.getTaxExemptSpreadsheetUrl(businessNumber, mappedType);
+        if (result.success && result.spreadsheetUrl) {
+          if (mappedType === 'sales') {
+            setTaxExemptSalesSpreadsheetUrl(result.spreadsheetUrl);
+          } else {
+            setTaxExemptPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+          }
+        }
+      } else {
+        const result = await window.electron.hometax.getCashReceiptSpreadsheetUrl(businessNumber);
+        if (result.success && result.spreadsheetUrl) {
+          setCashReceiptSpreadsheetUrl(result.spreadsheetUrl);
         }
       }
     } catch (error) {
@@ -1819,6 +1896,10 @@ const FinanceHub: React.FC = () => {
         existingUrl = taxSalesSpreadsheetUrl;
       } else if (taxInvoiceType === 'purchase') {
         existingUrl = taxPurchaseSpreadsheetUrl;
+      } else if (taxInvoiceType === 'tax-exempt-sales') {
+        existingUrl = taxExemptSalesSpreadsheetUrl;
+      } else if (taxInvoiceType === 'tax-exempt-purchase') {
+        existingUrl = taxExemptPurchaseSpreadsheetUrl;
       } else {
         existingUrl = cashReceiptSpreadsheetUrl;
       }
@@ -1832,9 +1913,14 @@ const FinanceHub: React.FC = () => {
           existingSpreadsheetUrl: existingUrl || undefined,
         });
       } else {
+        const exportInvoiceType = taxInvoiceType === 'tax-exempt-sales'
+          ? 'sales'
+          : taxInvoiceType === 'tax-exempt-purchase'
+            ? 'purchase'
+            : taxInvoiceType;
         result = await window.electron.sheets.exportTaxInvoicesToSpreadsheet({
           invoices: filteredAndSortedTaxInvoices,
-          invoiceType: taxInvoiceType,
+          invoiceType: exportInvoiceType,
           existingSpreadsheetUrl: existingUrl || undefined,
         });
       }
@@ -1845,6 +1931,10 @@ const FinanceHub: React.FC = () => {
           setTaxSalesSpreadsheetUrl(result.spreadsheetUrl);
         } else if (taxInvoiceType === 'purchase') {
           setTaxPurchaseSpreadsheetUrl(result.spreadsheetUrl);
+        } else if (taxInvoiceType === 'tax-exempt-sales') {
+          setTaxExemptSalesSpreadsheetUrl(result.spreadsheetUrl);
+        } else if (taxInvoiceType === 'tax-exempt-purchase') {
+          setTaxExemptPurchaseSpreadsheetUrl(result.spreadsheetUrl);
         } else {
           setCashReceiptSpreadsheetUrl(result.spreadsheetUrl);
         }
@@ -1883,12 +1973,21 @@ const FinanceHub: React.FC = () => {
   };
 
   const handleClearTaxSpreadsheet = async () => {
-    const typeLabel = taxInvoiceType === 'sales' ? '매출' : taxInvoiceType === 'purchase' ? '매입' : '현금영수증';
+    const typeLabel =
+      taxInvoiceType === 'sales' ? '세금계산서 매출' :
+      taxInvoiceType === 'purchase' ? '세금계산서 매입' :
+      taxInvoiceType === 'tax-exempt-sales' ? '면세계산서 매출' :
+      taxInvoiceType === 'tax-exempt-purchase' ? '면세계산서 매입' :
+      '현금영수증';
     if (confirm(`기존 ${typeLabel} 스프레드시트 연결을 해제하고 다음에 새로운 스프레드시트를 생성하시겠습니까?`)) {
       if (taxInvoiceType === 'sales') {
         setTaxSalesSpreadsheetUrl(null);
       } else if (taxInvoiceType === 'purchase') {
         setTaxPurchaseSpreadsheetUrl(null);
+      } else if (taxInvoiceType === 'tax-exempt-sales') {
+        setTaxExemptSalesSpreadsheetUrl(null);
+      } else if (taxInvoiceType === 'tax-exempt-purchase') {
+        setTaxExemptPurchaseSpreadsheetUrl(null);
       } else {
         setCashReceiptSpreadsheetUrl(null);
       }
@@ -1898,7 +1997,12 @@ const FinanceHub: React.FC = () => {
         const businessNumber = filteredAndSortedTaxInvoices[0].business_number;
         if (businessNumber && taxInvoiceType !== 'cash-receipt') {
           try {
-            await window.electron.hometax.saveSpreadsheetUrl(businessNumber, taxInvoiceType, '');
+            if (taxInvoiceType === 'sales' || taxInvoiceType === 'purchase') {
+              await window.electron.hometax.saveSpreadsheetUrl(businessNumber, taxInvoiceType, '');
+            } else if (taxInvoiceType === 'tax-exempt-sales' || taxInvoiceType === 'tax-exempt-purchase') {
+              const mappedType = taxInvoiceType === 'tax-exempt-sales' ? 'sales' : 'purchase';
+              await window.electron.hometax.saveTaxExemptSpreadsheetUrl(businessNumber, mappedType, '');
+            }
           } catch (error) {
             console.error('Error clearing tax spreadsheet URL:', error);
           }
@@ -3050,6 +3154,8 @@ const FinanceHub: React.FC = () => {
               savedSpreadsheetUrl={
                 taxInvoiceType === 'sales' ? taxSalesSpreadsheetUrl :
                 taxInvoiceType === 'purchase' ? taxPurchaseSpreadsheetUrl :
+                taxInvoiceType === 'tax-exempt-sales' ? taxExemptSalesSpreadsheetUrl :
+                taxInvoiceType === 'tax-exempt-purchase' ? taxExemptPurchaseSpreadsheetUrl :
                 cashReceiptSpreadsheetUrl
               }
               onInvoiceTypeChange={handleTaxInvoiceTabChange}
