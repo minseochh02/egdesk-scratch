@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { createHometaxSchema } from './migrations/002-hometax-schema';
 import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema';
+import { createTaxExemptInvoicesSchema } from './migrations/024-tax-exempt-invoices-schema';
 import { runOnceMigration } from './migration-state';
 
 interface MigrationRunnerParams {
@@ -22,6 +23,7 @@ export async function runSqliteMigrations({
   initializeFinanceHubSchema(financeHubDb);
   createHometaxSchema(financeHubDb);
   createCashReceiptsSchema(financeHubDb);
+  createTaxExemptInvoicesSchema(financeHubDb);
 
   // Run datetime migration
   try {

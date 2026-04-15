@@ -2299,12 +2299,18 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:drop-all-data'),
     getInvoices: (filters: any) =>
       ipcRenderer.invoke('hometax:get-invoices', filters),
+    getTaxExemptInvoices: (filters: any) =>
+      ipcRenderer.invoke('hometax:get-tax-exempt-invoices', filters),
     getCashReceipts: (filters: any) =>
       ipcRenderer.invoke('hometax:get-cash-receipts', filters),
     getSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase') =>
       ipcRenderer.invoke('hometax:get-spreadsheet-url', businessNumber, invoiceType),
     saveSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) =>
       ipcRenderer.invoke('hometax:save-spreadsheet-url', businessNumber, invoiceType, spreadsheetUrl),
+    getTaxExemptSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase') =>
+      ipcRenderer.invoke('hometax:get-tax-exempt-spreadsheet-url', businessNumber, invoiceType),
+    saveTaxExemptSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) =>
+      ipcRenderer.invoke('hometax:save-tax-exempt-spreadsheet-url', businessNumber, invoiceType, spreadsheetUrl),
     getCashReceiptSpreadsheetUrl: (businessNumber: string) =>
       ipcRenderer.invoke('hometax:get-cash-receipt-spreadsheet-url', businessNumber),
     saveCashReceiptSpreadsheetUrl: (businessNumber: string, spreadsheetUrl: string) =>

@@ -34,6 +34,7 @@ import { BrowserController } from './browser-controller';
 import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 import { initializeStore, getStore } from './storage';
 import { getDeveloperWindows } from './coding/developer-windows';
+import { setEgdeskConfigRegeneratorDeps } from './coding/regenerate-egdesk-config';
 import { getDevServerManager } from './coding/dev-server-manager';
 import { codingAIHandler } from './coding/coding-ai-handler';
 import { exec } from 'child_process';
@@ -492,6 +493,23 @@ const createWindow = async () => {
     await initializeStore();
     const store = getStore();
     console.log('✅ Electron Store initialized successfully');
+
+    setEgdeskConfigRegeneratorDeps({
+      getTunnelApiKey: () => {
+        try {
+          const s = getStore();
+          if (!s) {
+            return undefined;
+          }
+          const mcpConfig = s.get('mcpConfiguration') as
+            | { tunnel?: { apiKey?: string } }
+            | undefined;
+          return mcpConfig?.tunnel?.apiKey;
+        } catch {
+          return undefined;
+        }
+      },
+    });
 
     // Initialize Rookie Skillset Database
     try {

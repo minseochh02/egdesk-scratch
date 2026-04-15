@@ -35,7 +35,7 @@ interface TaxInvoiceFiltersProps {
   filters: TaxInvoiceFilters;
   businesses: ConnectedBusiness[];
   invoices: TaxInvoice[];
-  invoiceType: 'sales' | 'purchase';
+  invoiceType: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt';
   onFilterChange: (key: keyof TaxInvoiceFilters, value: string) => void;
   onResetFilters: () => void;
   showQuickDates?: boolean;
@@ -62,7 +62,8 @@ const TaxInvoiceFiltersComponent: React.FC<TaxInvoiceFiltersProps> = ({
 
   // Get unique company names based on invoice type
   const uniqueCompanyNames = React.useMemo(() => {
-    const field = invoiceType === 'sales' ? '공급받는자상호' : '공급자상호';
+    const isSalesLike = invoiceType === 'sales' || invoiceType === 'tax-exempt-sales';
+    const field = isSalesLike ? '공급받는자상호' : '공급자상호';
     const names = new Set<string>();
 
     invoices.forEach(invoice => {
@@ -75,7 +76,8 @@ const TaxInvoiceFiltersComponent: React.FC<TaxInvoiceFiltersProps> = ({
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'ko-KR'));
   }, [invoices, invoiceType]);
 
-  const companyFilterLabel = invoiceType === 'sales' ? '공급받는자' : '공급자';
+  const companyFilterLabel =
+    invoiceType === 'sales' || invoiceType === 'tax-exempt-sales' ? '공급받는자' : '공급자';
 
   return (
     <div className="tax-filters">

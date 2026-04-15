@@ -29,7 +29,7 @@ export interface TaxInvoice {
 
 interface TaxInvoiceTableProps {
   invoices: TaxInvoice[];
-  invoiceType: 'sales' | 'purchase' | 'cash-receipt';
+  invoiceType: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt';
   onRowClick?: (invoice: TaxInvoice) => void;
   onSort?: (key: string) => void;
   sortKey?: string;
@@ -57,6 +57,8 @@ const TaxInvoiceTable: React.FC<TaxInvoiceTableProps> = ({
   const defaultEmptyMessage = `수집된 ${
     invoiceType === 'sales' ? '매출 세금계산서' :
     invoiceType === 'purchase' ? '매입 세금계산서' :
+    invoiceType === 'tax-exempt-sales' ? '매출 면세계산서' :
+    invoiceType === 'tax-exempt-purchase' ? '매입 면세계산서' :
     '현금영수증'
   }${invoiceType === 'cash-receipt' ? '이' : '가'} 없습니다`;
 
@@ -80,14 +82,26 @@ const TaxInvoiceTable: React.FC<TaxInvoiceTableProps> = ({
       ),
     },
     {
-      key: invoiceType === 'sales' ? '공급받는자상호' : invoiceType === 'purchase' ? '공급자상호' : '공급받는자상호',
-      header: invoiceType === 'sales' ? '공급받는자' : invoiceType === 'purchase' ? '공급자' : '용도',
+      key:
+        invoiceType === 'sales' || invoiceType === 'tax-exempt-sales'
+          ? '공급받는자상호'
+          : invoiceType === 'purchase' || invoiceType === 'tax-exempt-purchase'
+            ? '공급자상호'
+            : '공급받는자상호',
+      header:
+        invoiceType === 'sales' || invoiceType === 'tax-exempt-sales'
+          ? '공급받는자'
+          : invoiceType === 'purchase' || invoiceType === 'tax-exempt-purchase'
+            ? '공급자'
+            : '용도',
       sortable: true,
       render: (invoice) => (
         <span className="tax-invoice-table__company">
-          {invoiceType === 'sales' ? invoice.공급받는자상호 :
-           invoiceType === 'purchase' ? invoice.공급자상호 :
-           invoice.공급받는자상호}
+          {invoiceType === 'sales' || invoiceType === 'tax-exempt-sales'
+            ? invoice.공급받는자상호
+            : invoiceType === 'purchase' || invoiceType === 'tax-exempt-purchase'
+              ? invoice.공급자상호
+              : invoice.공급받는자상호}
         </span>
       ),
     },
