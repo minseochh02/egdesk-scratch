@@ -23,13 +23,19 @@ import { resolveBrowserRecordingTestFileInput } from './browser-recording-paths'
 import {
   clickWithOrderedStrategies,
   fillWithOrderedStrategies,
+  replayCapturedLabeledFieldFill,
+  replayDatePickerBlurLastInput,
+  replayDatePickerComponent,
   type LocatorStrategyKind,
 } from './browser-recording-locator-strategies';
+import { getSQLiteManager } from './sqlite/manager';
+import { restartPlaywrightScheduler } from './scheduler/playwright-scheduler-instance';
+import type { PlaywrightScheduledTest } from './sqlite/playwright-scheduler';
 
 // ===== Paused Browser Session Management =====
 
 interface RecordedAction {
-  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
+  type: 'navigate' | 'click' | 'fill' | 'keypress' | 'screenshot' | 'waitForElement' | 'download' | 'datePickerGroup' | 'captureTable' | 'captureLabeledFields' | 'newTab' | 'print' | 'clickUntilGone' | 'closeTab';
   selector?: string;
   xpath?: string;
   value?: string;
@@ -41,9 +47,9 @@ interface RecordedAction {
   coordinates?: { x: number; y: number };
   frameSelector?: string;
   dateComponents?: {
-    year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    month: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    day: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    year?: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month?: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day?: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   };
   dateOffset?: number;
   tables?: Array<{
@@ -53,6 +59,15 @@ interface RecordedAction {
     sampleRow: string[];
     rowCount: number;
   }>;
+  labeledFields?: Array<{
+    labelText: string;
+    selector: string;
+    xpath: string;
+    tagName: string;
+    inputType?: string;
+    sampleValue?: string;
+  }>;
+  labeledFieldsContainer?: { xpath: string; cssSelector: string };
   newTabUrl?: string;
   closedTabUrl?: string;
   maxIterations?: number;
@@ -73,6 +88,8 @@ interface DownloadReplayState {
 interface ExecuteActionReplayContext {
   params?: BrowserRecordingReplayParams;
   datePickerGroupOrdinal?: number;
+  /** Which `captureLabeledFields` step (0-based) when executing that action */
+  labeledFieldCaptureOrdinal?: number;
   recordLocatorStrategy?: (actionIndex: number, strategy: LocatorStrategyKind) => void;
   /** Indices of click actions that immediately precede a `download-wait` marker (same as codegen) */
   downloadTriggerIndices?: Set<number>;
@@ -418,53 +435,27 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         const day = targetDate.getDate().toString().padStart(2, '0');
         console.log(`    📅 Target date (offset ${dateOffset}): ${year}-${month}-${day}`);
 
-        // Execute year
-        if (action.dateComponents.year) {
-          const comp = action.dateComponents.year;
-          const ySel = normalizeSelectorForPlaywright(comp.selector);
-          if (comp.elementType === 'select') {
-            await page.locator(ySel).selectOption(year);
-          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(ySel).click();
-            await page.waitForTimeout(500);
-            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${year}"`).first().click();
-          } else if (comp.elementType === 'input') {
-            await page.locator(ySel).fill(year);
-          }
+        const dc = action.dateComponents;
+
+        // Execute year (css → xpath fallback; matches generated spec)
+        if (dc.year) {
+          await replayDatePickerComponent(page, dc.year, year);
           console.log(`    ✓ Selected year: ${year}`);
         }
 
         // Execute month
-        if (action.dateComponents.month) {
-          const comp = action.dateComponents.month;
-          const mSel = normalizeSelectorForPlaywright(comp.selector);
-          if (comp.elementType === 'select') {
-            await page.locator(mSel).selectOption(month);
-          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(mSel).click();
-            await page.waitForTimeout(500);
-            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${month}"`).first().click();
-          } else if (comp.elementType === 'input') {
-            await page.locator(mSel).fill(month);
-          }
+        if (dc.month) {
+          await replayDatePickerComponent(page, dc.month, month);
           console.log(`    ✓ Selected month: ${month}`);
         }
 
         // Execute day
-        if (action.dateComponents.day) {
-          const comp = action.dateComponents.day;
-          const dSel = normalizeSelectorForPlaywright(comp.selector);
-          if (comp.elementType === 'select') {
-            await page.locator(dSel).selectOption(day);
-          } else if (comp.elementType === 'button' && comp.dropdownSelector) {
-            await page.locator(dSel).click();
-            await page.waitForTimeout(500);
-            await page.locator(normalizeSelectorForPlaywright(comp.dropdownSelector)).locator(`text="${day}"`).first().click();
-          } else if (comp.elementType === 'input') {
-            await page.locator(dSel).fill(day);
-          }
+        if (dc.day) {
+          await replayDatePickerComponent(page, dc.day, day);
           console.log(`    ✓ Selected day: ${day}`);
         }
+
+        await replayDatePickerBlurLastInput(page, dc);
       }
       break;
 
@@ -550,6 +541,38 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
       console.log(`    ✓ Table capture action (skipped in replay)`);
       break;
 
+    case 'captureLabeledFields': {
+      const ord = replay?.labeledFieldCaptureOrdinal;
+      const fields = action.labeledFields;
+      const fills = replay?.params?.labeledFieldFills?.[ord ?? -1];
+      if (ord === undefined || !fields?.length) {
+        console.log(`    ✓ Labeled fields capture (no fill — missing metadata)`);
+        break;
+      }
+      if (!fills || fills.length === 0) {
+        console.log(`    ✓ Labeled fields capture (skipped — no replay values in UI)`);
+        break;
+      }
+      console.log(`    📋 Filling ${fields.length} labeled field(s) from replay params (block ${ord})`);
+      for (let fi = 0; fi < fields.length; fi++) {
+        const raw = fills[fi];
+        if (raw === undefined || String(raw).trim() === '') continue;
+        const val = String(raw).trim();
+        const f = fields[fi];
+        if ((f.tagName || '').toLowerCase() === 'input' && (f.inputType || '').toLowerCase() === 'file') {
+          console.log(`    ⏭️ Skip file input: ${f.labelText}`);
+          continue;
+        }
+        try {
+          await replayCapturedLabeledFieldFill(page, f, val);
+          console.log(`    ✓ Filled "${f.labelText}": ${val.substring(0, 60)}${val.length > 60 ? '…' : ''}`);
+        } catch (e: any) {
+          console.warn(`    ⚠️ Could not fill "${f.labelText}": ${e?.message || e}`);
+        }
+      }
+      break;
+    }
+
     case 'print':
       console.log(`    ✓ Print action (requires OS automation)`);
       break;
@@ -582,6 +605,136 @@ function getOutputDir(): string {
   migrateOldTestFiles(baseDir, outputDir);
 
   return outputDir;
+}
+
+/** Schedule row embedded in browser-recorder ZIP metadata.json or single-file comment */
+interface BrowserRecorderExportedSchedule {
+  specFileName: string;
+  testName: string;
+  enabled: boolean;
+  scheduledTime: string;
+  frequencyType: 'daily' | 'weekly' | 'monthly' | 'custom';
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  customIntervalDays?: number;
+}
+
+function scheduledTestToExportPayload(
+  s: PlaywrightScheduledTest,
+  specFileName: string
+): BrowserRecorderExportedSchedule {
+  return {
+    specFileName,
+    testName: s.testName,
+    enabled: s.enabled,
+    scheduledTime: s.scheduledTime,
+    frequencyType: s.frequencyType,
+    dayOfWeek: s.dayOfWeek,
+    dayOfMonth: s.dayOfMonth,
+    customIntervalDays: s.customIntervalDays,
+  };
+}
+
+function isBrowserRecorderExportedSchedule(x: any): x is BrowserRecorderExportedSchedule {
+  return (
+    x &&
+    typeof x.specFileName === 'string' &&
+    typeof x.testName === 'string' &&
+    typeof x.enabled === 'boolean' &&
+    typeof x.scheduledTime === 'string' &&
+    typeof x.frequencyType === 'string' &&
+    ['daily', 'weekly', 'monthly', 'custom'].includes(x.frequencyType)
+  );
+}
+
+/** Strips a leading Schedule Metadata block (single-line JSON) if present. */
+function stripScheduleMetadataBlockFromTestContent(content: string): string {
+  const m = content.match(/^\/\*\s*\r?\n \* Schedule Metadata\r?\n \* (\{[^\r\n]*\})\r?\n \*\/\s*\r?\n?/);
+  if (!m) return content;
+  return content.slice(m[0].length);
+}
+
+function applyBrowserRecorderScheduleToPath(
+  targetPath: string,
+  payload: BrowserRecorderExportedSchedule
+): void {
+  const mgr = getSQLiteManager().getPlaywrightSchedulerManager();
+  const createFields = {
+    testName: payload.testName,
+    scheduledTime: payload.scheduledTime,
+    frequencyType: payload.frequencyType,
+    dayOfWeek: payload.dayOfWeek,
+    dayOfMonth: payload.dayOfMonth,
+    customIntervalDays: payload.customIntervalDays,
+  };
+  const existing = mgr.getTestByPath(targetPath);
+  if (existing) {
+    mgr.updateTest(existing.id, createFields);
+    if (existing.enabled !== payload.enabled) {
+      mgr.toggleTest(existing.id, payload.enabled);
+    }
+  } else {
+    const created = mgr.createTest({
+      testPath: targetPath,
+      ...createFields,
+    });
+    if (!payload.enabled) {
+      mgr.toggleTest(created.id, false);
+    }
+  }
+}
+
+/**
+ * Apply schedules from import metadata; call restartPlaywrightScheduler once after.
+ * Returns number of schedules applied (skipped entries excluded).
+ */
+async function applyBrowserRecorderImportedSchedules(
+  pathMapping: Record<string, string>,
+  schedules: unknown
+): Promise<number> {
+  if (!schedules || !Array.isArray(schedules) || schedules.length === 0) {
+    return 0;
+  }
+  let applied = 0;
+  for (const raw of schedules) {
+    if (!isBrowserRecorderExportedSchedule(raw)) {
+      console.warn('⚠️ Skipping invalid schedule entry in import metadata');
+      continue;
+    }
+    const key = `tests/${raw.specFileName}`;
+    const targetPath = pathMapping[key];
+    if (!targetPath) {
+      console.warn(`⚠️ Skipping schedule for ${raw.specFileName} — test was not imported`);
+      continue;
+    }
+    try {
+      applyBrowserRecorderScheduleToPath(targetPath, raw);
+      applied++;
+    } catch (err) {
+      console.warn(`⚠️ Failed to apply schedule for ${raw.specFileName}:`, err);
+    }
+  }
+  if (applied > 0) {
+    await restartPlaywrightScheduler();
+  }
+  return applied;
+}
+
+/** Parses Schedule Metadata block (single-line JSON) from spec file content; returns null if absent. */
+function parseScheduleMetadataFromTestContent(
+  content: string,
+  fallbackSpecFileName: string
+): BrowserRecorderExportedSchedule | null {
+  const m = content.match(/\/\*\s*\r?\n \* Schedule Metadata\r?\n \* (\{[^\r\n]*\})\r?\n \*\//);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1]) as Record<string, unknown>;
+    if (typeof obj.specFileName !== 'string') obj.specFileName = fallbackSpecFileName;
+    if (!isBrowserRecorderExportedSchedule(obj)) return null;
+    return obj as BrowserRecorderExportedSchedule;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -666,7 +819,8 @@ async function runBrowserRecordingActionReplay(
   const currentScriptName = path.basename(resolvedTestFile, '.spec.js');
 
   event.sender.send('playwright-test-info', {
-    message: 'Starting recording replay with action engine (date overrides when set)...',
+    message:
+      'Starting recording replay with action engine (date / captured-field value overrides when set)...',
     testFile: resolvedTestFile,
   });
 
@@ -721,6 +875,7 @@ async function runBrowserRecordingActionReplay(
 
   const pageStack: Page[] = [];
   let datePickerOrdinal = 0;
+  let labeledFieldCaptureOrdinal = 0;
   const learnedStrategies: Record<number, LocatorStrategyKind> = {};
 
   const downloadTriggerIndices = new Set<number>();
@@ -756,11 +911,15 @@ async function runBrowserRecordingActionReplay(
         },
         downloadTriggerIndices,
         downloadReplay,
+        params: replayParams,
       };
       if (action.type === 'datePickerGroup') {
-        replayCtx.params = replayParams;
         replayCtx.datePickerGroupOrdinal = datePickerOrdinal;
         datePickerOrdinal++;
+      }
+      if (action.type === 'captureLabeledFields') {
+        replayCtx.labeledFieldCaptureOrdinal = labeledFieldCaptureOrdinal;
+        labeledFieldCaptureOrdinal++;
       }
 
       page = await executeAction(page, context, action, i, actions, pageStack, currentScriptName, replayCtx);
@@ -846,7 +1005,13 @@ export function registerChromeHandlers(): void {
         return { ok: false, error: parsed.error, datePickerGroupCount: 0, ui: 'none' as const };
       }
       const opts = getReplayUiOptionsFromActions(parsed.actions);
-      return { ok: true, datePickerGroupCount: opts.datePickerGroupCount, ui: opts.ui };
+      return {
+        ok: true,
+        datePickerGroupCount: opts.datePickerGroupCount,
+        ui: opts.ui,
+        defaultReplayDates: opts.defaultReplayDates,
+        labeledFieldReplayBlocks: opts.labeledFieldReplayBlocks,
+      };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e), datePickerGroupCount: 0, ui: 'none' as const };
     }
@@ -2304,7 +2469,7 @@ test('recorded test', async ({ page }) => {
       }
 
       if (replayParams !== undefined) {
-        console.log('📅 Action replay mode (date parameters object provided)');
+        console.log('📅 Action replay mode (replayParams object provided)');
         const ar = await runBrowserRecordingActionReplay(testFile, replayParams, event);
         return ar.success
           ? { success: true, message: ar.message || 'Recording replay completed' }
@@ -3347,17 +3512,33 @@ const { chromium } = require('playwright-core');
         };
       }
 
-      // Read test file content
-      let testContent = fs.readFileSync(testPath, 'utf-8');
+      // Read test file content (strip any prior embedded schedule block to avoid duplication)
+      let testContent = stripScheduleMetadataBlockFromTestContent(fs.readFileSync(testPath, 'utf-8'));
+
+      const playwrightSchedulerMgr = getSQLiteManager().getPlaywrightSchedulerManager();
+      const scheduleRow = playwrightSchedulerMgr.getTestByPath(testPath);
+      let schedulePrefix = '';
+      if (scheduleRow) {
+        const jsonLine = JSON.stringify(
+          scheduledTestToExportPayload(scheduleRow, path.basename(testPath))
+        );
+        schedulePrefix = `/*
+ * Schedule Metadata
+ * ${jsonLine}
+ */
+
+`;
+      }
 
       // Check if test is part of a chain and prepend metadata if needed
       const chainStore = getChainMetadataStore();
       const allChains = chainStore.getAllChains();
       const chain = allChains.find(c => c.scripts.some(s => s.scriptPath === testPath));
 
+      let chainPrefix = '';
       if (chain) {
         const scriptInfo = chain.scripts.find(s => s.scriptPath === testPath);
-        const chainMetadata = `/*
+        chainPrefix = `/*
  * Chain Metadata
  * Chain ID: ${chain.chainId}
  * Step: ${scriptInfo?.order || 1}
@@ -3367,8 +3548,9 @@ const { chromium } = require('playwright-core');
  */
 
 `;
-        testContent = chainMetadata + testContent;
       }
+
+      testContent = schedulePrefix + chainPrefix + testContent;
 
       // Write to selected location
       fs.writeFileSync(saveResult.filePath, testContent, 'utf-8');
@@ -3379,7 +3561,8 @@ const { chromium } = require('playwright-core');
         success: true,
         data: {
           filePath: saveResult.filePath,
-          testName: path.basename(saveResult.filePath)
+          testName: path.basename(saveResult.filePath),
+          scheduleExported: Boolean(scheduleRow)
         }
       };
     } catch (error: any) {
@@ -3508,13 +3691,24 @@ const { chromium } = require('playwright-core');
         updatedAt: chain.updatedAt
       }));
 
+      const exportedBasenames = new Set(testFiles.map(f => path.basename(f)));
+      const playwrightSchedulerMgr = getSQLiteManager().getPlaywrightSchedulerManager();
+      const exportSchedules: BrowserRecorderExportedSchedule[] = [];
+      for (const s of playwrightSchedulerMgr.getAllTests()) {
+        const base = path.basename(s.testPath);
+        if (exportedBasenames.has(base)) {
+          exportSchedules.push(scheduledTestToExportPayload(s, base));
+        }
+      }
+
       // Create metadata.json
       const metadata = {
-        exportVersion: '1.0',
+        exportVersion: '1.1',
         exportedAt: new Date().toISOString(),
         testCount: testFiles.length,
         downloads: downloadsMetadata,
-        chains: exportChains
+        chains: exportChains,
+        schedules: exportSchedules
       };
 
       zip.addFile('metadata.json', Buffer.from(JSON.stringify(metadata, null, 2), 'utf-8'));
@@ -3522,7 +3716,9 @@ const { chromium } = require('playwright-core');
       // Write ZIP file
       zip.writeZip(saveResult.filePath);
 
-      console.log(`✅ Exported ${testFiles.length} tests, ${exportChains.length} chains, ${totalDownloadFolders} download folders`);
+      console.log(
+        `✅ Exported ${testFiles.length} tests, ${exportChains.length} chains, ${exportSchedules.length} schedules, ${totalDownloadFolders} download folders`
+      );
 
       return {
         success: true,
@@ -3530,6 +3726,7 @@ const { chromium } = require('playwright-core');
           filePath: saveResult.filePath,
           testCount: testFiles.length,
           chainCount: exportChains.length,
+          scheduleCount: exportSchedules.length,
           downloadFolders: totalDownloadFolders
         }
       };
@@ -3599,6 +3796,19 @@ const { chromium } = require('playwright-core');
         // Copy file
         fs.copyFileSync(importPath, targetPath);
 
+        const importedContents = fs.readFileSync(targetPath, 'utf-8');
+        const schedPayload = parseScheduleMetadataFromTestContent(importedContents, fileName);
+        let schedulesApplied = 0;
+        if (schedPayload) {
+          try {
+            applyBrowserRecorderScheduleToPath(targetPath, schedPayload);
+            schedulesApplied = 1;
+            await restartPlaywrightScheduler();
+          } catch (err) {
+            console.warn('⚠️ Failed to apply schedule from imported test file:', err);
+          }
+        }
+
         console.log('✅ Imported single test:', fileName);
 
         return {
@@ -3607,7 +3817,8 @@ const { chromium } = require('playwright-core');
             imported: 1,
             skipped: 0,
             chains: 0,
-            downloadFolders: 0
+            downloadFolders: 0,
+            schedules: schedulesApplied
           }
         };
       }
@@ -3785,7 +3996,17 @@ const { chromium } = require('playwright-core');
           }
         }
 
-        console.log(`✅ Import complete: ${imported} imported, ${skipped} skipped, ${restoredChains} chains, ${restoredDownloadFolders} download folders`);
+        let restoredSchedules = 0;
+        if (metadata && metadata.schedules && Array.isArray(metadata.schedules)) {
+          restoredSchedules = await applyBrowserRecorderImportedSchedules(
+            pathMapping,
+            metadata.schedules
+          );
+        }
+
+        console.log(
+          `✅ Import complete: ${imported} imported, ${skipped} skipped, ${restoredChains} chains, ${restoredSchedules} schedules, ${restoredDownloadFolders} download folders`
+        );
 
         return {
           success: true,
@@ -3793,6 +4014,7 @@ const { chromium } = require('playwright-core');
             imported,
             skipped,
             chains: restoredChains,
+            schedules: restoredSchedules,
             downloadFolders: restoredDownloadFolders
           }
         };

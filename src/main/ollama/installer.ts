@@ -484,7 +484,10 @@ class OllamaManager implements OllamaInstaller {
 
     try {
       console.log(`⬇️  Pulling Ollama model: ${model}`);
-      const { stdout, stderr } = await execAsync(`ollama pull ${model}`);
+      // Long pulls spam TTY progress to stderr; default exec maxBuffer (~1 MiB) overflows.
+      const { stdout, stderr } = await execAsync(`ollama pull ${model}`, {
+        maxBuffer: Infinity,
+      });
       if (stdout) console.log(stdout);
       if (stderr) console.error(stderr);
       return true;

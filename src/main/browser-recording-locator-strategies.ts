@@ -2,7 +2,7 @@
  * Shared locator strategy ordering and Playwright execution for browser recorder
  * replay (in-app) — matches generateTestCode() semantics.
  */
-import type { FrameLocator, Page } from 'playwright-core';
+import type { FrameLocator, Locator, Page } from 'playwright-core';
 
 export type LocatorStrategyKind = 'semantic' | 'css' | 'xpath';
 
@@ -203,4 +203,197 @@ export async function fillWithOrderedStrategies(
     }
   }
   throw lastErr ?? new Error('fillWithOrderedStrategies: all strategies failed');
+}
+
+/** One date field (year/month/day) as stored on datePickerGroup — matches generated spec fallbacks */
+export interface DatePickerReplayComponent {
+  selector: string;
+  xpath?: string;
+  elementType: 'select' | 'button' | 'input';
+  dropdownSelector?: string;
+}
+
+/**
+ * Recorded CSS may use :nth-of-type(n), :nth-child(n), or :nth-match(n). Duplicate IDs often make
+ * `//*[@id="day"]` match multiple nodes; use the same 0-based index with locator.nth() when falling back to XPath.
+ */
+export function getDatePickerNthIndexFromCss(cssSelector: string): number | undefined {
+  const nthType = cssSelector.match(/:nth-of-type\((\d+)\)/i);
+  if (nthType) return Math.max(0, parseInt(nthType[1], 10) - 1);
+  const nthChild = cssSelector.match(/:nth-child\((\d+)\)/i);
+  if (nthChild) return Math.max(0, parseInt(nthChild[1], 10) - 1);
+  const nthMatch = cssSelector.match(/:nth-match\((\d+)\)/i);
+  if (nthMatch) return Math.max(0, parseInt(nthMatch[1], 10) - 1);
+  return undefined;
+}
+
+/**
+ * Run an action on the XPath fallback locator; disambiguate duplicate-ID matches using the CSS nth hint,
+ * or .first() if strict mode still complains and no hint applies.
+ */
+async function withDatePickerXpathLocator(
+  page: Page,
+  comp: DatePickerReplayComponent,
+  action: (loc: Locator) => Promise<void>
+): Promise<void> {
+  const xp = comp.xpath!.trim();
+  const base = page.locator(normalizeSelectorForPlaywright(xp));
+  const idx = getDatePickerNthIndexFromCss(comp.selector);
+  const primary = idx !== undefined ? base.nth(idx) : base;
+  try {
+    await action(primary);
+  } catch (e) {
+    const msg = String((e as Error)?.message || e);
+    if (!msg.includes('strict mode violation')) throw e;
+    if (idx !== undefined) throw e;
+    console.log('    ↪︎ xpath matched multiple elements; using .first()');
+    await action(base.first());
+  }
+}
+
+/**
+ * Replay for datePickerGroup: try primary CSS locator, then recorded XPath (same idea as generateTestCode try/catch).
+ */
+export async function replayDatePickerComponent(
+  page: Page,
+  comp: DatePickerReplayComponent,
+  value: string
+): Promise<void> {
+  if (comp.elementType === 'select') {
+    try {
+      await page.locator(normalizeSelectorForPlaywright(comp.selector)).selectOption(value, { timeout: 15000 });
+    } catch (e) {
+      if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+      console.log(`    ↪︎ date select css failed, trying xpath: ${(e as Error)?.message || e}`);
+      await withDatePickerXpathLocator(page, comp, (loc) => loc.selectOption(value));
+    }
+    return;
+  }
+
+  if (comp.elementType === 'input') {
+    try {
+      await page.locator(normalizeSelectorForPlaywright(comp.selector)).fill(value, { timeout: 15000 });
+    } catch (e) {
+      if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+      console.log(`    ↪︎ date fill css failed, trying xpath: ${(e as Error)?.message || e}`);
+      await withDatePickerXpathLocator(page, comp, (loc) => loc.fill(value));
+    }
+    return;
+  }
+
+  // button — open, then pick from list (dropdownSelector optional; matches codegen)
+  if (comp.selector.includes(':has-text')) {
+    const baseSelector = comp.selector.split(':has-text')[0];
+    try {
+      await page.locator(baseSelector).filter({ hasText: value }).click({ timeout: 15000 });
+    } catch (e) {
+      if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+      console.log(`    ↪︎ date button :has-text click failed, trying xpath: ${(e as Error)?.message || e}`);
+      await withDatePickerXpathLocator(page, comp, (loc) => loc.click());
+    }
+  } else {
+    try {
+      await page.locator(normalizeSelectorForPlaywright(comp.selector)).click({ timeout: 15000 });
+    } catch (e) {
+      if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+      console.log(`    ↪︎ date button css click failed, trying xpath: ${(e as Error)?.message || e}`);
+      await withDatePickerXpathLocator(page, comp, (loc) => loc.click());
+    }
+  }
+
+  await page.waitForTimeout(500);
+
+  if (comp.dropdownSelector) {
+    const raw = comp.dropdownSelector.trim();
+    const scoped = normalizeSelectorForPlaywright(comp.dropdownSelector);
+    try {
+      await page.locator(scoped).locator(`text="${value}"`).first().click({ timeout: 15000 });
+    } catch (e) {
+      console.log(`    ↪︎ date dropdown text= failed, trying hasText filter: ${(e as Error)?.message || e}`);
+      await page
+        .locator(`${raw} a, ${raw} button, ${raw} div, ${raw} li`)
+        .filter({ hasText: value })
+        .first()
+        .click({ timeout: 15000 });
+    }
+  } else {
+    await page.locator('a, button, div, li').filter({ hasText: value }).first().click({ timeout: 15000 });
+  }
+}
+
+/** Blur last input among day → month → year so change handlers run (matches generated spec). */
+/** One row from captureLabeledFields JSON */
+export interface CapturedLabeledFieldEntry {
+  labelText: string;
+  selector: string;
+  xpath?: string;
+  tagName: string;
+  inputType?: string;
+  sampleValue?: string;
+}
+
+/**
+ * Fill a control recorded by captureLabeledFields: CSS locator first, then XPath with nth hint from CSS (same as date replay).
+ */
+export async function replayCapturedLabeledFieldFill(
+  page: Page,
+  field: CapturedLabeledFieldEntry,
+  value: string
+): Promise<void> {
+  const tag = (field.tagName || '').toLowerCase();
+  const run = async (loc: Locator) => {
+    if (tag === 'select') {
+      await loc.selectOption(value, { timeout: 15000 });
+    } else if (tag === 'textarea') {
+      await loc.fill(value, { timeout: 15000 });
+    } else {
+      await loc.fill(value, { timeout: 15000 });
+    }
+  };
+
+  try {
+    await run(page.locator(normalizeSelectorForPlaywright(field.selector)));
+  } catch (e) {
+    if (!field.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+    console.log(`    ↪︎ labeled field css failed, trying xpath: ${(e as Error)?.message || e}`);
+    const base = page.locator(normalizeSelectorForPlaywright(field.xpath));
+    const idx = getDatePickerNthIndexFromCss(field.selector);
+    const primary = idx !== undefined ? base.nth(idx) : base;
+    try {
+      await run(primary);
+    } catch (e2) {
+      const msg = String((e2 as Error)?.message || '');
+      if (msg.includes('strict mode violation') && idx === undefined) {
+        console.log('    ↪︎ xpath matched multiple elements; using .first()');
+        await run(base.first());
+      } else {
+        throw e2;
+      }
+    }
+  }
+}
+
+export async function replayDatePickerBlurLastInput(
+  page: Page,
+  dateComponents: {
+    year?: DatePickerReplayComponent;
+    month?: DatePickerReplayComponent;
+    day?: DatePickerReplayComponent;
+  }
+): Promise<void> {
+  const keys: Array<'day' | 'month' | 'year'> = ['day', 'month', 'year'];
+  for (const key of keys) {
+    const comp = dateComponents[key];
+    if (comp?.elementType === 'input') {
+      try {
+        await page.locator(normalizeSelectorForPlaywright(comp.selector)).blur();
+      } catch (e) {
+        if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
+        console.log(`    ↪︎ date blur css failed, trying xpath: ${(e as Error)?.message || e}`);
+        await withDatePickerXpathLocator(page, comp, (loc) => loc.blur());
+      }
+      await page.waitForTimeout(500);
+      return;
+    }
+  }
 }

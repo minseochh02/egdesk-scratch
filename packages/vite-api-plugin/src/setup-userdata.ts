@@ -498,7 +498,7 @@ export async function listBrowserRecordingTests() {
   return callBrowserRecordingTool('browser_recording_list_saved_tests', {});
 }
 
-/** Inspect a spec for date-picker replay UI (none, single date, or range) */
+/** Inspect a spec: date UI, defaultReplayDates, labeledFieldReplayBlocks, etc. */
 export async function getBrowserRecordingReplayOptions(testFile: string) {
   return callBrowserRecordingTool('browser_recording_get_replay_options', { testFile });
 }
@@ -507,9 +507,11 @@ export type BrowserRecordingRunOptions = {
   startDate?: string;
   endDate?: string;
   datePickersByIndex?: string[];
+  /** Per captureLabeledFields step, values in field order (see labeledFieldReplayBlocks from get_replay_options) */
+  labeledFieldFills?: (string | undefined)[][];
 };
 
-/** Replay a saved recording in Chrome; optional dates use YYYY/MM/DD or YYYY-MM-DD */
+/** Replay a saved recording in Chrome; optional dates (YYYY/MM/DD or YYYY-MM-DD) and optional labeledFieldFills */
 export async function runBrowserRecording(
   testFile: string,
   options: BrowserRecordingRunOptions = {}

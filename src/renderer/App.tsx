@@ -64,6 +64,7 @@ import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
 
+/** Ollama tag: Gemma 3 ~4B (e.g. gemma3:4b) */
 const GEMMA_MODEL_ID = 'gemma3:4b';
 
 function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -2394,7 +2395,7 @@ function AppContent() {
       const pullResult = await electron.ollama.pullModel(GEMMA_MODEL_ID);
       if (!pullResult?.success) {
         setGemmaStatus('error');
-        setGemmaMessage(pullResult?.error || pullResult?.message || 'Failed to download Gemma 4GB model.');
+        setGemmaMessage(pullResult?.error || pullResult?.message || 'Failed to download Gemma 4 (E4B) model.');
         return;
       }
 
@@ -2404,11 +2405,11 @@ function AppContent() {
         setGemmaMessage(null);
       } else {
         setGemmaStatus('error');
-        setGemmaMessage('Gemma 4GB download finished but verification failed.');
+        setGemmaMessage('Gemma 4 (E4B) download finished but verification failed.');
       }
     } catch (error: any) {
       setGemmaStatus('error');
-      setGemmaMessage(error?.message || 'Failed to prepare Gemma 4GB model.');
+      setGemmaMessage(error?.message || 'Failed to prepare Gemma 4 (E4B) model.');
     }
   }, []);
 
@@ -2629,10 +2630,10 @@ function AppContent() {
           <div className={`ollama-banner gemma ${gemmaStatus === 'error' ? 'error' : gemmaStatus}`}>
             <div className="ollama-banner__text">
               {gemmaStatus === 'pulling'
-                ? 'Downloading Gemma 4GB model... This may take a few minutes depending on your network speed.'
+                ? 'Downloading Gemma 4 (E4B) (~10 GB)... This may take a few minutes depending on your network speed.'
                 : gemmaStatus === 'error'
-                  ? `Unable to prepare Gemma 4GB model.${gemmaMessage ? ` ${gemmaMessage}` : ''}`
-                  : 'Gemma 4GB model is not available locally. Download it to enable local AI conversations.'}
+                  ? `Unable to prepare Gemma 4 (E4B) model.${gemmaMessage ? ` ${gemmaMessage}` : ''}`
+                  : 'Gemma 4 (E4B) is not available locally (~10 GB). Download it to enable local AI conversations.'}
               {gemmaStatus !== 'error' && gemmaMessage ? ` ${gemmaMessage}` : ''}
             </div>
             <div className="ollama-banner__actions">
@@ -2641,7 +2642,7 @@ function AppContent() {
                 onClick={handleEnsureGemma}
                 disabled={gemmaStatus === 'pulling' || gemmaStatus === 'checking'}
               >
-                {gemmaStatus === 'pulling' ? 'Downloading Gemma 4GB…' : 'Install Gemma 4GB'}
+                {gemmaStatus === 'pulling' ? 'Downloading Gemma 4 (E4B)…' : 'Install Gemma 4 (E4B)'}
               </button>
               <button
                 type="button"

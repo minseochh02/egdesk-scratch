@@ -42,9 +42,15 @@ const BrowserRecorderPage: React.FC = () => {
   });
   const [showRenameModal, setShowRenameModal] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
-  const [replayModal, setReplayModal] = useState<{ path: string; name: string; ui: 'singleDate' | 'dateRange' } | null>(null);
+  const [replayModal, setReplayModal] = useState<{
+    path: string;
+    name: string;
+    ui: 'none' | 'singleDate' | 'dateRange';
+    labeledFieldBlocks: Array<{ labels: string[]; defaults?: (string | undefined)[] }>;
+  } | null>(null);
   const [replayStartDate, setReplayStartDate] = useState('');
   const [replayEndDate, setReplayEndDate] = useState('');
+  const [replayLabeledFieldValues, setReplayLabeledFieldValues] = useState<string[]>([]);
   const [showExtensionSelector, setShowExtensionSelector] = useState(false);
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -243,6 +249,7 @@ const BrowserRecorderPage: React.FC = () => {
     setReplayModal(null);
     setReplayStartDate('');
     setReplayEndDate('');
+    setReplayLabeledFieldValues([]);
   };
 
   const handleReplayTest = async (test: any) => {
@@ -253,7 +260,9 @@ const BrowserRecorderPage: React.FC = () => {
         alert(`Could not read recording: ${opts.error || 'unknown error'}`);
         return;
       }
-      if (opts.ui === 'none') {
+      const labeledBlocks = opts.labeledFieldReplayBlocks ?? [];
+      const hasLabeledFields = labeledBlocks.length > 0;
+      if (opts.ui === 'none' && !hasLabeledFields) {
         // Pass empty replayParams so main process uses in-process action replay (executeAction +
         // preferredLocatorStrategy). Without this, replayParams is undefined and the handler runs
         // the extracted script via Node, which ignores RECORDED_ACTIONS preferences.
@@ -266,9 +275,25 @@ const BrowserRecorderPage: React.FC = () => {
         }
         return;
       }
-      setReplayStartDate('');
-      setReplayEndDate('');
-      setReplayModal({ path: test.path, name: test.name, ui: opts.ui });
+      const defaults = opts.defaultReplayDates ?? [];
+      if (opts.ui === 'dateRange') {
+        setReplayStartDate(defaults[0] ?? '');
+        setReplayEndDate(defaults[1] ?? '');
+      } else {
+        setReplayStartDate(defaults[0] ?? '');
+        setReplayEndDate('');
+      }
+      setReplayLabeledFieldValues(
+        labeledBlocks.flatMap((b: { labels: string[]; defaults?: (string | undefined)[] }) =>
+          b.labels.map((_: string, i: number) => (b.defaults?.[i] != null ? String(b.defaults[i]) : ''))
+        )
+      );
+      setReplayModal({
+        path: test.path,
+        name: test.name,
+        ui: opts.ui,
+        labeledFieldBlocks: labeledBlocks,
+      });
     } catch (e: any) {
       console.error(e);
       alert(`Failed to prepare replay: ${e?.message || e}`);
@@ -287,11 +312,31 @@ const BrowserRecorderPage: React.FC = () => {
     const dbg = (window as any).electron.debug;
     const start = toReplayDateParam(replayStartDate);
     const end = toReplayDateParam(replayEndDate);
-    let replayParams: { dateRange?: { start?: string; end?: string }; datePickersByIndex?: (string | undefined)[] };
+    const replayParams: {
+      dateRange?: { start?: string; end?: string };
+      datePickersByIndex?: (string | undefined)[];
+      labeledFieldFills?: (string | undefined)[][];
+    } = {};
     if (replayModal.ui === 'dateRange') {
-      replayParams = { dateRange: { start, end } };
-    } else {
-      replayParams = { datePickersByIndex: [start] };
+      replayParams.dateRange = { start, end };
+    } else if (replayModal.ui === 'singleDate') {
+      replayParams.datePickersByIndex = [start];
+    }
+    const blocks = replayModal.labeledFieldBlocks;
+    if (blocks.length > 0) {
+      const sizes = blocks.map((b) => b.labels.length);
+      const fills: (string | undefined)[][] = [];
+      let o = 0;
+      for (const n of sizes) {
+        fills.push(
+          replayLabeledFieldValues.slice(o, o + n).map((v) => {
+            const t = v == null ? '' : String(v).trim();
+            return t === '' ? undefined : t;
+          })
+        );
+        o += n;
+      }
+      replayParams.labeledFieldFills = fills;
     }
     const testName = replayModal.name;
     try {
@@ -581,8 +626,12 @@ const BrowserRecorderPage: React.FC = () => {
       const result = await (window as any).electron.debug.exportSingleTest(test.path);
 
       if (result.success) {
-        addDebugLog(`✅ Test exported successfully: ${result.data.testName}`);
-        alert(`Test exported successfully!\n\nFile: ${result.data.testName}\nLocation: ${result.data.filePath}`);
+        const sched = result.data.scheduleExported ? ' (schedule included)' : '';
+        addDebugLog(`✅ Test exported successfully: ${result.data.testName}${sched}`);
+        alert(
+          `Test exported successfully!\n\nFile: ${result.data.testName}\nLocation: ${result.data.filePath}` +
+            (result.data.scheduleExported ? '\n\nSchedule metadata was embedded in the file.' : '')
+        );
       } else {
         addDebugLog(`❌ Export failed: ${result.error}`);
         alert(`Export failed: ${result.error}`);
@@ -604,12 +653,15 @@ const BrowserRecorderPage: React.FC = () => {
       const result = await (window as any).electron.debug.exportAllTests();
 
       if (result.success) {
-        const { testCount, chainCount, downloadFolders } = result.data;
-        addDebugLog(`✅ Export complete: ${testCount} tests, ${chainCount} chains, ${downloadFolders} download folders`);
+        const { testCount, chainCount, scheduleCount = 0, downloadFolders } = result.data;
+        addDebugLog(
+          `✅ Export complete: ${testCount} tests, ${chainCount} chains, ${scheduleCount} schedules, ${downloadFolders} download folders`
+        );
         alert(
           `Export successful!\n\n` +
           `Tests: ${testCount}\n` +
           `Chains: ${chainCount}\n` +
+          `Schedules: ${scheduleCount}\n` +
           `Download Folders: ${downloadFolders}\n\n` +
           `Location: ${result.data.filePath}`
         );
@@ -634,8 +686,10 @@ const BrowserRecorderPage: React.FC = () => {
       const result = await (window as any).electron.debug.importTests();
 
       if (result.success) {
-        const { imported, skipped, chains, downloadFolders } = result.data;
-        addDebugLog(`✅ Import complete: ${imported} imported, ${skipped} skipped, ${chains} chains, ${downloadFolders} download folders`);
+        const { imported, skipped, chains, schedules = 0, downloadFolders } = result.data;
+        addDebugLog(
+          `✅ Import complete: ${imported} imported, ${skipped} skipped, ${chains} chains, ${schedules} schedules, ${downloadFolders} download folders`
+        );
 
         // Refresh test list
         const testsResult = await (window as any).electron.debug.getPlaywrightTests();
@@ -649,6 +703,7 @@ const BrowserRecorderPage: React.FC = () => {
           `Imported: ${imported}\n` +
           `Skipped: ${skipped}\n` +
           `Chains Restored: ${chains}\n` +
+          `Schedules Restored: ${schedules}\n` +
           `Download Folders: ${downloadFolders}`
         );
       } else {
@@ -1265,45 +1320,80 @@ const BrowserRecorderPage: React.FC = () => {
               <div className="browser-recorder-modal-overlay" onClick={closeReplayModal}>
                 <div className="browser-recorder-schedule-modal" onClick={(e) => e.stopPropagation()}>
                   <div className="browser-recorder-modal-header">
-                    <h3 className="browser-recorder-modal-title">📅 Replay: {replayModal.name}</h3>
+                    <h3 className="browser-recorder-modal-title">Replay: {replayModal.name}</h3>
                     <button className="browser-recorder-modal-close" onClick={closeReplayModal}>✕</button>
                   </div>
                   <div className="browser-recorder-modal-body">
-                    <p style={{ color: '#666', marginBottom: 12 }}>
-                      {replayModal.ui === 'dateRange'
-                        ? 'Set start and end dates as YYYY/MM/DD. Leave blank to use the recorded relative offsets.'
-                        : 'Set the date as YYYY/MM/DD. Leave blank to use the recorded relative offset.'}
-                    </p>
-                    <div className="browser-recorder-form-group">
-                      <label className="browser-recorder-form-label">
-                        {replayModal.ui === 'dateRange' ? 'Start date' : 'Date'}{' '}
-                        <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        placeholder="YYYY/MM/DD"
-                        value={replayStartDate}
-                        onChange={(e) => setReplayStartDate(e.target.value)}
-                        className="browser-recorder-form-input"
-                      />
-                    </div>
-                    {replayModal.ui === 'dateRange' && (
-                      <div className="browser-recorder-form-group">
-                        <label className="browser-recorder-form-label">
-                          End date <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="off"
-                          placeholder="YYYY/MM/DD"
-                          value={replayEndDate}
-                          onChange={(e) => setReplayEndDate(e.target.value)}
-                          className="browser-recorder-form-input"
-                        />
-                      </div>
+                    {replayModal.ui !== 'none' && (
+                      <>
+                        <p style={{ color: '#666', marginBottom: 12 }}>
+                          {replayModal.ui === 'dateRange'
+                            ? 'Start and end dates use YYYY/MM/DD. Fields show the calendar dates implied by your recorded offsets (e.g. yesterday / today). Clear a field to use only the relative offset at run time instead.'
+                            : 'Date uses YYYY/MM/DD. The field shows the calendar date implied by your recorded offset. Clear it to use only the relative offset at run time.'}
+                        </p>
+                        <div className="browser-recorder-form-group">
+                          <label className="browser-recorder-form-label">
+                            {replayModal.ui === 'dateRange' ? 'Start date' : 'Date'}{' '}
+                            <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            placeholder="YYYY/MM/DD"
+                            value={replayStartDate}
+                            onChange={(e) => setReplayStartDate(e.target.value)}
+                            className="browser-recorder-form-input"
+                          />
+                        </div>
+                        {replayModal.ui === 'dateRange' && (
+                          <div className="browser-recorder-form-group">
+                            <label className="browser-recorder-form-label">
+                              End date <span style={{ fontWeight: 400, color: '#888' }}>(YYYY/MM/DD)</span>
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              placeholder="YYYY/MM/DD"
+                              value={replayEndDate}
+                              onChange={(e) => setReplayEndDate(e.target.value)}
+                              className="browser-recorder-form-input"
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {replayModal.labeledFieldBlocks.length > 0 && (
+                      <>
+                        <p style={{ color: '#666', marginBottom: 12, marginTop: replayModal.ui !== 'none' ? 16 : 0 }}>
+                          Captured form fields: enter values to fill during replay (leave blank to skip that field). Labels come from your Fields capture step.
+                        </p>
+                        {(() => {
+                          let flatIdx = 0;
+                          return replayModal.labeledFieldBlocks.flatMap((block, bi) =>
+                            block.labels.map((label, fi) => {
+                              const cur = flatIdx++;
+                              return (
+                                <div key={`lf-${bi}-${fi}`} className="browser-recorder-form-group">
+                                  <label className="browser-recorder-form-label">{label}</label>
+                                  <input
+                                    type="text"
+                                    autoComplete="off"
+                                    value={replayLabeledFieldValues[cur] ?? ''}
+                                    onChange={(e) => {
+                                      const next = [...replayLabeledFieldValues];
+                                      next[cur] = e.target.value;
+                                      setReplayLabeledFieldValues(next);
+                                    }}
+                                    className="browser-recorder-form-input"
+                                  />
+                                </div>
+                              );
+                            })
+                          );
+                        })()}
+                      </>
                     )}
                   </div>
                   <div className="browser-recorder-modal-footer">
