@@ -232,6 +232,8 @@ const results = await searchTable('sales_data', 'keyword');
 const total = await aggregateTable('sales_data', '공급가액', 'SUM');
 ```
 
+The dev server also proxies `__internal_knowledge_proxy` to `POST /internal-knowledge/tools/call` on your EGDesk HTTP server. Generated helpers include `callInternalKnowledgeTool`, `listKnowledgeDocuments`, `getBusinessIdentitySnapshot`, `searchCompanyResearch`, and related functions—same tool names as the Internal Knowledge MCP service.
+
 ### Using in API Routes
 
 Combine with API routes to create endpoints that query your EGDesk data:

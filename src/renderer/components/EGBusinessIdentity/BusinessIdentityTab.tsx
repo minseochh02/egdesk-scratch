@@ -14,6 +14,8 @@ import { runSEOAnalysis, runSSLAnalysis } from './analysisHelpers';
 import { handleBlogScheduleToggle, handleSocialMediaScheduleToggle, isBlogChannel, isSocialMediaChannel } from './utils';
 import { mapStoredPlanToEntry } from './snsPlanHelpers';
 import type { SnsPlanEntry, StoredSnsPlan } from './types';
+import DetailedCompanyInfo, { type DetailedCompanyData } from './DetailedCompanyInfo';
+import InternalKnowledgeTab from './InternalKnowledgeTab';
 
 interface IdentityBlock {
   title: string;
@@ -148,6 +150,18 @@ interface IdentityData {
     label: string;
     detail: string;
   }>;
+  detailedCompanyData?: DetailedCompanyData;
+  productsWithImages?: {
+    items: Array<{
+      name: string;
+      kind: string;
+      allImageUrls: string[];
+      pages: Array<{
+        pageUrl: string;
+        imageUrls: string[];
+      }>;
+    }>;
+  };
 }
 
 function buildInsightsFromIdentityData(
@@ -310,7 +324,7 @@ const INSTAGRAM_CREDENTIALS_KEY = 'businessIdentityInstagramCredentials';
 const BusinessIdentityTab: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'identity' | 'scheduled' | 'research'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'company' | 'scheduled' | 'knowledge' | 'research'>('identity');
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramPassword, setInstagramPassword] = useState('');
   const [credentialsStatus, setCredentialsStatus] = useState<string | null>(null);
@@ -448,6 +462,14 @@ const BusinessIdentityTab: React.FC = () => {
     }
     return buildInsightsFromSource(source);
   }, [identityData, source]);
+
+  const hasDetailedCompanyInfo = Boolean(identityData?.detailedCompanyData);
+
+  useEffect(() => {
+    if (activeTab === 'company' && !hasDetailedCompanyInfo) {
+      setActiveTab('identity');
+    }
+  }, [activeTab, hasDetailedCompanyInfo]);
 
   // Get URL for retry functionality
   const analysisUrl = useMemo(() => {
@@ -818,12 +840,28 @@ const BusinessIdentityTab: React.FC = () => {
         >
           Identity Preview
         </button>
+        {hasDetailedCompanyInfo && (
+          <button
+            type="button"
+            className={`egbusiness-identity-result__tab${activeTab === 'company' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('company')}
+          >
+            Company info
+          </button>
+        )}
         <button
           type="button"
           className={`egbusiness-identity-result__tab${activeTab === 'scheduled' ? ' is-active' : ''}`}
           onClick={() => setActiveTab('scheduled')}
         >
           Scheduled Posts
+        </button>
+        <button
+          type="button"
+          className={`egbusiness-identity-result__tab${activeTab === 'knowledge' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('knowledge')}
+        >
+          Internal Knowledge
         </button>
         <button
           type="button"
@@ -890,8 +928,8 @@ const BusinessIdentityTab: React.FC = () => {
                 />
               )}
               {analysisResults.ssl !== undefined && (
-                <SSLAnalysisDisplay 
-                  sslAnalysis={analysisResults.ssl || null} 
+                <SSLAnalysisDisplay
+                  sslAnalysis={analysisResults.ssl || null}
                   onRetry={handleRetrySSL}
                   isRetrying={isRetryingSSL}
                 />
@@ -901,6 +939,13 @@ const BusinessIdentityTab: React.FC = () => {
 
           {/* SNS plan grid removed; use Scheduled Posts tab instead */}
         </>
+      ) : activeTab === 'company' ? (
+        identityData?.detailedCompanyData ? (
+          <DetailedCompanyInfo
+            data={identityData.detailedCompanyData}
+            productsWithImages={identityData.productsWithImages}
+          />
+        ) : null
       ) : activeTab === 'scheduled' ? (
         <section className="egbusiness-identity-result__panel egbusiness-identity-result__panel--scheduled">
           <div className="egbusiness-identity-result__panel-header">
@@ -1162,6 +1207,8 @@ const BusinessIdentityTab: React.FC = () => {
             hasAccountForChannel={hasAccountForChannel}
           />
         </section>
+      ) : activeTab === 'knowledge' ? (
+        <InternalKnowledgeTab snapshotId={(location.state as any)?.snapshotId} />
       ) : activeTab === 'research' ? (
         <CompanyResearchTab initialDomain={insights.sourceMeta?.url} />
       ) : null}

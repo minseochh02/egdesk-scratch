@@ -105,6 +105,15 @@ const EGBusinessIdentity: React.FC = () => {
     }
   }, [identitySnapshot]);
 
+  /** Saved business identity in SQLite — required before Scheduled Posts is available */
+  const hasIdentity = Boolean(identitySnapshot);
+
+  useEffect(() => {
+    if (!hasIdentity && activeTab === 'scheduled') {
+      setActiveTab('kickoff');
+    }
+  }, [hasIdentity, activeTab]);
+
   const fetchStoredSnsPlans = useCallback(async (snapshotId: string): Promise<SnsPlanEntry[] | null> => {
     try {
       if (!window.electron?.businessIdentity?.listSnsPlans) {
@@ -530,6 +539,26 @@ const EGBusinessIdentity: React.FC = () => {
       console.info('[EGBusinessIdentity] AI raw response:', aiResultContent);
       console.info('[EGBusinessIdentity] Parsed identity data:', identityData);
 
+      // Load detailed company data from output.json and products-with-images.json
+      try {
+        // Load detailed company data via IPC
+        const detailedDataResult = await window.electron.businessIdentity.loadDetailedCompanyData();
+        if (detailedDataResult.success && detailedDataResult.data) {
+          identityData.detailedCompanyData = detailedDataResult.data;
+          console.info('[EGBusinessIdentity] Loaded detailed company data from output.json');
+        }
+
+        // Load products with images via IPC
+        const productsResult = await window.electron.businessIdentity.loadProductsWithImages();
+        if (productsResult.success && productsResult.data) {
+          identityData.productsWithImages = productsResult.data;
+          console.info('[EGBusinessIdentity] Loaded product images data:', productsResult.data.items?.length || 0, 'products');
+        }
+      } catch (loadError) {
+        console.warn('[EGBusinessIdentity] Failed to load detailed company data:', loadError);
+        // Continue without detailed data - it's optional
+      }
+
       let snapshotId: string | undefined;
       let snsPlanData: SnsPlanEntry[] | null = null;
       console.info('[EGBusinessIdentity] Step 3: Persisting snapshot & generating SNS plan');
@@ -818,17 +847,42 @@ const EGBusinessIdentity: React.FC = () => {
       }
     }
 
-    navigate('/egbusiness-identity/preview', {
-      state: {
-        source: parsedIdentity.source,
-        identityData: parsedIdentity,
-        rawAiResponse: identitySnapshot.identityJson,
-        mode: 'ai',
-        snapshotId: identitySnapshot.id,
-        snsPlan,
-        analysisResults,
-      },
-    });
+    // Load detailed company data for saved snapshots and navigate
+    (async () => {
+      let enrichedIdentityData = parsedIdentity;
+      try {
+        enrichedIdentityData = { ...parsedIdentity };
+
+        // Load detailed company data via IPC
+        const detailedDataResult = await window.electron.businessIdentity.loadDetailedCompanyData();
+        if (detailedDataResult.success && detailedDataResult.data) {
+          enrichedIdentityData.detailedCompanyData = detailedDataResult.data;
+          console.info('[EGBusinessIdentity] Loaded detailed company data for snapshot');
+        }
+
+        // Load products with images via IPC
+        const productsResult = await window.electron.businessIdentity.loadProductsWithImages();
+        if (productsResult.success && productsResult.data) {
+          enrichedIdentityData.productsWithImages = productsResult.data;
+          console.info('[EGBusinessIdentity] Loaded product images for snapshot');
+        }
+      } catch (loadError) {
+        console.warn('[EGBusinessIdentity] Failed to load detailed company data for snapshot:', loadError);
+        // Continue with original data - it's optional
+      }
+
+      navigate('/egbusiness-identity/preview', {
+        state: {
+          source: enrichedIdentityData.source,
+          identityData: enrichedIdentityData,
+          rawAiResponse: identitySnapshot.identityJson,
+          mode: 'ai',
+          snapshotId: identitySnapshot.id,
+          snsPlan,
+          analysisResults,
+        },
+      });
+    })();
   }, [
     identitySnapshot,
     navigate,
@@ -884,7 +938,7 @@ const EGBusinessIdentity: React.FC = () => {
         />
       </header>
 
-      {!isEditMode && (
+      {!isEditMode && hasIdentity && (
       <div className="egbusiness-identity__tabs">
         <button
           type="button"

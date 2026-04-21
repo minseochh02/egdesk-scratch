@@ -109,6 +109,29 @@ export interface CreateBusinessIdentitySnsPlanExecution {
   executionData?: Record<string, any>;
 }
 
+export interface InternalKnowledgeDocument {
+  id: string;
+  snapshotId: string;
+  title: string;
+  category: 'hierarchy' | 'process' | 'policy' | 'note';
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateInternalKnowledgeDocument {
+  snapshotId: string;
+  title: string;
+  category: 'hierarchy' | 'process' | 'policy' | 'note';
+  content: string;
+}
+
+export interface UpdateInternalKnowledgeDocument {
+  title?: string;
+  category?: 'hierarchy' | 'process' | 'policy' | 'note';
+  content?: string;
+}
+
 export class SQLiteBusinessIdentityManager {
   private db: Database.Database;
 
@@ -231,6 +254,23 @@ export class SQLiteBusinessIdentityManager {
     this.db.exec(accountTable);
     this.db.exec(planTable);
     this.db.exec(executionTable);
+
+    const knowledgeTable = `
+      CREATE TABLE IF NOT EXISTS internal_knowledge (
+        id TEXT PRIMARY KEY,
+        snapshot_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL CHECK (category IN ('hierarchy', 'process', 'policy', 'note')),
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (snapshot_id) REFERENCES business_identity_snapshots(id) ON DELETE CASCADE
+      )
+    `;
+
+    this.db.exec(knowledgeTable);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_internal_knowledge_snapshot ON internal_knowledge(snapshot_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_internal_knowledge_category ON internal_knowledge(category)`);
   }
 
   private generateId(prefix: string) {
@@ -601,6 +641,94 @@ export class SQLiteBusinessIdentityManager {
       WHERE id = ?
     `);
     stmt.run(now, success ? 1 : 0, success ? 0 : 1, now, planId);
+  }
+
+  // Internal Knowledge CRUD Operations
+
+  createKnowledgeDocument(data: CreateInternalKnowledgeDocument): InternalKnowledgeDocument {
+    const id = this.generateId('ik_doc');
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO internal_knowledge (
+        id, snapshot_id, title, category, content, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      data.snapshotId,
+      data.title,
+      data.category,
+      data.content,
+      now,
+      now
+    );
+    return this.getKnowledgeDocument(id)!;
+  }
+
+  getKnowledgeDocument(id: string): InternalKnowledgeDocument | null {
+    const row = this.db
+      .prepare(`SELECT * FROM internal_knowledge WHERE id = ?`)
+      .get(id) as any;
+    if (!row) return null;
+    return this.mapKnowledgeDocument(row);
+  }
+
+  listKnowledgeDocuments(snapshotId: string): InternalKnowledgeDocument[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM internal_knowledge WHERE snapshot_id = ? ORDER BY created_at DESC`
+      )
+      .all(snapshotId) as any[];
+    return rows.map((row) => this.mapKnowledgeDocument(row));
+  }
+
+  updateKnowledgeDocument(id: string, updates: UpdateInternalKnowledgeDocument): InternalKnowledgeDocument | null {
+    const updatesList: string[] = [];
+    const values: any[] = [];
+
+    if (updates.title !== undefined) {
+      updatesList.push('title = ?');
+      values.push(updates.title);
+    }
+    if (updates.category !== undefined) {
+      updatesList.push('category = ?');
+      values.push(updates.category);
+    }
+    if (updates.content !== undefined) {
+      updatesList.push('content = ?');
+      values.push(updates.content);
+    }
+
+    if (updatesList.length === 0) {
+      return this.getKnowledgeDocument(id);
+    }
+
+    const now = new Date().toISOString();
+    updatesList.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+
+    this.db
+      .prepare(`UPDATE internal_knowledge SET ${updatesList.join(', ')} WHERE id = ?`)
+      .run(...values);
+
+    return this.getKnowledgeDocument(id);
+  }
+
+  deleteKnowledgeDocument(id: string): void {
+    this.db.prepare(`DELETE FROM internal_knowledge WHERE id = ?`).run(id);
+  }
+
+  private mapKnowledgeDocument(row: any): InternalKnowledgeDocument {
+    return {
+      id: row.id,
+      snapshotId: row.snapshot_id,
+      title: row.title,
+      category: row.category,
+      content: row.content,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    };
   }
 }
 

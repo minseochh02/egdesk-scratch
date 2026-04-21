@@ -1,0 +1,476 @@
+/*
+ * EGDesk Business Identity — detailed company / product catalog.
+ * Theme: matches EGBusinessIdentity / egbusiness-identity-result (dark slate, light text, blue/violet accents).
+ */
+
+[data-egdesk-bi-detailed-company].egdesk-bi-detailed-company {
+  margin-top: 2rem;
+  color: #cbd5e1;
+}
+
+.egdesk-bi-detailed-company--empty {
+  padding: 2rem;
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 16px;
+  border: 2px dashed rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+}
+
+.egdesk-bi-detailed-company--empty .egdesk-bi-detailed-company__panel-header h2 {
+  color: #f9fafb;
+}
+
+.egdesk-bi-detailed-company--empty .egdesk-bi-detailed-company__panel-header p {
+  color: #94a3b8;
+}
+
+.egdesk-bi-detailed-company__panel {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 20px;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.egdesk-bi-detailed-company__panel-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.egdesk-bi-detailed-company__icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(79, 70, 229, 0.18);
+  color: #a78bfa;
+  border-radius: 14px;
+  font-size: 1.25rem;
+}
+
+.egdesk-bi-detailed-company__panel-header h2 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.egdesk-bi-detailed-company__panel-header p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #cbd5f5;
+  line-height: 1.5;
+}
+
+/* Grid Layouts */
+.egdesk-bi-detailed-company__grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.egdesk-bi-detailed-company__grid--2col {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.egdesk-bi-detailed-company__item {
+  padding: 1rem;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.egdesk-bi-detailed-company__item--full {
+  grid-column: 1 / -1;
+}
+
+.egdesk-bi-detailed-company__item h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.egdesk-bi-detailed-company__item p {
+  margin: 0;
+  color: #e2e8f0;
+  line-height: 1.6;
+}
+
+[data-egdesk-bi-detailed-company] .egdesk-bi-detailed-company__item a.egdesk-bi-detailed-company__inline-link {
+  color: #60a5fa;
+  text-decoration: none;
+  font: inherit;
+}
+
+[data-egdesk-bi-detailed-company] .egdesk-bi-detailed-company__item a.egdesk-bi-detailed-company__inline-link:hover {
+  text-decoration: underline;
+  color: #93c5fd;
+}
+
+.egdesk-bi-detailed-company__tagline {
+  font-size: 1.125rem;
+  font-weight: 500;
+  font-style: italic;
+  color: #a5b4fc;
+}
+
+/* Phone Numbers */
+.egdesk-bi-detailed-company__phones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.egdesk-bi-detailed-company__phone-entry {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.egdesk-bi-detailed-company__phone-type {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: #94a3b8;
+  min-width: 80px;
+}
+
+/* Summary */
+.egdesk-bi-detailed-company__summary {
+  padding: 1rem 1.25rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 4px solid rgba(59, 130, 246, 0.55);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.egdesk-bi-detailed-company__summary p {
+  margin: 0;
+  line-height: 1.7;
+  color: #e2e8f0;
+}
+
+/* Divisions */
+.egdesk-bi-detailed-company__divisions {
+  margin-bottom: 1.5rem;
+}
+
+.egdesk-bi-detailed-company__divisions h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.egdesk-bi-detailed-company__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.egdesk-bi-detailed-company__list li {
+  padding: 0.75rem 1rem;
+  background: rgba(30, 41, 59, 0.55);
+  border-left: 3px solid rgba(96, 165, 250, 0.65);
+  border-radius: 8px;
+  color: #e2e8f0;
+}
+
+/* Positioning */
+.egdesk-bi-detailed-company__positioning h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.egdesk-bi-detailed-company__positioning-item {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(30, 41, 59, 0.55);
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.egdesk-bi-detailed-company__positioning-item:last-child {
+  margin-bottom: 0;
+}
+
+.egdesk-bi-detailed-company__positioning-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 0.5rem;
+  text-transform: capitalize;
+}
+
+.egdesk-bi-detailed-company__positioning-item p {
+  margin: 0;
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+
+/* Products Grid */
+.egdesk-bi-detailed-company__products-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+}
+
+.egdesk-bi-detailed-company__product-card {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 1.25rem;
+  background: rgba(30, 41, 59, 0.55);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.egdesk-bi-detailed-company__product-card:hover {
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.55);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.egdesk-bi-detailed-company__product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.egdesk-bi-detailed-company__product-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #f9fafb;
+  line-height: 1.3;
+}
+
+.egdesk-bi-detailed-company__product-badge {
+  flex-shrink: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.egdesk-bi-detailed-company__product-badge--product {
+  background: rgba(6, 182, 212, 0.18);
+  color: #67e8f9;
+}
+
+.egdesk-bi-detailed-company__product-badge--service {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+}
+
+.egdesk-bi-detailed-company__product-badge--platform {
+  background: rgba(234, 179, 8, 0.18);
+  color: #fde047;
+}
+
+.egdesk-bi-detailed-company__product-badge--trade {
+  background: rgba(244, 63, 94, 0.18);
+  color: #fda4af;
+}
+
+.egdesk-bi-detailed-company__product-badge--mixed {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+.egdesk-bi-detailed-company__product-description {
+  margin: 0 0 1rem 0;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+/* Product Images */
+.egdesk-bi-detailed-company__product-images {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.egdesk-bi-detailed-company__product-images h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.egdesk-bi-detailed-company__image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 0.5rem;
+}
+
+[data-egdesk-bi-detailed-company] button.egdesk-bi-detailed-company__image-thumbnail {
+  aspect-ratio: 1;
+  display: block;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  transition: transform 0.2s, box-shadow 0.2s;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0;
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+[data-egdesk-bi-detailed-company] button.egdesk-bi-detailed-company__image-thumbnail:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.6);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+[data-egdesk-bi-detailed-company] button.egdesk-bi-detailed-company__image-thumbnail:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+[data-egdesk-bi-detailed-company] button.egdesk-bi-detailed-company__image-thumbnail:active {
+  transform: scale(0.98);
+}
+
+[data-egdesk-bi-detailed-company] button.egdesk-bi-detailed-company__image-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.egdesk-bi-detailed-company__image-count {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* Product Links — match active tab / CTA gradient */
+.egdesk-bi-detailed-company__product-links {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+[data-egdesk-bi-detailed-company] a.egdesk-bi-detailed-company__product-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #2563eb, #8b5cf6);
+  color: #f9fafb !important;
+  text-decoration: none !important;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  cursor: pointer;
+  box-sizing: border-box;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+}
+
+[data-egdesk-bi-detailed-company] a.egdesk-bi-detailed-company__product-link:hover {
+  filter: brightness(1.08);
+  color: #f9fafb !important;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+}
+
+/* Partners */
+.egdesk-bi-detailed-company__partners {
+  margin-bottom: 1rem;
+}
+
+.egdesk-bi-detailed-company__partners h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.egdesk-bi-detailed-company__partners-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.egdesk-bi-detailed-company__partner-badge {
+  padding: 0.5rem 1rem;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+[data-egdesk-bi-detailed-company] a.egdesk-bi-detailed-company__network-link {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #2563eb, #8b5cf6);
+  color: #f9fafb !important;
+  text-decoration: none !important;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+}
+
+[data-egdesk-bi-detailed-company] a.egdesk-bi-detailed-company__network-link:hover {
+  filter: brightness(1.08);
+  color: #f9fafb !important;
+}
+
+/* Industries */
+.egdesk-bi-detailed-company__industries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.egdesk-bi-detailed-company__industry-tag {
+  padding: 0.5rem 1rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  font-size: 0.875rem;
+  color: #e2e8f0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .egdesk-bi-detailed-company__products-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .egdesk-bi-detailed-company__grid--2col {
+    grid-template-columns: 1fr;
+  }
+
+  .egdesk-bi-detailed-company__image-grid {
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  }
+}

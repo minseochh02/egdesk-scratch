@@ -8,8 +8,6 @@ import { randomUUID } from 'crypto';
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { PlaywrightScheduledTest } from '../sqlite/playwright-scheduler';
-import { BrowserWindow, app } from 'electron';
-import * as path from 'path';
 import { getSchedulerRecoveryService } from './recovery-service';
 
 export class PlaywrightSchedulerService {
@@ -407,9 +405,12 @@ export class PlaywrightSchedulerService {
     let success = false;
 
     try {
-      // Execute the test using the existing run-playwright-test logic
-      console.log('🚀 Calling runPlaywrightTest...');
-      await this.runPlaywrightTest(test.testPath);
+      console.log('🚀 Calling browser recording replay automation runner...');
+      const { runBrowserRecordingReplayForAutomation } = await import('../chrome-handlers');
+      const replayResult = await runBrowserRecordingReplayForAutomation(test.testPath, {});
+      if (!replayResult.success) {
+        throw new Error(replayResult.error || 'Browser recording replay failed');
+      }
 
       console.log(`✅ Test completed successfully`);
       success = true;
@@ -466,209 +467,6 @@ export class PlaywrightSchedulerService {
     }
 
     return { success, error: errorMessage };
-  }
-
-  /**
-   * Run a Playwright test by executing it directly in the main process
-   * This matches the approach used by the replay handler and works reliably in production
-   */
-  private async runPlaywrightTest(testPath: string): Promise<void> {
-    const fs = require('fs');
-    const os = require('os');
-
-    console.log('🎬 Running Playwright test:', testPath);
-
-    // Validate test file exists
-    if (!fs.existsSync(testPath)) {
-      throw new Error(`Test file not found: ${testPath}`);
-    }
-
-    // Read the test file
-    let generatedCode = fs.readFileSync(testPath, 'utf8');
-    console.log('📄 Test file read, size:', generatedCode.length);
-
-    // Extract the test body from the standalone script
-    let testBody = '';
-
-    if (generatedCode.includes('launchPersistentContext')) {
-      // Standalone format with launchPersistentContext
-      // Extract code between "try {" and "} finally {" using indentation-aware matching
-      console.log('🔍 Detected standalone launchPersistentContext format');
-      
-      const lines = generatedCode.split('\n');
-      
-      // Find the 'finally {' line and its indentation
-      let finallyIndex = -1;
-      let finallyIndent = -1;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim() === 'finally {' || lines[i].includes('} finally {')) {
-          finallyIndex = i;
-          finallyIndent = lines[i].search(/\S/); // First non-whitespace character position
-          break;
-        }
-      }
-
-      if (finallyIndex !== -1 && finallyIndent !== -1) {
-        // Search backwards from finally to find a 'try {' with the SAME indentation
-        let tryIndex = -1;
-        for (let i = finallyIndex - 1; i >= 0; i--) {
-          const lineIndent = lines[i].search(/\S/);
-          if (lineIndent === finallyIndent && lines[i].trim() === 'try {') {
-            tryIndex = i;
-            console.log('✅ Found matching try block at line', i, 'with indentation', lineIndent);
-            break;
-          }
-        }
-
-        if (tryIndex !== -1) {
-          testBody = lines.slice(tryIndex + 1, finallyIndex).join('\n').trim();
-          console.log('✅ Extracted test body from try block (lines', tryIndex + 1, 'to', finallyIndex, ')');
-        } else {
-          console.error('❌ Could not find matching try block with same indentation as finally');
-        }
-      }
-
-      if (!testBody) {
-        console.error('❌ Failed to extract test body, attempting fallback');
-        // Fallback: look for the pattern after page setup
-        const setupEndMarker = 'page.on(\'dialog\'';
-        const setupEndIndex = generatedCode.indexOf(setupEndMarker);
-        if (setupEndIndex !== -1) {
-          // Find the next 'try {' after setup
-          const afterSetup = generatedCode.substring(setupEndIndex);
-          const tryMatch = afterSetup.match(/try\s*\{([\s\S]+?)\}\s*finally\s*\{/);
-          if (tryMatch && tryMatch[1]) {
-            testBody = tryMatch[1].trim();
-            console.log('⚠️ Extracted test body using post-setup regex fallback');
-          }
-        }
-      }
-    }
-
-    if (!testBody) {
-      console.error('❌ Failed to extract test body. File content preview:', generatedCode.substring(0, 500));
-      throw new Error('Could not extract test body from file. The file format may be invalid.');
-    }
-
-    console.log('📋 Test body extracted, length:', testBody.length);
-    console.log('📋 First 500 chars of testBody:', testBody.substring(0, 500));
-    console.log('📋 Last 500 chars of testBody:', testBody.substring(testBody.length - 500));
-
-    // Import playwright-core (available in the main process)
-    const { chromium } = require('playwright-core');
-
-    // Get script name for downloads folder
-    const scriptName = path.basename(testPath, '.spec.js');
-    console.log(`📁 Using script name for downloads: ${scriptName}`);
-
-    // Create downloads directory using script name: Downloads/EGDesk-Browser/scriptname
-    const downloadsPath = path.join(app.getPath('downloads'), 'EGDesk-Browser', scriptName);
-    if (!fs.existsSync(downloadsPath)) {
-      fs.mkdirSync(downloadsPath, { recursive: true });
-    }
-    console.log('📥 Downloads will be saved to:', downloadsPath);
-
-    // Create temporary profile directory
-    let profilesDir: string;
-    try {
-      const userData = app.getPath('userData');
-      if (!userData || userData === '/' || userData.length < 3) {
-        throw new Error('Invalid userData path');
-      }
-      profilesDir = path.join(userData, 'chrome-profiles');
-    } catch (err) {
-      console.warn('⚠️ userData not available, using os.tmpdir():', err);
-      profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
-    }
-
-    if (!fs.existsSync(profilesDir)) {
-      fs.mkdirSync(profilesDir, { recursive: true });
-    }
-    const profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-scheduled-'));
-    console.log('📁 Using profile directory:', profileDir);
-
-    // Launch browser with persistent context
-    const context = await chromium.launchPersistentContext(profileDir, {
-      headless: false,
-      channel: 'chrome',
-      viewport: null,
-      permissions: ['clipboard-read', 'clipboard-write'],
-      acceptDownloads: true,
-      downloadsPath: downloadsPath,
-      args: [
-        '--no-default-browser-check',
-        '--disable-blink-features=AutomationControlled',
-        '--no-first-run',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--allow-running-insecure-content',
-        '--disable-features=PrivateNetworkAccessSendPreflights',
-        '--disable-features=PrivateNetworkAccessRespectPreflightResults'
-      ]
-    });
-
-    // Get or create page
-    const pages = context.pages();
-    const page = pages.length > 0 ? pages[0] : await context.newPage();
-
-    try {
-      console.log('🎬 Starting test execution...');
-
-      // Create a function from the test body and execute it
-      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-
-      let testFunction;
-      try {
-        testFunction = new AsyncFunction('page', 'expect', 'path', 'downloadsPath', 'fs', 'os', testBody);
-      } catch (syntaxError: any) {
-        // If there's a syntax error creating the function, provide detailed feedback
-        const errorMsg = `Failed to create test function: ${syntaxError.message}`;
-        console.error('❌', errorMsg);
-        console.error('Test body preview (first 1000 chars):', testBody.substring(0, 1000));
-        console.error('Test body preview (last 500 chars):', testBody.substring(Math.max(0, testBody.length - 500)));
-
-        // Write the problematic test body to a temp file for inspection
-        const tempDebugFile = path.join(os.tmpdir(), 'egdesk-test-debug.js');
-        fs.writeFileSync(tempDebugFile, testBody);
-
-        throw new Error(`${errorMsg}\n\nExtracted test body length: ${testBody.length} chars\nDebug file saved to: ${tempDebugFile}\n\nFirst 200 chars:\n${testBody.substring(0, 200)}\n\nLast 200 chars:\n${testBody.substring(Math.max(0, testBody.length - 200))}`);
-      }
-
-      // Simple expect implementation for basic assertions
-      const expect = (value: any) => ({
-        toBe: (expected: any) => {
-          if (value !== expected) {
-            throw new Error(`Expected ${value} to be ${expected}`);
-          }
-        },
-        toContain: (expected: any) => {
-          if (!value.includes(expected)) {
-            throw new Error(`Expected ${value} to contain ${expected}`);
-          }
-        }
-      });
-
-      // Execute the test
-      await testFunction(page, expect, path, downloadsPath, fs, os);
-
-      console.log('✅ Test execution completed successfully');
-
-    } catch (error) {
-      console.error('❌ Test execution failed:', error);
-      throw error;
-    } finally {
-      // Clean up
-      await context.close();
-      console.log('🧹 Browser context closed');
-
-      // Clean up profile directory
-      try {
-        fs.rmSync(profileDir, { recursive: true, force: true });
-        console.log('🧹 Profile directory cleaned up');
-      } catch (e) {
-        console.warn('⚠️ Failed to clean up profile directory:', e);
-      }
-    }
   }
 
   // ============================================

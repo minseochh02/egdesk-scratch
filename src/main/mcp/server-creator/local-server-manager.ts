@@ -25,6 +25,7 @@ import { ConversationsMCPService } from '../conversations/conversations-mcp-serv
 import { SheetsMCPService } from '../sheets/sheets-mcp-service';
 import { UserDataMCPService } from '../user-data/user-data-mcp-service';
 import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
+import { InternalKnowledgeMCPService } from '../internal-knowledge/internal-knowledge-mcp-service';
 import { BrowserRecordingMCPService } from '../browser-recording/browser-recording-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
@@ -128,6 +129,7 @@ export class LocalServerManager {
   private sheetsMCPService: SheetsMCPService | null = null;
   private userDataMCPService: UserDataMCPService | null = null;
   private financeHubMCPService: FinanceHubMCPService | null = null;
+  private internalKnowledgeMCPService: InternalKnowledgeMCPService | null = null;
   private browserRecordingMCPService: BrowserRecordingMCPService | null = null;
   
   // SSE Handlers
@@ -478,6 +480,13 @@ export class LocalServerManager {
       return;
     }
 
+    // Business Identity & Company Research MCP Server endpoints (REST API)
+    // Provides access to: internal knowledge documents, business identity snapshots, company research
+    if (url.startsWith('/internal-knowledge')) {
+      await this.handleInternalKnowledgeEndpoint(req, res, url);
+      return;
+    }
+
     // Browser Recording MCP Server endpoints (REST API)
     if (url.startsWith('/browser-recording')) {
       await this.handleBrowserRecordingEndpoint(req, res, url);
@@ -522,6 +531,8 @@ export class LocalServerManager {
         '/user-data/tools/call - Call a User Data tool',
         '/financehub/tools - List FinanceHub tools',
         '/financehub/tools/call - Call a FinanceHub tool',
+        '/internal-knowledge/tools - List Business Identity & Company Research tools',
+        '/internal-knowledge/tools/call - Call a Business Identity & Company Research tool',
         '/browser-recording/tools - List Browser Recording tools',
         '/browser-recording/tools/call - Call a Browser Recording tool',
         '/test-gmail - Test endpoint (dev only)'
@@ -644,6 +655,20 @@ export class LocalServerManager {
       this.financeHubMCPService = new FinanceHubMCPService(database);
     }
     return this.financeHubMCPService;
+  }
+
+  /**
+   * Get or create Internal Knowledge MCP Service
+   */
+  private getInternalKnowledgeMCPService(): InternalKnowledgeMCPService {
+    if (!this.internalKnowledgeMCPService) {
+      // Business identity data is in WordPress database, company research is in Conversations database
+      const manager = getSQLiteManager();
+      const wordpressDatabase = manager.getWordPressDatabase();
+      const conversationsDatabase = manager.getConversationsDatabase();
+      this.internalKnowledgeMCPService = new InternalKnowledgeMCPService(wordpressDatabase, conversationsDatabase);
+    }
+    return this.internalKnowledgeMCPService;
   }
 
   /**
@@ -1526,6 +1551,70 @@ export class LocalServerManager {
       res.end(JSON.stringify({ success: true, result }, null, 2));
     } catch (error) {
       console.error('Error calling FinanceHub tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * Handle Business Identity & Company Research MCP endpoint
+   * Provides access to internal knowledge, business identity snapshots, and company research
+   */
+  private async handleInternalKnowledgeEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    // List Business Identity tools
+    if (url === '/internal-knowledge/tools' && req.method === 'GET') {
+      this.handleInternalKnowledgeToolsList(res);
+      return;
+    }
+
+    // Call a Business Identity tool
+    if (url === '/internal-knowledge/tools/call' && req.method === 'POST') {
+      await this.handleInternalKnowledgeToolCall(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Business Identity MCP endpoint not found'
+    }));
+  }
+
+  /**
+   * Handle Business Identity tools list (knowledge, snapshots, company research)
+   */
+  private handleInternalKnowledgeToolsList(res: http.ServerResponse): void {
+    const service = this.getInternalKnowledgeMCPService();
+    const tools = service.listTools();
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle Business Identity tool call (knowledge, snapshots, company research)
+   */
+  private async handleInternalKnowledgeToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Missing "tool" parameter' }));
+        return;
+      }
+
+      console.log(`🏢 Calling Business Identity tool: ${tool}`);
+      const service = this.getInternalKnowledgeMCPService();
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, result }, null, 2));
+    } catch (error) {
+      console.error('Error calling Business Identity tool:', error);
       res.writeHead(500);
       res.end(JSON.stringify({
         success: false,

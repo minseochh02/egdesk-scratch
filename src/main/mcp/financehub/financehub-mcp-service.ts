@@ -330,6 +330,44 @@ export class FinanceHubMCPService implements IMCPService {
         }
       },
       {
+        name: 'financehub_query_tax_exempt_invoices',
+        description:
+          'Query tax-exempt invoices (tax_exempt_invoices table: 면세 계산서 등 synced from Hometax)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            businessNumber: {
+              type: 'string',
+              description: 'Filter by business registration number'
+            },
+            invoiceType: {
+              type: 'string',
+              enum: ['sales', 'purchase'],
+              description: 'Sales or purchase invoices'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date filter on 작성일자 (YYYY-MM-DD)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date filter on 작성일자 (YYYY-MM-DD)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum rows to return (max 1000)',
+              default: 100
+            },
+            offset: {
+              type: 'number',
+              description: 'Pagination offset',
+              default: 0
+            }
+          },
+          required: []
+        }
+      },
+      {
         name: 'financehub_query_cash_receipts',
         description: 'Query cash receipt rows (cash_receipts table) synced from Hometax',
         inputSchema: {
@@ -754,6 +792,41 @@ export class FinanceHubMCPService implements IMCPService {
           const enforcedOffset = Math.max(Number(offset) || 0, 0);
 
           const q = this.manager.queryTaxInvoices({
+            businessNumber,
+            invoiceType,
+            startDate,
+            endDate,
+            limit: enforcedLimit,
+            offset: enforcedOffset
+          });
+
+          if (q.error) {
+            throw new Error(q.error);
+          }
+
+          result = {
+            totalMatching: q.total,
+            limit: enforcedLimit,
+            offset: enforcedOffset,
+            invoices: q.invoices
+          };
+          break;
+        }
+
+        case 'financehub_query_tax_exempt_invoices': {
+          const {
+            businessNumber,
+            invoiceType,
+            startDate,
+            endDate,
+            limit = 100,
+            offset = 0
+          } = args;
+
+          const enforcedLimit = Math.min(Math.max(Number(limit) || 100, 1), 1000);
+          const enforcedOffset = Math.max(Number(offset) || 0, 0);
+
+          const q = this.manager.queryTaxExemptInvoices({
             businessNumber,
             invoiceType,
             startDate,

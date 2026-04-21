@@ -266,7 +266,7 @@ const BrowserRecorderPage: React.FC = () => {
         // Pass empty replayParams so main process uses in-process action replay (executeAction +
         // preferredLocatorStrategy). Without this, replayParams is undefined and the handler runs
         // the extracted script via Node, which ignores RECORDED_ACTIONS preferences.
-        const result = await dbg.runPlaywrightTest(test.path, {});
+        const result = await dbg.runBrowserRecordingReplay(test.path, {});
         if (result.success) {
           console.log(`🎬 Running test with timing: ${test.name}`);
           addDebugLog(`🎬⏱️ Running test: ${test.name}`);
@@ -340,7 +340,7 @@ const BrowserRecorderPage: React.FC = () => {
     }
     const testName = replayModal.name;
     try {
-      const result = await dbg.runPlaywrightTest(replayModal.path, replayParams);
+      const result = await dbg.runBrowserRecordingReplay(replayModal.path, replayParams);
       closeReplayModal();
       if (result.success) {
         addDebugLog(`🎬 Replay with date options: ${testName}`);

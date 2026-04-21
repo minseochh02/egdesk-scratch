@@ -4,9 +4,9 @@ Next.js plugin for EGDesk database proxy integration. Provides middleware-based 
 
 ## Features
 
-- 🔒 CORS-free database access via Next.js middleware
+- 🔒 CORS-free database access via Next.js middleware (or `proxy.ts` on Next.js 16+)
 - 🌐 Works in both local and tunneled environments
-- 📝 Type-safe table definitions and helper functions
+- 📝 Type-safe table definitions and helper functions (user data, FinanceHub, internal knowledge / business identity / company research, browser recording)
 - 🚀 Auto-discovery of database tables
 - 🔧 Zero configuration after setup
 
@@ -81,14 +81,21 @@ await setupNextApiPlugin('/path/to/project', {
 
 ## How It Works
 
-The plugin creates a Next.js middleware that intercepts requests to `__user_data_proxy` and forwards them to your EGDesk MCP server. This allows your Next.js app to make database queries without CORS issues, even in tunneled environments.
+The plugin generates `middleware.ts` or `proxy.ts` that intercepts special paths and forwards them to your EGDesk HTTP MCP server so the browser never talks to another origin directly.
 
-**Request Flow:**
-1. Your component calls `queryTable()` or other helpers
-2. Helper makes a fetch to `__user_data_proxy`
-3. Next.js middleware intercepts the request
-4. Middleware forwards to `localhost:8080/user-data/tools/call`
-5. Response is returned to your component
+**Proxied paths (examples):**
+
+| Path | Forwards to |
+|------|-------------|
+| `__user_data_proxy` | `POST /user-data/tools/call` |
+| `__browser_recording_proxy` | `POST /browser-recording/tools/call` |
+| `__internal_knowledge_proxy` | `POST /internal-knowledge/tools/call` (knowledge docs, business identity snapshots, company research) |
+
+**User-data request flow:**
+1. Your code calls `queryTable()` or another helper
+2. Helper fetches `__user_data_proxy`
+3. Middleware/proxy forwards to `http://<EGDESK>/user-data/tools/call`
+4. Parsed JSON is returned to your component
 
 ## API Reference
 
@@ -121,6 +128,21 @@ listTables()
 
 // Get table schema
 getTableSchema(tableName: string)
+
+// Internal Knowledge / Business Identity / Company Research (MCP)
+callInternalKnowledgeTool(toolName: string, args?: Record<string, any>)
+listKnowledgeDocuments(snapshotId: string, category?: 'hierarchy' | 'process' | 'policy' | 'note')
+getKnowledgeDocument(documentId: string)
+searchKnowledgeContent(snapshotId: string, searchText: string, category?: ...)
+getKnowledgeByCategory(snapshotId: string, category: ...)
+listBusinessIdentitySnapshots(brandKey?: string)
+getBusinessIdentitySnapshot(snapshotId: string)
+getBusinessIdentityCompanyInfo(snapshotId: string)
+getBusinessIdentityServicesProducts(snapshotId: string)
+listCompanyResearch(status?: 'completed' | 'failed' | 'in_progress')
+getCompanyResearchById(researchId: string)
+getCompanyResearchByDomain(domain: string)
+searchCompanyResearch(searchText: string)
 ```
 
 ### Configuration Types
