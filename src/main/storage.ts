@@ -1475,7 +1475,7 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 // Hometax Integration IPC Handlers
 // ============================================
 
-import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices } from './hometax-automation';
+import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices, collectTaxInvoicesInRange } from './hometax-automation';
 import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } from './hometax-excel-parser';
 import { importTaxInvoices, importTaxExemptInvoices, recordSyncOperation, getTaxInvoices, getTaxExemptInvoices, getSpreadsheetUrl, saveSpreadsheetUrl, getTaxExemptSpreadsheetUrl, saveTaxExemptSpreadsheetUrl, importCashReceipts, getCashReceipts, getCashReceiptSpreadsheetUrl, saveCashReceiptSpreadsheetUrl } from './sqlite/hometax';
 import { getConversationsDatabase, getFinanceHubDatabase } from './sqlite/init';
@@ -2196,6 +2196,194 @@ ipcMain.handle('hometax:collect-invoices', async (event, certificateData: any, c
     };
   }
 });
+
+/**
+ * Helper function to parse and import Hometax Excel files into the database
+ */
+async function processHometaxFiles(db: any, files: any) {
+  let salesInserted = 0;
+  let salesDuplicate = 0;
+  let purchaseInserted = 0;
+  let purchaseDuplicate = 0;
+  let taxExemptSalesInserted = 0;
+  let taxExemptSalesDuplicate = 0;
+  let taxExemptPurchaseInserted = 0;
+  let taxExemptPurchaseDuplicate = 0;
+  let cashReceiptInserted = 0;
+  let cashReceiptDuplicate = 0;
+
+  const { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } = require('./hometax-excel-parser');
+  const { importTaxInvoices, importTaxExemptInvoices, importCashReceipts } = require('./sqlite/hometax');
+
+  // Parse 세금계산서 (Sales)
+  for (const file of [files.thisMonthSalesFile, files.lastMonthSalesFile].filter(Boolean)) {
+    const parsed = parseHometaxExcel(file);
+    if (parsed.success && parsed.invoices && parsed.businessNumber) {
+      const result = importTaxInvoices(db, parsed.businessNumber, 'sales', parsed.invoices, file);
+      salesInserted += result.inserted;
+      salesDuplicate += result.duplicate;
+    }
+  }
+
+  // Parse 세금계산서 (Purchase)
+  for (const file of [files.thisMonthPurchaseFile, files.lastMonthPurchaseFile].filter(Boolean)) {
+    const parsed = parseHometaxExcel(file);
+    if (parsed.success && parsed.invoices && parsed.businessNumber) {
+      const result = importTaxInvoices(db, parsed.businessNumber, 'purchase', parsed.invoices, file);
+      purchaseInserted += result.inserted;
+      purchaseDuplicate += result.duplicate;
+    }
+  }
+
+  // Parse 면세계산서 (Sales)
+  for (const file of [files.thisMonthTaxExemptSalesFile, files.lastMonthTaxExemptSalesFile].filter(Boolean)) {
+    const parsed = parseTaxExemptExcel(file);
+    if (parsed.success && parsed.invoices && parsed.businessNumber) {
+      const result = importTaxExemptInvoices(db, parsed.businessNumber, 'sales', parsed.invoices, file);
+      taxExemptSalesInserted += result.inserted;
+      taxExemptSalesDuplicate += result.duplicate;
+    }
+  }
+
+  // Parse 면세계산서 (Purchase)
+  for (const file of [files.thisMonthTaxExemptPurchaseFile, files.lastMonthTaxExemptPurchaseFile].filter(Boolean)) {
+    const parsed = parseTaxExemptExcel(file);
+    if (parsed.success && parsed.invoices && parsed.businessNumber) {
+      const result = importTaxExemptInvoices(db, parsed.businessNumber, 'purchase', parsed.invoices, file);
+      taxExemptPurchaseInserted += result.inserted;
+      taxExemptPurchaseDuplicate += result.duplicate;
+    }
+  }
+
+  // Parse 현금영수증
+  if (files.cashReceiptFile) {
+    const parsed = parseCashReceiptExcel(files.cashReceiptFile);
+    if (parsed.success && parsed.receipts && parsed.receipts.length > 0) {
+      // Need a business number. Try to detect from other parsed files if not provided.
+      // For range collection, we assume business number is consistent.
+      let businessNumber = parsed.businessNumber;
+      if (!businessNumber) {
+        // Fallback: try to get from any other parsed file in this batch
+        const anyFile = [files.thisMonthSalesFile, files.thisMonthPurchaseFile].find(Boolean);
+        if (anyFile) {
+          const p = parseHometaxExcel(anyFile);
+          if (p.success) businessNumber = p.businessNumber;
+        }
+      }
+
+      if (businessNumber) {
+        const result = importCashReceipts(db, businessNumber, parsed.receipts, files.cashReceiptFile);
+        cashReceiptInserted += result.inserted;
+        cashReceiptDuplicate += result.duplicate;
+      }
+    }
+  }
+
+  return {
+    salesInserted, salesDuplicate,
+    purchaseInserted, purchaseDuplicate,
+    taxExemptSalesInserted, taxExemptSalesDuplicate,
+    taxExemptPurchaseInserted, taxExemptPurchaseDuplicate,
+    cashReceiptInserted, cashReceiptDuplicate
+  };
+}
+
+/**
+ * Collect tax invoices for a custom date range
+ */
+ipcMain.handle('hometax:collect-invoices-in-range', async (event, certificateData: any, certificatePassword: string, startYear: string, startMonth: string, endYear: string, endMonth: string) => {
+  try {
+    console.log(`[IPC] hometax:collect-invoices-in-range called: ${startYear}-${startMonth} to ${endYear}-${endMonth}`);
+
+    const result = await collectTaxInvoicesInRange(
+      certificateData,
+      certificatePassword,
+      parseInt(startYear),
+      parseInt(startMonth),
+      parseInt(endYear),
+      parseInt(endMonth),
+      (message) => {
+        event.sender.send('hometax:collect-progress', message);
+      }
+    );
+
+    if (!result.success || !result.downloadedFiles) {
+      return result;
+    }
+
+    const db = getFinanceHubDatabase();
+    const totals = {
+      salesInserted: 0, salesDuplicate: 0,
+      purchaseInserted: 0, purchaseDuplicate: 0,
+      taxExemptSalesInserted: 0, taxExemptSalesDuplicate: 0,
+      taxExemptPurchaseInserted: 0, taxExemptPurchaseDuplicate: 0,
+      cashReceiptInserted: 0, cashReceiptDuplicate: 0
+    };
+
+    // Wait for files to be written
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Group downloaded files by year-month to use existing processHometaxFiles helper
+    const monthGroups = new Map<string, any>();
+    
+    for (const file of result.downloadedFiles) {
+      const key = `${file.year}-${file.month}`;
+      if (!monthGroups.has(key)) {
+        monthGroups.set(key, {
+          thisMonthSalesFile: null, lastMonthSalesFile: null,
+          thisMonthPurchaseFile: null, lastMonthPurchaseFile: null,
+          thisMonthTaxExemptSalesFile: null, lastMonthTaxExemptSalesFile: null,
+          thisMonthTaxExemptPurchaseFile: null, lastMonthTaxExemptPurchaseFile: null,
+          cashReceiptFile: null
+        });
+      }
+      
+      const group = monthGroups.get(key);
+      if (file.type === 'sales' && file.category === 'tax') group.thisMonthSalesFile = file.path;
+      if (file.type === 'purchase' && file.category === 'tax') group.thisMonthPurchaseFile = file.path;
+      if (file.type === 'sales' && file.category === 'tax-exempt') group.thisMonthTaxExemptSalesFile = file.path;
+      if (file.type === 'purchase' && file.category === 'tax-exempt') group.thisMonthTaxExemptPurchaseFile = file.path;
+      if (file.type === 'cash-receipt') group.cashReceiptFile = file.path;
+    }
+
+    // Process all monthly collection results
+    for (const monthlyResult of monthGroups.values()) {
+      const folderTotals = await processHometaxFiles(db, monthlyResult);
+      
+      // Update running totals
+      totals.salesInserted += folderTotals.salesInserted;
+      totals.salesDuplicate += folderTotals.salesDuplicate;
+      totals.purchaseInserted += folderTotals.purchaseInserted;
+      totals.purchaseDuplicate += folderTotals.purchaseDuplicate;
+      totals.taxExemptSalesInserted += folderTotals.taxExemptSalesInserted;
+      totals.taxExemptSalesDuplicate += folderTotals.taxExemptSalesDuplicate;
+      totals.taxExemptPurchaseInserted += folderTotals.taxExemptPurchaseInserted;
+      totals.taxExemptPurchaseDuplicate += folderTotals.taxExemptPurchaseDuplicate;
+      totals.cashReceiptInserted += folderTotals.cashReceiptInserted;
+      totals.cashReceiptDuplicate += folderTotals.cashReceiptDuplicate;
+
+      // Cleanup files for this month
+      const filesToDelete = [
+        monthlyResult.thisMonthSalesFile, monthlyResult.lastMonthSalesFile,
+        monthlyResult.thisMonthPurchaseFile, monthlyResult.lastMonthPurchaseFile,
+        monthlyResult.thisMonthTaxExemptSalesFile, monthlyResult.lastMonthTaxExemptSalesFile,
+        monthlyResult.thisMonthTaxExemptPurchaseFile, monthlyResult.lastMonthTaxExemptPurchaseFile,
+        monthlyResult.cashReceiptFile
+      ].filter(Boolean);
+
+      const fs = require('fs');
+      for (const f of filesToDelete) {
+        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { console.warn(`Failed to delete ${f}`, e); }
+      }
+    }
+
+    return { success: true, ...totals };
+  } catch (error) {
+    console.error('[IPC] hometax:collect-invoices-in-range error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 
 // ========================================================================
 // DRIVE SERVICE FOLDER MANAGEMENT HELPERS

@@ -192,6 +192,18 @@ const FinanceHub: React.FC = () => {
   const [showTaxGoogleAuth, setShowTaxGoogleAuth] = useState(false);
   const [signingInTaxGoogle, setSigningInTaxGoogle] = useState(false);
 
+  // Hometax date range collection state
+  const [showHometaxRangeModal, setShowHometaxRangeModal] = useState<{ businessNumber: string; businessName: string } | null>(null);
+  const [hometaxRangeStart, setHometaxRangeStart] = useState({ 
+    year: new Date().getFullYear().toString(), 
+    month: (new Date().getMonth() + 1).toString().padStart(2, '0') 
+  });
+  const [hometaxRangeEnd, setHometaxRangeEnd] = useState({ 
+    year: new Date().getFullYear().toString(), 
+    month: (new Date().getMonth() + 1).toString().padStart(2, '0') 
+  });
+  const [hometaxSyncProgress, setHometaxSyncProgress] = useState<string | null>(null);
+
   // Arduino port settings state
   const [arduinoPort, setArduinoPort] = useState<string>('COM3');
   const [availablePorts, setAvailablePorts] = useState<any[]>([]);
@@ -351,6 +363,17 @@ const FinanceHub: React.FC = () => {
   // Load Arduino port on mount
   useEffect(() => {
     loadArduinoPort();
+  }, []);
+
+  // Listen for Hometax collection progress
+  useEffect(() => {
+    if (!window.electron?.hometax?.onCollectProgress) return;
+    
+    const cleanup = window.electron.hometax.onCollectProgress((message: string) => {
+      setHometaxSyncProgress(message);
+    });
+    
+    return cleanup;
   }, []);
 
   // NH + 법인 + 공동인증서: INIpay cert 목록 (홈택스와 유사 — fetchBankCertificates → 선택)
@@ -1776,6 +1799,18 @@ const FinanceHub: React.FC = () => {
   };
 
   const handleCollectTaxInvoices = async (businessNumber: string) => {
+    const business = connectedBusinesses.find(b => b.businessNumber === businessNumber);
+    setShowHometaxRangeModal({ 
+      businessNumber, 
+      businessName: business?.businessName || businessNumber 
+    });
+  };
+
+  const handleStartRangeCollection = async () => {
+    if (!showHometaxRangeModal) return;
+    
+    const { businessNumber, businessName } = showHometaxRangeModal;
+    
     try {
       // Get saved certificate data for this business
       const savedCert = await window.electron.hometax.getSelectedCertificate(businessNumber);
@@ -1785,30 +1820,45 @@ const FinanceHub: React.FC = () => {
         return;
       }
 
-      // Call backend to collect tax invoices
-      const result = await window.electron.hometax.collectInvoices(
+      setIsLoadingTaxInvoices(true);
+      setShowHometaxRangeModal(null); // Close modal and show progress in main UI or overlay
+      setHometaxSyncProgress('동기화 준비 중...');
+
+      // Call backend to collect tax invoices for the range
+      const result = await window.electron.hometax.collectInvoicesInRange(
         savedCert.data,
-        savedCert.data.certificatePassword
+        savedCert.data.certificatePassword,
+        hometaxRangeStart.year,
+        hometaxRangeStart.month,
+        hometaxRangeEnd.year,
+        hometaxRangeEnd.month
       );
 
       if (result.success) {
+        setHometaxSyncProgress(null);
         // Reload data
         await loadConnectedBusinesses();
         await loadTaxInvoices();
 
-        // Auto-export to spreadsheets (sales, purchase, and cash receipts)
+        // Auto-export to spreadsheets
         console.log('[FinanceHub] Auto-exporting to spreadsheets...');
         await exportInvoicesForType(businessNumber, 'sales');
         await exportInvoicesForType(businessNumber, 'purchase');
         await exportTaxExemptInvoicesForType(businessNumber, 'sales');
         await exportTaxExemptInvoicesForType(businessNumber, 'purchase');
         await exportCashReceiptsForBusiness(businessNumber);
+        
+        alert(`✅ ${businessName} 동기화 완료!`);
       } else {
+        setHometaxSyncProgress(null);
         alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
       }
     } catch (error: any) {
+      setHometaxSyncProgress(null);
       console.error('[FinanceHub] Error collecting tax invoices:', error);
       alert(`수집 중 오류 발생: ${error?.message || error}`);
+    } finally {
+      setIsLoadingTaxInvoices(false);
     }
   };
 
@@ -4118,6 +4168,103 @@ const FinanceHub: React.FC = () => {
                 ✅ 계속하기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Hometax Date Range Modal */}
+      {showHometaxRangeModal && (
+        <div className="finance-hub__modal-overlay" onClick={() => setShowHometaxRangeModal(null)}>
+          <div className="finance-hub__modal finance-hub__modal--small" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              <h2>동기화 기간 선택</h2>
+              <button className="finance-hub__modal-close" onClick={() => setShowHometaxRangeModal(null)}>✕</button>
+            </div>
+            <div className="finance-hub__modal-body" style={{ padding: '24px' }}>
+              <p style={{ marginBottom: '20px', color: 'var(--fh-text-muted)' }}>
+                <strong>{showHometaxRangeModal.businessName}</strong>의 데이터를 수집할 기간을 선택하세요.<br/>
+                홈택스는 월 단위 조회를 수행하므로 기간이 길어질수록 시간이 더 소요됩니다.
+              </p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                <div className="finance-hub__input-group">
+                  <label>시작 연월</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select 
+                      className="finance-hub__input" 
+                      value={hometaxRangeStart.year}
+                      onChange={(e) => setHometaxRangeStart(prev => ({ ...prev, year: e.target.value }))}
+                    >
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                    </select>
+                    <select 
+                      className="finance-hub__input"
+                      value={hometaxRangeStart.month}
+                      onChange={(e) => setHometaxRangeStart(prev => ({ ...prev, month: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0')).map(m => (
+                        <option key={m} value={m}>{m}월</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="finance-hub__input-group">
+                  <label>종료 연월</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select 
+                      className="finance-hub__input"
+                      value={hometaxRangeEnd.year}
+                      onChange={(e) => setHometaxRangeEnd(prev => ({ ...prev, year: e.target.value }))}
+                    >
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                    </select>
+                    <select 
+                      className="finance-hub__input"
+                      value={hometaxRangeEnd.month}
+                      onChange={(e) => setHometaxRangeEnd(prev => ({ ...prev, month: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0')).map(m => (
+                        <option key={m} value={m}>{m}월</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button 
+                  className="finance-hub__btn finance-hub__btn--outline finance-hub__btn--full"
+                  onClick={() => {
+                    const now = new Date();
+                    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    setHometaxRangeStart({ year: lastMonth.getFullYear().toString(), month: (lastMonth.getMonth() + 1).toString().padStart(2, '0') });
+                    setHometaxRangeEnd({ year: now.getFullYear().toString(), month: (now.getMonth() + 1).toString().padStart(2, '0') });
+                  }}
+                >
+                  최근 2개월
+                </button>
+                <button 
+                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                  onClick={handleStartRangeCollection}
+                >
+                  수집 시작
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Syncing Progress Overlay */}
+      {hometaxSyncProgress && (
+        <div className="finance-hub__modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="finance-hub__modal finance-hub__modal--small" style={{ textAlign: 'center', padding: '40px' }}>
+            <div className="finance-hub__spinner finance-hub__spinner--large" style={{ margin: '0 auto 24px' }}></div>
+            <h3 style={{ marginBottom: '12px' }}>홈택스 데이터 수집 중</h3>
+            <p style={{ color: 'var(--fh-text-muted)', fontSize: '1.1rem' }}>{hometaxSyncProgress}</p>
+            <p style={{ marginTop: '20px', fontSize: '0.9rem', color: '#ff6b6b' }}>
+              ⚠️ 수집이 완료될 때까지 브라우저나 앱 창을 닫지 마세요.
+            </p>
           </div>
         </div>
       )}
