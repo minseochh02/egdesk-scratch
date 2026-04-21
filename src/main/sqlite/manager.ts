@@ -1825,6 +1825,123 @@ export class SQLiteManager {
         };
       }
     });
+
+    // Load detailed company data from output.json
+    ipcMain.handle('sqlite-business-identity-load-detailed-company-data', async () => {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const outputJsonPath = path.join(process.cwd(), '../first-agent/output.json');
+
+        if (!fs.existsSync(outputJsonPath)) {
+          return { success: false, error: 'output.json not found' };
+        }
+
+        const outputData = JSON.parse(fs.readFileSync(outputJsonPath, 'utf-8'));
+
+        return {
+          success: true,
+          data: {
+            contactAndLegal: outputData.contactAndLegal,
+            companyStructure: outputData.companyStructure,
+            centralServicesAndProducts: outputData.centralServicesAndProducts,
+            partnersAndNetwork: outputData.partnersAndNetwork,
+            targetIndustriesMentioned: outputData.targetIndustriesMentioned,
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to load detailed company data',
+        };
+      }
+    });
+
+    // Load products with images from products-with-images.json
+    ipcMain.handle('sqlite-business-identity-load-products-with-images', async () => {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const productsJsonPath = path.join(process.cwd(), '../product-service-manager/products-with-images.json');
+
+        if (!fs.existsSync(productsJsonPath)) {
+          return { success: false, error: 'products-with-images.json not found' };
+        }
+
+        const productsData = JSON.parse(fs.readFileSync(productsJsonPath, 'utf-8'));
+
+        return {
+          success: true,
+          data: { items: productsData.items || [] },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to load products with images',
+        };
+      }
+    });
+
+    // Internal Knowledge handlers
+    ipcMain.handle('sqlite-internal-knowledge-create', async (event, data: any) => {
+      try {
+        const document = this.getBusinessIdentityManager().createKnowledgeDocument(data);
+        return { success: true, data: document };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-internal-knowledge-get', async (event, id: string) => {
+      try {
+        const document = this.getBusinessIdentityManager().getKnowledgeDocument(id);
+        return { success: true, data: document };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-internal-knowledge-list', async (event, snapshotId: string) => {
+      try {
+        const documents = this.getBusinessIdentityManager().listKnowledgeDocuments(snapshotId);
+        return { success: true, data: documents };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-internal-knowledge-update', async (event, id: string, updates: any) => {
+      try {
+        const document = this.getBusinessIdentityManager().updateKnowledgeDocument(id, updates);
+        return { success: true, data: document };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
+
+    ipcMain.handle('sqlite-internal-knowledge-delete', async (event, id: string) => {
+      try {
+        this.getBusinessIdentityManager().deleteKnowledgeDocument(id);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    });
   }
 
   /**

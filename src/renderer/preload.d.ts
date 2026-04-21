@@ -178,6 +178,17 @@ interface BusinessIdentityAPI {
 }
 
 /**
+ * Interface for Internal Knowledge API.
+ */
+interface InternalKnowledgeAPI {
+  create: (snapshotId: string, data: { title: string; category: string; content: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  get: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  list: (snapshotId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  update: (id: string, updates: { title?: string; category?: string; content?: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+/**
  * Interface for Template Copies API.
  */
 interface TemplateCopiesAPI {
@@ -456,7 +467,7 @@ interface DebugAPI {
     /** Per captureLabeledFields block — labels + defaults for replay value inputs */
     labeledFieldReplayBlocks?: Array<{ labels: string[]; defaults?: (string | undefined)[] }>;
   }>;
-  runPlaywrightTest: (
+  runBrowserRecordingReplay: (
     testFile: string,
     replayParams?: {
       dateRange?: { start?: string; end?: string };
@@ -868,6 +879,7 @@ export interface IElectronAPI {
   facebook: FacebookAPI;
   scheduledPosts: ScheduledPostsAPI;
   businessIdentity: BusinessIdentityAPI;
+  internalKnowledge: InternalKnowledgeAPI;
   templateCopies: TemplateCopiesAPI;
   appsScriptTools: AppsScriptToolsAPI;
   sync: SyncAPI;

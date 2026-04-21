@@ -243,7 +243,7 @@ export function generateHelperFile(projectPath: string): void {
   const helperContent = `/**
  * EGDesk User Data Helper Functions
  *
- * Type-safe helpers for accessing EGDesk user data.
+ * Type-safe helpers for EGDesk user data and internal knowledge / business identity / company research (MCP).
  */
 
 /**
@@ -464,6 +464,143 @@ export async function renameTable(
     newTableName,
     newDisplayName
   });
+}
+
+// ==========================================
+// INTERNAL KNOWLEDGE / BUSINESS IDENTITY / COMPANY RESEARCH (MCP)
+// ==========================================
+
+/**
+ * Call EGDesk Internal Knowledge MCP tool.
+ *
+ * Uses \`/__internal_knowledge_proxy\` (see @egdesk/vite-api-plugin). EGDesk HTTP server must be running.
+ */
+export async function callInternalKnowledgeTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const response = await fetch('/__internal_knowledge_proxy', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ tool: toolName, arguments: args })
+  });
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+/** List internal knowledge documents for a business identity snapshot */
+export async function listKnowledgeDocuments(
+  snapshotId: string,
+  category?: 'hierarchy' | 'process' | 'policy' | 'note'
+) {
+  return callInternalKnowledgeTool('knowledge_list_documents', {
+    snapshotId,
+    ...(category != null ? { category } : {})
+  });
+}
+
+/** Get one knowledge document by ID (full markdown content) */
+export async function getKnowledgeDocument(documentId: string) {
+  return callInternalKnowledgeTool('knowledge_get_document', { documentId });
+}
+
+/** Search knowledge documents by text in title or content */
+export async function searchKnowledgeContent(
+  snapshotId: string,
+  searchText: string,
+  category?: 'hierarchy' | 'process' | 'policy' | 'note'
+) {
+  return callInternalKnowledgeTool('knowledge_search_content', {
+    snapshotId,
+    searchText,
+    ...(category != null ? { category } : {})
+  });
+}
+
+/** Get all documents of a single category for a snapshot */
+export async function getKnowledgeByCategory(
+  snapshotId: string,
+  category: 'hierarchy' | 'process' | 'policy' | 'note'
+) {
+  return callInternalKnowledgeTool('knowledge_get_by_category', { snapshotId, category });
+}
+
+/** Create a new knowledge document */
+export async function createKnowledgeDocument(
+  snapshotId: string,
+  title: string,
+  category: 'hierarchy' | 'process' | 'policy' | 'note',
+  content?: string
+) {
+  return callInternalKnowledgeTool('knowledge_create_document', {
+    snapshotId,
+    title,
+    category,
+    ...(content != null ? { content } : {})
+  });
+}
+
+/** Update an existing knowledge document */
+export async function updateKnowledgeDocument(
+  documentId: string,
+  updates: { title?: string; category?: 'hierarchy' | 'process' | 'policy' | 'note'; content?: string }
+) {
+  return callInternalKnowledgeTool('knowledge_update_document', { documentId, ...updates });
+}
+
+/** Delete a knowledge document */
+export async function deleteKnowledgeDocument(documentId: string) {
+  return callInternalKnowledgeTool('knowledge_delete_document', { documentId });
+}
+
+/** List business identity snapshots (optional brand filter) */
+export async function listBusinessIdentitySnapshots(brandKey?: string) {
+  return callInternalKnowledgeTool('businessidentity_list_snapshots', {
+    ...(brandKey != null ? { brandKey } : {})
+  });
+}
+
+/** Full snapshot by ID (identity JSON, SEO/SSL analysis, etc.) */
+export async function getBusinessIdentitySnapshot(snapshotId: string) {
+  return callInternalKnowledgeTool('businessidentity_get_snapshot', { snapshotId });
+}
+
+/** Company info slice from a snapshot */
+export async function getBusinessIdentityCompanyInfo(snapshotId: string) {
+  return callInternalKnowledgeTool('businessidentity_get_company_info', { snapshotId });
+}
+
+/** Services and products from a snapshot */
+export async function getBusinessIdentityServicesProducts(snapshotId: string) {
+  return callInternalKnowledgeTool('businessidentity_get_services_products', { snapshotId });
+}
+
+/** List company research records */
+export async function listCompanyResearch(
+  status?: 'completed' | 'failed' | 'in_progress'
+) {
+  return callInternalKnowledgeTool('companyresearch_list_all', {
+    ...(status != null ? { status } : {})
+  });
+}
+
+/** One company research record by ID */
+export async function getCompanyResearchById(researchId: string) {
+  return callInternalKnowledgeTool('companyresearch_get_by_id', { researchId });
+}
+
+/** Research records for a domain */
+export async function getCompanyResearchByDomain(domain: string) {
+  return callInternalKnowledgeTool('companyresearch_get_by_domain', { domain });
+}
+
+/** Search company research by company name or domain */
+export async function searchCompanyResearch(searchText: string) {
+  return callInternalKnowledgeTool('companyresearch_search', { searchText });
 }
 
 // ==========================================

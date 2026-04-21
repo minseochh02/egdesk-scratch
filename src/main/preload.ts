@@ -683,6 +683,9 @@ export interface BusinessIdentityAPI {
     planId: string,
     aiKeyId: string | null,
   ) => Promise<{ success: boolean; error?: string }>;
+  loadDetailedCompanyData: () => Promise<{ success: boolean; data?: any; error?: string }>;
+  loadProductsWithImages: () => Promise<{ success: boolean; data?: any; error?: string }>;
+  listSnsPlanExecutions: (planId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
 }
 
 export interface TemplateCopiesAPI {
@@ -1703,7 +1706,19 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-connection', planId, connectionId, connectionName, connectionType),
     updateSnsPlanAIKey: (planId: string, aiKeyId: string | null) =>
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
+    loadDetailedCompanyData: () => ipcRenderer.invoke('sqlite-business-identity-load-detailed-company-data'),
+    loadProductsWithImages: () => ipcRenderer.invoke('sqlite-business-identity-load-products-with-images'),
   } as BusinessIdentityAPI,
+
+  internalKnowledge: {
+    create: (snapshotId: string, data: { title: string; category: string; content: string }) =>
+      ipcRenderer.invoke('sqlite-internal-knowledge-create', { snapshotId, ...data }),
+    get: (id: string) => ipcRenderer.invoke('sqlite-internal-knowledge-get', id),
+    list: (snapshotId: string) => ipcRenderer.invoke('sqlite-internal-knowledge-list', snapshotId),
+    update: (id: string, updates: { title?: string; category?: string; content?: string }) =>
+      ipcRenderer.invoke('sqlite-internal-knowledge-update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('sqlite-internal-knowledge-delete', id),
+  },
   
   // ========================================================================
   // TEMPLATE COPIES MANAGEMENT
@@ -2102,14 +2117,14 @@ const electronHandler = {
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     getBrowserRecordingReplayOptions: (testFile: string) =>
       ipcRenderer.invoke('get-browser-recording-replay-options', { testFile }),
-    runPlaywrightTest: (
+    runBrowserRecordingReplay: (
       testFile: string,
       replayParams?: {
         dateRange?: { start?: string; end?: string };
         datePickersByIndex?: (string | undefined)[];
         labeledFieldFills?: (string | undefined)[][];
       }
-    ) => ipcRenderer.invoke('run-playwright-test', { testFile, replayParams }),
+    ) => ipcRenderer.invoke('run-browser-recording-replay', { testFile, replayParams }),
     runChain: (chainId: string) => ipcRenderer.invoke('run-chain', { chainId }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
     renamePlaywrightTest: (testPath: string, newName: string) => ipcRenderer.invoke('rename-playwright-test', { testPath, newName }),

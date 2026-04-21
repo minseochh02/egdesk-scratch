@@ -39,7 +39,22 @@ import {
   FinanceHubListBanksTool,
   FinanceHubListAccountsTool,
   FinanceHubQueryTransactionsTool,
-  FinanceHubGetStatisticsTool
+  FinanceHubGetStatisticsTool,
+  InternalKnowledgeListSnapshotsTool,
+  InternalKnowledgeGetSnapshotTool,
+  InternalKnowledgeGetCompanyInfoTool,
+  InternalKnowledgeGetServicesProductsTool,
+  KnowledgeListDocumentsTool,
+  KnowledgeGetDocumentTool,
+  KnowledgeSearchContentTool,
+  KnowledgeGetByCategoryTool,
+  KnowledgeCreateDocumentTool,
+  KnowledgeUpdateDocumentTool,
+  KnowledgeDeleteDocumentTool,
+  CompanyResearchListAllTool,
+  CompanyResearchGetByIdTool,
+  CompanyResearchGetByDomainTool,
+  CompanyResearchSearchTool
 } from './tools';
 
 
@@ -533,6 +548,222 @@ export class ToolRegistry {
           required: []
         };
 
+      case 'businessidentity_list_snapshots':
+        return {
+          type: 'object',
+          properties: {
+            brandKey: {
+              type: 'string',
+              description: 'Optional: Filter by specific brand key'
+            }
+          },
+          required: []
+        };
+
+      case 'businessidentity_get_snapshot':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot to retrieve'
+            }
+          },
+          required: ['snapshotId']
+        };
+
+      case 'businessidentity_get_company_info':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            }
+          },
+          required: ['snapshotId']
+        };
+
+      case 'businessidentity_get_services_products':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            }
+          },
+          required: ['snapshotId']
+        };
+
+      case 'knowledge_list_documents':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            },
+            category: {
+              type: 'string',
+              description: 'Optional: Filter by category (hierarchy/process/policy/note)'
+            }
+          },
+          required: ['snapshotId']
+        };
+
+      case 'knowledge_get_document':
+        return {
+          type: 'object',
+          properties: {
+            documentId: {
+              type: 'string',
+              description: 'The ID of the knowledge document to retrieve'
+            }
+          },
+          required: ['documentId']
+        };
+
+      case 'knowledge_search_content':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            },
+            query: {
+              type: 'string',
+              description: 'Search query to match in title or content'
+            }
+          },
+          required: ['snapshotId', 'query']
+        };
+
+      case 'knowledge_get_by_category':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            },
+            category: {
+              type: 'string',
+              description: 'The category to filter by (hierarchy/process/policy/note)'
+            }
+          },
+          required: ['snapshotId', 'category']
+        };
+
+      case 'knowledge_create_document':
+        return {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'The ID of the business identity snapshot'
+            },
+            title: {
+              type: 'string',
+              description: 'Document title'
+            },
+            category: {
+              type: 'string',
+              description: 'Document category (hierarchy/process/policy/note)'
+            },
+            content: {
+              type: 'string',
+              description: 'Optional: Markdown content (defaults to empty string)'
+            }
+          },
+          required: ['snapshotId', 'title', 'category']
+        };
+
+      case 'knowledge_update_document':
+        return {
+          type: 'object',
+          properties: {
+            documentId: {
+              type: 'string',
+              description: 'The ID of the knowledge document to update'
+            },
+            title: {
+              type: 'string',
+              description: 'Optional: New document title'
+            },
+            category: {
+              type: 'string',
+              description: 'Optional: New document category (hierarchy/process/policy/note)'
+            },
+            content: {
+              type: 'string',
+              description: 'Optional: New markdown content'
+            }
+          },
+          required: ['documentId']
+        };
+
+      case 'knowledge_delete_document':
+        return {
+          type: 'object',
+          properties: {
+            documentId: {
+              type: 'string',
+              description: 'The ID of the knowledge document to delete'
+            }
+          },
+          required: ['documentId']
+        };
+
+      case 'companyresearch_list_all':
+        return {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              description: 'Optional: Filter by research status (pending/in_progress/completed)'
+            }
+          },
+          required: []
+        };
+
+      case 'companyresearch_get_by_id':
+        return {
+          type: 'object',
+          properties: {
+            researchId: {
+              type: 'string',
+              description: 'The ID of the company research record'
+            }
+          },
+          required: ['researchId']
+        };
+
+      case 'companyresearch_get_by_domain':
+        return {
+          type: 'object',
+          properties: {
+            domain: {
+              type: 'string',
+              description: 'The company domain (e.g., "example.com")'
+            }
+          },
+          required: ['domain']
+        };
+
+      case 'companyresearch_search':
+        return {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query to match company name or domain'
+            }
+          },
+          required: ['query']
+        };
+
       default:
         return {
           type: 'object',
@@ -704,6 +935,25 @@ export class ToolRegistry {
     this.registerTool(new FinanceHubListAccountsTool());
     this.registerTool(new FinanceHubQueryTransactionsTool());
     this.registerTool(new FinanceHubGetStatisticsTool());
+
+    // Business Identity & Internal Knowledge Tools
+    this.registerTool(new InternalKnowledgeListSnapshotsTool());
+    this.registerTool(new InternalKnowledgeGetSnapshotTool());
+    this.registerTool(new InternalKnowledgeGetCompanyInfoTool());
+    this.registerTool(new InternalKnowledgeGetServicesProductsTool());
+    this.registerTool(new KnowledgeListDocumentsTool());
+    this.registerTool(new KnowledgeGetDocumentTool());
+    this.registerTool(new KnowledgeSearchContentTool());
+    this.registerTool(new KnowledgeGetByCategoryTool());
+    this.registerTool(new KnowledgeCreateDocumentTool());
+    this.registerTool(new KnowledgeUpdateDocumentTool());
+    this.registerTool(new KnowledgeDeleteDocumentTool());
+
+    // Company Research Tools
+    this.registerTool(new CompanyResearchListAllTool());
+    this.registerTool(new CompanyResearchGetByIdTool());
+    this.registerTool(new CompanyResearchGetByDomainTool());
+    this.registerTool(new CompanyResearchSearchTool());
   }
 }
 

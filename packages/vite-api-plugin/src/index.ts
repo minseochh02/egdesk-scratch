@@ -292,6 +292,53 @@ export function viteApiPlugin(options: ViteApiPluginOptions = {}): Plugin {
           return;
         }
 
+        // Internal Knowledge / Business Identity / Company Research MCP proxy
+        if (url.includes('__internal_knowledge_proxy')) {
+          log(`Proxying internal-knowledge request: ${url}`);
+
+          let body = '';
+          req.on('data', chunk => {
+            body += chunk.toString();
+          });
+          req.on('end', async () => {
+            try {
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+              };
+
+              const projectPath = process.cwd();
+              const envVars = readEnvLocal(projectPath);
+              const actualApiKey = envVars.apiKey || egdeskApiKey;
+              const actualApiUrl = envVars.apiUrl || egdeskUrl;
+
+              if (actualApiKey) {
+                headers['X-Api-Key'] = actualApiKey;
+              }
+
+              const response = await fetch(`${actualApiUrl}/internal-knowledge/tools/call`, {
+                method: 'POST',
+                headers,
+                body
+              });
+
+              const result = await response.json();
+
+              res.statusCode = response.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(result));
+            } catch (error) {
+              console.error('[vite-api-plugin] Internal knowledge proxy error:', error);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                error: 'Proxy error',
+                message: error instanceof Error ? error.message : String(error)
+              }));
+            }
+          });
+          return;
+        }
+
         // Check if this is an API request
         const apiPath = routeMatcher(url);
 

@@ -6,7 +6,7 @@
 import path from 'path';
 import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'crypto';
-import { getTaxInvoices, getCashReceipts } from './hometax';
+import { getTaxInvoices, getTaxExemptInvoices, getCashReceipts } from './hometax';
 
 // ============================================
 // Types (Bank-Agnostic)
@@ -2050,6 +2050,31 @@ export class FinanceHubDbManager {
     offset: number;
   }): { invoices: Record<string, unknown>[]; total: number; error?: string } {
     const r = getTaxInvoices(this.db, {
+      businessNumber: filters.businessNumber,
+      invoiceType: filters.invoiceType,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+    if (!r.success) {
+      return { invoices: [], total: 0, error: r.error };
+    }
+    return {
+      invoices: (r.data ?? []) as Record<string, unknown>[],
+      total: r.total ?? 0
+    };
+  }
+
+  queryTaxExemptInvoices(filters: {
+    businessNumber?: string;
+    invoiceType?: 'sales' | 'purchase';
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { invoices: Record<string, unknown>[]; total: number; error?: string } {
+    const r = getTaxExemptInvoices(this.db, {
       businessNumber: filters.businessNumber,
       invoiceType: filters.invoiceType,
       startDate: filters.startDate,

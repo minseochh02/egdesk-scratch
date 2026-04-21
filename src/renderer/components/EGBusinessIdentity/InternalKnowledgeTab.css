@@ -1,0 +1,555 @@
+/* Internal Knowledge Tab - Main Container */
+.internal-knowledge-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #1a1d23;
+  color: #e0e0e0;
+}
+
+/* Header */
+.internal-knowledge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2f3a;
+  background-color: #1e2229;
+}
+
+.internal-knowledge-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.internal-knowledge-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: #4a9eff;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.internal-knowledge-new-btn:hover {
+  background-color: #3d8ae6;
+}
+
+.internal-knowledge-new-btn:active {
+  background-color: #3275cc;
+}
+
+/* Error Message */
+.internal-knowledge-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background-color: #4a2020;
+  border-bottom: 1px solid #6a3030;
+  color: #ffaaaa;
+  font-size: 14px;
+}
+
+.internal-knowledge-error button {
+  background: none;
+  border: none;
+  color: #ffaaaa;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.internal-knowledge-error button:hover {
+  color: #ffffff;
+}
+
+/* Main Content Area */
+.internal-knowledge-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.internal-knowledge-sidebar {
+  width: 280px;
+  background-color: #1e2229;
+  border-right: 1px solid #2a2f3a;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* Editor Panel */
+.internal-knowledge-editor-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.internal-knowledge-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2f3a;
+  background-color: #1e2229;
+}
+
+.internal-knowledge-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.internal-knowledge-editor-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.internal-knowledge-category-badge {
+  padding: 4px 10px;
+  background-color: #2a2f3a;
+  color: #a0a0a0;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.internal-knowledge-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.internal-knowledge-save-status {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.internal-knowledge-save-status.saving {
+  color: #a0a0a0;
+}
+
+.internal-knowledge-save-status.saved {
+  color: #5cb85c;
+}
+
+.internal-knowledge-action-btn {
+  padding: 8px 12px;
+  background-color: #2a2f3a;
+  color: #e0e0e0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-size: 14px;
+}
+
+.internal-knowledge-action-btn:hover {
+  background-color: #34394a;
+}
+
+.internal-knowledge-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.internal-knowledge-action-btn.delete {
+  color: #ff6b6b;
+}
+
+.internal-knowledge-action-btn.delete:hover {
+  background-color: #4a2020;
+}
+
+.internal-knowledge-editor-body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  background-color: #1a1d23;
+}
+
+/* Empty States */
+.internal-knowledge-empty-state,
+.internal-knowledge-editor-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.internal-knowledge-empty-state h3,
+.internal-knowledge-editor-empty h3 {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.internal-knowledge-empty-state p,
+.internal-knowledge-editor-empty p {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  color: #a0a0a0;
+}
+
+.internal-knowledge-editor-empty ul {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  text-align: left;
+}
+
+.internal-knowledge-editor-empty li {
+  margin: 10px 0;
+  color: #a0a0a0;
+  font-size: 14px;
+}
+
+.internal-knowledge-editor-empty li strong {
+  color: #ffffff;
+}
+
+.internal-knowledge-new-btn-large {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background-color: #4a9eff;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 20px;
+}
+
+.internal-knowledge-new-btn-large:hover {
+  background-color: #3d8ae6;
+}
+
+.internal-knowledge-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: #a0a0a0;
+}
+
+/* Knowledge Document List */
+.knowledge-document-list {
+  padding: 12px 0;
+}
+
+.knowledge-category-section {
+  margin-bottom: 20px;
+}
+
+.knowledge-category-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background-color: #252932;
+  border-bottom: 1px solid #2a2f3a;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.knowledge-category-icon {
+  color: #4a9eff;
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+.knowledge-category-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.knowledge-category-count {
+  margin-left: 8px;
+  color: #a0a0a0;
+  font-size: 12px;
+}
+
+.knowledge-category-add-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #4a9eff;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  font-size: 12px;
+}
+
+.knowledge-category-add-btn:hover {
+  background-color: #2a2f3a;
+}
+
+.knowledge-category-documents {
+  padding: 4px 0;
+}
+
+.knowledge-empty-state {
+  padding: 20px 16px;
+  text-align: center;
+  color: #6a6f7a;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.knowledge-document-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.knowledge-document-item:hover {
+  background-color: #252932;
+}
+
+.knowledge-document-item.is-active {
+  background-color: #2a2f3a;
+  border-left-color: #4a9eff;
+}
+
+.knowledge-document-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.knowledge-document-date {
+  font-size: 12px;
+  color: #6a6f7a;
+}
+
+/* Modal Styles */
+.knowledge-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.knowledge-modal-content {
+  background-color: #1e2229;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.knowledge-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+.knowledge-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.knowledge-modal-close {
+  background: none;
+  border: none;
+  color: #a0a0a0;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 18px;
+  transition: color 0.2s;
+}
+
+.knowledge-modal-close:hover {
+  color: #ffffff;
+}
+
+.knowledge-modal-body {
+  padding: 24px;
+}
+
+.knowledge-modal-error {
+  padding: 12px;
+  background-color: #4a2020;
+  border: 1px solid #6a3030;
+  border-radius: 6px;
+  color: #ffaaaa;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.knowledge-modal-field {
+  margin-bottom: 20px;
+}
+
+.knowledge-modal-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.knowledge-modal-field input,
+.knowledge-modal-field select {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: #252932;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.knowledge-modal-field input:focus,
+.knowledge-modal-field select:focus {
+  outline: none;
+  border-color: #4a9eff;
+}
+
+.knowledge-modal-field input::placeholder {
+  color: #6a6f7a;
+}
+
+.knowledge-modal-field input:disabled,
+.knowledge-modal-field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.knowledge-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #2a2f3a;
+}
+
+.knowledge-modal-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.knowledge-modal-btn-secondary {
+  background-color: #2a2f3a;
+  color: #e0e0e0;
+}
+
+.knowledge-modal-btn-secondary:hover {
+  background-color: #34394a;
+}
+
+.knowledge-modal-btn-primary {
+  background-color: #4a9eff;
+  color: #ffffff;
+}
+
+.knowledge-modal-btn-primary:hover {
+  background-color: #3d8ae6;
+}
+
+.knowledge-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Markdown Editor Wrapper */
+.markdown-editor-wrapper {
+  height: 100%;
+}
+
+.markdown-editor-wrapper .w-md-editor {
+  background-color: #1a1d23;
+  color: #e0e0e0;
+}
+
+.markdown-editor-wrapper .w-md-editor-toolbar {
+  background-color: #1e2229;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+.markdown-editor-wrapper .w-md-editor-toolbar button {
+  color: #a0a0a0;
+}
+
+.markdown-editor-wrapper .w-md-editor-toolbar button:hover {
+  color: #ffffff;
+  background-color: #2a2f3a;
+}
+
+.markdown-editor-wrapper .w-md-editor-text-pre,
+.markdown-editor-wrapper .w-md-editor-text-input {
+  background-color: #1a1d23;
+  color: #e0e0e0;
+}
+
+.markdown-editor-wrapper .w-md-editor-preview {
+  background-color: #1a1d23;
+  color: #e0e0e0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .internal-knowledge-sidebar {
+    width: 100%;
+    max-width: 240px;
+  }
+
+  .internal-knowledge-content {
+    flex-direction: column;
+  }
+
+  .internal-knowledge-editor-panel {
+    border-left: none;
+    border-top: 1px solid #2a2f3a;
+  }
+}
