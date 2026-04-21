@@ -2310,6 +2310,13 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:get-all-saved-certificates'),
     collectInvoices: (certificateData: any, certificatePassword: string) =>
       ipcRenderer.invoke('hometax:collect-invoices', certificateData, certificatePassword),
+    collectInvoicesInRange: (certificateData: any, certificatePassword: string, startYear: string, startMonth: string, endYear: string, endMonth: string) =>
+      ipcRenderer.invoke('hometax:collect-invoices-in-range', certificateData, certificatePassword, startYear, startMonth, endYear, endMonth),
+    onCollectProgress: (callback: (message: string) => void) => {
+      const subscription = (_event: IpcRendererEvent, message: string) => callback(message);
+      ipcRenderer.on('hometax:collect-progress', subscription);
+      return () => ipcRenderer.removeListener('hometax:collect-progress', subscription);
+    },
     dropAllData: () =>
       ipcRenderer.invoke('hometax:drop-all-data'),
     getInvoices: (filters: any) =>

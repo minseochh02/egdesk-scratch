@@ -1207,6 +1207,115 @@ export function getHometaxConnectionStatus(): { isConnected: boolean } {
  * Also collects current week cash receipts (1 download)
  * Total: 5 downloads
  */
+/**
+ * Collect tax invoices (매출/매입) and cash receipts for a business for a specific date range
+ * Loops through each month in the range and collects data
+ */
+export async function collectTaxInvoicesInRange(
+  certificateData: any,
+  certificatePassword: string,
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number,
+  onProgress?: (message: string) => void
+): Promise<{
+  success: boolean;
+  downloadedFiles: { year: number; month: number; type: string; category: string; path: string }[];
+  error?: string
+}> {
+  const downloadedFiles: { year: number; month: number; type: string; category: string; path: string }[] = [];
+
+  try {
+    console.log(`[Hometax] Starting tax invoice collection from ${startYear}-${startMonth} to ${endYear}-${endMonth}`);
+
+    // Generate list of year-month pairs to collect
+    const targetMonths: { year: number; month: number }[] = [];
+    let currYear = startYear;
+    let currMonth = startMonth;
+
+    while (currYear < endYear || (currYear === endYear && currMonth <= endMonth)) {
+      targetMonths.push({ year: currYear, month: currMonth });
+      currMonth++;
+      if (currMonth > 12) {
+        currMonth = 1;
+        currYear++;
+      }
+    }
+
+    console.log(`[Hometax] Target months to collect:`, targetMonths);
+
+    for (let i = 0; i < targetMonths.length; i++) {
+        const { year, month } = targetMonths[i];
+        const progressPrefix = `(${i + 1}/${targetMonths.length}) [${year}-${month.toString().padStart(2, '0')}]`;
+
+        if (onProgress) onProgress(`${progressPrefix} 매출 전자세금계산서 수집 중...`);
+        // 1. 매출 과세
+        const sTax = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax', year, month);
+        if (sTax.success && sTax.downloadedFile) {
+            downloadedFiles.push({ year, month, type: 'sales', category: 'tax', path: sTax.downloadedFile });
+        }
+
+        if (onProgress) onProgress(`${progressPrefix} 매입 전자세금계산서 수집 중...`);
+        // 2. 매입 과세
+        const pTax = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax', year, month);
+        if (pTax.success && pTax.downloadedFile) {
+            downloadedFiles.push({ year, month, type: 'purchase', category: 'tax', path: pTax.downloadedFile });
+        }
+
+        if (onProgress) onProgress(`${progressPrefix} 매출 전자계산서(면세) 수집 중...`);
+        // 3. 매출 면세
+        const sExempt = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax-exempt', year, month);
+        if (sExempt.success && sExempt.downloadedFile) {
+            downloadedFiles.push({ year, month, type: 'sales', category: 'tax-exempt', path: sExempt.downloadedFile });
+        }
+
+        if (onProgress) onProgress(`${progressPrefix} 매입 전자계산서(면세) 수집 중...`);
+        // 4. 매입 면세
+        const pExempt = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax-exempt', year, month);
+        if (pExempt.success && pExempt.downloadedFile) {
+            downloadedFiles.push({ year, month, type: 'purchase', category: 'tax-exempt', path: pExempt.downloadedFile });
+        }
+    }
+
+    // Cash receipts are handled slightly differently in the UI (weekly), but here we can try to download for current month if it's in range
+    const now = new Date();
+    if (endYear === now.getFullYear() && endMonth === (now.getMonth() + 1)) {
+        if (onProgress) onProgress(`현금영수증 내역 수집 중...`);
+        const cashRes = await downloadCashReceipts(certificateData, certificatePassword);
+        if (cashRes.success && cashRes.downloadedFile) {
+            downloadedFiles.push({ year: endYear, month: endMonth, type: 'cash-receipt', category: 'none', path: cashRes.downloadedFile });
+        }
+    }
+
+    return {
+      success: true,
+      downloadedFiles
+    };
+
+  } catch (error) {
+    console.error('[Hometax] Error in collective range collection:', error);
+    return {
+      success: false,
+      downloadedFiles,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  } finally {
+    try {
+      console.log('[Hometax] Closing browser after range collection...');
+      await disconnectFromHometax();
+    } catch (cleanupError) {
+      console.error('[Hometax] Failed to close browser:', cleanupError);
+    }
+  }
+}
+
+/**
+ * Collect tax invoices (매출/매입) and cash receipts for a business
+ * Collects data for both current month and last month, for both sales and purchases (4 downloads total)
+ * Also collects current week cash receipts (1 download)
+ * Total: 5 downloads
+ */
 export async function collectTaxInvoices(
   certificateData: any,
   certificatePassword: string
@@ -1223,13 +1332,10 @@ export async function collectTaxInvoices(
   cashReceiptFile?: string;
   error?: string
 }> {
-  try {
-    console.log('[Hometax] Starting tax invoice collection for current and last month...');
-
-    // Calculate current and last month
+    // Re-use the range collection for simplicity (current and last month)
     const now = new Date();
     const thisYear = now.getFullYear();
-    const thisMonth = now.getMonth() + 1; // JavaScript months are 0-indexed
+    const thisMonth = now.getMonth() + 1;
 
     let lastYear = thisYear;
     let lastMonth = thisMonth - 1;
@@ -1238,147 +1344,27 @@ export async function collectTaxInvoices(
       lastYear = thisYear - 1;
     }
 
-    console.log(`[Hometax] Target months - This: ${thisYear}-${thisMonth.toString().padStart(2, '0')}, Last: ${lastYear}-${lastMonth.toString().padStart(2, '0')}`);
-    console.log('[Hometax] ==================== Starting 9-part collection ====================');
+    const result = await collectTaxInvoicesInRange(certificateData, certificatePassword, lastYear, lastMonth, thisYear, thisMonth);
 
-    // 1. Collect this month 매출 (sales)
-    console.log('[Hometax] ▶ (1/5) Collecting this month 매출...');
-    const thisMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax', thisYear, thisMonth);
-    if (!thisMonthSalesResult.success) {
-      return { success: false, error: thisMonthSalesResult.error };
+    if (!result.success) {
+        return { success: false, error: result.error };
     }
-    const thisMonthSalesFile = thisMonthSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (1/5) Completed:', thisMonthSalesFile);
 
-    // 2. Collect last month 매출 (sales)
-    console.log('[Hometax] ▶ (2/5) Collecting last month 매출...');
-    const lastMonthSalesResult = await connectToHometax(certificateData, certificatePassword, 'sales', 'tax', lastYear, lastMonth);
-    if (!lastMonthSalesResult.success) {
-      return { success: false, error: lastMonthSalesResult.error };
-    }
-    const lastMonthSalesFile = lastMonthSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (2/5) Completed:', lastMonthSalesFile);
+    const files = result.downloadedFiles;
+    const findFile = (y: number, m: number, t: string, c: string) =>
+        files.find(f => f.year === y && f.month === m && f.type === t && f.category === c)?.path;
 
-    // 3. Collect this month 매입 (purchases)
-    console.log('[Hometax] ▶ (3/5) Collecting this month 매입...');
-    const thisMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax', thisYear, thisMonth);
-    if (!thisMonthPurchaseResult.success) {
-      return { success: false, error: thisMonthPurchaseResult.error };
-    }
-    const thisMonthPurchaseFile = thisMonthPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (3/5) Completed:', thisMonthPurchaseFile);
-
-    // 4. Collect last month 매입 (purchases)
-    console.log('[Hometax] ▶ (4/5) Collecting last month 매입...');
-    const lastMonthPurchaseResult = await connectToHometax(certificateData, certificatePassword, 'purchase', 'tax', lastYear, lastMonth);
-    if (!lastMonthPurchaseResult.success) {
-      return { success: false, error: lastMonthPurchaseResult.error };
-    }
-    const lastMonthPurchaseFile = lastMonthPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (4/5) Completed:', lastMonthPurchaseFile);
-
-    // 5. Collect this month tax-exempt sales (전자계산서 매출)
-    console.log('[Hometax] ▶ (5/9) Collecting this month 전자계산서 매출...');
-    const thisMonthTaxExemptSalesResult = await connectToHometax(
-      certificateData,
-      certificatePassword,
-      'sales',
-      'tax-exempt',
-      thisYear,
-      thisMonth
-    );
-    if (!thisMonthTaxExemptSalesResult.success) {
-      return { success: false, error: thisMonthTaxExemptSalesResult.error };
-    }
-    const thisMonthTaxExemptSalesFile = thisMonthTaxExemptSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (5/9) Completed:', thisMonthTaxExemptSalesFile);
-
-    // 6. Collect last month tax-exempt sales (전자계산서 매출)
-    console.log('[Hometax] ▶ (6/9) Collecting last month 전자계산서 매출...');
-    const lastMonthTaxExemptSalesResult = await connectToHometax(
-      certificateData,
-      certificatePassword,
-      'sales',
-      'tax-exempt',
-      lastYear,
-      lastMonth
-    );
-    if (!lastMonthTaxExemptSalesResult.success) {
-      return { success: false, error: lastMonthTaxExemptSalesResult.error };
-    }
-    const lastMonthTaxExemptSalesFile = lastMonthTaxExemptSalesResult.downloadedFile;
-    console.log('[Hometax] ✓ (6/9) Completed:', lastMonthTaxExemptSalesFile);
-
-    // 7. Collect this month tax-exempt purchase (전자계산서 매입)
-    console.log('[Hometax] ▶ (7/9) Collecting this month 전자계산서 매입...');
-    const thisMonthTaxExemptPurchaseResult = await connectToHometax(
-      certificateData,
-      certificatePassword,
-      'purchase',
-      'tax-exempt',
-      thisYear,
-      thisMonth
-    );
-    if (!thisMonthTaxExemptPurchaseResult.success) {
-      return { success: false, error: thisMonthTaxExemptPurchaseResult.error };
-    }
-    const thisMonthTaxExemptPurchaseFile = thisMonthTaxExemptPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (7/9) Completed:', thisMonthTaxExemptPurchaseFile);
-
-    // 8. Collect last month tax-exempt purchase (전자계산서 매입)
-    console.log('[Hometax] ▶ (8/9) Collecting last month 전자계산서 매입...');
-    const lastMonthTaxExemptPurchaseResult = await connectToHometax(
-      certificateData,
-      certificatePassword,
-      'purchase',
-      'tax-exempt',
-      lastYear,
-      lastMonth
-    );
-    if (!lastMonthTaxExemptPurchaseResult.success) {
-      return { success: false, error: lastMonthTaxExemptPurchaseResult.error };
-    }
-    const lastMonthTaxExemptPurchaseFile = lastMonthTaxExemptPurchaseResult.downloadedFile;
-    console.log('[Hometax] ✓ (8/9) Completed:', lastMonthTaxExemptPurchaseFile);
-
-    // 9. Collect current week cash receipts (현금영수증)
-    console.log('[Hometax] ▶ (9/9) Collecting current week 현금영수증...');
-    const cashReceiptResult = await downloadCashReceipts(certificateData, certificatePassword);
-    if (!cashReceiptResult.success) {
-      console.warn('[Hometax] ⚠️  Cash receipt download failed, but continuing:', cashReceiptResult.error);
-      // Don't fail the entire collection if cash receipts fail - they might not have any
-    }
-    const cashReceiptFile = cashReceiptResult.downloadedFile;
-    console.log('[Hometax] ✓ (9/9) Completed:', cashReceiptFile);
-
-    console.log('[Hometax] ==================== ✅ All 9 collections completed! ====================');
     return {
       success: true,
-      thisMonthSalesFile,
-      lastMonthSalesFile,
-      thisMonthPurchaseFile,
-      lastMonthPurchaseFile,
-      thisMonthTaxExemptSalesFile,
-      lastMonthTaxExemptSalesFile,
-      thisMonthTaxExemptPurchaseFile,
-      lastMonthTaxExemptPurchaseFile,
-      cashReceiptFile
+      thisMonthSalesFile: findFile(thisYear, thisMonth, 'sales', 'tax'),
+      lastMonthSalesFile: findFile(lastYear, lastMonth, 'sales', 'tax'),
+      thisMonthPurchaseFile: findFile(thisYear, thisMonth, 'purchase', 'tax'),
+      lastMonthPurchaseFile: findFile(lastYear, lastMonth, 'purchase', 'tax'),
+      thisMonthTaxExemptSalesFile: findFile(thisYear, thisMonth, 'sales', 'tax-exempt'),
+      lastMonthTaxExemptSalesFile: findFile(lastYear, lastMonth, 'sales', 'tax-exempt'),
+      thisMonthTaxExemptPurchaseFile: findFile(thisYear, thisMonth, 'purchase', 'tax-exempt'),
+      lastMonthTaxExemptPurchaseFile: findFile(lastYear, lastMonth, 'purchase', 'tax-exempt'),
+      cashReceiptFile: files.find(f => f.type === 'cash-receipt')?.path
     };
-
-  } catch (error) {
-    console.error('[Hometax] Error collecting tax invoices:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  } finally {
-    // CRITICAL FIX: Always close browser after collecting tax invoices
-    try {
-      console.log('[Hometax] Closing browser...');
-      await disconnectFromHometax();
-      console.log('[Hometax] ✅ Browser closed successfully');
-    } catch (cleanupError) {
-      console.error('[Hometax] Failed to close browser:', cleanupError);
-    }
-  }
 }
+
