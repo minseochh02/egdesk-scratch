@@ -1315,6 +1315,25 @@ const createWindow = async () => {
           const financeHubDb = getSQLiteManager().getFinanceHubManager();
           const { resolveKoreanBankLabelToId } = require('./financehub/utils/bankLabelToId');
 
+          const digitsOnly = (v: string | null | undefined) => String(v ?? '').replace(/\D/g, '');
+          /** SERP: when 은행 text is unknown, map to the sole existing bank account with same digits (excludes serp / *-card). */
+          const uniqueBankIdByAccountDigits = (() => {
+            const byDigits = new Map<string, Set<string>>();
+            for (const acc of financeHubDb.getAllAccounts()) {
+              const bid = acc.bankId;
+              if (bid === 'serp' || bid.endsWith('-card')) continue;
+              const d = digitsOnly(acc.accountNumber);
+              if (d.length < 6) continue;
+              if (!byDigits.has(d)) byDigits.set(d, new Set());
+              byDigits.get(d)!.add(bid);
+            }
+            const out = new Map<string, string>();
+            for (const [d, set] of byDigits) {
+              if (set.size === 1) out.set(d, [...set][0]!);
+            }
+            return out;
+          })();
+
           const fallbackAcct =
             (accountNumber && String(accountNumber).trim()) ||
             (extractedData.metadata as { accountNumber?: string })?.accountNumber ||
@@ -1360,6 +1379,14 @@ const createWindow = async () => {
             const label = rowBankLabel(tx);
             const resolved = label ? resolveKoreanBankLabelToId(label) : null;
             if (resolved) return resolved;
+            const acctDigits = digitsOnly(rowAccountNumber(tx));
+            const fromSaved = acctDigits ? uniqueBankIdByAccountDigits.get(acctDigits) : undefined;
+            if (fromSaved) {
+              ctx.log(
+                `은행 라벨 "${label || '(없음)'}" 미매핑 → 저장된 계좌번호로 은행 ${fromSaved} 사용`
+              );
+              return fromSaved;
+            }
             if (label) {
               console.warn(`[bank-excel-import] Unmapped 은행 "${label}", storing under serp`);
             }
