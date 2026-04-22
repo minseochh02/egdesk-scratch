@@ -51,7 +51,11 @@ import {
   CATEGORY_LABELS,
   CARD_CATEGORY_LABELS,
 } from './types';
-import { formatAccountNumber, formatCurrency, getBankInfo, toCanonicalBankId } from './utils';
+import { formatAccountNumber, formatCurrency, formatDate, getBankInfo, toCanonicalBankId } from './utils';
+import {
+  buildBcCardQueryChunksForYearMonthRange,
+  yearMonthKey,
+} from './bcCardRangeSyncDates';
 import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 
 // Sub-components
@@ -199,6 +203,21 @@ const FinanceHub: React.FC = () => {
     month: (new Date().getMonth() + 1).toString().padStart(2, '0') 
   });
   const [hometaxSyncProgress, setHometaxSyncProgress] = useState<string | null>(null);
+
+  // BC Card date range sync (monthly chunks)
+  const [showBcCardRangeModal, setShowBcCardRangeModal] = useState<{
+    cardNumber: string;
+    alias: string;
+  } | null>(null);
+  const [bcCardRangeStart, setBcCardRangeStart] = useState({
+    year: new Date().getFullYear().toString(),
+    month: (new Date().getMonth() + 1).toString().padStart(2, '0'),
+  });
+  const [bcCardRangeEnd, setBcCardRangeEnd] = useState({
+    year: new Date().getFullYear().toString(),
+    month: (new Date().getMonth() + 1).toString().padStart(2, '0'),
+  });
+  const [bcCardSyncProgress, setBcCardSyncProgress] = useState<string | null>(null);
 
   // Arduino port settings state
   const [arduinoPort, setArduinoPort] = useState<string>('COM3');
@@ -1249,6 +1268,146 @@ const FinanceHub: React.FC = () => {
       console.error('[FinanceHub] Card sync error:', error);
       alert(`카드 거래내역 동기화 실패: ${error?.message || error}`);
     } finally {
+      setIsSyncingCard(null);
+    }
+  };
+
+  const handleStartBcCardRangeSync = async () => {
+    if (!showBcCardRangeModal) return;
+
+    const { cardNumber } = showBcCardRangeModal;
+    const sy = parseInt(bcCardRangeStart.year, 10);
+    const sm = parseInt(bcCardRangeStart.month, 10);
+    const ey = parseInt(bcCardRangeEnd.year, 10);
+    const em = parseInt(bcCardRangeEnd.month, 10);
+
+    if (yearMonthKey(sy, sm) > yearMonthKey(ey, em)) {
+      alert('시작 연월이 종료 연월보다 늦을 수 없습니다.');
+      return;
+    }
+
+    const monthCount = yearMonthKey(ey, em) - yearMonthKey(sy, sm) + 1;
+    if (monthCount > 24) {
+      alert('최대 24개월까지만 선택할 수 있습니다.');
+      return;
+    }
+
+    const chunks = buildBcCardQueryChunksForYearMonthRange(sy, sm, ey, em, 30);
+    if (chunks.length === 0) {
+      alert('동기화할 기간이 없습니다.');
+      return;
+    }
+
+    setShowBcCardRangeModal(null);
+    setIsSyncingCard('bc-card');
+
+    let totalInserted = 0;
+    let totalSkipped = 0;
+    let chunksWithData = 0;
+
+    try {
+      const cardConnection = connectedCards.find((c) => c.cardCompanyId === 'bc-card');
+
+      for (let i = 0; i < chunks.length; i += 1) {
+        const ch = chunks[i];
+        setBcCardSyncProgress(
+          `(${i + 1}/${chunks.length}) ${ch.label} · ${formatDate(ch.startDate)} ~ ${formatDate(ch.endDate)} 조회 중...`
+        );
+
+        const result = await window.electron.financeHub.card.getTransactions(
+          'bc-card',
+          cardNumber,
+          ch.startDate,
+          ch.endDate
+        );
+
+        if (!result.success || !result.transactions) {
+          throw new Error(result.error || '거래내역 조회 실패');
+        }
+
+        const transactionsData =
+          result.transactions[0]?.extractedData?.transactions || [];
+
+        if (transactionsData.length === 0) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+
+        chunksWithData += 1;
+
+        const transactionsByCard = new Map<string, any[]>();
+        transactionsData.forEach((tx: any) => {
+          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || 'unknown';
+          if (!transactionsByCard.has(txCardNumber)) {
+            transactionsByCard.set(txCardNumber, []);
+          }
+          transactionsByCard.get(txCardNumber)!.push(tx);
+        });
+
+        for (const [txCardNumber, cardTransactions] of transactionsByCard.entries()) {
+          const cardInfo = cardConnection?.cards?.find(
+            (c) => c.cardNumber.includes(txCardNumber) || txCardNumber.includes(c.cardNumber)
+          );
+
+          const accountData = {
+            accountNumber: txCardNumber,
+            accountName: cardInfo?.cardName || `BC카드 ${txCardNumber}`,
+            customerName: cardConnection?.alias || '',
+            balance: 0,
+          };
+
+          const syncMetadata = {
+            queryPeriodStart: ch.startDate,
+            queryPeriodEnd: ch.endDate,
+            excelFilePath: result.transactions[0]?.path || '',
+          };
+
+          const importResult = await window.electron.financeHubDb.importTransactions(
+            'bc-card',
+            accountData,
+            cardTransactions,
+            syncMetadata,
+            true
+          );
+
+          if (!importResult.success) {
+            throw new Error(importResult.error || '데이터베이스 저장 실패');
+          }
+          totalInserted += importResult.data.inserted || 0;
+          totalSkipped += importResult.data.skipped || 0;
+        }
+
+        await new Promise((r) => setTimeout(r, 400));
+      }
+
+      await Promise.all([loadDatabaseStats(), loadRecentSyncOperations(), refreshAll()]);
+
+      setConnectedCards((prev) =>
+        prev.map((c) =>
+          c.cardCompanyId === 'bc-card' ? { ...c, lastSync: new Date() } : c
+        )
+      );
+
+      const spreadsheetUpdate = await autoUpdateSpreadsheet('card');
+      let spreadsheetMsg = spreadsheetUpdate.updated
+        ? '\n\n📊 스프레드시트 자동 업데이트 완료!'
+        : '';
+
+      if (spreadsheetUpdate.updated) {
+        const cleanup = await cleanupDownloadedFiles('bc-card');
+        if (cleanup.cleaned && cleanup.count > 0) {
+          spreadsheetMsg += `\n🗑️ 다운로드 파일 ${cleanup.count}개 정리 완료`;
+        }
+      }
+
+      alert(
+        `✅ BC카드 기간 동기화 완료!\n\n• 새로 추가: ${totalInserted}건\n• 중복 건너뜀: ${totalSkipped}건\n• 조회 구간 수: ${chunks.length}개 (${chunksWithData}개 구간에 거래 존재)${spreadsheetMsg}`
+      );
+    } catch (error: unknown) {
+      console.error('[FinanceHub] BC Card range sync error:', error);
+      alert(`BC카드 기간 동기화 실패: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBcCardSyncProgress(null);
       setIsSyncingCard(null);
     }
   };
@@ -2891,45 +3050,64 @@ const FinanceHub: React.FC = () => {
                                 <strong>⚠️ {connection.cardCompanyId === 'shinhan-card' ? '신한카드: 최대 7일' : connection.cardCompanyId === 'bc-card' ? 'BC카드: 최대 1개월' : '하나카드: 최대 1년'}</strong>, 모든 부서·카드 일괄 동기화
                               </div>
                             </div>
-                            <div className="finance-hub__sync-dropdown" style={{ display: 'inline-block' }}>
-                              <button
-                                className="finance-hub__btn finance-hub__btn--primary"
-                                onClick={() => setShowCardSyncOptions(showCardSyncOptions === connection.cardCompanyId ? null : connection.cardCompanyId)}
-                                disabled={isSyncingCard !== null || connection.status === 'pending'}
-                                style={{ fontSize: '13px', padding: '6px 12px' }}
-                              >
-                                <FontAwesomeIcon icon={isSyncingCard === connection.cardCompanyId ? faSpinner : faSync} spin={isSyncingCard === connection.cardCompanyId} />
-                                {' '}전체 동기화
-                              </button>
-                              {showCardSyncOptions === connection.cardCompanyId && !isSyncingCard && (
-                                <div className="finance-hub__sync-options">
-                                  <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'day'); setShowCardSyncOptions(null); }}>
-                                    <FontAwesomeIcon icon={faClock} /> 1일
-                                  </button>
-                                  <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'week'); setShowCardSyncOptions(null); }}>
-                                    <FontAwesomeIcon icon={faClock} /> 1주일 {connection.cardCompanyId === 'shinhan-card' && '(최대)'}
-                                  </button>
-                                  {connection.cardCompanyId === 'shinhan-card' ? null : connection.cardCompanyId === 'bc-card' ? (
-                                    <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
-                                      <FontAwesomeIcon icon={faClock} /> 1개월 (최대)
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <div className="finance-hub__sync-dropdown" style={{ display: 'inline-block' }}>
+                                <button
+                                  className="finance-hub__btn finance-hub__btn--primary"
+                                  onClick={() => setShowCardSyncOptions(showCardSyncOptions === connection.cardCompanyId ? null : connection.cardCompanyId)}
+                                  disabled={isSyncingCard !== null || connection.status === 'pending'}
+                                  style={{ fontSize: '13px', padding: '6px 12px' }}
+                                >
+                                  <FontAwesomeIcon icon={isSyncingCard === connection.cardCompanyId ? faSpinner : faSync} spin={isSyncingCard === connection.cardCompanyId} />
+                                  {' '}전체 동기화
+                                </button>
+                                {showCardSyncOptions === connection.cardCompanyId && !isSyncingCard && (
+                                  <div className="finance-hub__sync-options">
+                                    <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'day'); setShowCardSyncOptions(null); }}>
+                                      <FontAwesomeIcon icon={faClock} /> 1일
                                     </button>
-                                  ) : (
-                                    <>
-                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
-                                        <FontAwesomeIcon icon={faClock} /> 1개월
+                                    <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'week'); setShowCardSyncOptions(null); }}>
+                                      <FontAwesomeIcon icon={faClock} /> 1주일 {connection.cardCompanyId === 'shinhan-card' && '(최대)'}
+                                    </button>
+                                    {connection.cardCompanyId === 'shinhan-card' ? null : connection.cardCompanyId === 'bc-card' ? (
+                                      <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
+                                        <FontAwesomeIcon icon={faClock} /> 1개월 (최대)
                                       </button>
-                                      <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '3months'); setShowCardSyncOptions(null); }}>
-                                        <FontAwesomeIcon icon={faClock} /> 3개월
-                                      </button>
-                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '6months'); setShowCardSyncOptions(null); }}>
-                                        <FontAwesomeIcon icon={faClock} /> 6개월
-                                      </button>
-                                      <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'year'); setShowCardSyncOptions(null); }}>
-                                        <FontAwesomeIcon icon={faClock} /> 1년 (최대)
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
+                                    ) : (
+                                      <>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'month'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1개월
+                                        </button>
+                                        <button className="finance-hub__sync-option finance-hub__sync-option--default" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '3months'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 3개월
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, '6months'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 6개월
+                                        </button>
+                                        <button className="finance-hub__sync-option" onClick={() => { handleSyncCardTransactions(connection.cardCompanyId, connection.cards[0].cardNumber, 'year'); setShowCardSyncOptions(null); }}>
+                                          <FontAwesomeIcon icon={faClock} /> 1년 (최대)
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {connection.cardCompanyId === 'bc-card' && (
+                                <button
+                                  type="button"
+                                  className="finance-hub__btn finance-hub__btn--outline"
+                                  onClick={() => {
+                                    setShowBcCardRangeModal({
+                                      cardNumber: connection.cards[0].cardNumber,
+                                      alias: connection.alias || '',
+                                    });
+                                    setShowCardSyncOptions(null);
+                                  }}
+                                  disabled={isSyncingCard !== null || connection.status === 'pending'}
+                                  style={{ fontSize: '13px', padding: '6px 12px' }}
+                                >
+                                  기간 동기화
+                                </button>
                               )}
                             </div>
                           </div>
@@ -4129,6 +4307,104 @@ const FinanceHub: React.FC = () => {
         </div>
       )}
 
+      {/* BC Card date range modal */}
+      {showBcCardRangeModal && (
+        <div className="finance-hub__modal-overlay" onClick={() => setShowBcCardRangeModal(null)}>
+          <div className="finance-hub__modal finance-hub__modal--small" onClick={(e) => e.stopPropagation()}>
+            <div className="finance-hub__modal-header">
+              <h2>BC카드 동기화 기간</h2>
+              <button type="button" className="finance-hub__modal-close" onClick={() => setShowBcCardRangeModal(null)}>✕</button>
+            </div>
+            <div className="finance-hub__modal-body" style={{ padding: '24px' }}>
+              <p style={{ marginBottom: '20px', color: 'var(--fh-text-muted)' }}>
+                <strong>BC카드</strong>
+                {showBcCardRangeModal.alias ? ` (${showBcCardRangeModal.alias}님)` : ''} 거래내역을 가져올 연월 범위를 선택하세요.
+                <br />
+                조회는 달력 월 단위로 나뉘며, 한 번에 최대 30일까지만 요청합니다(31일 달은 자동 분할).
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                <div className="finance-hub__input-group">
+                  <label>시작 연월</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      className="finance-hub__input"
+                      value={bcCardRangeStart.year}
+                      onChange={(e) => setBcCardRangeStart((prev) => ({ ...prev, year: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 10 + i).map((y) => (
+                        <option key={y} value={String(y)}>{y}년</option>
+                      ))}
+                    </select>
+                    <select
+                      className="finance-hub__input"
+                      value={bcCardRangeStart.month}
+                      onChange={(e) => setBcCardRangeStart((prev) => ({ ...prev, month: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0')).map((m) => (
+                        <option key={m} value={m}>{m}월</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="finance-hub__input-group">
+                  <label>종료 연월</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      className="finance-hub__input"
+                      value={bcCardRangeEnd.year}
+                      onChange={(e) => setBcCardRangeEnd((prev) => ({ ...prev, year: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 10 + i).map((y) => (
+                        <option key={y} value={String(y)}>{y}년</option>
+                      ))}
+                    </select>
+                    <select
+                      className="finance-hub__input"
+                      value={bcCardRangeEnd.month}
+                      onChange={(e) => setBcCardRangeEnd((prev) => ({ ...prev, month: e.target.value }))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0')).map((m) => (
+                        <option key={m} value={m}>{m}월</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="finance-hub__btn finance-hub__btn--outline finance-hub__btn--full"
+                  onClick={() => {
+                    const now = new Date();
+                    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    setBcCardRangeStart({
+                      year: lastMonth.getFullYear().toString(),
+                      month: (lastMonth.getMonth() + 1).toString().padStart(2, '0'),
+                    });
+                    setBcCardRangeEnd({
+                      year: now.getFullYear().toString(),
+                      month: (now.getMonth() + 1).toString().padStart(2, '0'),
+                    });
+                  }}
+                >
+                  최근 2개월
+                </button>
+                <button
+                  type="button"
+                  className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
+                  onClick={() => void handleStartBcCardRangeSync()}
+                >
+                  동기화 시작
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Syncing Progress Overlay */}
       {hometaxSyncProgress && (
         <div className="finance-hub__modal-overlay" style={{ zIndex: 1100 }}>
@@ -4138,6 +4414,19 @@ const FinanceHub: React.FC = () => {
             <p style={{ color: 'var(--fh-text-muted)', fontSize: '1.1rem' }}>{hometaxSyncProgress}</p>
             <p style={{ marginTop: '20px', fontSize: '0.9rem', color: '#ff6b6b' }}>
               ⚠️ 수집이 완료될 때까지 브라우저나 앱 창을 닫지 마세요.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {bcCardSyncProgress && (
+        <div className="finance-hub__modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="finance-hub__modal finance-hub__modal--small" style={{ textAlign: 'center', padding: '40px' }}>
+            <div className="finance-hub__spinner finance-hub__spinner--large" style={{ margin: '0 auto 24px' }}></div>
+            <h3 style={{ marginBottom: '12px' }}>BC카드 거래내역 동기화 중</h3>
+            <p style={{ color: 'var(--fh-text-muted)', fontSize: '1.1rem' }}>{bcCardSyncProgress}</p>
+            <p style={{ marginTop: '20px', fontSize: '0.9rem', color: '#ff6b6b' }}>
+              ⚠️ 동기화가 끝날 때까지 브라우저나 앱 창을 닫지 마세요.
             </p>
           </div>
         </div>
