@@ -12,7 +12,8 @@ function resolveKoreanBankLabelToId(raw) {
   // Longer / specific patterns first
   if (s.includes('카카오')) return 'kakao';
   if (s.includes('토스')) return 'toss';
-  if (s.includes('ibk') || s.includes('기업은행')) return 'ibk';
+  // IBK: SERP/aggregators often use "기업" alone (기업은행)
+  if (s.includes('ibk') || s.includes('기업은행') || s === '기업') return 'ibk';
   if (s.includes('농협') || s.includes('nh') || s === 'nhbank') return 'nh';
   if (s.includes('국민') || s.includes('kookmin') || (s.includes('kb') && !s.includes('카드'))) return 'kookmin';
   if (s.includes('신한')) return 'shinhan';
