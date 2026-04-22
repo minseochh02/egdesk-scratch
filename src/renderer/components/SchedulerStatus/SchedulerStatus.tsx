@@ -14,7 +14,7 @@ import {
 import './SchedulerStatus.css';
 
 interface ScheduleTask {
-  entityType: 'card' | 'bank' | 'tax';
+  entityType: 'card' | 'bank' | 'tax' | 'promissory';
   entityId: string;
   entityName: string;
   enabled: boolean;
@@ -55,7 +55,7 @@ const SchedulerStatus: React.FC = () => {
   const [syncingEntities, setSyncingEntities] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'>('all');
-  const [filterType, setFilterType] = useState<'all' | 'card' | 'bank' | 'tax'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'card' | 'bank' | 'tax' | 'promissory'>('all');
   const [filterScheduler, setFilterScheduler] = useState<'all' | 'financehub' | 'docker' | 'playwright' | 'scheduled_posts'>('all');
   const [allIntents, setAllIntents] = useState<ExecutionIntent[]>([]);
   const [totalIntents, setTotalIntents] = useState(0);
@@ -127,6 +127,20 @@ const SchedulerStatus: React.FC = () => {
           }
         });
 
+        // Promissory notes (어음)
+        Object.entries(settingsResult.settings.promissoryNotes || {}).forEach(([bankId, schedule]: [string, any]) => {
+          if (schedule) {
+            tasks.push({
+              entityType: 'promissory',
+              entityId: bankId,
+              entityName: getEntityDisplayName('promissory', bankId),
+              enabled: schedule.enabled,
+              scheduledTime: schedule.time,
+              status: 'pending',
+            });
+          }
+        });
+
         setScheduledTasks(tasks);
       }
 
@@ -188,10 +202,24 @@ const SchedulerStatus: React.FC = () => {
       loadSchedulerData();
     });
 
+    const cleanupPermanent = window.electron.financeHubScheduler.onSyncPermanentlyFailed((data: {
+      entityKey?: string;
+      targetDate?: string;
+      error?: string;
+    }) => {
+      setIsSyncing(false);
+      loadSchedulerData();
+      alert(
+        `Sync permanently failed after max retries: ${data.entityKey ?? 'entity'}\n` +
+          `${data.targetDate ? `Date: ${data.targetDate}\n` : ''}${data.error ?? ''}`
+      );
+    });
+
     return () => {
       cleanupStarted();
       cleanupCompleted();
       cleanupFailed();
+      cleanupPermanent();
     };
   }, []);
 
@@ -208,14 +236,17 @@ const SchedulerStatus: React.FC = () => {
     };
 
     const bankNames: Record<string, string> = {
-      'kookmin': 'KB국민은행',
-      'shinhan': '신한은행',
-      'nh': 'NH농협은행',
-      'nhBusiness': 'NH농협은행(기업)',
+      shinhan: '신한은행',
+      kookmin: 'KB국민은행',
+      nh: 'NH농협은행',
+      ibk: 'IBK기업은행',
+      hana: '하나은행',
+      woori: '우리은행',
     };
 
     if (type === 'card') return cardNames[id] || id;
     if (type === 'bank') return bankNames[id] || id;
+    if (type === 'promissory') return `어음 · ${bankNames[id] || id}`;
     return id;
   };
 
@@ -605,6 +636,7 @@ const SchedulerStatus: React.FC = () => {
             <option value="card">Cards</option>
             <option value="bank">Banks</option>
             <option value="tax">Tax</option>
+            <option value="promissory">Promissory (어음)</option>
           </select>
         </div>
         <div className="scheduler-status__filter-group">
@@ -638,7 +670,13 @@ const SchedulerStatus: React.FC = () => {
                   <div className="scheduler-status__task-header">
                     <div className="scheduler-status__task-info">
                       <span className={`scheduler-status__task-type scheduler-status__task-type--${task.entityType}`}>
-                        {task.entityType === 'card' ? '💳' : task.entityType === 'bank' ? '🏦' : '📄'}
+                        {task.entityType === 'card'
+                          ? '💳'
+                          : task.entityType === 'bank'
+                            ? '🏦'
+                            : task.entityType === 'promissory'
+                              ? '📜'
+                              : '📄'}
                         {task.entityType.toUpperCase()}
                       </span>
                       <h3>{task.entityName}</h3>
@@ -1049,7 +1087,8 @@ const SchedulerStatus: React.FC = () => {
             <div className="scheduler-status__diagnostic-section">
               <h3>🔄 Tasks Eligible for Recovery ({diagnostics.missedTasks?.length || 0})</h3>
               <p style={{ fontSize: '13px', color: '#9CA3AF', marginBottom: '12px' }}>
-                Tasks where execution window has passed and status is 'pending' or 'failed' (retry_count &lt; 5)
+                Tasks where execution window has passed and status is 'pending' or 'failed' (retry_count &lt;{' '}
+                {schedulerSettings?.retryCount ?? 3})
               </p>
               {diagnostics.missedTasks && diagnostics.missedTasks.length > 0 ? (
                 <div className="scheduler-status__table-scroll" style={{ maxHeight: '300px' }}>
@@ -1075,7 +1114,9 @@ const SchedulerStatus: React.FC = () => {
                               {task.status}
                             </span>
                           </td>
-                          <td>{task.retry_count || 0}/5</td>
+                          <td>
+                            {task.retry_count || 0}/{schedulerSettings?.retryCount ?? 3}
+                          </td>
                           <td style={{ color: '#EF4444', fontSize: '11px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {task.error_message || '-'}
                           </td>

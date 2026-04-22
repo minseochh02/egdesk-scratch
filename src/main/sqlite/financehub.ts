@@ -185,10 +185,11 @@ export function initializeFinanceHubSchema(db: Database.Database): void {
     ['woori', 'Woori Bank', '우리은행', '#0072BC', '🏛️', 0, 'https://www.wooribank.com/'],
     ['hana', 'Hana Bank', '하나은행', '#009775', '🌿', 0, 'https://www.kebhana.com/'],
     ['nh', 'NH Bank', 'NH농협은행', '#00B140', '🌾', 0, 'https://banking.nonghyup.com/'],
-    ['nh-business', 'NH Business Bank', 'NH농협은행(법인)', '#00B140', '🌾', 1, 'https://banking.nonghyup.com/'],
     ['ibk', 'IBK Bank', 'IBK기업은행', '#004A98', '🏢', 0, 'https://www.ibk.co.kr/'],
     ['kakao', 'Kakao Bank', '카카오뱅크', '#FFEB00', '💬', 0, null],
     ['toss', 'Toss Bank', '토스뱅크', '#0064FF', '💸', 0, null],
+    // Excel format bucket (not a bank): SERP unified import; bank_id `serp` for FK + display
+    ['serp', 'SERP Excel', 'SERP 통합 엑셀', '#5C6BC0', '📄', 0, null],
   ];
 
   // Seed card companies (stored in same table as banks)
@@ -473,6 +474,53 @@ export class FinanceHubDbManager {
       icon: row.icon,
       supportsAutomation: !!row.supports_automation,
     };
+  }
+
+  /**
+   * Delete all imported accounts, transactions, and sync rows for a bank id (e.g. `serp`).
+   * Does not remove the `banks` registry row or saved credentials.
+   */
+  deleteImportedDataForBankId(bankId: string): {
+    bankTransactions: number;
+    cardTransactions: number;
+    unifiedTransactions: number;
+    syncOperations: number;
+    accounts: number;
+  } {
+    const id = String(bankId || '').trim();
+    if (!id) {
+      throw new Error('bankId is required');
+    }
+
+    const tableExists = (name: string) =>
+      !!this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name);
+
+    return this.db.transaction(() => {
+      let bankTransactions = 0;
+      let cardTransactions = 0;
+
+      if (tableExists('bank_transactions')) {
+        bankTransactions = this.db.prepare(`DELETE FROM bank_transactions WHERE bank_id = ?`).run(id).changes;
+      }
+      if (tableExists('card_transactions')) {
+        // card_transactions uses card_company_id (FK to banks), not bank_id
+        cardTransactions = this.db
+          .prepare(`DELETE FROM card_transactions WHERE card_company_id = ?`)
+          .run(id).changes;
+      }
+
+      const unifiedTransactions = this.db.prepare(`DELETE FROM transactions WHERE bank_id = ?`).run(id).changes;
+      const syncOperations = this.db.prepare(`DELETE FROM sync_operations WHERE bank_id = ?`).run(id).changes;
+      const accounts = this.db.prepare(`DELETE FROM accounts WHERE bank_id = ?`).run(id).changes;
+
+      return {
+        bankTransactions,
+        cardTransactions,
+        unifiedTransactions,
+        syncOperations,
+        accounts,
+      };
+    })();
   }
 
   // ========================================

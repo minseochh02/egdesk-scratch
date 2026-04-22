@@ -454,51 +454,57 @@ export class DevServerManager {
   }
 
   /**
-   * Initialize a new Next.js project in the given folder
+   * Initialize a new Next.js project in the given folder.
+   * Scaffolds into a temp directory first to avoid conflicts with existing files,
+   * then copies generated files into folderPath (without overwriting existing ones).
    */
   private async initializeNextJsProject(folderPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       console.log(`🚀 Initializing Next.js project in ${folderPath}...`);
 
-      // Use create-next-app with default settings
-      // All flags to make it completely non-interactive
+      // Sanitize folder name for use as a create-next-app project name
+      const projectName = path.basename(folderPath).toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const tempParentDir = path.join(os.tmpdir(), `egdesk-init-${Date.now()}`);
+      const tempProjectDir = path.join(tempParentDir, projectName);
+
+      try {
+        fs.mkdirSync(tempParentDir, { recursive: true });
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
       const args = [
-        'create-next-app@latest',
-        '.',  // Create in current directory
-        '--typescript',  // Use TypeScript
-        '--tailwind',  // Include Tailwind CSS
-        '--eslint',  // Include ESLint
-        '--app',  // Use App Router
-        '--src-dir',  // Use src/ directory
-        '--import-alias', '@/*',  // Set import alias
-        '--use-npm',  // Use npm as package manager
-        '--no-git',  // Don't initialize git (user may already have it)
-        '--skip-install'  // Skip npm install (we'll do it ourselves with better error handling)
+        projectName,
+        '--typescript',
+        '--tailwind',
+        '--eslint',
+        '--app',
+        '--src-dir',
+        '--import-alias', '@/*',
+        '--use-npm',
+        '--no-git',
+        '--skip-install'
       ];
 
-      // Clean environment and add flags to force non-interactive mode
+      // Clean environment and force non-interactive mode
       const cleanEnv = { ...process.env };
       delete cleanEnv.NODE_OPTIONS;
       delete cleanEnv.TS_NODE_PROJECT;
       delete cleanEnv.TS_NODE_TRANSPILE_ONLY;
+      cleanEnv.CI = 'true';
+      cleanEnv.DISABLE_PROMPTS = 'true';
 
-      // Force non-interactive mode to skip all prompts
-      cleanEnv.CI = 'true';  // Tells create-next-app we're in CI mode (no prompts)
-      cleanEnv.DISABLE_PROMPTS = 'true';  // Additional safety
-
-      // Use system npx (on Windows, use npx.cmd explicitly)
       const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-      const initProcess = spawn(npxCommand, ['create-next-app@latest', ...args.slice(1)], {
-        cwd: folderPath,
+      const initProcess = spawn(npxCommand, ['create-next-app@latest', ...args], {
+        cwd: tempParentDir,
         env: cleanEnv,
         shell: true,
-        stdio: ['pipe', 'pipe', 'pipe']  // Allow us to pipe input if needed
+        stdio: ['pipe', 'pipe', 'pipe']
       });
 
-      // Pipe 'n' (No) to stdin to answer any prompts that might still appear
-      // This handles the React Compiler question and any other new prompts
       if (initProcess.stdin) {
-        initProcess.stdin.write('n\n');  // Answer No to React Compiler
+        initProcess.stdin.write('n\n');
         initProcess.stdin.end();
       }
 
@@ -519,15 +525,19 @@ export class DevServerManager {
 
       initProcess.on('close', async (code) => {
         if (code === 0) {
-          console.log('✅ Next.js project initialized successfully');
-          console.log('📦 Created files:');
-          console.log('  - src/app/page.tsx (Home page)');
-          console.log('  - src/app/layout.tsx (Root layout)');
-          console.log('  - package.json (Dependencies)');
-          console.log('  - tailwind.config.ts (Tailwind configuration)');
-          console.log('  - tsconfig.json (TypeScript configuration)');
+          try {
+            // Copy scaffolded files into folderPath without overwriting existing files
+            fs.cpSync(tempProjectDir, folderPath, { recursive: true, force: false, errorOnExist: false });
+            console.log('✅ Next.js project files copied to target folder');
+          } catch (copyError) {
+            console.error('Failed to copy Next.js project files:', copyError);
+            fs.rmSync(tempParentDir, { recursive: true, force: true });
+            reject(copyError);
+            return;
+          }
 
-          // Now install dependencies since we skipped it during create-next-app
+          fs.rmSync(tempParentDir, { recursive: true, force: true });
+
           try {
             console.log('📦 Installing dependencies...');
             await this.installDependencies(folderPath, 'npm');
@@ -538,6 +548,7 @@ export class DevServerManager {
             reject(installError);
           }
         } else {
+          fs.rmSync(tempParentDir, { recursive: true, force: true });
           const errorMsg = `Next.js initialization failed with code ${code}\nStdout: ${stdoutOutput}\nStderr: ${errorOutput}`;
           console.error(errorMsg);
           reject(new Error(errorMsg));
@@ -545,6 +556,7 @@ export class DevServerManager {
       });
 
       initProcess.on('error', (error) => {
+        fs.rmSync(tempParentDir, { recursive: true, force: true });
         console.error('Next.js init process error:', error);
         reject(error);
       });
@@ -1921,9 +1933,9 @@ export default nextConfig;
       return existing;
     }
 
-    // Check if folder is empty - if so, initialize Next.js
-    if (this.isFolderEmpty(folderPath)) {
-      console.log('📂 Empty folder detected - setting up Next.js project...');
+    // Check if folder has no package.json - if so, initialize Next.js
+    if (!fs.existsSync(path.join(folderPath, 'package.json'))) {
+      console.log('📂 No package.json found - setting up Next.js project...');
       await this.initializeNextJsProject(folderPath);
     }
 

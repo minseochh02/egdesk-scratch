@@ -45,6 +45,7 @@ interface TaxInvoicesPageProps {
   onSort: (key: string) => void;
   onCollectAll?: () => void;
   onExport?: () => void;
+  onImportExcel?: () => void;
   onClearSpreadsheet?: () => void;
   onGoogleSignIn?: () => void;
   onCloseGoogleAuth?: () => void;
@@ -74,6 +75,7 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
   onSort,
   onCollectAll,
   onExport,
+  onImportExcel,
   onClearSpreadsheet,
   onGoogleSignIn,
   onCloseGoogleAuth,
@@ -136,6 +138,14 @@ const TaxInvoicesPage: React.FC<TaxInvoicesPageProps> = ({
             onClick={() => setShowFilters(!showFilters)}
           >
             🔍 {showFilters ? '필터 숨기기' : '필터 보기'}
+          </button>
+          <button
+            className="tip-btn tip-btn--outline"
+            onClick={onImportExcel}
+            disabled={!onImportExcel}
+            title="홈택스에서 내려받은 Excel 파일을 가져옵니다 (현재 탭 유형과 일치하는 파일)"
+          >
+            📄 Excel 가져오기
           </button>
           <button
             className="tip-btn tip-btn--outline"

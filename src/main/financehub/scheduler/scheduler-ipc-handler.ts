@@ -155,6 +155,12 @@ export function registerFinanceHubSchedulerHandlers(): void {
     });
   });
 
+  scheduler.on('sync-permanently-failed', (payload: Record<string, unknown>) => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('finance-hub:scheduler:sync-permanently-failed', payload);
+    });
+  });
+
   // Get debug log
   ipcMain.handle('finance-hub:scheduler:get-debug-log', async () => {
     try {

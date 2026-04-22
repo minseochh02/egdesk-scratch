@@ -2251,6 +2251,12 @@ const electronHandler = {
     /** Bank-scoped 어음 sync (no per-account range; one action per connected bank). */
     syncPromissoryNotes: (bankId: string) =>
       ipcRenderer.invoke('finance-hub:sync-promissory-notes', { bankId }),
+    bank: {
+      importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
+        ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),
+      deleteImportedDataForBankId: (bankId: string) =>
+        ipcRenderer.invoke('finance-hub:delete-imported-data-for-bank', { bankId }),
+    },
     // Card company methods
     card: {
       loginAndGetCards: (cardCompanyId: string, credentials: CardCredentials, proxyUrl?: string, manualPassword?: boolean) =>
@@ -2325,6 +2331,11 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:get-tax-exempt-invoices', filters),
     getCashReceipts: (filters: any) =>
       ipcRenderer.invoke('hometax:get-cash-receipts', filters),
+    importExcel: (
+      filePath: string,
+      kind: 'sales' | 'purchase' | 'tax-exempt-sales' | 'tax-exempt-purchase' | 'cash-receipt',
+      businessNumber?: string
+    ) => ipcRenderer.invoke('hometax:import-excel', { filePath, kind, businessNumber }),
     getSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase') =>
       ipcRenderer.invoke('hometax:get-spreadsheet-url', businessNumber, invoiceType),
     saveSpreadsheetUrl: (businessNumber: string, invoiceType: 'sales' | 'purchase', spreadsheetUrl: string) =>
@@ -2452,6 +2463,10 @@ const electronHandler = {
     onSyncFailed: (callback: (data: any) => void) => {
       ipcRenderer.on('finance-hub:scheduler:sync-failed', (event, data) => callback(data));
       return () => ipcRenderer.removeAllListeners('finance-hub:scheduler:sync-failed');
+    },
+    onSyncPermanentlyFailed: (callback: (data: any) => void) => {
+      ipcRenderer.on('finance-hub:scheduler:sync-permanently-failed', (event, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('finance-hub:scheduler:sync-permanently-failed');
     },
     onSettingsUpdated: (callback: (settings: any) => void) => {
       ipcRenderer.on('finance-hub:scheduler:settings-updated', (event, settings) => callback(settings));

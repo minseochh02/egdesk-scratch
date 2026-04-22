@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { getSchedulerRecoveryService } from './recovery-service';
+import { formatLocalDateString, getSchedulerRecoveryService, resolveMaxIntentRetries } from './recovery-service';
 
 /**
  * Register IPC handlers for scheduler recovery system
@@ -86,7 +86,8 @@ export function registerSchedulerRecoveryHandlers(): void {
       const recoveryService = getSchedulerRecoveryService();
       const db = recoveryService['getDb']();
       const now = new Date();
-      const today = now.toISOString().split('T')[0];
+      const today = formatLocalDateString(now);
+      const maxIntentRetries = resolveMaxIntentRetries();
 
       // Get today's tasks
       const todayTasks = db.prepare(`
@@ -109,7 +110,7 @@ export function registerSchedulerRecoveryHandlers(): void {
       // Get missed tasks eligible for recovery
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 3);
-      const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+      const cutoffDateStr = formatLocalDateString(cutoffDate);
 
       const missedTasks = db.prepare(`
         SELECT
@@ -124,9 +125,9 @@ export function registerSchedulerRecoveryHandlers(): void {
         WHERE status IN ('pending', 'failed')
           AND intended_date >= ?
           AND execution_window_end < ?
-          AND COALESCE(retry_count, 0) < 5
+          AND COALESCE(retry_count, 0) < ?
         ORDER BY intended_date ASC, intended_time ASC
-      `).all(cutoffDateStr, now.toISOString());
+      `).all(cutoffDateStr, now.toISOString(), maxIntentRetries);
 
       // Get stuck running tasks
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -149,6 +150,7 @@ export function registerSchedulerRecoveryHandlers(): void {
           todayTasks: todayTasks,
           missedTasks: missedTasks,
           stuckTasks: stuckTasks,
+          maxIntentRetries,
           totalIntentsInDb: db.prepare('SELECT COUNT(*) as count FROM scheduler_execution_intents').get(),
         }
       };
@@ -169,7 +171,7 @@ export function registerSchedulerRecoveryHandlers(): void {
       const lookbackDays = options?.lookbackDays || 7;
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
-      const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+      const cutoffDateStr = formatLocalDateString(cutoffDate);
 
       const result = db.prepare(`
         UPDATE scheduler_execution_intents

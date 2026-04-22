@@ -240,7 +240,7 @@ class BaseBankAutomator {
     let persistentProfileDir = null;
 
     // Bank-excel scripts use os.tmpdir() + playwright-profile-*; this must win over config.chromeProfile
-    // when launchOverrides.useKbScriptPlaywrightProfile is true (e.g. nh-business had chromeProfile: 'Default').
+    // when launchOverrides.useKbScriptPlaywrightProfile is true (e.g. KB script profile).
     if (launchOverrides.useKbScriptPlaywrightProfile === true) {
       try {
         persistentProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));

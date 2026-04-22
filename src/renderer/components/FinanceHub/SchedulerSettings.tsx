@@ -12,6 +12,7 @@ interface ScheduleSettings {
   enabled: boolean;
   retryCount: number;
   retryDelayMinutes: number;
+  retryDelayMaxMinutes?: number;
   spreadsheetSyncEnabled?: boolean;
 
   cards: {
@@ -26,14 +27,20 @@ interface ScheduleSettings {
   };
 
   banks: {
+    shinhan?: EntitySchedule;
     kookmin?: EntitySchedule;
     nh?: EntitySchedule;
-    nhBusiness?: EntitySchedule;
-    shinhan?: EntitySchedule;
+    ibk?: EntitySchedule;
+    hana?: EntitySchedule;
+    woori?: EntitySchedule;
   };
 
   tax: {
     [businessNumber: string]: EntitySchedule;
+  };
+
+  promissoryNotes: {
+    [bankId: string]: EntitySchedule;
   };
 
   lastSyncTime?: string;
@@ -52,10 +59,17 @@ const CARD_LABELS: Record<string, string> = {
 };
 
 const BANK_LABELS: Record<string, string> = {
+  shinhan: '신한은행',
   kookmin: 'KB국민은행',
   nh: 'NH농협은행',
-  nhBusiness: 'NH농협기업은행',
-  shinhan: '신한은행',
+  ibk: 'IBK기업은행',
+  hana: '하나은행',
+  woori: '우리은행',
+};
+
+/** 어음 스케줄 라벨 (은행별 syncPromissoryNotes 지원 시 확장) */
+const PROMISSORY_LABELS: Record<string, string> = {
+  ibk: 'IBK 어음(외상매출채권)',
 };
 
 export const SchedulerSettings: React.FC = () => {
@@ -69,6 +83,7 @@ export const SchedulerSettings: React.FC = () => {
   const [cardsExpanded, setCardsExpanded] = useState(true);
   const [banksExpanded, setBanksExpanded] = useState(true);
   const [taxExpanded, setTaxExpanded] = useState(true);
+  const [promissoryExpanded, setPromissoryExpanded] = useState(true);
 
   useEffect(() => {
     loadSettings();
@@ -89,6 +104,18 @@ export const SchedulerSettings: React.FC = () => {
         setSyncing(false);
         loadLastSyncInfo();
         alert(`❌ ${data.entityType} 동기화 실패: ${data.entityId} - ${data.error}`);
+      }),
+      window.electron.financeHubScheduler.onSyncPermanentlyFailed((data: {
+        entityKey?: string;
+        targetDate?: string;
+        error?: string;
+      }) => {
+        setSyncing(false);
+        loadLastSyncInfo();
+        alert(
+          `⛔ 재시도 한도 초과 — 수동 확인 필요: ${data.entityKey ?? 'entity'}\n` +
+            `${data.targetDate ? `날짜: ${data.targetDate}\n` : ''}${data.error ?? ''}`
+        );
       }),
       window.electron.financeHubScheduler.onSettingsUpdated((newSettings) => {
         setSettings(newSettings);
@@ -150,7 +177,7 @@ export const SchedulerSettings: React.FC = () => {
     }
   };
 
-  const handleEntityToggle = async (entityType: 'cards' | 'banks' | 'tax', entityId: string) => {
+  const handleEntityToggle = async (entityType: 'cards' | 'banks' | 'tax' | 'promissoryNotes', entityId: string) => {
     if (!settings) return;
 
     const currentSchedule = settings[entityType][entityId as keyof typeof settings[typeof entityType]];
@@ -177,7 +204,7 @@ export const SchedulerSettings: React.FC = () => {
     }
   };
 
-  const handleEntityTimeChange = async (entityType: 'cards' | 'banks' | 'tax', entityId: string, newTime: string) => {
+  const handleEntityTimeChange = async (entityType: 'cards' | 'banks' | 'tax' | 'promissoryNotes', entityId: string, newTime: string) => {
     if (!settings) return;
 
     const currentSchedule = settings[entityType][entityId as keyof typeof settings[typeof entityType]];
@@ -291,7 +318,12 @@ export const SchedulerSettings: React.FC = () => {
     return null;
   };
 
-  const renderEntitySchedule = (entityType: 'cards' | 'banks' | 'tax', entityId: string, label: string, schedule?: EntitySchedule) => {
+  const renderEntitySchedule = (
+    entityType: 'cards' | 'banks' | 'tax' | 'promissoryNotes',
+    entityId: string,
+    label: string,
+    schedule?: EntitySchedule
+  ) => {
     if (!schedule) return null;
 
     return (
@@ -387,6 +419,27 @@ export const SchedulerSettings: React.FC = () => {
                 <div className="scheduler-settings__empty">
                   저장된 사업자가 없습니다. Hometax 탭에서 사업자를 추가하세요.
                 </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Promissory notes (어음) — bank keys with automator support */}
+        <div className="scheduler-settings__section">
+          <div className="scheduler-settings__section-header" onClick={() => setPromissoryExpanded(!promissoryExpanded)}>
+            <FontAwesomeIcon icon={promissoryExpanded ? faChevronDown : faChevronRight} />
+            <h3>
+              어음 ({Object.values(settings.promissoryNotes || {}).filter((s) => s?.enabled).length}/
+              {Object.keys(settings.promissoryNotes || {}).length})
+            </h3>
+          </div>
+          {promissoryExpanded && (
+            <div className="scheduler-settings__section-content">
+              {Object.entries(settings.promissoryNotes || {}).map(([bankId, schedule]) =>
+                renderEntitySchedule('promissoryNotes', bankId, PROMISSORY_LABELS[bankId] || `${bankId} 어음`, schedule)
+              )}
+              {Object.keys(settings.promissoryNotes || {}).length === 0 && (
+                <div className="scheduler-settings__empty">어음 스케줄이 없습니다.</div>
               )}
             </div>
           )}

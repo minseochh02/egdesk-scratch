@@ -13,7 +13,6 @@ const { BaseBankAutomator, BaseCardAutomator } = require('./core');
 const shinhan = require('./banks/shinhan');
 const kookmin = require('./banks/kookmin');
 const nh = require('./banks/nh');
-const nhBusiness = require('./banks/nh-business');
 const ibk = require('./banks/ibk');
 const hana = require('./banks/hana');
 const woori = require('./banks/woori');
@@ -45,15 +44,6 @@ const BANKS = {
     run: async (username, password, id, proxyUrl) => {
       const automator = nh.createNHAutomator();
       return automator.login({ userId: id, password }, proxyUrl);
-    },
-  },
-  'nh-business': {
-    config: nhBusiness.NH_BUSINESS_BANK_INFO,
-    Automator: nhBusiness.NHBusinessBankAutomator,
-    create: nhBusiness.createNHBusinessAutomator,
-    run: async (certificatePassword, proxyUrl) => {
-      const automator = nhBusiness.createNHBusinessAutomator();
-      return automator.login({ certificatePassword }, proxyUrl);
     },
   },
   ibk: {
@@ -133,7 +123,6 @@ module.exports = {
   shinhan,
   kookmin,
   nh,
-  nhBusiness,
   ibk,
   hana,
   woori,

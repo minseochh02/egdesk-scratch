@@ -94,7 +94,6 @@ export const PROFILE_PREFIXES = {
   BANK_SHINHAN: 'bank-shinhan',
   BANK_KOOKMIN: 'bank-kookmin',
   BANK_NH: 'bank-nh',
-  BANK_NH_BUSINESS: 'bank-nh-business',
 } as const;
 
 /**
@@ -136,9 +135,5 @@ export const CREDENTIAL_ENV_VARS: Record<string, { username: string; password: s
   nh: {
     username: 'NH_USERNAME',
     password: 'NH_PASSWORD',
-  },
-  'nh-business': {
-    username: 'NH_BUSINESS_USERNAME',
-    password: 'NH_BUSINESS_PASSWORD',
   },
 };

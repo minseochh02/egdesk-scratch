@@ -14,8 +14,9 @@ const BANK_EXCEL_HEADER_ROW_1BASED = {
   kookmin: 7,
   ibk: 3,
   woori: 4,
-  'nh-business': 10,
   nh: 10,
+  /** Excel format profile (not a bank): unified SERP export; header row 6 */
+  serp: 6,
 };
 
 const DEFAULT_HEADER_MAPPING = {
@@ -70,9 +71,10 @@ function resolveFixedHeaderRowIndex(ctx) {
   if (ctx && typeof ctx.excelHeaderRow === 'number' && ctx.excelHeaderRow >= 1) {
     return ctx.excelHeaderRow - 1;
   }
-  const bankId = ctx && ctx.config && ctx.config.bank && ctx.config.bank.id;
-  if (!bankId) return null;
-  const row1 = BANK_EXCEL_HEADER_ROW_1BASED[String(bankId).toLowerCase()];
+  const bankIdRaw = ctx && ctx.config && ctx.config.bank && ctx.config.bank.id;
+  if (!bankIdRaw) return null;
+  const bankId = String(bankIdRaw).toLowerCase() === 'nh-business' ? 'nh' : String(bankIdRaw).toLowerCase();
+  const row1 = BANK_EXCEL_HEADER_ROW_1BASED[bankId];
   if (typeof row1 === 'number' && row1 >= 1) {
     return row1 - 1;
   }
@@ -96,6 +98,28 @@ const NH_EXCEL_COLUMNS = {
     { keys: ['거래점'], role: 'branch' },
     { keys: ['거래내용'], role: 'jeogyo2', jeogyoKey: '거래내용' },
     { keys: ['이체메모'], role: 'jeogyo2', jeogyoKey: '이체메모' },
+  ],
+};
+
+/** Excel format profile: SERP unified transaction export (multi-bank columns in sheet; bank_id stored as `serp` for import). */
+const SERP_EXCEL_COLUMNS = {
+  datetimeStyle: null,
+  columns: [
+    { keys: ['거래일자'], role: 'date' },
+    { keys: ['거래시간'], role: 'time' },
+    { keys: ['적요1'], role: 'description' },
+    { keys: ['입금'], role: 'deposit' },
+    { keys: ['출금'], role: 'withdrawal' },
+    { keys: ['잔액'], role: 'balance' },
+    { keys: ['취급지점'], role: 'branch' },
+    { keys: ['상대계좌'], role: 'counterpartyAccount' },
+    { keys: ['상대계좌예금주명'], role: 'counterparty' },
+    { keys: ['은행'], role: 'jeogyo2', jeogyoKey: '은행' },
+    { keys: ['계좌번호'], role: 'jeogyo2', jeogyoKey: '계좌번호' },
+    { keys: ['계좌별칭'], role: 'jeogyo2', jeogyoKey: '계좌별칭' },
+    { keys: ['비고'], role: 'jeogyo2', jeogyoKey: '비고' },
+    { keys: ['수기'], role: 'jeogyo2', jeogyoKey: '수기' },
+    { keys: ['적요2'], role: 'jeogyo2', jeogyoKey: '적요2' },
   ],
 };
 
@@ -128,7 +152,6 @@ const BANK_EXCEL_PARSE_SCHEMA = {
     ],
   },
   nh: NH_EXCEL_COLUMNS,
-  'nh-business': NH_EXCEL_COLUMNS,
   kookmin: {
     datetimeStyle: 'kbSpace',
     columns: [
@@ -172,6 +195,7 @@ const BANK_EXCEL_PARSE_SCHEMA = {
       { keys: ['표어음증권금액(원)'], role: 'jeogyo2', jeogyoKey: '표어음증권금액(원)' },
     ],
   },
+  serp: SERP_EXCEL_COLUMNS,
 };
 
 function normalizeExcelHeaderKey(h) {
@@ -480,7 +504,8 @@ function parseTransactionExcel(filePath, ctx) {
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    const bankId = ctx && ctx.config && ctx.config.bank && String(ctx.config.bank.id).toLowerCase();
+    const bankIdRaw = ctx && ctx.config && ctx.config.bank && String(ctx.config.bank.id).toLowerCase();
+    const bankId = bankIdRaw === 'nh-business' ? 'nh' : bankIdRaw;
     const schema = bankId ? BANK_EXCEL_PARSE_SCHEMA[bankId] : null;
 
     if (schema) {

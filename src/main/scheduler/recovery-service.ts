@@ -4,6 +4,36 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getStore } from '../storage';
+import AsyncDebugFileLogger from './async-debug-file-logger';
+
+/** YYYY-MM-DD in local timezone (matches FinanceHub intent dates). */
+export function formatLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Max DB `retry_count` before recovery stops retrying an intent.
+ * Aligns with `financeHubScheduler.retryCount` in the Electron store when set.
+ */
+export function resolveMaxIntentRetries(override?: number): number {
+  if (override !== undefined && typeof override === 'number' && override >= 0) {
+    return override;
+  }
+  try {
+    const store = getStore();
+    const s = store.get('financeHubScheduler', {}) as { retryCount?: number };
+    if (typeof s.retryCount === 'number' && s.retryCount >= 0) {
+      return s.retryCount;
+    }
+  } catch {
+    // Store may not be initialized yet
+  }
+  return 3;
+}
 
 /**
  * Scheduler Recovery Service
@@ -50,12 +80,21 @@ export interface RecoveryOptions {
   priorityOrder: 'oldest_first' | 'newest_first';
   schedulerFilter?: string[]; // Only recover specific schedulers
   debugForceRun?: boolean; // Debug mode: run recovery on all tasks regardless of execution window (default: false)
+  /** Max DB `retry_count` before excluding an intent; defaults to `financeHubScheduler.retryCount` from store. */
+  maxIntentRetries?: number;
 }
+
+/** Result of running one recovery task (used to avoid duplicate intent updates). */
+export type RecoveryTaskOutcome =
+  | { kind: 'executed' }
+  | { kind: 'deferred'; reason: string }
+  | { kind: 'terminal_handled' };
 
 export interface RecoveryReport {
   missedCount: number;
   executedCount: number;
   failedCount: number;
+  /** Intents not run this pass because of `maxCatchUpExecutions` (still pending/failed in DB). */
   skippedCount: number;
   missedExecutions: MissedExecution[];
   executionResults: Array<{
@@ -69,6 +108,7 @@ export interface RecoveryReport {
 export class SchedulerRecoveryService {
   private static instance: SchedulerRecoveryService | null = null;
   private debugLogPath: string;
+  private asyncDebugLogger: AsyncDebugFileLogger;
 
   private constructor() {
     // Create debug log file path
@@ -81,6 +121,7 @@ export class SchedulerRecoveryService {
     }
 
     this.debugLogPath = path.join(logDir, 'recovery-debug.log');
+    this.asyncDebugLogger = new AsyncDebugFileLogger(this.debugLogPath);
     this.debugLog('='.repeat(80));
     this.debugLog(`RecoveryService initialized at ${new Date().toISOString()}`);
     this.debugLog('='.repeat(80));
@@ -90,11 +131,8 @@ export class SchedulerRecoveryService {
    * Write debug log to file (visible in production)
    */
   private debugLog(message: string): void {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-
     try {
-      fs.appendFileSync(this.debugLogPath, logMessage);
+      this.asyncDebugLogger.writeLine(message);
     } catch (error) {
       console.error('Failed to write recovery debug log:', error);
     }
@@ -323,7 +361,7 @@ export class SchedulerRecoveryService {
    */
   public async hasRunToday(schedulerType: string, taskId: string): Promise<boolean> {
     const db = this.getDb();
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDateString(new Date());
 
     const intent = db.prepare(`
       SELECT * FROM scheduler_execution_intents
@@ -378,15 +416,18 @@ export class SchedulerRecoveryService {
   public async detectMissedExecutions(options: Partial<RecoveryOptions> = {}): Promise<MissedExecution[]> {
     const db = this.getDb();
     const lookbackDays = options.lookbackDays || 365;
+    const maxIntentRetries = resolveMaxIntentRetries(options.maxIntentRetries);
 
-    // Calculate cutoff date
+    // Calculate cutoff date (local calendar day, same as intent intended_date)
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
-    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+    const cutoffDateStr = formatLocalDateString(cutoffDate);
 
     const debugMode = options.debugForceRun || false;
 
-    this.debugLog(`Detecting missed executions: lookback=${lookbackDays} days, cutoff=${cutoffDateStr}, debugForceRun=${debugMode}`);
+    this.debugLog(
+      `Detecting missed executions: lookback=${lookbackDays} days, cutoff=${cutoffDateStr}, maxIntentRetries=${maxIntentRetries}, debugForceRun=${debugMode}`
+    );
     if (debugMode) {
       console.log(`[RecoveryService] 🐛 DEBUG MODE: Will detect ALL pending/failed tasks regardless of execution window`);
     }
@@ -427,7 +468,7 @@ export class SchedulerRecoveryService {
 
     // Get pending AND failed intents where execution window has passed
     // CRITICAL FIX: Include 'failed' status so failed tasks can be retried on restart
-    // SAFETY: Exclude tasks that have been retried too many times (max 5 total attempts)
+    // SAFETY: Exclude tasks that exceed maxIntentRetries (aligned with Finance Hub scheduler settings)
     // SAFETY: Exclude 'skipped' tasks (permanent errors like missing credentials)
     // DEBUG MODE: If debugForceRun is true, ignore execution window check
     let query = `
@@ -435,7 +476,7 @@ export class SchedulerRecoveryService {
       WHERE status IN ('pending', 'failed')
         AND intended_date >= ?
         ${debugMode ? '' : 'AND execution_window_end < ?'}
-        AND COALESCE(retry_count, 0) < 5
+        AND COALESCE(retry_count, 0) < ?
       ORDER BY intended_date ASC, intended_time ASC
     `;
 
@@ -443,6 +484,7 @@ export class SchedulerRecoveryService {
     if (!debugMode) {
       params.push(new Date().toISOString());
     }
+    params.push(maxIntentRetries);
 
     // Apply scheduler filter if provided
     if (options.schedulerFilter && options.schedulerFilter.length > 0) {
@@ -469,9 +511,9 @@ export class SchedulerRecoveryService {
       // Log failed tasks separately for visibility
       if (intent.status === 'failed') {
         const retryCount = intent.retry_count || 0;
-        this.debugLog(`  Failed task: retry ${retryCount}/5, error: ${intent.error_message || 'none'}`);
+        this.debugLog(`  Failed task: retry ${retryCount}/${maxIntentRetries}, error: ${intent.error_message || 'none'}`);
         console.log(`[RecoveryService] Found failed task to retry: ${intent.task_name} (${intent.intended_date})`);
-        console.log(`[RecoveryService]   Retry count: ${retryCount}/5`);
+        console.log(`[RecoveryService]   Retry count: ${retryCount}/${maxIntentRetries}`);
         if (intent.error_message) {
           console.log(`[RecoveryService]   Previous error: ${intent.error_message}`);
         }
@@ -507,9 +549,12 @@ export class SchedulerRecoveryService {
     };
 
     const opts = { ...defaultOptions, ...options };
+    const maxIntentRetries = resolveMaxIntentRetries(opts.maxIntentRetries);
 
     this.debugLog('🔄 Starting recovery process...');
-    this.debugLog(`Options: lookbackDays=${opts.lookbackDays}, autoExecute=${opts.autoExecute}, maxCatchUp=${opts.maxCatchUpExecutions}`);
+    this.debugLog(
+      `Options: lookbackDays=${opts.lookbackDays}, autoExecute=${opts.autoExecute}, maxCatchUp=${opts.maxCatchUpExecutions}, maxIntentRetries=${maxIntentRetries}`
+    );
     console.log('[RecoveryService] 🔄 Starting recovery process...');
     console.log('[RecoveryService] Options:', opts);
 
@@ -549,19 +594,14 @@ export class SchedulerRecoveryService {
     // Sort by priority
     const sorted = this.prioritizeTasks(deduplicatedByEntity, opts.priorityOrder);
 
-    // Limit executions
+    // Limit executions per run; remaining intents stay pending/failed for a future recovery run
     const toExecute = sorted.slice(0, opts.maxCatchUpExecutions);
-    const toSkip = sorted.slice(opts.maxCatchUpExecutions);
+    const deferredPastCap = sorted.slice(opts.maxCatchUpExecutions);
 
-    console.log(`[RecoveryService] Will execute: ${toExecute.length}, Will skip: ${toSkip.length}`);
-
-    // Mark skipped tasks
-    for (const missed of toSkip) {
-      await this.markIntentSkipped(
-        missed.schedulerType,
-        missed.taskId,
-        missed.intendedDate,
-        'exceeded_max_catchup_executions'
+    console.log(`[RecoveryService] Will execute: ${toExecute.length}, deferred (cap): ${deferredPastCap.length}`);
+    if (deferredPastCap.length > 0) {
+      console.log(
+        `[RecoveryService] ${deferredPastCap.length} intent(s) remain queued (exceeded maxCatchUpExecutions this run; not marked skipped)`
       );
     }
 
@@ -573,16 +613,44 @@ export class SchedulerRecoveryService {
         try {
           this.debugLog(`Executing missed task: ${missed.taskId} (${missed.intendedDate})`);
           console.log(`[RecoveryService] Executing missed task: ${missed.taskName} (${missed.intendedDate})`);
-          await this.executeTaskByType(missed);
+          const outcome = await this.executeTaskByType(missed);
 
-          // CRITICAL: Mark intent as completed so it doesn't get recovered again
-          await this.markIntentCompleted(
-            missed.schedulerType,
-            missed.taskId,
-            missed.intendedDate,
-            missed.intentId // Use intentId as execution ID
-          );
-          console.log(`[RecoveryService] ✅ Marked ${missed.taskId} (${missed.intendedDate}) as completed`);
+          if (outcome.kind === 'deferred') {
+            this.debugLog(`↩ Deferred ${missed.taskId}: ${outcome.reason}`);
+            console.log(`[RecoveryService] Deferred ${missed.taskName}: ${outcome.reason}`);
+            executionResults.push({
+              intentId: missed.intentId,
+              taskName: missed.taskName,
+              success: false,
+              error: outcome.reason,
+            });
+            continue;
+          }
+
+          if (outcome.kind === 'terminal_handled') {
+            this.debugLog(`✓ Terminal handled (skipped/cleaned): ${missed.taskId}`);
+            executionResults.push({
+              intentId: missed.intentId,
+              taskName: missed.taskName,
+              success: true,
+            });
+            continue;
+          }
+
+          // FinanceHub marks completion inside executeEntitySync; other schedulers need the recovery row updated here.
+          if (missed.schedulerType !== 'financehub') {
+            await this.markIntentCompleted(
+              missed.schedulerType,
+              missed.taskId,
+              missed.intendedDate,
+              randomUUID()
+            );
+            console.log(`[RecoveryService] ✅ Marked ${missed.taskId} (${missed.intendedDate}) as completed`);
+          } else {
+            console.log(
+              `[RecoveryService] ✅ FinanceHub task finished (${missed.taskId} ${missed.intendedDate}); intent marked by scheduler`
+            );
+          }
 
           this.debugLog(`✓ Task completed successfully: ${missed.taskId}`);
           executionResults.push({
@@ -617,7 +685,7 @@ export class SchedulerRecoveryService {
       missedCount: missedExecutions.length,
       executedCount: executionResults.filter(r => r.success).length,
       failedCount: executionResults.filter(r => !r.success).length,
-      skippedCount: toSkip.length,
+      skippedCount: deferredPastCap.length,
       missedExecutions,
       executionResults,
     };
@@ -701,23 +769,19 @@ export class SchedulerRecoveryService {
   /**
    * Execute task based on scheduler type
    */
-  private async executeTaskByType(missed: MissedExecution): Promise<void> {
+  private async executeTaskByType(missed: MissedExecution): Promise<RecoveryTaskOutcome> {
     switch (missed.schedulerType) {
       case 'financehub':
-        await this.executeFinanceHubTask(missed);
-        break;
+        return this.executeFinanceHubTask(missed);
 
       case 'docker':
-        await this.executeDockerTask(missed);
-        break;
+        return this.executeDockerTask(missed);
 
       case 'playwright':
-        await this.executePlaywrightTask(missed);
-        break;
+        return this.executePlaywrightTask(missed);
 
       case 'scheduled_posts':
-        await this.executeScheduledPostTask(missed);
-        break;
+        return this.executeScheduledPostTask(missed);
 
       default:
         throw new Error(`Unknown scheduler type: ${missed.schedulerType}`);
@@ -727,7 +791,7 @@ export class SchedulerRecoveryService {
   /**
    * Execute FinanceHub sync task
    */
-  private async executeFinanceHubTask(missed: MissedExecution): Promise<void> {
+  private async executeFinanceHubTask(missed: MissedExecution): Promise<RecoveryTaskOutcome> {
     this.debugLog(`►►► executeFinanceHubTask() called for: ${missed.taskId}`);
     console.log(`[RecoveryService] ►►► executeFinanceHubTask() called for: ${missed.taskId}`);
 
@@ -759,7 +823,7 @@ export class SchedulerRecoveryService {
       );
 
       console.log(`[RecoveryService] ⚠️  Marked corrupted task as skipped: ${missed.taskId}`);
-      return;
+      return { kind: 'terminal_handled' };
     }
 
     // CRITICAL: Check if scheduler is already syncing this entity or has retry scheduled
@@ -771,13 +835,13 @@ export class SchedulerRecoveryService {
     if (syncingEntities.includes(missed.taskId)) {
       this.debugLog(`⚠️ ${missed.taskId} is already syncing - skipping recovery`);
       console.log(`[RecoveryService] ⚠️  ${missed.taskId} is already syncing - skipping recovery to prevent duplicate`);
-      return;
+      return { kind: 'deferred', reason: 'already_syncing' };
     }
 
     if (hasRetry) {
       this.debugLog(`⚠️ ${missed.taskId} already has a retry scheduled - skipping recovery`);
       console.log(`[RecoveryService] ⚠️  ${missed.taskId} already has a retry scheduled - skipping recovery to prevent duplicate`);
-      return;
+      return { kind: 'deferred', reason: 'retry_already_scheduled' };
     }
 
     this.debugLog(`Calling scheduler.syncEntity("${entityType}", "${entityId}", "${missed.intendedDate}")...`);
@@ -785,16 +849,21 @@ export class SchedulerRecoveryService {
 
     // CRITICAL: Pass the intendedDate so the scheduler marks the correct intent
     // Without this, it would mark today's intent instead of the missed intent
-    await scheduler.syncEntity(entityType as 'card' | 'bank' | 'tax', entityId, missed.intendedDate);
+    await scheduler.syncEntity(
+      entityType as 'card' | 'bank' | 'tax' | 'promissory',
+      entityId,
+      missed.intendedDate
+    );
 
     this.debugLog(`✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
     console.log(`[RecoveryService] ✓ scheduler.syncEntity() completed for ${entityType}:${entityId}`);
+    return { kind: 'executed' };
   }
 
   /**
    * Execute Docker task
    */
-  private async executeDockerTask(missed: MissedExecution): Promise<void> {
+  private async executeDockerTask(missed: MissedExecution): Promise<RecoveryTaskOutcome> {
     const { getDockerSchedulerService } = await import('../docker/DockerSchedulerService');
     const service = getDockerSchedulerService();
 
@@ -807,12 +876,13 @@ export class SchedulerRecoveryService {
     if (!result.success) {
       throw new Error(result.error || 'Docker task execution failed');
     }
+    return { kind: 'executed' };
   }
 
   /**
    * Execute Playwright test
    */
-  private async executePlaywrightTask(missed: MissedExecution): Promise<void> {
+  private async executePlaywrightTask(missed: MissedExecution): Promise<RecoveryTaskOutcome> {
     const { getPlaywrightSchedulerService } = await import('./playwright-scheduler-service');
     const service = getPlaywrightSchedulerService();
 
@@ -825,12 +895,13 @@ export class SchedulerRecoveryService {
     if (!result.success) {
       throw new Error(result.error || 'Playwright test execution failed');
     }
+    return { kind: 'executed' };
   }
 
   /**
    * Execute scheduled post
    */
-  private async executeScheduledPostTask(missed: MissedExecution): Promise<void> {
+  private async executeScheduledPostTask(missed: MissedExecution): Promise<RecoveryTaskOutcome> {
     const { ScheduledPostsExecutor } = await import('./scheduled-posts-executor');
     const sqliteManager = getSQLiteManager();
     const scheduledPostsManager = sqliteManager.getScheduledPostsManager();
@@ -849,6 +920,7 @@ export class SchedulerRecoveryService {
       ...scheduledPost,
       topics: topicNames,
     });
+    return { kind: 'executed' };
   }
 
   // ============================================
@@ -862,7 +934,7 @@ export class SchedulerRecoveryService {
     const db = this.getDb();
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+    const cutoffDateStr = formatLocalDateString(cutoffDate);
 
     const result = db.prepare(`
       DELETE FROM scheduler_execution_intents
