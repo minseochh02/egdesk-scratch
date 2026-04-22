@@ -127,6 +127,11 @@ export const getDateRangeForPeriod = (period: '1week' | '1month' | '3months' | '
 // Bank Info Functions
 // ============================================
 
+/** NH is only ever `nh` in the app; old DB/export rows may still say `nh-business`. */
+export function toCanonicalBankId(bankId: string): string {
+  return bankId === 'nh-business' ? 'nh' : bankId;
+}
+
 /**
  * Get bank info by ID with fallback
  */
@@ -134,8 +139,7 @@ export const getBankInfo = (
   bankId: string,
   banksMap: Record<string, BankInfo> = {}
 ): BankInfo => {
-  // Map nh-business to nh for display purposes
-  const lookupId = bankId === 'nh-business' ? 'nh' : bankId;
+  const lookupId = toCanonicalBankId(bankId);
 
   return banksMap[lookupId] || DEFAULT_BANK_INFO[lookupId] || {
     id: bankId,

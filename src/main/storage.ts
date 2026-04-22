@@ -270,16 +270,23 @@ function migrateFinanceHubScheduler() {
           shinhan: { enabled: true, time: '05:10' },
         },
 
-        // Banks: 5:20 - 5:50 (10-minute intervals)
+        // Banks: 5:20 - 6:10 (10-minute intervals) — all automators in financehub/index.js BANKS
         banks: {
           kookmin: { enabled: true, time: '05:20' },
           nh: { enabled: true, time: '05:30' },
-          nhBusiness: { enabled: true, time: '05:40' },
-          shinhan: { enabled: true, time: '05:50' },
+          shinhan: { enabled: true, time: '05:40' },
+          ibk: { enabled: true, time: '05:50' },
+          hana: { enabled: true, time: '06:00' },
+          woori: { enabled: true, time: '06:10' },
         },
 
         // Tax: Dynamic based on saved businesses (will be populated when businesses are added)
         tax: {},
+
+        // 어음 (IBK 외상매출채권 등 — automator syncPromissoryNotes)
+        promissoryNotes: {
+          ibk: { enabled: true, time: '06:20' },
+        },
       });
       console.log('✅ financeHubScheduler added to store with staggered entity schedules');
     } else if (schedulerConfig.enabled === undefined) {
@@ -306,10 +313,15 @@ function migrateFinanceHubScheduler() {
         banks: schedulerConfig.banks || {
           kookmin: { enabled: true, time: '05:20' },
           nh: { enabled: true, time: '05:30' },
-          nhBusiness: { enabled: true, time: '05:40' },
-          shinhan: { enabled: true, time: '05:50' },
+          shinhan: { enabled: true, time: '05:40' },
+          ibk: { enabled: true, time: '05:50' },
+          hana: { enabled: true, time: '06:00' },
+          woori: { enabled: true, time: '06:10' },
         },
         tax: schedulerConfig.tax || {},
+        promissoryNotes: schedulerConfig.promissoryNotes || {
+          ibk: { enabled: true, time: '06:20' },
+        },
       };
 
       // Remove old 'time' and 'includeTaxSync' fields if they exist
@@ -1732,6 +1744,119 @@ ipcMain.handle('hometax:get-cash-receipts', async (event, filters: any) => {
     };
   }
 });
+
+type HometaxImportExcelKind =
+  | 'sales'
+  | 'purchase'
+  | 'tax-exempt-sales'
+  | 'tax-exempt-purchase'
+  | 'cash-receipt';
+
+/**
+ * Import a single Hometax Excel file (manual upload). `kind` must match the active tab / file type.
+ * For 세금계산서, invoice type is taken from `kind` (not filename). Optional `businessNumber` overrides parser.
+ */
+ipcMain.handle(
+  'hometax:import-excel',
+  async (
+    _event,
+    options: { filePath: string; kind: HometaxImportExcelKind; businessNumber?: string }
+  ) => {
+    try {
+      const { filePath, kind, businessNumber: overrideBn } = options;
+      if (!filePath || typeof filePath !== 'string') {
+        return { success: false, error: 'filePath is required' };
+      }
+
+      const db = getFinanceHubDatabase();
+      const trimmedOverride = overrideBn && String(overrideBn).trim();
+
+      if (kind === 'sales' || kind === 'purchase') {
+        const parsed = parseHometaxExcel(filePath);
+        if (!parsed.success || !parsed.invoices?.length) {
+          return {
+            success: false,
+            error: parsed.error || 'No invoices found in Excel file',
+          };
+        }
+        const bn = trimmedOverride || parsed.businessNumber;
+        if (!bn) {
+          return {
+            success: false,
+            error: '사업자번호를 확인할 수 없습니다. 상단에서 사업자를 선택하거나 엑셀 상단 정보를 확인하세요.',
+          };
+        }
+        const r = importTaxInvoices(db, bn, kind, parsed.invoices, filePath);
+        return {
+          success: r.success,
+          inserted: r.inserted,
+          duplicate: r.duplicate,
+          error: r.error,
+          businessNumber: bn,
+        };
+      }
+
+      if (kind === 'tax-exempt-sales' || kind === 'tax-exempt-purchase') {
+        const parsed = parseTaxExemptExcel(filePath);
+        if (!parsed.success || !parsed.invoices?.length) {
+          return {
+            success: false,
+            error: parsed.error || 'No tax-exempt invoices found in Excel file',
+          };
+        }
+        const invoiceType = kind === 'tax-exempt-sales' ? 'sales' : 'purchase';
+        const bn = trimmedOverride || parsed.businessNumber;
+        if (!bn) {
+          return {
+            success: false,
+            error: '사업자번호를 확인할 수 없습니다. 상단에서 사업자를 선택하세요.',
+          };
+        }
+        const r = importTaxExemptInvoices(db, bn, invoiceType, parsed.invoices, filePath);
+        return {
+          success: r.success,
+          inserted: r.inserted,
+          duplicate: r.duplicate,
+          error: r.error,
+          businessNumber: bn,
+        };
+      }
+
+      if (kind === 'cash-receipt') {
+        const parsed = parseCashReceiptExcel(filePath);
+        if (!parsed.success || !parsed.receipts?.length) {
+          return {
+            success: false,
+            error: parsed.error || 'No cash receipts found in Excel file',
+          };
+        }
+        const bn = trimmedOverride;
+        if (!bn) {
+          return {
+            success: false,
+            error: '현금영수증 가져오기에는 사업자번호가 필요합니다. 연결된 사업자를 선택하세요.',
+          };
+        }
+        const r = importCashReceipts(db, bn, parsed.receipts, filePath);
+        return {
+          success: r.success,
+          inserted: r.inserted,
+          duplicate: r.duplicate,
+          error: r.error,
+          businessNumber: bn,
+        };
+      }
+
+      return { success: false, error: `Unknown import kind: ${kind}` };
+    } catch (error) {
+      console.error('[IPC] hometax:import-excel error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+);
 
 /**
  * Get saved spreadsheet URL for a business and invoice type

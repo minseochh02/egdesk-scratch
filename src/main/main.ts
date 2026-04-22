@@ -766,46 +766,10 @@ const createWindow = async () => {
         }
       });
 
-      /** NH 법인 등: INIpay cert table — one-shot browser, list only (see NHBusinessBankAutomator.fetchCertificates) */
       ipcMain.handle(
         'finance-hub:fetch-bank-certificates',
-        async (_event, { bankId, proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
-          const id = String(bankId || '').toLowerCase();
-          if (id !== 'nh-business') {
-            return { success: false, error: '이 은행은 인증서 목록 조회를 지원하지 않습니다.' };
-          }
-          let existing = activeAutomators.get(id);
-          if (existing && typeof existing.cleanup === 'function') {
-            try {
-              await existing.cleanup(false);
-            } catch (e) {
-              console.warn('[FINANCE-HUB] fetch-bank-certificates: cleanup existing automator', e);
-            }
-            activeAutomators.delete(id);
-          }
-          const { createAutomator } = require('./financehub');
-          const automator = createAutomator(id, { headless: false });
-          try {
-            if (typeof automator.fetchCertificates !== 'function') {
-              return { success: false, error: '인증서 목록 조회를 지원하지 않습니다.' };
-            }
-            return await automator.fetchCertificates(proxyUrl);
-          } catch (error) {
-            console.error('[FINANCE-HUB] fetch-bank-certificates failed:', error);
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          } finally {
-            if (automator && typeof automator.cleanup === 'function') {
-              try {
-                await automator.cleanup(false);
-              } catch (e) {
-                console.warn('[FINANCE-HUB] fetch-bank-certificates: automator cleanup', e);
-              }
-            }
-            activeAutomators.delete(id);
-          }
+        async (_event, { bankId: _bankId, proxyUrl: _proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
+          return { success: false, error: '인증서 목록 조회를 지원하지 않습니다.' };
         }
       );
 
@@ -1319,6 +1283,188 @@ const createWindow = async () => {
           return {
             success: false,
             error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      });
+
+      ipcMain.handle('finance-hub:bank:import-excel', async (_event, { filePath, bankId, accountNumber }) => {
+        try {
+          const normalizedBankId = String(bankId || '')
+            .trim()
+            .toLowerCase();
+          console.log(`[FINANCE-HUB] Importing bank Excel: ${filePath} for ${normalizedBankId}`);
+
+          const { parseTransactionExcel } = require('./financehub/utils/transactionParser');
+          const ctx = {
+            config: { bank: { id: normalizedBankId } },
+            log: (msg: string) => console.log(`[bank-excel-import] ${msg}`),
+            warn: (msg: string) => console.warn(`[bank-excel-import] ${msg}`),
+          };
+
+          const extractedData = parseTransactionExcel(filePath, ctx);
+          const transactionsData = extractedData.transactions || [];
+
+          if (transactionsData.length === 0) {
+            return {
+              success: false,
+              error: 'No transactions found in Excel file',
+            };
+          }
+
+          const { getSQLiteManager } = await import('./sqlite/manager');
+          const financeHubDb = getSQLiteManager().getFinanceHubManager();
+          const { resolveKoreanBankLabelToId } = require('./financehub/utils/bankLabelToId');
+
+          const fallbackAcct =
+            (accountNumber && String(accountNumber).trim()) ||
+            (extractedData.metadata as { accountNumber?: string })?.accountNumber ||
+            'MANUAL-IMPORT';
+
+          const parseDescription2 = (tx: { description2?: string }): Record<string, string> | null => {
+            if (!tx?.description2 || typeof tx.description2 !== 'string') return null;
+            try {
+              const j = JSON.parse(tx.description2) as Record<string, unknown>;
+              const out: Record<string, string> = {};
+              for (const [k, v] of Object.entries(j)) {
+                if (v != null && v !== '') out[k] = String(v).trim();
+              }
+              return Object.keys(out).length ? out : null;
+            } catch {
+              return null;
+            }
+          };
+
+          const rowAccountNumber = (tx: { description2?: string }): string | null => {
+            const j = parseDescription2(tx);
+            const raw = j?.['계좌번호'];
+            if (raw && String(raw).trim()) return String(raw).trim();
+            return null;
+          };
+
+          const rowBankLabel = (tx: { description2?: string }): string | null => {
+            const j = parseDescription2(tx);
+            const raw = j?.['은행'];
+            if (raw && String(raw).trim()) return String(raw).trim();
+            return null;
+          };
+
+          const rowAccountAlias = (tx: { description2?: string }): string => {
+            const j = parseDescription2(tx);
+            const raw = j?.['계좌별칭'];
+            return raw && String(raw).trim() ? String(raw).trim() : '';
+          };
+
+          /** SERP / multi-bank sheets: map row "은행" to real banks.id; other formats use selected bankId. */
+          const effectiveBankIdForRow = (tx: { description2?: string }): string => {
+            if (normalizedBankId !== 'serp') return normalizedBankId;
+            const label = rowBankLabel(tx);
+            const resolved = label ? resolveKoreanBankLabelToId(label) : null;
+            if (resolved) return resolved;
+            if (label) {
+              console.warn(`[bank-excel-import] Unmapped 은행 "${label}", storing under serp`);
+            }
+            return 'serp';
+          };
+
+          const GROUP_SEP = '\x1e';
+          const byBankAndAccount = new Map<string, typeof transactionsData>();
+          for (const tx of transactionsData) {
+            const bid = effectiveBankIdForRow(tx);
+            const acctKey = rowAccountNumber(tx) || fallbackAcct;
+            const gkey = `${bid}${GROUP_SEP}${acctKey}`;
+            if (!byBankAndAccount.has(gkey)) byBankAndAccount.set(gkey, []);
+            byBankAndAccount.get(gkey)!.push(tx);
+          }
+
+          let totalInserted = 0;
+          let totalSkipped = 0;
+          const groupLabels: string[] = [];
+          const bankIdsUsed = new Set<string>();
+
+          for (const [gkey, txs] of byBankAndAccount) {
+            const [bid, acctNum] = gkey.split(GROUP_SEP);
+            bankIdsUsed.add(bid);
+            groupLabels.push(`${bid}/${acctNum}`);
+            const alias = txs[0] ? rowAccountAlias(txs[0] as { description2?: string }) : '';
+            const accountData = {
+              accountNumber: acctNum,
+              accountName:
+                alias ||
+                (extractedData.metadata as { accountName?: string })?.accountName ||
+                '수동 업로드 계좌',
+              customerName: (extractedData.metadata as { customerName?: string })?.customerName || '',
+              balance: (extractedData.metadata as { balance?: number })?.balance ?? 0,
+              availableBalance: (extractedData.metadata as { availableBalance?: number })?.availableBalance ?? 0,
+              openDate: (extractedData.metadata as { openDate?: string })?.openDate || '',
+            };
+
+            const dates = txs
+              .map((tx: { date?: string }) => tx.date || '')
+              .filter((d: string) => d);
+            const queryPeriodStart =
+              dates.length > 0 ? String(Math.min(...dates.map((d: string) => d.replace(/[^0-9]/g, '')))) : 'unknown';
+            const queryPeriodEnd =
+              dates.length > 0 ? String(Math.max(...dates.map((d: string) => d.replace(/[^0-9]/g, '')))) : 'unknown';
+
+            const syncMetadata = {
+              queryPeriodStart,
+              queryPeriodEnd,
+              filePath,
+            };
+
+            const importResult = financeHubDb.importTransactions(
+              bid,
+              accountData,
+              txs,
+              syncMetadata,
+              false
+            );
+            totalInserted += importResult.inserted;
+            totalSkipped += importResult.skipped;
+          }
+
+          console.log(
+            `[FINANCE-HUB] Bank Excel import complete: ${totalInserted} inserted, ${totalSkipped} skipped, ${groupLabels.length} bank+account group(s), banks: ${[...bankIdsUsed].join(',')}`
+          );
+
+          return {
+            success: true,
+            inserted: totalInserted,
+            skipped: totalSkipped,
+            total: transactionsData.length,
+            accountNumber: groupLabels.length === 1 ? groupLabels[0].split('/')[1] : undefined,
+            accountNumbers: groupLabels.map((gl) => gl.split('/')[1]),
+            groupLabels,
+            accountsCount: groupLabels.length,
+            bankIdsUsed: [...bankIdsUsed],
+          };
+        } catch (error) {
+          console.error('[FINANCE-HUB] Bank Excel import error:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
+
+      ipcMain.handle('finance-hub:delete-imported-data-for-bank', async (_event, { bankId }: { bankId: string }) => {
+        try {
+          const id = String(bankId || '')
+            .trim()
+            .toLowerCase();
+          if (!id) {
+            return { success: false, error: 'bankId is required' };
+          }
+          const { getSQLiteManager } = await import('./sqlite/manager');
+          const financeHubDb = getSQLiteManager().getFinanceHubManager();
+          const counts = financeHubDb.deleteImportedDataForBankId(id);
+          console.log(`[FINANCE-HUB] Deleted imported data for bank_id=${id}:`, counts);
+          return { success: true, ...counts };
+        } catch (error) {
+          console.error('[FINANCE-HUB] delete-imported-data-for-bank error:', error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
           };
         }
       });
@@ -3635,7 +3781,7 @@ const createWindow = async () => {
       try {
         console.log('🔄 Checking for missed scheduler executions...');
 
-        const { getSchedulerRecoveryService } = await import('./scheduler/recovery-service');
+        const { getSchedulerRecoveryService, resolveMaxIntentRetries } = await import('./scheduler/recovery-service');
         const recoveryService = getSchedulerRecoveryService();
 
         const report = await recoveryService.recoverMissedExecutions({
@@ -3643,6 +3789,7 @@ const createWindow = async () => {
           autoExecute: true,        // Auto-execute missed tasks
           maxCatchUpExecutions: 20, // Max 20 catch-up executions (covers all entities + future growth)
           priorityOrder: 'oldest_first',
+          maxIntentRetries: resolveMaxIntentRetries(),
         });
 
         console.log('📊 Recovery Report:', report);

@@ -78,3 +78,13 @@ Example for IBK:
   ""기재내용"": ""적요2"",
   ""표·어음·증권금액(원)"": ""적요2""
 }, Split Logic: 거래일시 (YYYY.MM.DD HH:MM:SS) splits at the space."
+
+## SERP (Excel format, not a specific bank)
+
+SERP is a **unified transaction Excel layout** (multi-bank columns may appear per row). It is not a financial institution. Manual import uses `bank_id` / parser key `serp` only for routing and FK storage in `banks` (display: SERP 통합 엑셀). Actual institution names often appear in row columns and are mapped into primary fields or the 적요2 JSON bundle.
+
+- **Header row**: row 6 (1-based); rows 1–5 are ignored for the transaction table.
+- **Headers** (space-normalized): 거래일자, 거래시간, 은행, 계좌번호, 계좌별칭, 적요1, 입금, 출금, 잔액, 비고, 수기, 취급지점, 상대계좌, 상대계좌예금주명, 적요2.
+- **Primary mapping**: 거래일자/거래시간 → date/time; 적요1 → 적요1; 입금/출금/잔액; 취급지점; 상대계좌; 상대계좌예금주명.
+- **적요2 bundle**: 은행, 계좌번호, 계좌별칭, 비고, 수기, 적요2 column values.
+- **Manual import**: rows are grouped by **`은행` (mapped to real `banks.id`) + `계좌번호`** when the selected format is **SERP**. The `은행` column text is matched to seeded banks (신한·국민·우리·하나·농협·IBK·카카오·토스, etc.); unmapped labels still store under `serp`. Non-SERP formats keep the selected bank for all rows. Rows without `계좌번호` use the optional UI field or `MANUAL-IMPORT`.

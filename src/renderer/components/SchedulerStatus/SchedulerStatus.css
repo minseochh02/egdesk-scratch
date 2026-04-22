@@ -291,6 +291,11 @@
   color: #FF6B35;
 }
 
+.scheduler-status__task-type--promissory {
+  background: rgba(212, 175, 55, 0.12);
+  color: #D4AF37;
+}
+
 .scheduler-status__task-disabled {
   padding: 2px 8px;
   background: rgba(107, 114, 128, 0.2);

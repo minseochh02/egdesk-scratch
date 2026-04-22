@@ -79,6 +79,9 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [hasPersistentSpreadsheet, setHasPersistentSpreadsheet] = useState(false);
   const [showCardImport, setShowCardImport] = useState(false);
   const [selectedCardCompany, setSelectedCardCompany] = useState('bc-card');
+  const [showBankImport, setShowBankImport] = useState(false);
+  const [selectedBankForExcel, setSelectedBankForExcel] = useState('shinhan');
+  const [bankExcelAccountNumber, setBankExcelAccountNumber] = useState('');
 
   // Check persistent spreadsheet status on mount and when transaction type changes
   useEffect(() => {
@@ -216,6 +219,75 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
       // Keep the Google login UI visible so they can try again
     } finally {
       setSigningIn(false);
+    }
+  };
+
+  const handleImportBankExcel = async () => {
+    try {
+      const result = await (window as any).electron.dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }],
+        title: '은행 거래내역 Excel 파일 선택',
+      });
+
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return;
+      }
+
+      const filePath = result.filePaths[0];
+      const accountNum = bankExcelAccountNumber.trim() || undefined;
+      console.log(`Importing bank Excel: ${filePath} for ${selectedBankForExcel}`);
+
+      const importResult = await (window as any).electron.financeHub.bank.importExcel(
+        filePath,
+        selectedBankForExcel,
+        accountNum
+      );
+
+      if (importResult.success) {
+        const multi =
+          typeof importResult.accountsCount === 'number' && importResult.accountsCount > 1
+            ? ` · ${importResult.accountsCount}개 그룹(은행+계좌)으로 분리`
+            : '';
+        const banksLine =
+          Array.isArray(importResult.bankIdsUsed) && importResult.bankIdsUsed.length > 0
+            ? ` · 은행: ${importResult.bankIdsUsed.join(', ')}`
+            : '';
+        alert(
+          `✅ ${importResult.inserted}개 거래내역 가져오기 완료! (중복 ${importResult.skipped}개 건너뜀)${multi}${banksLine}`
+        );
+        setShowBankImport(false);
+        loadTransactions();
+      } else {
+        alert(`❌ 가져오기 실패: ${importResult.error}`);
+      }
+    } catch (error) {
+      console.error('Error importing bank Excel:', error);
+      alert(`❌ 오류 발생: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    }
+  };
+
+  const handleDeleteSerpImportedData = async () => {
+    if (
+      !confirm(
+        'SERP 통합 엑셀으로 저장된 데이터(bank_id = serp)를 모두 삭제합니다. 되돌릴 수 없습니다. 계속할까요?'
+      )
+    ) {
+      return;
+    }
+    try {
+      const r = await (window as any).electron.financeHub.bank.deleteImportedDataForBankId('serp');
+      if (r.success) {
+        alert(
+          `삭제 완료 — 계좌 ${r.accounts ?? 0}개, 은행거래 ${r.bankTransactions ?? 0}건, 통합거래 ${r.unifiedTransactions ?? 0}건, 동기화 기록 ${r.syncOperations ?? 0}건`
+        );
+        loadTransactions();
+      } else {
+        alert(`삭제 실패: ${r.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('delete SERP data:', error);
+      alert(`❌ ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
     }
   };
 
@@ -388,6 +460,57 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
               </button>
             </div>
           )}
+          {showBankImport && (
+            <div className="txp-google-auth-container">
+              <span className="txp-google-auth-message">
+                은행별 양식 또는 통합 엑셀 형식을 선택하고 (선택) 계좌번호 입력 후 파일을 선택하세요
+              </span>
+              <select
+                value={selectedBankForExcel}
+                onChange={(e) => setSelectedBankForExcel(e.target.value)}
+                style={{ padding: '8px', marginRight: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <optgroup label="은행별 엑셀">
+                  <option value="shinhan">신한은행</option>
+                  <option value="hana">하나은행</option>
+                  <option value="kookmin">KB국민은행</option>
+                  <option value="nh">NH농협은행</option>
+                  <option value="nh-business">NH농협 기업뱅킹</option>
+                  <option value="ibk">IBK기업은행</option>
+                  <option value="woori">우리은행</option>
+                </optgroup>
+                <optgroup label="엑셀 형식">
+                  <option
+                    value="serp"
+                    title="통합 거래내역 엑셀 형식. 실제 은행과 무관하며, 행의 은행·계좌 열은 메모(적요2)에 함께 저장됩니다."
+                  >
+                    SERP 통합 엑셀
+                  </option>
+                </optgroup>
+              </select>
+              <input
+                type="text"
+                placeholder="계좌번호 없는 행만 적용 (선택)"
+                title="엑셀 행에 계좌번호가 있으면 행별로 계좌가 나뉩니다. 빈 행은 여기 값 또는 MANUAL-IMPORT로 묶입니다."
+                value={bankExcelAccountNumber}
+                onChange={(e) => setBankExcelAccountNumber(e.target.value)}
+                style={{ padding: '8px', marginRight: '8px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '140px' }}
+              />
+              <button
+                className="txp-btn txp-btn--primary"
+                onClick={handleImportBankExcel}
+                style={{ marginRight: '8px' }}
+              >
+                📁 파일 선택
+              </button>
+              <button
+                className="txp-btn txp-btn--outline txp-btn--small"
+                onClick={() => setShowBankImport(false)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           {showCardImport && (
             <div className="txp-google-auth-container">
               <span className="txp-google-auth-message">카드사를 선택하고 파일을 선택하세요</span>
@@ -420,6 +543,25 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           <button className="txp-btn txp-btn--outline" onClick={() => setShowFilters(!showFilters)}>
             🔍 {showFilters ? '필터 숨기기' : '필터 보기'}
           </button>
+          {transactionType === 'bank' && (
+            <button
+              className="txp-btn txp-btn--outline"
+              onClick={() => setShowBankImport(true)}
+              title="은행 거래내역 Excel 파일 가져오기"
+            >
+              📄 Excel 가져오기
+            </button>
+          )}
+          {transactionType === 'bank' && (
+            <button
+              type="button"
+              className="txp-btn txp-btn--outline txp-btn--small"
+              onClick={handleDeleteSerpImportedData}
+              title="SERP 통합 엑셀 가져오기로 저장된 계좌·거래만 삭제 (banks 테이블의 SERP 항목은 유지)"
+            >
+              🗑️ SERP 데이터 삭제
+            </button>
+          )}
           {transactionType === 'card' && (
             <button className="txp-btn txp-btn--outline" onClick={() => setShowCardImport(true)} title="카드 Excel 파일 가져오기">
               📄 Excel 가져오기

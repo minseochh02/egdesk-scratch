@@ -1,14 +1,14 @@
+import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { app } from 'electron';
 import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
-import { getStore } from '../../storage';
-import { SQLiteManager } from '../../sqlite/manager';
+import AsyncDebugFileLogger from '../../scheduler/async-debug-file-logger';
+import { getSchedulerRecoveryService } from '../../scheduler/recovery-service';
 import { collectTaxInvoices } from '../../hometax-automation';
 import { parseHometaxExcel } from '../../hometax-excel-parser';
 import { importTaxInvoices } from '../../sqlite/hometax';
-import { getSchedulerRecoveryService } from '../../scheduler/recovery-service';
-import * as fs from 'fs';
-import * as path from 'path';
+import { getStore } from '../../storage';
 
 interface EntitySchedule {
   enabled: boolean;
@@ -19,6 +19,8 @@ interface ScheduleSettings {
   enabled: boolean; // Global enable/disable
   retryCount: number;
   retryDelayMinutes: number;
+  /** Cap for exponential backoff (minutes). Defaults to 30. */
+  retryDelayMaxMinutes?: number;
   spreadsheetSyncEnabled?: boolean; // Enable auto-export to spreadsheet
 
   // Individual entity schedules
@@ -34,14 +36,21 @@ interface ScheduleSettings {
   };
 
   banks: {
+    shinhan?: EntitySchedule;
     kookmin?: EntitySchedule;
     nh?: EntitySchedule;
-    nhBusiness?: EntitySchedule;
-    shinhan?: EntitySchedule;
+    ibk?: EntitySchedule;
+    hana?: EntitySchedule;
+    woori?: EntitySchedule;
   };
 
   tax: {
     [businessName: string]: EntitySchedule;  // Key is business name, not number
+  };
+
+  /** 어음 (promissory notes) — keyed by bankId (e.g. ibk); only banks with syncPromissoryNotes() */
+  promissoryNotes: {
+    [bankId: string]: EntitySchedule;
   };
 
   lastSyncTime?: string;
@@ -84,10 +93,12 @@ export class FinanceHubScheduler extends EventEmitter {
   private activeBrowsers: Map<string, any> = new Map(); // Track active browser instances by entityKey
   private settings: ScheduleSettings;
   private debugLogPath: string;
+  private asyncDebugLogger: AsyncDebugFileLogger;
   private DEFAULT_SETTINGS: ScheduleSettings = {
     enabled: true,
     retryCount: process.env.NODE_ENV === 'production' ? 3 : 0,
     retryDelayMinutes: 5,
+    retryDelayMaxMinutes: 30,
     spreadsheetSyncEnabled: true,
 
     // Cards: 4:00 - 5:10 (10-minute intervals)
@@ -102,16 +113,23 @@ export class FinanceHubScheduler extends EventEmitter {
       shinhan: { enabled: true, time: '05:10' },
     },
 
-    // Banks: 5:20 - 5:50 (10-minute intervals)
+    // Banks: 5:20 - 6:10 (10-minute intervals) — matches `financehub/index.js` BANKS registry
     banks: {
       kookmin: { enabled: true, time: '05:20' },
       nh: { enabled: true, time: '05:30' },
-      nhBusiness: { enabled: true, time: '05:40' },
-      shinhan: { enabled: true, time: '05:50' },
+      shinhan: { enabled: true, time: '05:40' },
+      ibk: { enabled: true, time: '05:50' },
+      hana: { enabled: true, time: '06:00' },
+      woori: { enabled: true, time: '06:10' },
     },
 
     // Tax: Dynamic based on saved businesses (starting at 6:00)
     tax: {},
+
+    // 어음: after bank block — IBK only until other automators implement syncPromissoryNotes()
+    promissoryNotes: {
+      ibk: { enabled: true, time: '06:20' },
+    },
   };
 
   private constructor() {
@@ -128,20 +146,28 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     this.debugLogPath = path.join(logDir, 'scheduler-debug.log');
+    this.asyncDebugLogger = new AsyncDebugFileLogger(this.debugLogPath);
     this.debugLog('='.repeat(80));
     this.debugLog(`Scheduler initialized at ${new Date().toISOString()}`);
     this.debugLog('='.repeat(80));
   }
 
   /**
+   * Exponential backoff for in-process retries (capped).
+   */
+  private getRetryDelayMs(retryCount: number): number {
+    const baseMs = this.settings.retryDelayMinutes * 60 * 1000;
+    const capMin = this.settings.retryDelayMaxMinutes ?? 30;
+    const maxMs = capMin * 60 * 1000;
+    return Math.min(maxMs, baseMs * 2 ** retryCount);
+  }
+
+  /**
    * Write debug log to file (visible in production)
    */
   private debugLog(message: string): void {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-
     try {
-      fs.appendFileSync(this.debugLogPath, logMessage);
+      this.asyncDebugLogger.writeLine(message);
     } catch (error) {
       console.error('Failed to write debug log:', error);
     }
@@ -175,6 +201,12 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     // Deep merge for nested objects (cards, banks, tax)
+    const mergedBanks = {
+      ...this.DEFAULT_SETTINGS.banks,
+      ...(saved.banks || {}),
+    };
+    delete (mergedBanks as Record<string, unknown>).nhBusiness;
+
     return {
       ...this.DEFAULT_SETTINGS,
       ...saved,
@@ -182,13 +214,14 @@ export class FinanceHubScheduler extends EventEmitter {
         ...this.DEFAULT_SETTINGS.cards,
         ...(saved.cards || {}),
       },
-      banks: {
-        ...this.DEFAULT_SETTINGS.banks,
-        ...(saved.banks || {}),
-      },
+      banks: mergedBanks,
       tax: {
         ...this.DEFAULT_SETTINGS.tax,
         ...cleanedTax,
+      },
+      promissoryNotes: {
+        ...this.DEFAULT_SETTINGS.promissoryNotes,
+        ...(saved.promissoryNotes || {}),
       },
     };
   }
@@ -225,6 +258,12 @@ export class FinanceHubScheduler extends EventEmitter {
     }
 
     // Deep merge for nested objects
+    const mergedBanksUpdate = {
+      ...this.settings.banks,
+      ...(newSettings.banks || {}),
+    };
+    delete (mergedBanksUpdate as Record<string, unknown>).nhBusiness;
+
     this.settings = {
       ...this.settings,
       ...newSettings,
@@ -232,19 +271,26 @@ export class FinanceHubScheduler extends EventEmitter {
         ...this.settings.cards,
         ...(newSettings.cards || {}),
       },
-      banks: {
-        ...this.settings.banks,
-        ...(newSettings.banks || {}),
-      },
+      banks: mergedBanksUpdate,
       tax: {
         ...this.settings.tax,
         ...validatedTaxSchedules,
+      },
+      promissoryNotes: {
+        ...this.settings.promissoryNotes,
+        ...(newSettings.promissoryNotes || {}),
       },
     };
     this.saveSettings();
 
     // Restart scheduler if enabled state or any entity schedules changed
-    if ('enabled' in newSettings || 'cards' in newSettings || 'banks' in newSettings || 'tax' in newSettings) {
+    if (
+      'enabled' in newSettings ||
+      'cards' in newSettings ||
+      'banks' in newSettings ||
+      'tax' in newSettings ||
+      'promissoryNotes' in newSettings
+    ) {
       await this.stop();
       if (this.settings.enabled) {
         await this.start();
@@ -389,6 +435,41 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     }
 
+    // Promissory notes (per bankId, e.g. ibk)
+    for (const [bankId, schedule] of Object.entries(this.settings.promissoryNotes || {})) {
+      if (schedule && schedule.enabled) {
+        const entityKey = `promissory:${bankId}`;
+
+        const lastSuccess = await recoveryService.getLastSuccessfulExecutionDate('financehub', entityKey);
+
+        this.debugLog(`${entityKey}: lastSuccess=${lastSuccess || 'none'}`);
+
+        let startDate: Date;
+        if (lastSuccess) {
+          startDate = new Date(lastSuccess);
+          startDate.setDate(startDate.getDate() + 1);
+          this.debugLog(`${entityKey}: Backfilling from ${startDate.toISOString().split('T')[0]} (day after last success)`);
+          console.log(
+            `[FinanceHubScheduler] ${entityKey}: Last success ${lastSuccess}, backfilling from ${startDate.toISOString().split('T')[0]}`
+          );
+        } else {
+          startDate = new Date(today);
+          startDate.setDate(startDate.getDate() - defaultLookbackDays);
+          this.debugLog(
+            `${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days from ${startDate.toISOString().split('T')[0]}`
+          );
+          console.log(`[FinanceHubScheduler] ${entityKey}: No previous success, backfilling last ${defaultLookbackDays} days`);
+        }
+
+        for (const dateStr of getDateRange(startDate, today)) {
+          const exists = await this.intentExistsForDate(entityKey, dateStr);
+          if (!exists) {
+            intentsToCreate.push(this.createHistoricalIntent('promissory', bankId, schedule.time, dateStr));
+          }
+        }
+      }
+    }
+
     // Bulk create all missing intents
     if (intentsToCreate.length > 0) {
       try {
@@ -418,7 +499,12 @@ export class FinanceHubScheduler extends EventEmitter {
   /**
    * Create a historical intent for a past date
    */
-  private createHistoricalIntent(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, dateStr: string): any {
+  private createHistoricalIntent(
+    entityType: 'card' | 'bank' | 'tax' | 'promissory',
+    entityId: string,
+    timeStr: string,
+    dateStr: string
+  ): any {
     const [targetHour, targetMinute] = timeStr.split(':').map(Number);
     const entityKey = `${entityType}:${entityId}`;
 
@@ -513,6 +599,11 @@ export class FinanceHubScheduler extends EventEmitter {
     console.log(`[FinanceHubScheduler] Card schedules:`, Object.keys(this.settings.cards).length, 'cards');
     console.log(`[FinanceHubScheduler] Bank schedules:`, Object.keys(this.settings.banks).length, 'banks');
     console.log(`[FinanceHubScheduler] Tax schedules:`, Object.keys(this.settings.tax).length, 'businesses');
+    console.log(
+      `[FinanceHubScheduler] Promissory schedules:`,
+      Object.keys(this.settings.promissoryNotes || {}).length,
+      'banks'
+    );
 
     // Schedule cards
     for (const [cardKey, schedule] of Object.entries(this.settings.cards)) {
@@ -575,11 +666,27 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     }
 
+    // Schedule promissory notes (bank credentials; automator must implement syncPromissoryNotes)
+    for (const [bankId, schedule] of Object.entries(this.settings.promissoryNotes || {})) {
+      if (schedule && schedule.enabled) {
+        if (banksWithCredentials.includes(bankId)) {
+          this.scheduleEntity('promissory', bankId, schedule.time, now);
+        } else {
+          console.log(`[FinanceHubScheduler] ⚠️  Skipping promissory ${bankId} - no credentials in DATABASE`);
+        }
+      }
+    }
+
     this.debugLog(`✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
     console.log(`[FinanceHubScheduler] ✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
   }
 
-  private async scheduleEntity(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, now: Date): Promise<void> {
+  private async scheduleEntity(
+    entityType: 'card' | 'bank' | 'tax' | 'promissory',
+    entityId: string,
+    timeStr: string,
+    now: Date
+  ): Promise<void> {
     const [targetHour, targetMinute] = timeStr.split(':').map(Number);
 
     // Calculate next sync time
@@ -700,7 +807,13 @@ export class FinanceHubScheduler extends EventEmitter {
   // Sync Execution
   // ============================================
 
-  private async executeEntitySync(entityType: 'card' | 'bank' | 'tax', entityId: string, timeStr: string, retryCount = 0, intendedDate?: string): Promise<void> {
+  private async executeEntitySync(
+    entityType: 'card' | 'bank' | 'tax' | 'promissory',
+    entityId: string,
+    timeStr: string,
+    retryCount = 0,
+    intendedDate?: string
+  ): Promise<void> {
     const entityKey = `${entityType}:${entityId}`;
 
     this.debugLog(`═══ executeEntitySync() called: ${entityKey} (retry ${retryCount}, intendedDate=${intendedDate || 'today'}) ═══`);
@@ -816,6 +929,11 @@ export class FinanceHubScheduler extends EventEmitter {
         success = taxResult.success;
         error = taxResult.error;
         result = taxResult;
+      } else if (entityType === 'promissory') {
+        const promissoryResult = await this.syncPromissoryNotes(entityId);
+        success = promissoryResult.success;
+        error = promissoryResult.error;
+        result = promissoryResult;
       }
 
       // Check if error is permanent (no point retrying)
@@ -823,7 +941,9 @@ export class FinanceHubScheduler extends EventEmitter {
         error.includes('No saved credentials') ||
         error.includes('Certificate not found') ||
         error.includes('Certificate password not saved') ||
-        error.includes('No accounts found')
+        error.includes('No accounts found') ||
+        error.includes('does not support promissory') ||
+        error.includes('활성 계좌가 없습니다')
       );
 
       const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
@@ -838,7 +958,10 @@ export class FinanceHubScheduler extends EventEmitter {
           console.error(`[FinanceHubScheduler] Failed to mark intent as skipped:`, err);
         }
       } else if (shouldRetry) {
-        console.log(`[FinanceHubScheduler] ${entityKey} failed (attempt ${retryCount + 1}/${this.settings.retryCount}), retrying in ${this.settings.retryDelayMinutes} minutes...`);
+        const delayMs = this.getRetryDelayMs(retryCount);
+        console.log(
+          `[FinanceHubScheduler] ${entityKey} failed (attempt ${retryCount + 1}/${this.settings.retryCount}), retrying in ${Math.round(delayMs / 60000)} min (${delayMs}ms)...`
+        );
 
         // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
         // This prevents the task from getting stuck in 'running' state if app shuts down before retry
@@ -869,7 +992,7 @@ export class FinanceHubScheduler extends EventEmitter {
           }
           // CRITICAL: Pass intendedDate to retry so it marks the correct intent
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1, intendedDate);
-        }, this.settings.retryDelayMinutes * 60 * 1000);
+        }, this.getRetryDelayMs(retryCount));
 
         this.syncTimers.set(entityKey, retryTimer);
       } else {
@@ -879,6 +1002,16 @@ export class FinanceHubScheduler extends EventEmitter {
           console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
         } else if (!success && retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
+        }
+        if (!success && isProduction && retryCount >= this.settings.retryCount) {
+          this.emit('sync-permanently-failed', {
+            entityType,
+            entityId,
+            entityKey,
+            targetDate,
+            retryCount,
+            error: error || undefined,
+          });
         }
         // Sync completed (with or without success)
         const status = success ? 'success' : 'failed';
@@ -894,8 +1027,8 @@ export class FinanceHubScheduler extends EventEmitter {
 
         console.log(`[FinanceHubScheduler] ${entityKey} sync ${success ? 'completed' : 'failed'}: ${error || 'OK'}`);
 
-        // After successful sync: export to spreadsheet (optional) and cleanup files
-        if (success) {
+        // After successful sync: export to spreadsheet (optional) and cleanup files (not for 어음)
+        if (success && entityType !== 'promissory') {
           if (this.settings.spreadsheetSyncEnabled) {
             try {
               console.log(`[FinanceHubScheduler] 📊 Exporting ${entityKey} to spreadsheet...`);
@@ -938,7 +1071,9 @@ export class FinanceHubScheduler extends EventEmitter {
         errorMessage.includes('No saved credentials') ||
         errorMessage.includes('Certificate not found') ||
         errorMessage.includes('Certificate password not saved') ||
-        errorMessage.includes('No accounts found')
+        errorMessage.includes('No accounts found') ||
+        errorMessage.includes('does not support promissory') ||
+        errorMessage.includes('활성 계좌가 없습니다')
       );
 
       const isProduction = process.env.NODE_ENV === 'production' || !process.env.NODE_ENV;
@@ -955,7 +1090,10 @@ export class FinanceHubScheduler extends EventEmitter {
         this.updateSyncStatus('failed');
         this.emit('entity-sync-failed', { entityType, entityId, error });
       } else if (shouldRetry) {
-        console.log(`[FinanceHubScheduler] Retrying ${entityKey} (attempt ${retryCount + 1}/${this.settings.retryCount}) in ${this.settings.retryDelayMinutes} minutes...`);
+        const delayMs = this.getRetryDelayMs(retryCount);
+        console.log(
+          `[FinanceHubScheduler] Retrying ${entityKey} (attempt ${retryCount + 1}/${this.settings.retryCount}) in ${Math.round(delayMs / 60000)} min (${delayMs}ms)...`
+        );
 
         // CRITICAL FIX: Mark as failed so status is accurate while waiting for retry
         // This prevents the task from getting stuck in 'running' state if app shuts down before retry
@@ -979,7 +1117,7 @@ export class FinanceHubScheduler extends EventEmitter {
         const retryTimer = setTimeout(() => {
           // CRITICAL: Pass intendedDate to retry so it marks the correct intent
           this.executeEntitySync(entityType, entityId, timeStr, retryCount + 1, intendedDate);
-        }, this.settings.retryDelayMinutes * 60 * 1000);
+        }, this.getRetryDelayMs(retryCount));
 
         this.syncTimers.set(entityKey, retryTimer);
       } else {
@@ -989,6 +1127,16 @@ export class FinanceHubScheduler extends EventEmitter {
           console.log(`[FinanceHubScheduler] ${entityKey} failed in dev mode - skipping retry`);
         } else if (retryCount >= this.settings.retryCount) {
           console.log(`[FinanceHubScheduler] ${entityKey} failed after ${retryCount} retries - giving up`);
+        }
+        if (isProduction && retryCount >= this.settings.retryCount) {
+          this.emit('sync-permanently-failed', {
+            entityType,
+            entityId,
+            entityKey,
+            targetDate,
+            retryCount,
+            error: errorMessage,
+          });
         }
         this.updateSyncStatus('failed');
         this.emit('entity-sync-failed', { entityType, entityId, error });
@@ -1882,6 +2030,182 @@ export class FinanceHubScheduler extends EventEmitter {
   }
 
   /**
+   * 어음 sync — same credential/login flow as bank sync, then automator.syncPromissoryNotes() + IBK Excel import.
+   */
+  private async syncPromissoryNotes(bankId: string): Promise<{
+    success: boolean;
+    error?: string;
+    inserted?: number;
+    skipped?: number;
+  }> {
+    console.log(`[FinanceHubScheduler] Syncing promissory notes for bank: ${bankId}`);
+    this.logBrowserState();
+
+    let automator: any = null;
+    const entityKey = `promissory:${bankId}`;
+
+    const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
+      setTimeout(() => reject(new Error('Promissory sync timeout - operation took longer than 10 minutes')), 10 * 60 * 1000);
+    });
+
+    const syncPromise = (async () => {
+      try {
+        const { getSQLiteManager } = await import('../../sqlite/manager');
+        const sqliteManager = getSQLiteManager();
+        const financeHubDb = sqliteManager.getFinanceHubManager();
+        const dbCredentials = financeHubDb.getCredentials(bankId);
+
+        if (!dbCredentials) {
+          return {
+            success: false,
+            error: 'No saved credentials found in database for this bank',
+          };
+        }
+
+        const savedCredentials = {
+          userId: dbCredentials.userId,
+          password: dbCredentials.password,
+          ...dbCredentials.metadata,
+        };
+
+        if (this.activeBrowsers.has(entityKey)) {
+          const old = this.activeBrowsers.get(entityKey);
+          try {
+            await this.safeCleanupBrowser(old, entityKey, 10000);
+          } catch (e) {
+            console.error(`[FinanceHubScheduler] Failed to cleanup existing promissory browser:`, e);
+          }
+        }
+
+        const certPw = String(savedCredentials.certificatePassword ?? '').trim();
+        const authMethod = (savedCredentials as { bankAuthMethod?: string }).bankAuthMethod;
+        const useCorporateNativeCert =
+          FinanceHubScheduler.CORPORATE_NATIVE_CERT_BANK_IDS.has(bankId) &&
+          savedCredentials.accountType === 'corporate' &&
+          certPw.length > 0 &&
+          (authMethod == null || authMethod === 'certificate');
+
+        const { createAutomator } = require('../index');
+
+        const safeCancelCorporateCert = async () => {
+          if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+            try {
+              await automator.cancelCorporateCertificateLogin(true);
+            } catch (e) {
+              console.warn(`[FinanceHubScheduler] cancelCorporateCertificateLogin:`, e);
+            }
+          }
+        };
+
+        if (useCorporateNativeCert) {
+          const arduinoPort = await this.resolveArduinoPortForBankSync();
+          automator = createAutomator(bankId, { headless: false, arduinoPort });
+          this.activeBrowsers.set(entityKey, automator);
+
+          if (
+            typeof automator.prepareCorporateCertificateLogin !== 'function' ||
+            typeof automator.completeCorporateCertificateLogin !== 'function'
+          ) {
+            return {
+              success: false,
+              error: 'Corporate certificate login is not implemented for this bank automator',
+            };
+          }
+
+          const prep = await automator.prepareCorporateCertificateLogin(undefined);
+          if (!prep?.success) {
+            await safeCancelCorporateCert();
+            return { success: false, error: prep?.error || 'Corporate certificate prepare failed' };
+          }
+
+          const complete = await automator.completeCorporateCertificateLogin({
+            certificatePassword: certPw,
+          });
+
+          if (!complete?.success || !complete.isLoggedIn) {
+            await safeCancelCorporateCert();
+            return {
+              success: false,
+              error: complete?.error || 'Corporate certificate login failed',
+            };
+          }
+        } else {
+          automator = createAutomator(bankId, { headless: false });
+          this.activeBrowsers.set(entityKey, automator);
+
+          const loginResult = await automator.login(savedCredentials);
+          if (!loginResult.success) {
+            return {
+              success: false,
+              error: `Login failed: ${loginResult.error || 'Unknown error'}`,
+            };
+          }
+        }
+
+        let accounts: any[] = [];
+        if (typeof automator.getAccounts === 'function') {
+          accounts = await automator.getAccounts();
+        }
+        if (!accounts.length) {
+          return { success: false, error: 'No accounts found' };
+        }
+
+        if (typeof automator.syncPromissoryNotes !== 'function') {
+          return {
+            success: false,
+            error: `${bankId} does not support promissory note sync`,
+          };
+        }
+
+        const raw = (await automator.syncPromissoryNotes()) as {
+          success?: boolean;
+          error?: string;
+          filePath?: string | null;
+        };
+
+        if (!raw || raw.success === false) {
+          return {
+            success: false,
+            error: raw?.error || 'syncPromissoryNotes failed',
+          };
+        }
+
+        if (bankId === 'ibk' && raw.filePath && typeof raw.filePath === 'string') {
+          const imp = financeHubDb.importIbkPromissoryNotesFromExcel(raw.filePath);
+          return {
+            success: imp.success !== false,
+            inserted: imp.imported,
+            skipped: imp.skipped,
+            error: imp.error,
+          };
+        }
+
+        return { success: true, inserted: 0, skipped: 0 };
+      } catch (error) {
+        console.error(`[FinanceHubScheduler] Promissory sync error for ${bankId}:`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      } finally {
+        if (automator) {
+          await this.safeCleanupBrowser(automator, entityKey);
+        }
+      }
+    })();
+
+    try {
+      return await Promise.race([syncPromise, timeoutPromise]);
+    } catch (timeoutError: any) {
+      console.error(`[FinanceHubScheduler] Promissory sync timeout for ${bankId}:`, timeoutError);
+      return {
+        success: false,
+        error: timeoutError.message || 'Promissory sync timeout',
+      };
+    }
+  }
+
+  /**
    * Cleanup downloaded files after successful sync
    */
   private async cleanupDownloadedFiles(entityType: 'card' | 'bank' | 'tax', entityId: string): Promise<void> {
@@ -2236,8 +2560,11 @@ export class FinanceHubScheduler extends EventEmitter {
       console.log(`[FinanceHubScheduler] Cleared ${clearedRetries.length} pending retry timer(s) before manual sync:`, clearedRetries);
     }
 
+    const { getSQLiteManager } = await import('../../sqlite/manager');
+    const banksWithCredentials = getSQLiteManager().getFinanceHubManager().getBanksWithCredentials();
+
     // Build list of entities to sync
-    const entitiesToSync: Array<{type: 'card' | 'bank' | 'tax', id: string, time: string}> = [];
+    const entitiesToSync: Array<{ type: 'card' | 'bank' | 'tax' | 'promissory'; id: string; time: string }> = [];
 
     // Add enabled cards
     for (const [cardId, schedule] of Object.entries(this.settings.cards)) {
@@ -2266,6 +2593,13 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     }
 
+    // Add enabled promissory (requires bank credentials)
+    for (const [bankId, schedule] of Object.entries(this.settings.promissoryNotes || {})) {
+      if (schedule && schedule.enabled && banksWithCredentials.includes(bankId)) {
+        entitiesToSync.push({ type: 'promissory', id: bankId, time: schedule.time });
+      }
+    }
+
     console.log(`[FinanceHubScheduler] Found ${entitiesToSync.length} entities to sync sequentially`);
 
     // Sync entities ONE BY ONE (sequentially)
@@ -2291,7 +2625,11 @@ export class FinanceHubScheduler extends EventEmitter {
     console.log(`[FinanceHubScheduler] ✅ Manual sync completed - processed ${entitiesToSync.length} entities`);
   }
 
-  public async syncEntity(entityType: 'card' | 'bank' | 'tax', entityId: string, intendedDate?: string): Promise<void> {
+  public async syncEntity(
+    entityType: 'card' | 'bank' | 'tax' | 'promissory',
+    entityId: string,
+    intendedDate?: string
+  ): Promise<void> {
     this.debugLog(`═══ syncEntity() called: ${entityType}:${entityId}, intendedDate=${intendedDate || 'today'} ═══`);
     console.log(`[FinanceHubScheduler] ═══ syncEntity() called: ${entityType}:${entityId}, intendedDate=${intendedDate || 'today'} ═══`);
 
@@ -2300,7 +2638,9 @@ export class FinanceHubScheduler extends EventEmitter {
         ? this.settings.cards[entityId as keyof typeof this.settings.cards]
         : entityType === 'bank'
         ? this.settings.banks[entityId as keyof typeof this.settings.banks]
-        : this.settings.tax[entityId];
+        : entityType === 'tax'
+        ? this.settings.tax[entityId]
+        : this.settings.promissoryNotes?.[entityId];
 
     this.debugLog(`Schedule found: ${schedule ? `Yes (time: ${schedule.time}, enabled: ${schedule.enabled})` : 'NO - WILL THROW ERROR'}`);
     console.log(`[FinanceHubScheduler] Schedule found:`, schedule ? `Yes (time: ${schedule.time}, enabled: ${schedule.enabled})` : 'NO - WILL THROW ERROR');

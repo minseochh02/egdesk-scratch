@@ -312,7 +312,6 @@ export const DEFAULT_BANK_INFO: Record<string, BankInfo> = {
   woori: { id: 'woori', name: 'Woori Bank', nameKo: '우리은행', color: '#0072BC', icon: '🏛️', supportsAutomation: true },
   hana: { id: 'hana', name: 'Hana Bank', nameKo: '하나은행', color: '#009775', icon: '🌿', supportsAutomation: true },
   nh: { id: 'nh', name: 'NH Bank', nameKo: 'NH농협은행', color: '#00B140', icon: '🌾', supportsAutomation: true },
-  'nh-business': { id: 'nh-business', name: 'NH Business Bank', nameKo: 'NH농협은행', color: '#00B140', icon: '🌾', supportsAutomation: true },
   ibk: { id: 'ibk', name: 'IBK Bank', nameKo: 'IBK기업은행', color: '#004A98', icon: '🏢', supportsAutomation: true },
   kakao: { id: 'kakao', name: 'Kakao Bank', nameKo: '카카오뱅크', color: '#FFEB00', icon: '💬', supportsAutomation: false },
   toss: { id: 'toss', name: 'Toss Bank', nameKo: '토스뱅크', color: '#0064FF', icon: '💸', supportsAutomation: false },

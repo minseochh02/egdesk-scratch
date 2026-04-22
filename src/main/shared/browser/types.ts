@@ -166,5 +166,4 @@ export type ServiceType =
   | 'hometax'
   | 'shinhan'
   | 'kookmin'
-  | 'nh'
-  | 'nh-business';
+  | 'nh';
