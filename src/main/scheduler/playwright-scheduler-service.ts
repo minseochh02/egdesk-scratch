@@ -5,10 +5,12 @@
  */
 
 import { randomUUID } from 'crypto';
+import path from 'path';
 import * as schedule from 'node-schedule';
 import { getSQLiteManager } from '../sqlite/manager';
 import { PlaywrightScheduledTest } from '../sqlite/playwright-scheduler';
 import { getSchedulerRecoveryService } from './recovery-service';
+import { getTestSettingsStore } from '../test-settings-store';
 
 export class PlaywrightSchedulerService {
   private static instance: PlaywrightSchedulerService | null = null;
@@ -407,7 +409,9 @@ export class PlaywrightSchedulerService {
     try {
       console.log('🚀 Calling browser recording replay automation runner...');
       const { runBrowserRecordingReplayForAutomation } = await import('../chrome-handlers');
-      const replayResult = await runBrowserRecordingReplayForAutomation(test.testPath, {});
+      const specFileName = path.basename(test.testPath);
+      const testSettings = getTestSettingsStore().get(specFileName);
+      const replayResult = await runBrowserRecordingReplayForAutomation(test.testPath, { headless: testSettings.headless ?? false });
       if (!replayResult.success) {
         throw new Error(replayResult.error || 'Browser recording replay failed');
       }

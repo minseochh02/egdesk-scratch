@@ -39,6 +39,8 @@ export interface BrowserRecordingReplayParams {
   datePickersByIndex?: (string | undefined)[];
   /** Per `captureLabeledFields` action in order; each array aligns with `labeledFields[]` on that action */
   labeledFieldFills?: (string | undefined)[][];
+  /** Run the replay browser invisibly in the background */
+  headless?: boolean;
 }
 
 export interface LabeledFieldReplayBlock {

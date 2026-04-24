@@ -137,7 +137,7 @@ export const ExistingTableMapper: React.FC<ExistingTableMapperProps> = ({
                     📊 {table.displayName}
                   </div>
                   <div className="existing-table-meta">
-                    {table.rowCount.toLocaleString()} rows • {table.columnCount} columns
+                    {(table.rowCount ?? 0).toLocaleString()} rows • {table.columnCount} columns
                     {table.description && (
                       <span style={{ marginLeft: '8px', color: '#999' }}>
                         • {table.description}
@@ -178,7 +178,7 @@ export const ExistingTableMapper: React.FC<ExistingTableMapperProps> = ({
           Selected Table: {selectedTable.displayName}
         </h4>
         <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
-          {selectedTable.rowCount.toLocaleString()} rows • {tableColumns.length} columns
+          {(selectedTable.rowCount ?? 0).toLocaleString()} rows • {tableColumns.length} columns
         </p>
         <button
           onClick={() => setSelectedTableId(null)}

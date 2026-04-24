@@ -320,14 +320,14 @@ export async function connectToHometax(
 
       // Get company info from page if available
       const companyNameXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[2]/div/span[1]';
-      companyName = await page.evaluate((xpath) => {
+      companyName = await page!.evaluate((xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
         return element?.textContent?.trim() || '';
       }, companyNameXPath).catch(() => '');
 
       const companyTypeXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div/div[1]/div[1]/div[1]/div[1]/span';
-      companyType = await page.evaluate((xpath) => {
+      companyType = await page!.evaluate((xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
         return element?.textContent?.trim() || '';
@@ -656,7 +656,7 @@ export async function connectToHometax(
     } // End of login/navigation block
 
     // Wait for year select to be available
-    await page.waitForTimeout(3000);
+    await page!.waitForTimeout(3000);
 
     // Use provided year/month or default to current date
     const targetYear = year || new Date().getFullYear();
@@ -666,19 +666,19 @@ export async function connectToHometax(
     const categoryIndex = invoiceCategory === 'tax-exempt' ? 1 : 0;
     console.log(`[Hometax] Selecting ${invoiceCategory === 'tax-exempt' ? '전자계산서(면세)' : '전자세금계산서(과세)'} radio...`);
     const categorySelector = `label.w2radio_label[for="mf_txppWframe_wf01_radioEtxivClsfCd_input_${categoryIndex}"]`;
-    await page.locator(categorySelector).click({ timeout: 180000 });
-    await page.waitForTimeout(1000);
+    await page!.locator(categorySelector).click({ timeout: 180000 });
+    await page!.waitForTimeout(1000);
 
     // 2. Type Selection (Click radio button for 매출 or 매입)
     const radioIndex = invoiceType === 'sales' ? 0 : 1;
     const radioSelector = `#mf_txppWframe_radio3 > div.w2radio_item.w2radio_item_${radioIndex} > label`;
     console.log(`[Hometax] Selecting ${invoiceType === 'sales' ? '매출' : '매입'}...`);
-    await page.locator(radioSelector).click({ timeout: 180000 });
-    await page.waitForTimeout(1092); // Human-like delay (1x multiplier)
+    await page!.locator(radioSelector).click({ timeout: 180000 });
+    await page!.waitForTimeout(1092); // Human-like delay (1x multiplier)
 
     // Helper function for year/month selection
     const selectFromRobustXPath = async (subPath: string, valueToSelect: string, type: 'year' | 'month') => {
-      return await page.evaluate(({ sub, val, type }) => {
+      return await page!.evaluate(({ sub, val, type }) => {
         const roots = ['/html/body/div[1]', '/html/body/div[2]'];
         for (const root of roots) {
           const xpath = `${root}${sub}`;
@@ -711,12 +711,12 @@ export async function connectToHometax(
     } else {
       console.error('[Hometax] Failed to select year, trying fallback ID');
       try {
-        await page.selectOption('select[id*="sbxYy"], select[id*="Yy"]', targetYear.toString());
+        await page!.selectOption('select[id*="sbxYy"], select[id*="Yy"]', targetYear.toString());
       } catch (e) {
         console.error('[Hometax] Fallback year selection also failed');
       }
     }
-    await page.waitForTimeout(1000);
+    await page!.waitForTimeout(1000);
 
     // 4. Month Selection
     console.log(`[Hometax] Selecting month: ${targetMonth}...`);
@@ -728,18 +728,18 @@ export async function connectToHometax(
     } else {
       console.error('[Hometax] Failed to select month, trying fallback ID');
       try {
-        await page.selectOption('select[id*="sbxMm"], select[id*="Mm"]', monthVal);
+        await page!.selectOption('select[id*="sbxMm"], select[id*="Mm"]', monthVal);
       } catch (e) {
         console.error('[Hometax] Fallback month selection also failed');
       }
     }
-    await page.waitForTimeout(1000);
+    await page!.waitForTimeout(1000);
 
     console.log('[Hometax] Reached tax invoice list page');
 
     // Click 조회 button
     console.log('[Hometax] Clicking search button...');
-    const clickedSearch = await page.evaluate(() => {
+    const clickedSearch = await page!.evaluate(() => {
       const subPath = '/div[2]/div/div[1]/div[2]/div[2]/div[3]/div/div[4]/div/span';
       const roots = ['/html/body/div[1]', '/html/body/div[2]'];
       for (const root of roots) {
@@ -756,13 +756,13 @@ export async function connectToHometax(
 
     if (!clickedSearch) {
       console.log('[Hometax] Search button XPath failed, trying CSS fallback');
-      await page.locator('span.btn_search, [id*="btnSearch"]').first().click({ timeout: 10000 }).catch(() => {});
+      await page!.locator('span.btn_search, [id*="btnSearch"]').first().click({ timeout: 10000 }).catch(() => {});
     }
-    await page.waitForTimeout(3000);
+    await page!.waitForTimeout(3000);
 
     // Check for "no data" alert (Check both event flag and DOM)
     console.log('[Hometax] Checking for no-data alert...');
-    const noDataAlertExists = await page.evaluate(() => {
+    const noDataAlertExists = await page!.evaluate(() => {
       const alerts = document.querySelectorAll('.w2dialog_message');
       for (const alert of alerts) {
         if (alert.textContent?.includes('조회된 내역이 없습니다')) {
@@ -775,7 +775,7 @@ export async function connectToHometax(
     if (noDataDetected || noDataAlertExists) {
       console.log('[Hometax] 🔔 Dialog detected (via flag or DOM): alert - "조회된 내역이 없습니다." - Skipping download logic');
       // Close the alert (if still present in DOM)
-      await page.evaluate(() => {
+      await page!.evaluate(() => {
         const closeButtons = document.querySelectorAll('input[value="확인"]');
         for (const button of closeButtons) {
           (button as HTMLElement).click();
@@ -801,7 +801,7 @@ export async function connectToHometax(
 
     // Click excel download button
     console.log('[Hometax] Starting download with auto-confirmations...');
-    const clickedExcel = await page.evaluate((category) => {
+    const clickedExcel = await page!.evaluate((category) => {
       const subTaxExempt = '/div[2]/div/div[1]/div[2]/div[2]/div[6]/div/div/span[1]/input';
       const subTax = '/div[2]/div/div[1]/div[2]/div[3]/div[1]/div/span[1]/input';
       const subPath = category === 'tax-exempt' ? subTaxExempt : subTax;
@@ -821,18 +821,18 @@ export async function connectToHometax(
 
     if (!clickedExcel) {
       console.log('[Hometax] Excel button XPath failed, trying CSS fallback');
-      await page.locator('input.w2trigger[value="엑셀"], .btn_excel').first().click({ timeout: 10000 }).catch(() => {});
+      await page!.locator('input.w2trigger[value="엑셀"], .btn_excel').first().click({ timeout: 10000 }).catch(() => {});
     }
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Helper: XPath last() 로 body의 가장 마지막 다이얼로그 div를 동적으로 찾아 클릭
     const clickByLastDivXPath = async (subPath: string) => {
       const xpath = `/html/body/div[last()]/div[2]/div[1]/div/${subPath}`;
-      return await page.waitForFunction((xp) => {
+      return await page!.waitForFunction((xp) => {
         const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         return result.singleNodeValue !== null;
       }, xpath, { timeout: 5000 }).then(async () => {
-        await page.evaluate((xp) => {
+        await page!.evaluate((xp) => {
           const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
           (result.singleNodeValue as HTMLElement)?.click();
         }, xpath);
@@ -846,7 +846,7 @@ export async function connectToHometax(
     } else {
       console.log('[Hometax] First confirmation (확인) skipped (not present)');
     }
-    await page.waitForTimeout(1000);
+    await page!.waitForTimeout(1000);
 
     // Second confirmation: 엑셀 button (div[2]/div[3]/span[2]/input)
     if (await clickByLastDivXPath('div[2]/div[3]/span[2]/input')) {
@@ -854,7 +854,7 @@ export async function connectToHometax(
     } else {
       console.log('[Hometax] Second confirmation (엑셀) skipped (not present)');
     }
-    await page.waitForTimeout(1000);
+    await page!.waitForTimeout(1000);
 
     // Final dialog close: 닫기 button (div[2]/div[2]/input)
     if (await clickByLastDivXPath('div[2]/div[2]/input')) {
@@ -866,7 +866,7 @@ export async function connectToHometax(
     console.log('[Hometax] Download completed (confirmations auto-handled)');
 
     // Wait a bit for download to complete and get the file path
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Get downloaded file from the downloads folder
     const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
@@ -1000,14 +1000,14 @@ export async function downloadCashReceipts(
 
     // Navigate to 전자세금계산서 menu (same starting point)
     console.log('[Hometax] Navigating to tax menu...');
-    await page.waitForTimeout(3000);
-    await page.locator('[id="mf_wfHeader_wq_uuid_358"]').click({ timeout: 180000 });
-    await page.waitForTimeout(2891);
+    await page!.waitForTimeout(3000);
+    await page!.locator('[id="mf_wfHeader_wq_uuid_358"]').click({ timeout: 180000 });
+    await page!.waitForTimeout(2891);
 
     // Expand 가맹점 매출 조회 menu (li[7] instead of li[2])
     console.log('[Hometax] Expanding 가맹점 매출 조회 menu...');
     try {
-      await page.evaluate(() => {
+      await page!.evaluate(() => {
         const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[7]/ul/li[1]/a';
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
@@ -1020,16 +1020,16 @@ export async function downloadCashReceipts(
       console.log('[Hometax] 가맹점 매출 조회 menu expanded with XPath');
     } catch (error) {
       console.log('[Hometax] XPath failed, trying CSS selector');
-      await page.locator('#grpMenuLi_46_4606010000 > a').click({ timeout: 10000 });
+      await page!.locator('#grpMenuLi_46_4606010000 > a').click({ timeout: 10000 });
       console.log('[Hometax] 가맹점 매출 조회 menu expanded with CSS selector');
     }
 
-    await page.waitForTimeout(1000);
+    await page!.waitForTimeout(1000);
 
     // Click 현금영수증 매출내역 조회 submenu
     console.log('[Hometax] Clicking 현금영수증 매출내역 조회...');
     try {
-      await page.evaluate(() => {
+      await page!.evaluate(() => {
         const xpath = '/html/body/div[6]/div[2]/div[1]/div/div/div/div[4]/div[3]/div/div[2]/div[1]/div/div/div/div/ul/li[7]/ul/li[1]/ul/li[1]/a';
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
@@ -1042,16 +1042,16 @@ export async function downloadCashReceipts(
       console.log('[Hometax] 현금영수증 매출내역 조회 clicked with XPath');
     } catch (error) {
       console.log('[Hometax] XPath failed, trying ID selector');
-      await page.locator('[id="grpMenuAtag_46_4606010100"]').click({ timeout: 10000 });
+      await page!.locator('[id="grpMenuAtag_46_4606010100"]').click({ timeout: 10000 });
       console.log('[Hometax] 현금영수증 매출내역 조회 clicked with ID selector');
     }
 
-    await page.waitForTimeout(3000);
+    await page!.waitForTimeout(3000);
 
     // Click 주별 tab (auto-selects current week)
     console.log('[Hometax] Clicking 주별 tab...');
     try {
-      await page.evaluate(() => {
+      await page!.evaluate(() => {
         const xpath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[2]/div/ul/li[2]/div[1]/a';
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
@@ -1064,23 +1064,23 @@ export async function downloadCashReceipts(
       console.log('[Hometax] 주별 tab clicked with XPath');
     } catch (error) {
       console.log('[Hometax] XPath failed, trying CSS selector');
-      await page.locator('#mf_txppWframe_tabControl1_UTECRCB057_tab_tabs2_tabHTML').click({ timeout: 10000 });
+      await page!.locator('#mf_txppWframe_tabControl1_UTECRCB057_tab_tabs2_tabHTML').click({ timeout: 10000 });
     }
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Click 조회 button
     console.log('[Hometax] Clicking 조회 button...');
     const searchButtonXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[4]/div/div/div/span/input';
-    await page.evaluate((xpath) => {
+    await page!.evaluate((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const element = result.singleNodeValue as HTMLElement;
       element?.click();
     }, searchButtonXPath);
-    await page.waitForTimeout(3000);
+    await page!.waitForTimeout(3000);
 
     // Check for "no data" alert immediately after 조회
     console.log('[Hometax] Checking for no-data alert...');
-    const noDataAlertExists = await page.evaluate(() => {
+    const noDataAlertExists = await page!.evaluate(() => {
       const alerts = document.querySelectorAll('.w2dialog_message');
       for (const alert of alerts) {
         if (alert.textContent?.includes('조회된 내역이 없습니다')) {
@@ -1093,7 +1093,7 @@ export async function downloadCashReceipts(
     if (noDataAlertExists) {
       console.log('[Hometax] 🔔 Dialog detected: alert - "조회된 내역이 없습니다." - Skipping download logic');
       // Close the alert
-      await page.evaluate(() => {
+      await page!.evaluate(() => {
         const closeButtons = document.querySelectorAll('input[value="확인"]');
         for (const button of closeButtons) {
           (button as HTMLElement).click();
@@ -1115,24 +1115,24 @@ export async function downloadCashReceipts(
     // Click 내려받기 button
     console.log('[Hometax] Clicking 내려받기 button...');
     const downloadButtonXPath = '/html/body/div[1]/div[2]/div/div/div[1]/div[3]/div[5]/div[2]/span[2]/input';
-    await page.evaluate((xpath) => {
+    await page!.evaluate((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       const element = result.singleNodeValue as HTMLElement;
       element?.click();
     }, downloadButtonXPath);
 
     // Wait for confirmation dialog
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Click confirmation dialog
     const confirmXPath = '/html/body/div[6]/div[2]/div[1]/div/div[1]/div[2]/span[2]/input';
-    const confirmExists = await page.waitForFunction((xpath) => {
+    const confirmExists = await page!.waitForFunction((xpath) => {
       const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       return result.singleNodeValue !== null;
     }, confirmXPath, { timeout: 5000 }).then(() => true).catch(() => false);
 
     if (confirmExists) {
-      await page.evaluate((xpath) => {
+      await page!.evaluate((xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const element = result.singleNodeValue as HTMLElement;
         element?.click();
@@ -1143,7 +1143,7 @@ export async function downloadCashReceipts(
     console.log('[Hometax] Cash receipt download completed');
 
     // Wait for download to complete
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Get downloaded file from the downloads folder
     const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
@@ -1198,6 +1198,789 @@ export async function downloadCashReceipts(
   }
 }
 
+/** Hometax calendar text fields usually expect `YYYY.MM.DD` (e.g. w2input date). */
+function formatHometaxCalendarDate(y: number, m: number, d: number): string {
+  return `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}`;
+}
+
+/**
+ * Inclusive year/month range → start = first day of start month, end = last day of end month
+ * (same idea as {@link collectTaxInvoicesInRange} month list).
+ */
+function hometaxGojiDateRangeStrings(
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number
+): { start: string; end: string } {
+  const start = formatHometaxCalendarDate(startYear, startMonth, 1);
+  const lastDay = new Date(endYear, endMonth, 0).getDate();
+  const end = formatHometaxCalendarDate(endYear, endMonth, lastDay);
+  return { start, end };
+}
+
+/**
+ * Set 고지내역 query period (시작 / 종료).
+ * Start: <input id="mf_txppWframe_idx_strtDt_input" /> — XPath:
+ * /html/body/div[1]/div[2]/div/div/div/div[2]/div[1]/table/tbody/tr/td[4]/div/div[1]/div[1]/input
+ * End: <input id="mf_txppWframe_idx_endDt_input" /> (symmetric to start).
+ */
+async function setGojiNaeYeokDateRange(
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number
+): Promise<{ success: boolean; error?: string }> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  const { start, end } = hometaxGojiDateRangeStrings(
+    startYear,
+    startMonth,
+    endYear,
+    endMonth
+  );
+  try {
+    console.log('[Hometax] Setting 고지내역 date range:', start, '–', end);
+    const startLoc = page.locator('#mf_txppWframe_idx_strtDt_input');
+    const endLoc = page.locator('#mf_txppWframe_idx_endDt_input');
+    await startLoc.click({ timeout: 180000 });
+    await startLoc.fill(start, { timeout: 180000 });
+    await page.waitForTimeout(400);
+    await endLoc.click({ timeout: 180000 });
+    await endLoc.fill(end, { timeout: 180000 });
+    await page.waitForTimeout(500);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] setGojiNaeYeokDateRange error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Download tax bills (납부 고지서) from Hometax for each month in the inclusive range.
+ * Placeholder — requires active session; automation not yet implemented.
+ * Signature mirrors {@link collectTaxInvoicesInRange}.
+ */
+export async function downloadTaxBills(
+  _certificateData: any,
+  _certificatePassword: string,
+  _startYear: number,
+  _startMonth: number,
+  _endYear: number,
+  _endMonth: number,
+  _onProgress?: (message: string) => void
+): Promise<{
+  success: boolean;
+  downloadedFiles: { year: number; month: number; type: string; category: string; path: string }[];
+  cards?: any[];
+  error?: string;
+}> {
+  try {
+    // 0. Ensure we are connected/logged in
+    if (!globalPage) {
+      if (_onProgress) _onProgress('홈택스 접속 및 로그인 중...');
+      const conn = await connectToHometax(_certificateData, _certificatePassword, 'sales', 'tax', _startYear, _startMonth);
+      if (!conn.success) {
+        return { success: false, downloadedFiles: [], error: conn.error || 'Failed to connect to Hometax' };
+      }
+    }
+
+    if (_onProgress) {
+      _onProgress('홈화면으로 이동 중...');
+    }
+    const home = await goHome();
+  if (!home.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: home.error || 'Failed to navigate to Hometax home',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('전체 메뉴 여는 중...');
+  }
+  const totalMenu = await openTotalMenu();
+  if (!totalMenu.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: totalMenu.error || 'Failed to open total menu',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('납부·고지·환급 메뉴로 이동 중...');
+  }
+  const pnr = await goToPaymentNoticeRefundMenu();
+  if (!pnr.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: pnr.error || 'Failed to open 납부·고지·환급 menu',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('고지내역으로 이동 중...');
+  }
+  const goji = await goToGojiNaeYeok();
+  if (!goji.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: goji.error || 'Failed to open 고지내역',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('조회 기간 설정 중...');
+  }
+  const dates = await setGojiNaeYeokDateRange(
+    _startYear,
+    _startMonth,
+    _endYear,
+    _endMonth
+  );
+  if (!dates.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: dates.error || 'Failed to set query date range',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('조회 중...');
+  }
+  const search = await clickGojiNaeYeokSearch();
+  if (!search.success) {
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: search.error || 'Failed to run 조회',
+    };
+  }
+
+  if (_onProgress) {
+    _onProgress('고지 내역 분석 중...');
+  }
+
+  const allCards: any[] = [];
+  let hasNextPage = true;
+  let pageNum = 1;
+
+  while (hasNextPage) {
+    console.log(`[Hometax] Scraping page ${pageNum}...`);
+    const scrapRes = await scrapeTaxBillCards();
+
+    if (!scrapRes.success) {
+      return {
+        success: false,
+        downloadedFiles: [],
+        error:
+          scrapRes.error ||
+          `Failed to scrape tax bill cards on page ${pageNum}`,
+      };
+    }
+
+    allCards.push(...scrapRes.cards);
+
+    // Check for "Next" (다음) pagination button
+    const nextButton = globalPage!.locator('#mf_txppWframe_btn_pgl_navi_right');
+    const isVisible = await nextButton.isVisible();
+    const isDisabled = await nextButton.isDisabled();
+
+    // In Hometax, visibility: hidden or style="display: none" is often used for the last page
+    const isHiddenOrDisabled = await nextButton
+      .evaluate((el: HTMLElement) => {
+        const style = window.getComputedStyle(el);
+        return (
+          style.display === 'none' ||
+          style.visibility === 'hidden' ||
+          el.getAttribute('aria-hidden') === 'true' ||
+          (el as HTMLInputElement).disabled
+        );
+      })
+      .catch(() => true);
+
+    if (isVisible && !isDisabled && !isHiddenOrDisabled) {
+      console.log(`[Hometax] Clicking next page button...`);
+      await nextButton.click();
+      await globalPage!.waitForTimeout(2000); // Wait for next page content to load
+      pageNum++;
+    } else {
+      hasNextPage = false;
+    }
+  }
+
+    console.log(
+      `[Hometax] Total scraped ${allCards.length} cards across ${pageNum} pages.`,
+    );
+
+    const downloadsPath = path.join(os.homedir(), 'Downloads', 'EGDesk-Hometax');
+    if (!fs.existsSync(downloadsPath)) {
+      fs.mkdirSync(downloadsPath, { recursive: true });
+    }
+
+    const downloadedFiles: {
+      year: number;
+      month: number;
+      type: string;
+      category: string;
+      path: string;
+    }[] = [];
+
+  for (let i = 0; i < allCards.length; i++) {
+    const card = allCards[i];
+    if (!card.canView || !card.viewButtonId) {
+      console.log(`[Hometax] Skipping card ${i + 1}: ${card.title} (Cannot view)`);
+      continue;
+    }
+
+    if (_onProgress) {
+      _onProgress(`고지서 다운로드 중 (${i + 1}/${allCards.length}): ${card.title}`);
+    }
+
+    try {
+      const context = globalContext;
+      if (!context) throw new Error('No active browser context');
+
+      console.log(`[Hometax] Opening tax bill: ${card.title}`);
+
+      // 1. Wait for the new page event
+      const pagePromise = context.waitForEvent('page');
+
+      // 2. Click "열람하기"
+      await globalPage!.locator(`#${card.viewButtonId}`).click();
+
+      // 3. Get the new page
+      const newPage = await pagePromise;
+      await newPage.waitForLoadState('load');
+      await newPage.waitForTimeout(3000); // Wait for the report viewer to initialize
+
+      console.log('[Hometax] Tax bill window opened');
+
+      // 4. Find the report frame by searching all frames for the paint div
+      console.log('[Hometax] Searching for the report content frame...');
+      let reportFrame: any = null;
+      
+      // Wait a bit for the iframe to at least exist and start loading
+      await newPage.waitForTimeout(2000);
+      
+      const allFrames = newPage.frames();
+      console.log(`[Hometax] Found ${allFrames.length} total frames in popup.`);
+      
+      for (const frame of allFrames) {
+        try {
+          // Check if this frame has the report paint div
+          const paintDiv = await frame.$('.report_paint_div');
+          if (paintDiv) {
+            reportFrame = frame;
+            console.log(`[Hometax] Found report content in frame: ${frame.name() || 'unnamed'} (${frame.url()})`);
+            break;
+          }
+        } catch (e) {
+          // Cross-origin frames might throw; skip them
+        }
+      }
+
+      if (!reportFrame) {
+        console.log('[Hometax] Fallback: searching for iframe by title/name...');
+        const iframeLocator = newPage.locator('iframe[title*="report"], iframe[name*="reportFrame"], iframe[id*="reportFrame"]').first();
+        try {
+          const handle = await iframeLocator.elementHandle();
+          if (handle) {
+            reportFrame = await handle.contentFrame();
+          }
+        } catch (e) {
+          console.warn('[Hometax] Could not get frame handle');
+        }
+      }
+
+      if (!reportFrame) throw new Error('Could not locate report iframe');
+
+      // 5. Wait for the report to actually RENDER (not just the progress bar)
+      console.log('[Hometax] Waiting for report content to render (svg/text)...');
+      try {
+        // Wait for the .report_paint_div to contain an svg or at least one text span
+        // The progress bar is usually div.report_progress
+        await reportFrame.waitForSelector('.report_paint_div svg, .report_paint_div span', { 
+          state: 'attached', 
+          timeout: 45000 
+        });
+        // Extra buffer for full rendering
+        await newPage.waitForTimeout(2000);
+      } catch (e) {
+        console.warn('[Hometax] Warning: Timed out waiting for SVG/Span in report_paint_div. Content might be missing.');
+      }
+
+      // 6. Capture the report content as a raw HTML file.
+      console.log('[Hometax] Capturing report as raw HTML...');
+      const timestamp = Date.now();
+      const filename = `TaxBill_${card.title.replace(/\s+/g, '_')}_${timestamp}.html`;
+      const filePath = path.join(downloadsPath, filename);
+
+      const htmlContent = await (reportFrame as any).evaluate(() => {
+        // The user specifically mentioned /html/body/div/div/div[2]
+        // In the ClipReport viewer, this is typically the report_paint_div.
+        const paintDiv = document.querySelector('.report_paint_div') as HTMLElement;
+        
+        // If we found the paint div, use it. Otherwise try the XPath.
+        if (paintDiv) {
+          return paintDiv.outerHTML;
+        }
+
+        const contentEl = document.evaluate('/html/body/div/div/div[2]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
+        return contentEl ? contentEl.outerHTML : document.body.innerHTML;
+      });
+
+      fs.writeFileSync(filePath, htmlContent);
+      console.log(`[Hometax] Tax bill saved: ${filePath}`);
+
+      // 6.5 Extract detailed information from the report page itself
+      console.log('[Hometax] Extracting detailed data from the report page...');
+      const reportData = await (reportFrame as any).evaluate(() => {
+        const spans = Array.from(document.querySelectorAll('.report_paint_div span[aria-label]')) as HTMLElement[];
+        
+        // Sort by vertical position first, then horizontal to get logical reading order
+        const sortedItems = spans.map(span => {
+          const style = window.getComputedStyle(span);
+          const top = parseFloat(style.top) || 0;
+          const left = parseFloat(style.left) || 0;
+          return {
+            text: (span.getAttribute('aria-label') || '').trim(),
+            top,
+            left
+          };
+        })
+        .filter(item => item.text.length > 0)
+        .sort((a, b) => {
+          // Group by "lines" within 5 pixels
+          if (Math.abs(a.top - b.top) < 5) {
+            return a.left - b.left;
+          }
+          return a.top - b.top;
+        });
+
+        const allTexts = sortedItems.map(item => item.text);
+
+        // Helper to parse Korean dates like "2022년 04월 25일" to "2022-04-25"
+        const parseDate = (text: string) => {
+          const m = text.match(/(\d{4})[년\.]\s*(\d{1,2})[월\.]\s*(\d{1,2})[일]?/);
+          if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+          return text;
+        };
+
+        // Helper to parse numbers like "1,540" to 1540
+        const parseNum = (text: string) => {
+          const num = text.replace(/[^0-9]/g, '');
+          return num ? parseInt(num, 10) : 0;
+        };
+
+        // Try to identify key-value pairs or structured data
+        const extracted: Record<string, any> = {};
+
+        // Pattern-based extraction with refined logic
+        const patterns = [
+          // Basic Info
+          { key: 'attribution_period', marker: '이 납부고지서는 (', offset: 1 },
+          { key: 'attribution_tax_item', marker: ')에 귀속되는(', offset: 1 },
+          { key: 'notice_type', marker: ')에 대한 것으로 납세의무 성립', offset: 1 },
+          { key: 'attribution_year', marker: '연도는 (', offset: 1 },
+          { key: 'business_name', marker: '상   호\n(성   명)', offset: 1 },
+          { key: 'business_reg_no', marker: '사업자등록번호\n(주민등록번호)', offset: 1 },
+          { key: 'business_address', marker: '사업장\n(주 소)', offset: 1 },
+          
+          { key: 'prev_period_tax_paid', marker: '① 직전기과세기간납부세액은', offset: 1, type: 'num' },
+          { key: 'calculated_tax_amount', marker: '③ 산출세액은', offset: 1, type: 'num' },
+          { key: 'total_notice_amount', marker: '⑥ 고지세액은', offset: 1, type: 'num' },
+          
+          { key: 'class_code', marker: '분류기호', offset: 5, instance: 1 },
+          { key: 'imposition_ym', marker: '부과연월', offset: 5, instance: 1 },
+          { key: 'decision_type', marker: '결정구분', offset: 5, instance: 1 },
+          { key: 'tax_item_code', marker: '세목', offset: 5, instance: 1 },
+          { key: 'issue_number', marker: '발행번호', offset: 5, instance: 1 },
+          
+          { key: 'accounting_year', marker: '회계연도', offset: 1, instance: 1 },
+          { key: 'tax_year', marker: '과세연도', offset: 1, instance: 1 },
+          
+          { key: 'collection_account_no', marker: '수입징수관\n계좌번호', offset: 1 },
+          { key: 'virtual_account', marker: '가상계좌 (23:00 까지', offset: 3 }, // Adjusting offset based on likely DOM structure
+          { key: 'payment_deadline', marker: '납 부 기 한', offset: 1, type: 'date' },
+          { key: 'amount_due', marker: '금   액', offset: 1, type: 'num' },
+          { key: 'issue_date', marker: '세 무 서 장 (인)', offset: -1, type: 'date' }
+        ];
+
+        // Track seen counts for labels that appear multiple times
+        const seenCounts: Record<string, number> = {};
+
+        for (let j = 0; j < sortedItems.length; j++) {
+          const current = sortedItems[j].text;
+          
+          // Daily late fee extraction
+          if (current.includes('매 1일마다')) {
+            const m = current.match(/\(([\d,]+)\)원의/);
+            if (m) extracted['daily_late_fee_amount'] = parseNum(m[1]);
+          }
+
+          // Refined "납기경과" handling for Until (까지) and From (부터)
+          if (current === '납기경과') {
+            if (j + 1 < sortedItems.length) {
+              const next = sortedItems[j + 1].text;
+              const dateMatch = next.match(/(\d{4}\.\d{2}\.\d{2})/);
+              if (dateMatch && j + 2 < sortedItems.length) {
+                const amount = parseNum(sortedItems[j + 2].text);
+                const cleanDate = dateMatch[1].replace(/\./g, '-');
+                if (next.includes('까지')) {
+                  extracted['late_payment_until_date'] = cleanDate;
+                  extracted['late_payment_until_amount'] = amount;
+                } else if (next.includes('부터')) {
+                  extracted['late_payment_from_date'] = cleanDate;
+                  extracted['late_payment_from_amount'] = amount;
+                }
+              }
+            }
+          }
+
+          for (const p of patterns) {
+            if (current === p.marker || (p.marker.includes(':') && current.includes(p.marker))) {
+              seenCounts[p.marker] = (seenCounts[p.marker] || 0) + 1;
+              
+              // Only take the requested instance (usually the first one, the Taxpayer copy)
+              if (p.instance && seenCounts[p.marker] !== p.instance) continue;
+
+              if (j + (p.offset || 1) < sortedItems.length) {
+                let val = sortedItems[j + (p.offset || 1)].text;
+                
+                if (p.type === 'num') extracted[p.key] = parseNum(val);
+                else if (p.type === 'date') extracted[p.key] = parseDate(val);
+                else extracted[p.key] = val;
+              }
+            }
+          }
+        }
+
+        // Extract "Payment by Date" chart
+        const paymentChart: any[] = [];
+        for (let j = 0; j < sortedItems.length; j++) {
+          const text = sortedItems[j].text;
+          // Look for "YYYY.MM.DD" format
+          const dateMatch = text.match(/^(\d{4}\.\d{2}\.\d{2})$/);
+          if (dateMatch && j + 1 < sortedItems.length) {
+            const amountText = sortedItems[j + 1].text;
+            if (amountText.match(/^[\d,]+$/)) {
+              paymentChart.push({
+                date: text.replace(/\./g, '-'),
+                amount: parseNum(amountText)
+              });
+            }
+          }
+        }
+        if (paymentChart.length > 0) extracted['payment_by_date_chart'] = paymentChart;
+
+        // Extract "Tax Items Breakdown" (the table between deadline and total)
+        const breakdown: any[] = [];
+        let startIdx = -1;
+        let endIdx = -1;
+        
+        // Find the second "납 부 기 한" (or after the first one's value) and the "계" total
+        for (let k = 0; k < allTexts.length; k++) {
+          if (allTexts[k] === '납 부 기 한') {
+            startIdx = k + 2; // Skip label and date value
+          }
+          if (startIdx !== -1 && allTexts[k] === '계') {
+            endIdx = k;
+            break;
+          }
+        }
+
+        if (startIdx !== -1 && endIdx !== -1) {
+          for (let k = startIdx; k < endIdx; k += 2) {
+            if (k + 1 < endIdx) {
+              const label = allTexts[k];
+              const val = allTexts[k + 1];
+              if (val.match(/^[\d,]+$/)) {
+                breakdown.push({
+                  item: label,
+                  amount: parseNum(val)
+                });
+              }
+            }
+          }
+        }
+        if (breakdown.length > 0) extracted['tax_items_breakdown'] = breakdown;
+
+        return {
+          fullTextList: allTexts,
+          identifiedFields: extracted
+        };
+      });
+
+      // Attach the extracted data to the card object (Now using a specific key for detailed bill data)
+      card.scrapedBillData = reportData;
+      card.htmlPath = filePath;
+
+      // Add to downloaded files list
+      const yearMatch = card.title.match(/(\d{4})년/);
+      const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+
+      downloadedFiles.push({
+        year,
+        month: 0, // General year/period
+        type: 'tax-bill',
+        category: 'notice',
+        path: filePath,
+      });
+
+      // 7. Close the new page
+      await newPage.close();
+      await globalPage!.waitForTimeout(2000); // Buffer between captures
+    } catch (error) {
+      console.error(`[Hometax] Failed to capture card ${i + 1}:`, error);
+    }
+  }
+
+    return {
+      success: true,
+      downloadedFiles,
+      cards: allCards,
+    };
+  } catch (error) {
+    console.error('[Hometax] Error in downloadTaxBills:', error);
+    return {
+      success: false,
+      downloadedFiles: [],
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  } finally {
+    // If we started a session just for this, or if we want to be safe,
+    // we can close here. But typically we follow the pattern of the caller.
+    // For now, let's close to match the invoices logic.
+    await disconnectFromHometax().catch(() => {});
+  }
+}
+
+/**
+ * Click the header Hometax logo (국세청 홈택스) to return to the home screen.
+ * Target: <a id="mf_wfHeader_hdGroup001" class="w2group logo_hometax ico_apr" ... title="국세청 홈택스">
+ */
+export async function goHome(): Promise<{ success: boolean; error?: string }> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  try {
+    console.log('[Hometax] Clicking home logo (#mf_wfHeader_hdGroup001)...');
+    await page.locator('#mf_wfHeader_hdGroup001').click({ timeout: 180000 });
+    await page.waitForTimeout(1500);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] goHome error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Open the "Total Menu" (hamburger button) from the header.
+ * Target: <div id="mf_wfHeader_wq_uuid_358" class="w2group bar">...</div>
+ * XPath: /html/body/div[1]/div[1]/header/div[2]/div/ul/li[3]/a/div
+ */
+export async function openTotalMenu(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  try {
+    console.log('[Hometax] Opening total menu (#mf_wfHeader_wq_uuid_358)...');
+    await page.locator('#mf_wfHeader_wq_uuid_358').click({ timeout: 180000 });
+    await page.waitForTimeout(1500);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] openTotalMenu error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Open the "납부·고지·환급" (Payment, Notice, Refund) top menu from the header.
+ * Target: <a title="납부·고지·환급">...</a>
+ */
+export async function goToPaymentNoticeRefundMenu(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  try {
+    console.log('[Hometax] Opening 납부·고지·환급 menu (via title selector)...');
+    // Using title selector as IDs like wq_uuid_2241 are dynamic and fragile
+    await page.locator('a[title="납부·고지·환급"]').click({ timeout: 180000 });
+    await page.waitForTimeout(1500);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] goToPaymentNoticeRefundMenu error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Open "고지내역" (notice / tax-bill list) from the 납부·고지·환급 submenu.
+ * Target: <a id="grpMenuAtag_42_4204040000" href="javascript:void(0)">고지내역</a>
+ */
+export async function goToGojiNaeYeok(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  try {
+    console.log('[Hometax] Clicking 고지내역 (#grpMenuAtag_42_4204040000)...');
+    await page.locator('#grpMenuAtag_42_4204040000').click({ timeout: 180000 });
+    await page.waitForTimeout(1500);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] goToGojiNaeYeok error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Click 조회 (search) on the 고지내역 screen after date range is set.
+ * Target: <input type="button" id="mf_txppWframe_btn_search" class="w2trigger" value="조회" />
+ * XPath: /html/body/div[1]/div[2]/div/div/div/div[2]/div[2]/input
+ */
+export async function clickGojiNaeYeokSearch(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, error: 'No active browser session' };
+  }
+  try {
+    console.log('[Hometax] Clicking 조회 (#mf_txppWframe_btn_search)...');
+    await page.locator('#mf_txppWframe_btn_search').click({ timeout: 180000 });
+    await page.waitForTimeout(2000);
+    return { success: true };
+  } catch (error) {
+    console.error('[Hometax] clickGojiNaeYeokSearch error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Detect each "notice_view" card on the 고지내역 page and find their "열람하기" (View) buttons.
+ * This handles the repeating structure seen in the 고지내역 results.
+ */
+export async function scrapeTaxBillCards(): Promise<{
+  success: boolean;
+  cards: {
+    title: string;
+    amount: string;
+    status: string;
+    viewButtonId: string;
+    canView: boolean;
+  }[];
+  error?: string;
+}> {
+  const page = globalPage;
+  if (!page) {
+    return { success: false, cards: [], error: 'No active browser session' };
+  }
+
+  try {
+    // Wait for either the cards to appear or the "no data" message
+    await page.waitForTimeout(2000);
+
+    const cards = await page.locator('div.notice_view').all();
+    console.log(`[Hometax] Found ${cards.length} tax bill cards.`);
+
+    const scrapedData = [];
+
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+
+      // Extract identifying info
+      const title = await card
+        .locator('.noti_box .lta span')
+        .textContent()
+        .catch(() => 'Unknown');
+      const totalAmount = await card
+        .locator('.noti_box .rta strong')
+        .textContent()
+        .catch(() => '0');
+      const status = await card
+        .locator('.rta .badge')
+        .textContent()
+        .catch(() => '');
+
+      // Map all key-value pairs from the list items (noti_list)
+      const details: Record<string, string> = {};
+      const listItems = await card.locator('.noti_list li').all();
+      
+      for (const item of listItems) {
+        const label = await item.locator('.lta span').textContent().catch(() => '');
+        const value = await item.locator('.rta').textContent().catch(() => '');
+        if (label && label.trim()) {
+          details[label.trim()] = value?.trim() || '';
+        }
+      }
+
+      // Find the specific "열람하기" button in this card
+      const viewButton = card.locator('input[value="열람하기"]');
+      const isVisible = await viewButton.isVisible();
+      const isDisabled = await viewButton.isDisabled();
+      const buttonId = (await viewButton.getAttribute('id')) || '';
+
+      scrapedData.push({
+        title: title?.trim() || 'Unknown',
+        amount: totalAmount?.trim() || '0',
+        status: status?.trim() || '',
+        details,
+        viewButtonId: buttonId,
+        canView: isVisible && !isDisabled,
+      });
+    }
+
+    return { success: true, cards: scrapedData };
+  } catch (error) {
+    console.error('[Hometax] scrapeTaxBillCards error:', error);
+    return {
+      success: false,
+      cards: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
 /**
  * Disconnect from Hometax (close browser)
  */
@@ -1241,7 +2024,8 @@ export async function collectTaxInvoicesInRange(
   startMonth: number,
   endYear: number,
   endMonth: number,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  keepAlive?: boolean
 ): Promise<{
   success: boolean;
   downloadedFiles: { year: number; month: number; type: string; category: string; path: string }[];
@@ -1324,11 +2108,15 @@ export async function collectTaxInvoicesInRange(
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   } finally {
-    try {
-      console.log('[Hometax] Closing browser after range collection...');
-      await disconnectFromHometax();
-    } catch (cleanupError) {
-      console.error('[Hometax] Failed to close browser:', cleanupError);
+    if (!keepAlive) {
+      try {
+        console.log('[Hometax] Closing browser after range collection...');
+        await disconnectFromHometax();
+      } catch (cleanupError) {
+        console.error('[Hometax] Failed to close browser:', cleanupError);
+      }
+    } else {
+      console.log('[Hometax] keeping browser alive for next step');
     }
   }
 }

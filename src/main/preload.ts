@@ -2123,9 +2123,11 @@ const electronHandler = {
         dateRange?: { start?: string; end?: string };
         datePickersByIndex?: (string | undefined)[];
         labeledFieldFills?: (string | undefined)[][];
+        headless?: boolean;
       }
     ) => ipcRenderer.invoke('run-browser-recording-replay', { testFile, replayParams }),
     runChain: (chainId: string) => ipcRenderer.invoke('run-chain', { chainId }),
+    setTestHeadless: (testPath: string, headless: boolean) => ipcRenderer.invoke('set-test-headless', { testPath, headless }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),
     renamePlaywrightTest: (testPath: string, newName: string) => ipcRenderer.invoke('rename-playwright-test', { testPath, newName }),
     viewPlaywrightTest: (testPath: string) => ipcRenderer.invoke('view-playwright-test', { testPath }),
@@ -2348,6 +2350,10 @@ const electronHandler = {
       ipcRenderer.invoke('hometax:get-cash-receipt-spreadsheet-url', businessNumber),
     saveCashReceiptSpreadsheetUrl: (businessNumber: string, spreadsheetUrl: string) =>
       ipcRenderer.invoke('hometax:save-cash-receipt-spreadsheet-url', businessNumber, spreadsheetUrl),
+    collectBills: (certificateData: any, certificatePassword: string, startYear: string, startMonth: string, endYear: string, endMonth: string) =>
+      ipcRenderer.invoke('hometax:collect-bills', certificateData, certificatePassword, startYear, startMonth, endYear, endMonth),
+    getDocuments: (filters: any) =>
+      ipcRenderer.invoke('hometax:get-documents', filters),
   },
 
   /**

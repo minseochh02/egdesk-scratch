@@ -344,7 +344,7 @@ export const SourceFileSyncWizard: React.FC<SourceFileSyncWizardProps> = ({
                           <h4 className="desktop-sync-select-title">{table.displayName}</h4>
                           <p className="desktop-sync-select-subtitle">{table.tableName}</p>
                           <div className="desktop-sync-select-meta">
-                            <span>{table.rowCount.toLocaleString()} rows</span>
+                            <span>{(table.rowCount ?? 0).toLocaleString()} rows</span>
                             <span>{table.columnCount} columns</span>
                           </div>
                         </div>

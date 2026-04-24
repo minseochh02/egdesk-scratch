@@ -60,40 +60,40 @@ function orderWithPreference(
 
 type Root = Page | FrameLocator;
 
-async function trySemanticClick(root: Root, action: RecordedActionLocatorFields): Promise<void> {
+async function trySemanticClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
   const hasRole = !!(action.role && (action.ariaLabel || action.innerText));
   const hasText =
     !!action.innerText && action.innerText.length > 0 && action.innerText.length < 50;
 
   if (action.role && action.ariaLabel) {
     const locator = root.getByRole(action.role as any, { name: action.ariaLabel });
-    await locator.hover({ force: true });
-    await locator.click({ timeout: 5000 });
+    if (!headless) await locator.hover({ force: true });
+    await locator.click({ force: headless, timeout: 5000 });
   } else if (hasRole && hasText) {
     const locator = root.getByRole(action.role as any, { name: action.innerText!.trim() });
-    await locator.hover({ force: true });
-    await locator.click({ timeout: 5000 });
+    if (!headless) await locator.hover({ force: true });
+    await locator.click({ force: headless, timeout: 5000 });
   } else if (hasText) {
     const locator = root.getByText(action.innerText!.trim());
-    await locator.hover({ force: true });
-    await locator.click({ timeout: 5000 });
+    if (!headless) await locator.hover({ force: true });
+    await locator.click({ force: headless, timeout: 5000 });
   } else {
     throw new Error('semantic strategy not applicable');
   }
 }
 
-async function tryCssClick(root: Root, action: RecordedActionLocatorFields): Promise<void> {
+async function tryCssClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
   if (!action.selector) throw new Error('missing selector');
   const locator = root.locator(action.selector);
-  await locator.hover({ force: true });
-  await locator.click({ timeout: 5000 });
+  if (!headless) await locator.hover({ force: true });
+  await locator.click({ force: headless, timeout: 5000 });
 }
 
-async function tryXpathClick(root: Root, action: RecordedActionLocatorFields): Promise<void> {
+async function tryXpathClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
   if (!action.xpath) throw new Error('missing xpath');
   const locator = root.locator(`xpath=${action.xpath}`);
-  await locator.hover({ force: true });
-  await locator.click();
+  if (!headless) await locator.hover({ force: true });
+  await locator.click({ force: headless });
 }
 
 /**
@@ -103,7 +103,7 @@ async function tryXpathClick(root: Root, action: RecordedActionLocatorFields): P
 export async function clickWithOrderedStrategies(
   page: Page,
   action: RecordedActionLocatorFields,
-  options?: { onStrategyUsed?: (strategy: LocatorStrategyKind) => void }
+  options?: { onStrategyUsed?: (strategy: LocatorStrategyKind) => void; headless?: boolean }
 ): Promise<LocatorStrategyKind> {
   const order = getClickStrategyOrder(action);
   const root: Root = action.frameSelector
@@ -116,15 +116,17 @@ export async function clickWithOrderedStrategies(
       (pref ? ` | stored preference: ${pref}` : ' | no stored preference yet')
   );
 
+  const headless = options?.headless ?? false;
+
   let lastErr: Error | undefined;
   for (const strategy of order) {
     try {
       if (strategy === 'semantic') {
-        await trySemanticClick(root, action);
+        await trySemanticClick(root, action, headless);
       } else if (strategy === 'css') {
-        await tryCssClick(root, action);
+        await tryCssClick(root, action, headless);
       } else {
-        await tryXpathClick(root, action);
+        await tryXpathClick(root, action, headless);
       }
       options?.onStrategyUsed?.(strategy);
       const firstWorked = strategy === order[0];
@@ -139,6 +141,29 @@ export async function clickWithOrderedStrategies(
       console.log(`    ↪︎ "${strategy}" failed: ${e?.message || e}`);
     }
   }
+
+  // Last resort: JS dispatch click — works even when element is display:none (e.g. hidden nav
+  // menus in headless mode where CSS :hover states were never triggered).
+  const jsSelector = action.selector || (action.xpath ? `xpath=${action.xpath}` : null);
+  if (jsSelector) {
+    try {
+      console.log(`    ↪︎ Trying JS element.click() dispatch as last resort`);
+      const clicked = await page.evaluate((sel: string) => {
+        const el = sel.startsWith('xpath=')
+          ? document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement | null
+          : document.querySelector<HTMLElement>(sel);
+        if (!el) return false;
+        el.click();
+        return true;
+      }, jsSelector);
+      if (!clicked) throw new Error('element not found via JS dispatch');
+      console.log(`    ✓ Click succeeded via JS dispatch (element was not interactable via Playwright)`);
+      return 'css';
+    } catch (jsErr: any) {
+      console.log(`    ↪︎ JS dispatch failed: ${jsErr?.message || jsErr}`);
+    }
+  }
+
   throw lastErr ?? new Error('clickWithOrderedStrategies: all strategies failed');
 }
 

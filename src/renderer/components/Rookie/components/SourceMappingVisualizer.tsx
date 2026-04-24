@@ -169,7 +169,7 @@ export const SourceMappingVisualizer: React.FC<Props> = ({ resolverData, targetH
                   <div className="file-info">
                     <div className="file-name">{file.file}</div>
                     <div className="file-meta">
-                      {file.rowCount.toLocaleString()} rows · {file.columns.length} columns
+                      {(file.rowCount ?? 0).toLocaleString()} rows · {file.columns.length} columns
                     </div>
                   </div>
                 </div>

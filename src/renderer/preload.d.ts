@@ -473,8 +473,10 @@ interface DebugAPI {
       dateRange?: { start?: string; end?: string };
       datePickersByIndex?: (string | undefined)[];
       labeledFieldFills?: (string | undefined)[][];
+      headless?: boolean;
     }
   ) => Promise<{ success: boolean; error?: string; message?: string }>;
+  setTestHeadless: (testPath: string, headless: boolean) => Promise<{ success: boolean; error?: string }>;
   deletePlaywrightTest: (testPath: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   openInstagramWithProfile: (options: any) => Promise<{ success: boolean; error?: string }>;
   testYouTubeUpload: (options: any) => Promise<{ success: boolean; error?: string }>;

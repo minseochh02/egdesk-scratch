@@ -3,6 +3,7 @@
 // Parse downloaded tax invoice Excel files
 // ============================================
 
+import Database from 'better-sqlite3';
 const XLSX = require('xlsx');
 import path from 'path';
 import fs from 'fs';
@@ -473,4 +474,14 @@ export function parseTaxExemptExcel(filePath: string): ParsedTaxExemptExcelResul
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+import { importTaxBillData } from './sqlite/tax-bills';
+
+/**
+ * Process tax bill data extracted from the HTML report viewer
+ * Accepts the structured data returned by downloadTaxBills and imports into SQLite
+ */
+export function parseTaxBillData(db: Database.Database, automationResult: any) {
+  return importTaxBillData(db, automationResult);
 }
