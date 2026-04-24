@@ -266,10 +266,10 @@ const BrowserRecorderPage: React.FC = () => {
         // Pass empty replayParams so main process uses in-process action replay (executeAction +
         // preferredLocatorStrategy). Without this, replayParams is undefined and the handler runs
         // the extracted script via Node, which ignores RECORDED_ACTIONS preferences.
-        const result = await dbg.runBrowserRecordingReplay(test.path, {});
+        const result = await dbg.runBrowserRecordingReplay(test.path, { headless: test.headless ?? false });
         if (result.success) {
           console.log(`🎬 Running test with timing: ${test.name}`);
-          addDebugLog(`🎬⏱️ Running test: ${test.name}`);
+          addDebugLog(`🎬⏱️ Running test: ${test.name}${test.headless ? ' (headless)' : ''}`);
         } else {
           alert(`Failed to run test: ${result.error}`);
         }
@@ -312,11 +312,13 @@ const BrowserRecorderPage: React.FC = () => {
     const dbg = (window as any).electron.debug;
     const start = toReplayDateParam(replayStartDate);
     const end = toReplayDateParam(replayEndDate);
+    const currentTest = savedTests.find(t => t.path === replayModal.path);
     const replayParams: {
       dateRange?: { start?: string; end?: string };
       datePickersByIndex?: (string | undefined)[];
       labeledFieldFills?: (string | undefined)[][];
-    } = {};
+      headless?: boolean;
+    } = { headless: currentTest?.headless ?? false };
     if (replayModal.ui === 'dateRange') {
       replayParams.dateRange = { start, end };
     } else if (replayModal.ui === 'singleDate') {
@@ -343,7 +345,7 @@ const BrowserRecorderPage: React.FC = () => {
       const result = await dbg.runBrowserRecordingReplay(replayModal.path, replayParams);
       closeReplayModal();
       if (result.success) {
-        addDebugLog(`🎬 Replay with date options: ${testName}`);
+        addDebugLog(`🎬 Replay with date options: ${testName}${currentTest?.headless ? ' (headless)' : ''}`);
       } else {
         alert(`Failed to run test: ${result.error}`);
       }
@@ -603,6 +605,19 @@ const BrowserRecorderPage: React.FC = () => {
     } catch (error) {
       console.error('Error starting upload recording:', error);
       addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleToggleHeadless = async (test: any) => {
+    const newHeadless = !(test.headless ?? false);
+    // Optimistic update
+    setSavedTests(prev => prev.map(t => t.path === test.path ? { ...t, headless: newHeadless } : t));
+    try {
+      await (window as any).electron.debug.setTestHeadless(test.path, newHeadless);
+    } catch (err) {
+      // Revert on failure
+      setSavedTests(prev => prev.map(t => t.path === test.path ? { ...t, headless: !newHeadless } : t));
+      console.error('Failed to update headless setting:', err);
     }
   };
 
@@ -1089,6 +1104,18 @@ const BrowserRecorderPage: React.FC = () => {
                             >
                               ▶️ Replay
                             </button>
+                            <label
+                              className="browser-recorder-headless-toggle"
+                              title="Run replay without a visible browser window"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={test.headless ?? false}
+                                onChange={() => handleToggleHeadless(test)}
+                              />
+                              Headless
+                            </label>
                             {test.chainId && test.chainScripts && test.chainScripts.length > 1 && (
                               <button
                                 onClick={async () => {

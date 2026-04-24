@@ -115,6 +115,11 @@ export function initializeSyncConfigurationSchema(db: Database.Database): void {
     console.log('✅ Added last_sync_duplicates column to sync_configurations');
   }
 
+  if (!syncConfigColumnNames.includes('source')) {
+    db.exec(`ALTER TABLE sync_configurations ADD COLUMN source TEXT DEFAULT 'browser' CHECK(source IN ('browser', 'desktop'))`);
+    console.log('✅ Added source column to sync_configurations');
+  }
+
   // Check sync_activity_log table
   const activityLogTableInfo = db.prepare("PRAGMA table_info(sync_activity_log)").all() as Array<{ name: string }>;
   const activityLogColumnNames = activityLogTableInfo.map(col => col.name);

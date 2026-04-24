@@ -1487,9 +1487,10 @@ ipcMain.handle('finance-hub:clear-persistent-spreadsheet', async (event, key?: s
 // Hometax Integration IPC Handlers
 // ============================================
 
-import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices, collectTaxInvoicesInRange } from './hometax-automation';
-import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } from './hometax-excel-parser';
+import { fetchCertificates, connectToHometax, disconnectFromHometax, getHometaxConnectionStatus, collectTaxInvoices, collectTaxInvoicesInRange, downloadTaxBills } from './hometax-automation';
+import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel, parseTaxBillData } from './hometax-excel-parser';
 import { importTaxInvoices, importTaxExemptInvoices, recordSyncOperation, getTaxInvoices, getTaxExemptInvoices, getSpreadsheetUrl, saveSpreadsheetUrl, getTaxExemptSpreadsheetUrl, saveTaxExemptSpreadsheetUrl, importCashReceipts, getCashReceipts, getCashReceiptSpreadsheetUrl, saveCashReceiptSpreadsheetUrl } from './sqlite/hometax';
+import { importTaxBillData, getTaxDocuments } from './sqlite/tax-bills';
 import { getConversationsDatabase, getFinanceHubDatabase } from './sqlite/init';
 
 /**
@@ -2429,7 +2430,8 @@ ipcMain.handle('hometax:collect-invoices-in-range', async (event, certificateDat
       parseInt(endMonth),
       (message) => {
         event.sender.send('hometax:collect-progress', message);
-      }
+      },
+      true // keepAlive
     );
 
     if (!result.success || !result.downloadedFiles) {
@@ -2508,6 +2510,65 @@ ipcMain.handle('hometax:collect-invoices-in-range', async (event, certificateDat
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
+
+/**
+ * Collect tax bills (고지서) for a custom date range
+ */
+ipcMain.handle('hometax:collect-bills', async (event, certificateData: any, certificatePassword: string, startYear: string, startMonth: string, endYear: string, endMonth: string) => {
+  try {
+    console.log(`[IPC] hometax:collect-bills called: ${startYear}-${startMonth} to ${endYear}-${endMonth}`);
+
+    const result = await downloadTaxBills(
+      certificateData,
+      certificatePassword,
+      parseInt(startYear),
+      parseInt(startMonth),
+      parseInt(endYear),
+      parseInt(endMonth),
+      (message) => {
+        event.sender.send('hometax:collect-progress', message);
+      }
+    );
+
+    if (!result.success) {
+      return result;
+    }
+
+    const db = getFinanceHubDatabase();
+    
+    // Parse and import the collected bill data
+    const importResult = parseTaxBillData(db, result);
+    
+    return {
+      ...result,
+      importResult
+    };
+
+  } catch (error) {
+    console.error('[IPC] hometax:collect-bills error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+/**
+ * Get tax documents from the database
+ */
+ipcMain.handle('hometax:get-documents', async (event, filters: any) => {
+  try {
+    const db = getFinanceHubDatabase();
+    return getTaxDocuments(db, filters || {});
+  } catch (error) {
+    console.error('[IPC] hometax:get-documents error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
 
 
 // ========================================================================

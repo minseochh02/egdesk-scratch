@@ -6,6 +6,7 @@ import os from 'os';
 import { pathToFileURL } from 'url';
 import { BrowserRecorder } from './browser-recorder';
 import { getChainMetadataStore } from './chain-metadata';
+import { getTestSettingsStore } from './test-settings-store';
 import { codeViewerWindow } from './code-viewer-window';
 import { Browser, BrowserContext, Download, Page } from 'playwright-core';
 import { ChromeExtensionScanner } from './chrome-extension-scanner';
@@ -322,6 +323,7 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         }
         await clickWithOrderedStrategies(page, action, {
           onStrategyUsed: (strategy) => replay?.recordLocatorStrategy?.(index, strategy),
+          headless: replay?.params?.headless ?? false,
         });
       }
       break;
@@ -402,6 +404,7 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
         if (action.xpath || (sel && sel !== 'download-wait' && sel !== 'download-complete')) {
           await clickWithOrderedStrategies(page, action, {
             onStrategyUsed: (strategy) => replay?.recordLocatorStrategy?.(index, strategy),
+            headless: replay?.params?.headless ?? false,
           });
         }
         const download = await downloadPromise;
@@ -848,7 +851,7 @@ async function runBrowserRecordingActionReplay(
   const maxDelay = 3000;
 
   const context = await chromium.launchPersistentContext(profileDir, {
-    headless: false,
+    headless: replayParams.headless ?? false,
     channel: 'chrome',
     viewport: null,
     permissions: ['clipboard-read', 'clipboard-write'],
@@ -2487,6 +2490,7 @@ test('recorded test', async ({ page }) => {
       const outputDir = getOutputDir();
       const files = fs.readdirSync(outputDir);
       const metadataStore = getChainMetadataStore();
+      const settingsStore = getTestSettingsStore();
 
       // All .spec.js files in the browser-recorder-tests folder are valid tests
       const tests = files
@@ -2500,6 +2504,8 @@ test('recorded test', async ({ page }) => {
           const chain = metadataStore.getChainByScript(filePath);
           const scriptInChain = chain?.scripts.find(s => s.scriptPath === filePath);
 
+          const settings = settingsStore.get(file);
+
           return {
             name: file,
             path: filePath,
@@ -2509,7 +2515,9 @@ test('recorded test', async ({ page }) => {
             // Chain metadata
             chainId: chain?.chainId || null,
             chainOrder: scriptInChain?.order || null,
-            chainScripts: chain?.scripts || null
+            chainScripts: chain?.scripts || null,
+            // Per-test settings
+            headless: settings.headless ?? false,
           };
         })
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -2526,6 +2534,17 @@ test('recorded test', async ({ page }) => {
         error: error?.message || 'Failed to get Playwright tests',
         tests: []
       };
+    }
+  });
+
+  // Set headless mode for a specific test
+  ipcMain.handle('set-test-headless', async (_event, { testPath, headless }: { testPath: string; headless: boolean }) => {
+    try {
+      const specFileName = path.basename(testPath);
+      getTestSettingsStore().set(specFileName, { headless });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update test settings' };
     }
   });
 
@@ -2733,6 +2752,9 @@ test('recorded test', async ({ page }) => {
         }
       }
 
+      // Remove per-test settings
+      getTestSettingsStore().delete(path.basename(testPath));
+
       return {
         success: true,
         message: 'Test deleted successfully'
@@ -2831,6 +2853,9 @@ test('recorded test', async ({ page }) => {
         console.warn('⚠️ Could not update script content:', contentErr);
         // Don't fail the whole operation if content update fails
       }
+
+      // Migrate per-test settings to new filename
+      getTestSettingsStore().rename(path.basename(testPath), path.basename(newPath));
 
       return {
         success: true,

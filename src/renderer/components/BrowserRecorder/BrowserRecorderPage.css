@@ -2100,3 +2100,19 @@
     align-items: flex-start;
   }
 }
+
+
+/* Headless replay toggle */
+.browser-recorder-headless-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.browser-recorder-headless-toggle input[type="checkbox"] {
+  cursor: pointer;
+}

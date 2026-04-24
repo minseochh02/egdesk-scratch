@@ -61,6 +61,7 @@ import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
 // Sub-components
 import TransactionsPage from './TransactionsPage';
 import PromissoryNotesPage from './PromissoryNotesPage';
+import TaxBillsPage from './TaxBillsPage';
 
 // ============================================
 // Main Component
@@ -108,7 +109,7 @@ const FinanceHub: React.FC = () => {
   // Local State
   // ============================================
   
-  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management' | 'data-management' | 'promissory-notes'>('account-management');
+  const [currentView, setCurrentView] = useState<'account-management' | 'bank-transactions' | 'card-transactions' | 'tax-invoices' | 'tax-management' | 'data-management' | 'promissory-notes' | 'tax-bills'>('account-management');
   const [connectedBanks, setConnectedBanks] = useState<ConnectedBank[]>([]);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -203,6 +204,16 @@ const FinanceHub: React.FC = () => {
     month: (new Date().getMonth() + 1).toString().padStart(2, '0') 
   });
   const [hometaxSyncProgress, setHometaxSyncProgress] = useState<string | null>(null);
+
+  // Tax bills state
+  const [taxDocuments, setTaxDocuments] = useState<any[]>([]);
+  const [isLoadingTaxDocuments, setIsLoadingTaxDocuments] = useState(false);
+  const [taxDocumentFilters, setTaxDocumentFilters] = useState({
+    businessNumber: 'all',
+    status: 'all',
+    item_id: 'all',
+    period_year: 'all'
+  });
 
   // BC Card date range sync (monthly chunks)
   const [showBcCardRangeModal, setShowBcCardRangeModal] = useState<{
@@ -465,6 +476,9 @@ const FinanceHub: React.FC = () => {
             const cashReceiptsResult = await window.electron.hometax.getCashReceipts({
               businessNumber
             });
+            const taxBillsResult = await window.electron.hometax.getDocuments({
+              businessNumber
+            });
 
             return {
               businessNumber,
@@ -478,6 +492,7 @@ const FinanceHub: React.FC = () => {
               taxExemptSalesCount: taxExemptSalesResult.success ? (taxExemptSalesResult.total || 0) : 0,
               taxExemptPurchaseCount: taxExemptPurchaseResult.success ? (taxExemptPurchaseResult.total || 0) : 0,
               cashReceiptCount: cashReceiptsResult.success ? (cashReceiptsResult.total || 0) : 0,
+              taxBillCount: taxBillsResult.success ? (taxBillsResult.data?.length || 0) : 0,
               소유자명: certData.소유자명,
               용도: certData.용도,
               발급기관: certData.발급기관,
@@ -1747,6 +1762,32 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const loadTaxDocuments = async () => {
+    setIsLoadingTaxDocuments(true);
+    try {
+      const result = await window.electron.hometax.getDocuments({
+        entity_id: taxDocumentFilters.businessNumber === 'all' ? undefined : parseInt(taxDocumentFilters.businessNumber),
+        status: taxDocumentFilters.status === 'all' ? undefined : taxDocumentFilters.status,
+        item_id: taxDocumentFilters.item_id === 'all' ? undefined : taxDocumentFilters.item_id,
+        period_year: taxDocumentFilters.period_year === 'all' ? undefined : parseInt(taxDocumentFilters.period_year)
+      });
+
+      if (result.success) {
+        setTaxDocuments(result.data || []);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Error loading tax documents:', error);
+    } finally {
+      setIsLoadingTaxDocuments(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentView === 'tax-bills') {
+      loadTaxDocuments();
+    }
+  }, [currentView, taxDocumentFilters]);
+
   // Helper function to export invoices for a specific type (without alerts or opening tabs)
   const exportInvoicesForType = async (businessNumber: string, invoiceType: 'sales' | 'purchase') => {
     try {
@@ -1894,8 +1935,8 @@ const FinanceHub: React.FC = () => {
       setShowHometaxRangeModal(null); // Close modal and show progress in main UI or overlay
       setHometaxSyncProgress('동기화 준비 중...');
 
-      // Call backend to collect tax invoices for the range
-      const result = await window.electron.hometax.collectInvoicesInRange(
+      // 1. Call backend to collect tax invoices for the range
+      const invoiceResult = await window.electron.hometax.collectInvoicesInRange(
         savedCert.data,
         savedCert.data.certificatePassword,
         hometaxRangeStart.year,
@@ -1904,13 +1945,25 @@ const FinanceHub: React.FC = () => {
         hometaxRangeEnd.month
       );
 
-      if (result.success) {
+      // 2. Call backend to collect tax bills (고지서) for the same range
+      setHometaxSyncProgress('세금 고지서(납부서) 수집 중...');
+      const billsResult = await window.electron.hometax.collectBills(
+        savedCert.data,
+        savedCert.data.certificatePassword,
+        hometaxRangeStart.year,
+        hometaxRangeStart.month,
+        hometaxRangeEnd.year,
+        hometaxRangeEnd.month
+      );
+
+      if (invoiceResult.success || billsResult.success) {
         setHometaxSyncProgress(null);
         // Reload data
         await loadConnectedBusinesses();
         await loadTaxInvoices();
+        await loadTaxDocuments();
 
-        // Auto-export to spreadsheets
+        // Auto-export invoices to spreadsheets
         console.log('[FinanceHub] Auto-exporting to spreadsheets...');
         await exportInvoicesForType(businessNumber, 'sales');
         await exportInvoicesForType(businessNumber, 'purchase');
@@ -1918,10 +1971,10 @@ const FinanceHub: React.FC = () => {
         await exportTaxExemptInvoicesForType(businessNumber, 'purchase');
         await exportCashReceiptsForBusiness(businessNumber);
         
-        alert(`✅ ${businessName} 동기화 완료!`);
+        alert(`✅ ${businessName} 동기화 완료!${!billsResult.success ? `\n(주의: 고지서 수집 실패: ${billsResult.error})` : ''}`);
       } else {
         setHometaxSyncProgress(null);
-        alert(`❌ 수집 실패: ${result.error || '알 수 없는 오류'}`);
+        alert(`❌ 수집 실패: ${invoiceResult.error || billsResult.error || '알 수 없는 오류'}`);
       }
     } catch (error: any) {
       setHometaxSyncProgress(null);
@@ -2750,6 +2803,7 @@ const FinanceHub: React.FC = () => {
             <button className={`finance-hub__nav-item ${currentView === 'promissory-notes' ? 'active' : ''}`} onClick={() => setCurrentView('promissory-notes')}>어음 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-management' ? 'active' : ''}`} onClick={() => setCurrentView('tax-management')}>세금 관리</button>
             <button className={`finance-hub__nav-item ${currentView === 'tax-invoices' ? 'active' : ''}`} onClick={() => setCurrentView('tax-invoices')}>전자세금계산서</button>
+            <button className={`finance-hub__nav-item ${currentView === 'tax-bills' ? 'active' : ''}`} onClick={() => setCurrentView('tax-bills')}>고지서</button>
             <button className={`finance-hub__nav-item ${currentView === 'data-management' ? 'active' : ''}`} onClick={() => setCurrentView('data-management')}>데이터 관리</button>
           </nav>
         </div>
@@ -3323,6 +3377,23 @@ const FinanceHub: React.FC = () => {
               onGoogleSignIn={handleTaxGoogleSignIn}
               onCloseGoogleAuth={handleCloseTaxGoogleAuth}
               onDropData={handleDropTaxData}
+            />
+          </div>
+        ) : currentView === 'tax-bills' ? (
+          <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+            <TaxBillsPage
+              documents={taxDocuments}
+              isLoading={isLoadingTaxDocuments}
+              filters={taxDocumentFilters}
+              businesses={connectedBusinesses}
+              onFilterChange={(key, value) => setTaxDocumentFilters(prev => ({ ...prev, [key]: value }))}
+              onResetFilters={() => setTaxDocumentFilters({
+                businessNumber: 'all',
+                status: 'all',
+                item_id: 'all',
+                period_year: 'all'
+              })}
+              onRefresh={loadTaxDocuments}
             />
           </div>
         ) : currentView === 'tax-management' ? (
@@ -4246,7 +4317,9 @@ const FinanceHub: React.FC = () => {
                       value={hometaxRangeStart.year}
                       onChange={(e) => setHometaxRangeStart(prev => ({ ...prev, year: e.target.value }))}
                     >
-                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                      {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 10 + i).map(y => (
+                        <option key={y} value={y}>{y}년</option>
+                      ))}
                     </select>
                     <select 
                       className="finance-hub__input"
@@ -4264,11 +4337,13 @@ const FinanceHub: React.FC = () => {
                   <label>종료 연월</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select 
-                      className="finance-hub__input"
+                      className="finance-hub__input" 
                       value={hometaxRangeEnd.year}
                       onChange={(e) => setHometaxRangeEnd(prev => ({ ...prev, year: e.target.value }))}
                     >
-                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                      {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 10 + i).map(y => (
+                        <option key={y} value={y}>{y}년</option>
+                      ))}
                     </select>
                     <select 
                       className="finance-hub__input"

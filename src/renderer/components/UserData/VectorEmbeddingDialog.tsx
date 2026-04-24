@@ -171,7 +171,7 @@ export const VectorEmbeddingDialog: React.FC<VectorEmbeddingDialogProps> = ({
                     <h3>Estimate</h3>
                     <div className="estimate-row">
                       <span className="estimate-label">Rows:</span>
-                      <span className="estimate-value">{table.rowCount.toLocaleString()}</span>
+                      <span className="estimate-value">{(table.rowCount ?? 0).toLocaleString()}</span>
                     </div>
                     <div className="estimate-row">
                       <span className="estimate-label">Columns:</span>

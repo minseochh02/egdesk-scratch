@@ -1,0 +1,210 @@
+.tax-bills {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--fh-text-primary);
+  padding: 24px;
+}
+
+.tax-bills__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.tax-bills__title {
+  font-size: 24px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px 0;
+  color: var(--fh-text-primary);
+}
+
+.tax-bills__icon {
+  font-size: 28px;
+}
+
+.tax-bills__subtitle {
+  color: var(--fh-text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+.tax-bills__actions {
+  display: flex;
+  gap: 12px;
+}
+
+.tax-bills__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--fh-border);
+  background: var(--fh-bg-card);
+  color: var(--fh-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tax-bills__btn:hover {
+  border-color: var(--fh-primary);
+  background: var(--fh-bg-card-hover);
+}
+
+.tax-bills__btn.active {
+  background: rgba(0, 70, 255, 0.1);
+  border-color: var(--fh-primary);
+  color: var(--fh-primary);
+}
+
+.tax-bills__btn--primary {
+  background: var(--fh-primary);
+  color: white;
+  border: none;
+}
+
+.tax-bills__btn--primary:hover {
+  background: var(--fh-primary-hover);
+  color: white;
+}
+
+.tax-bills__filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 16px;
+  background: var(--fh-bg-card-hover);
+  border-radius: 12px;
+  margin-bottom: 24px;
+  border: 1px solid var(--fh-border);
+}
+
+.tax-bills__filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tax-bills__filter-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fh-text-secondary);
+}
+
+.tax-bills__filter-group select {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--fh-border);
+  background: var(--fh-bg-dark);
+  color: var(--fh-text-primary);
+  font-size: 14px;
+  min-width: 150px;
+}
+
+.tax-bills__filter-reset {
+  padding: 8px 16px;
+  font-size: 14px;
+  color: var(--fh-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.tax-bills__filter-reset:hover {
+  text-decoration: underline;
+}
+
+.tax-bills__content {
+  flex: 1;
+  background: var(--fh-bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--fh-border);
+  overflow: hidden;
+}
+
+.tax-bills__company {
+  display: flex;
+  flex-direction: column;
+}
+
+.tax-bills__company-name {
+  font-weight: 600;
+  color: var(--fh-text-primary);
+}
+
+.tax-bills__biz-no {
+  font-size: 12px;
+  color: var(--fh-text-secondary);
+}
+
+.tax-bills__amount {
+  font-weight: 700;
+  color: var(--fh-secondary);
+}
+
+/* Brighten DataTable headers and cells specifically for this page */
+.tax-bills .data-table__header {
+  color: var(--fh-text-primary);
+  opacity: 0.9;
+}
+
+.tax-bills .data-table__cell {
+  color: var(--fh-text-primary);
+}
+
+.tax-bills__status {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tax-bills__status--paid {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+}
+
+.tax-bills__status--pending {
+  background: rgba(245, 158, 11, 0.2);
+  color: #F59E0B;
+}
+
+.tax-bills__status--overdue {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+.tax-bills__status--cancelled {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9CA3AF;
+}
+
+.tax-bills__view-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--fh-border);
+  background: transparent;
+  color: var(--fh-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.8;
+}
+
+.tax-bills__view-btn:hover {
+  opacity: 1;
+  color: var(--fh-primary);
+  border-color: var(--fh-primary);
+  background: rgba(0, 70, 255, 0.1);
+}
