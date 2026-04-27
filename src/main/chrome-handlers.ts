@@ -293,10 +293,14 @@ async function injectResumeUI(page: Page, sessionId: string, pausedAt: number, t
  * must use the xpath selector engine or Playwright throws while parsing the string as CSS.
  */
 function normalizeSelectorForPlaywright(raw: string): string {
-  const s = raw.trim();
+  let s = raw.trim();
   if (!s) return s;
   if (/^[a-zA-Z][a-zA-Z0-9_-]*=/.test(s)) return s;
   if (s.startsWith('/')) return `xpath=${s}`;
+
+  // Strip :nth-match(n) as it's our custom internal hint
+  s = s.replace(/:nth-match\(\d+\)$/i, '');
+
   return s;
 }
 
@@ -330,9 +334,13 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
 
     case 'fill':
       if (action.frameSelector) {
-        const fillSelector = normalizeSelectorForPlaywright(action.xpath || action.selector!);
+        const sel = action.xpath || action.selector!;
+        const fillSelector = normalizeSelectorForPlaywright(sel);
+        const idx = getDatePickerNthIndexFromCss(sel);
         const frame = page.frameLocator(normalizeSelectorForPlaywright(action.frameSelector));
-        await frame.locator(fillSelector).fill(action.value || '');
+        const base = frame.locator(fillSelector);
+        const locator = idx !== undefined ? base.nth(idx) : base;
+        await locator.fill(action.value || '');
         console.log(`    ✓ Filled in iframe: ${action.frameSelector}`);
       } else {
         await fillWithOrderedStrategies(page, action, {
@@ -358,10 +366,14 @@ async function executeAction(page: Page, context: BrowserContext, action: Record
       break;
 
     case 'waitForElement':
-      const waitSelector = normalizeSelectorForPlaywright(action.xpath || action.selector!);
+      const sel = action.xpath || action.selector!;
+      const waitSelector = normalizeSelectorForPlaywright(sel);
+      const idx = getDatePickerNthIndexFromCss(sel);
       const condition = action.waitCondition || 'visible';
       const timeout = action.timeout || 30000;
-      await page.locator(waitSelector).waitFor({ state: condition as any, timeout });
+      const base = page.locator(waitSelector);
+      const locator = idx !== undefined ? base.nth(idx) : base;
+      await locator.waitFor({ state: condition as any, timeout });
       console.log(`    ✓ Waited for element: ${waitSelector} (${condition})`);
       break;
 
@@ -1922,11 +1934,14 @@ Please provide:
   // Enhanced Playwright recorder with keyboard tracking
   // (activeRecorder is now defined at module scope)
 
-  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url, extensionPaths, chainId, previousDownload, previousScriptPath }) => {
+  ipcMain.handle('launch-browser-recorder-enhanced', async (event, { url, extensionPaths, profileName, chainId, previousDownload, previousScriptPath }) => {
     try {
       console.log('🎭 Launching enhanced Playwright recorder for URL:', url);
       if (extensionPaths && extensionPaths.length > 0) {
         console.log(`🧩 With ${extensionPaths.length} Chrome extensions`);
+      }
+      if (profileName) {
+        console.log(`👤 Using profile: ${profileName}`);
       }
       if (chainId) {
         console.log(`🔗 Chain ID: ${chainId}`);
@@ -2218,12 +2233,17 @@ test('recorded test', async ({ page }) => {
             reason: 'Browser window closed by user'
           });
         }
-      });
+      }, profileName);
+
+      // Chrome (especially with a persistent profile) may restore its window
+      // over the code viewer. Bring the code viewer back to front after launch.
+      codeViewerWindow.bringToFront();
+
       } catch (startError: any) {
         console.error('Failed to start recorder:', startError);
         throw startError;
       }
-      
+
       return {
         success: true,
         message: 'Enhanced recorder started with code viewer.',
@@ -4126,6 +4146,903 @@ test('recorded test', async ({ page }) => {
         success: false,
         selectedExtensions: []
       };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Google Chrome Profile Session — persistent login tester
+  // ---------------------------------------------------------------------------
+
+  function getGoogleProfilesDir(): string {
+    try {
+      const userData = app.getPath('userData');
+      if (!userData || userData === '/' || userData.length < 3) throw new Error('invalid');
+      return path.join(userData, 'chrome-profiles', 'persistent', 'google');
+    } catch {
+      return path.join(os.tmpdir(), 'egdesk-google-profiles');
+    }
+  }
+
+  /**
+   * Launch a persistent Chrome context for Google login. The profile is kept on
+   * disk so subsequent sessions reuse the authenticated state.
+   */
+  ipcMain.handle('google-profile:launch', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      const profilesDir = getGoogleProfilesDir();
+      if (!fs.existsSync(profilesDir)) fs.mkdirSync(profilesDir, { recursive: true });
+
+      const profileDir = path.join(profilesDir, profileName);
+      if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: false,
+        channel: 'chrome',
+        viewport: null,
+        args: [
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+      await page.goto('https://accounts.google.com');
+
+      // Wait until the user closes the Chrome window themselves.
+      // This gives unlimited time to complete the full Google login flow.
+      await new Promise<void>((resolve) => {
+        context.once('close', resolve);
+      });
+
+      // Save metadata
+      const metaPath = path.join(profileDir, 'profile.json');
+      const existing = fs.existsSync(metaPath)
+        ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+        : {};
+      fs.writeFileSync(metaPath, JSON.stringify({
+        ...existing,
+        profileName,
+        profileDir,
+        createdAt: existing.createdAt ?? new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      }, null, 2));
+
+      // context is already closed by the user — no need to call context.close()
+      return { success: true, profileDir };
+    } catch (error) {
+      console.error('[Google Profile] launch error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Detect the Gmail address saved in a profile by navigating headlessly to
+   * accounts.google.com/SignOutOptions which lists signed-in accounts.
+   */
+  ipcMain.handle('google-profile:get-email', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) {
+        return { success: false, error: 'Profile not found' };
+      }
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: true,
+        channel: 'chrome',
+        viewport: { width: 1280, height: 800 },
+        args: ['--disable-blink-features=AutomationControlled'],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+      let email: string | null = null;
+
+      try {
+        // SignOutOptions page lists all signed-in accounts with their emails
+        await page.goto('https://accounts.google.com/SignOutOptions', { waitUntil: 'domcontentloaded', timeout: 20_000 });
+        await page.waitForTimeout(2000);
+
+        // Try data-email attribute first (most reliable)
+        email = await page.getAttribute('[data-email]', 'data-email').catch(() => null);
+
+        // Fallback: look for email text in known account list elements
+        if (!email) {
+          email = await page.locator('[data-identifier]').first().getAttribute('data-identifier').catch(() => null);
+        }
+
+        // Fallback: grab any visible text that looks like an email
+        if (!email) {
+          const texts = await page.locator('div, span').allTextContents();
+          const found = texts.find(t => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t.trim()));
+          if (found) email = found.trim();
+        }
+
+        // Persist to profile metadata if found
+        if (email) {
+          const metaPath = path.join(profileDir, 'profile.json');
+          const existing = fs.existsSync(metaPath)
+            ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+            : {};
+          fs.writeFileSync(metaPath, JSON.stringify({ ...existing, googleEmail: email }, null, 2));
+        }
+      } finally {
+        await context.close();
+      }
+
+      return { success: true, email };
+    } catch (error) {
+      console.error('[Google Profile] get-email error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Detect the phone number saved in a Google profile by navigating to
+   * myaccount.google.com/personal-info and extracting the Phone section text.
+   */
+  ipcMain.handle('google-profile:get-phone', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) return { success: false, error: 'Profile not found' };
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: true,
+        channel: 'chrome',
+        viewport: { width: 1280, height: 800 },
+        args: ['--disable-blink-features=AutomationControlled'],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+      let phone: string | null = null;
+
+      try {
+        await page.goto('https://myaccount.google.com/personal-info', {
+          waitUntil: 'domcontentloaded', timeout: 20_000,
+        });
+        await page.waitForTimeout(3000);
+
+        // Try common selectors near the Phone section
+        phone = await page.locator('[data-type="phone"] .IjBjue').first().innerText({ timeout: 5000 }).catch(() => null);
+
+        if (!phone) {
+          phone = await page.locator('a[href*="phone"] .IjBjue').first().innerText({ timeout: 3000 }).catch(() => null);
+        }
+
+        if (!phone) {
+          // Fallback: scan all visible text for an international phone number pattern
+          const texts = await page.locator('div, span, li').allTextContents();
+          const found = texts.find(t => /^\+?[\d\s\-().]{7,}$/.test(t.trim()) && t.trim().replace(/\D/g, '').length >= 7);
+          if (found) phone = found.trim();
+        }
+
+        if (phone) {
+          const metaPath = path.join(profileDir, 'profile.json');
+          const existing = fs.existsSync(metaPath)
+            ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+            : {};
+          fs.writeFileSync(metaPath, JSON.stringify({ ...existing, googlePhone: phone }, null, 2));
+        }
+      } finally {
+        await context.close();
+      }
+
+      return { success: true, phone };
+    } catch (error) {
+      console.error('[Google Profile] get-phone error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Telegram Setup — logs into Telegram Web and sets up BotFather bot
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Set up Telegram using a saved Google Chrome profile.
+   * Flow:
+   *   1. Open Telegram Web, enter phone number (discovered from Google personal info)
+   *   2. Wait for user to enter SMS verification code
+   *   3. Navigate directly to https://t.me/BotFather
+   *   4. START BOT → OPEN IN WEB
+   *   5. Run /newbot flow with fixed name "EGDesk OpenClaw" / username "egdesk_openclaw_bot"
+   *   6. Extract and save the bot token
+   */
+  ipcMain.handle('telegram:setup', async (_event, { profileName, phoneNumber }: { profileName: string; phoneNumber: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) {
+        return { success: false, error: `Profile "${profileName}" not found.` };
+      }
+
+      function parsePhone(fullNumber: string): { countryCode: string; localNumber: string } {
+        const digits = fullNumber.replace(/\D/g, '');
+        const commonCodes = [
+          '1','7','20','27','30','31','32','33','34','36','39','40','41','43','44',
+          '45','46','47','48','49','51','52','53','54','55','56','57','58','60','61','62','63','64','65',
+          '66','81','82','84','86','90','91','92','93','94','95','98',
+          '212','213','216','218','220','221','222','223','224','225','226','227','228','229',
+          '230','231','232','233','234','235','236','237','238','239','240','241','242','243',
+          '244','245','246','247','248','249','250','251','252','253','254','255','256','257',
+          '258','260','261','262','263','264','265','266','267','268','269','290','291','297',
+          '298','299','350','351','352','353','354','355','356','357','358','359','370','371',
+          '372','373','374','375','376','377','378','380','381','382','385','386','387','389',
+          '420','421','423','500','501','502','503','504','505','506','507','508','509','590',
+          '591','592','593','594','595','596','597','598','599','670','672','673','674','675',
+          '676','677','678','679','680','681','682','683','685','686','687','688','689','690',
+          '691','692','850','852','853','855','856','880','886','960','961','962','963','964',
+          '965','966','967','968','970','971','972','973','974','975','976','977','992','993',
+          '994','995','996','998',
+        ];
+        const sorted = [...commonCodes].sort((a, b) => b.length - a.length);
+        for (const code of sorted) {
+          if (digits.startsWith(code)) {
+            return { countryCode: `+${code}`, localNumber: digits.slice(code.length) };
+          }
+        }
+        return { countryCode: '+1', localNumber: digits };
+      }
+
+      const { countryCode, localNumber } = parsePhone(phoneNumber || '');
+      const countryCodeDigits = countryCode.replace('+', '');
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: false,
+        channel: 'chrome',
+        viewport: null,
+        args: [
+          '--window-size=907,867',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const pages = context.pages();
+      const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+      let botToken: string | null = null;
+
+      try {
+        // ── Phase A: Telegram login ──
+        await page.goto('https://web.telegram.org/k/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForTimeout(3000);
+
+        // Check if already logged in
+        const alreadyLoggedIn = await page.locator('.chats-container, .chatlist-chat, #column-center').isVisible({ timeout: 5000 }).catch(() => false);
+
+        if (!alreadyLoggedIn && phoneNumber) {
+          // Click "LOG IN BY PHONE NUMBER" to switch from QR code view to phone input
+          try {
+            // Try multiple ways to find the phone login button
+            const loginByPhoneLocator = page.locator([
+              'button:has-text("LOG IN BY PHONE NUMBER")',
+              'a:has-text("LOG IN BY PHONE NUMBER")',
+              '[class*="phone"]:has-text("LOG IN")',
+              'button:has-text("Sign in with phone")',
+            ].join(', ')).first();
+            // Fall back to getByText with case-insensitive match
+            let clicked = false;
+            try {
+              await loginByPhoneLocator.waitFor({ timeout: 6000 });
+              await loginByPhoneLocator.click({ force: true, timeout: 5000 });
+              clicked = true;
+            } catch {
+              // try getByText case-insensitive
+            }
+            if (!clicked) {
+              const byText = page.getByText(/log in by phone number/i);
+              await byText.waitFor({ timeout: 4000 });
+              await byText.click({ force: true, timeout: 3000 });
+            }
+            await page.waitForTimeout(2000);
+          } catch {
+            // Button not present — already on phone input view or selector changed
+          }
+
+          // Click country code field to open dropdown
+          try {
+            await page.locator('.input-field-input').nth(1).click({ timeout: 5000 });
+            await page.waitForTimeout(1000);
+            await page.keyboard.type(countryCodeDigits);
+            await page.waitForTimeout(1000);
+            try {
+              await page.locator(`[data-country-code="${countryCodeDigits}"]`).first().click({ timeout: 3000 });
+            } catch {
+              await page.locator('.country-list .country-list-element, .countries-search-list li').first().click({ timeout: 3000 });
+            }
+            await page.waitForTimeout(1000);
+          } catch {
+            // Country code selection failed — proceed anyway (default may already match)
+          }
+
+          // Fill local phone number
+          // The phone number field is a contenteditable div (not an <input>), so we must use keyboard.type()
+          try {
+            // Target by data-left-pattern attribute which is unique to the phone number input
+            const phoneInput = page.locator('[data-left-pattern]').first();
+            await phoneInput.waitFor({ timeout: 5000 });
+            await phoneInput.click({ timeout: 3000 });
+            await page.waitForTimeout(300);
+            await page.keyboard.type(localNumber, { delay: 50 });
+          } catch {
+            // Fallback: third input-field-input div (0=hidden, 1=country code, 2=phone)
+            try {
+              await page.locator('.input-field-input').nth(2).click({ timeout: 3000 });
+              await page.waitForTimeout(300);
+              await page.keyboard.type(localNumber, { delay: 50 });
+            } catch {
+              // Could not fill phone — user may need to enter manually
+            }
+          }
+          await page.waitForTimeout(1000);
+
+          // Click Next
+          try {
+            await page.locator('.c-ripple').nth(1).click({ timeout: 5000 });
+          } catch {
+            await page.locator('xpath=/html/body/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/button/div').click({ timeout: 5000 });
+          }
+
+          // Wait for user to enter SMS verification code (up to 2 minutes)
+          await page.waitForSelector('.chats-container, .chatlist-chat, #column-center, .chat-input', { timeout: 120_000 });
+        }
+
+        await page.waitForTimeout(2000);
+
+        // ── Phase B: Navigate to BotFather ──
+        await page.goto('https://t.me/BotFather', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForTimeout(3000);
+
+        // Click START BOT if visible (on the t.me preview page)
+        try {
+          const startBtn = page.getByRole('a', { name: 'START BOT' });
+          await startBtn.waitFor({ timeout: 8000 });
+          await startBtn.hover({ force: true });
+          await startBtn.click({ timeout: 5000 });
+        } catch {
+          try {
+            await page.locator('.tgme_action_button_new').first().click({ timeout: 5000 });
+          } catch {
+            await page.locator('xpath=/html/body/div[2]/div[2]/div/div[6]/a').click({ timeout: 5000 }).catch(() => {});
+          }
+        }
+        await page.waitForTimeout(3000);
+
+        // Click OPEN IN WEB
+        try {
+          const openBtn = page.getByRole('span', { name: 'OPEN IN WEB' });
+          await openBtn.waitFor({ timeout: 8000 });
+          await openBtn.hover({ force: true });
+          await openBtn.click({ timeout: 5000 });
+        } catch {
+          try {
+            await page.locator('.tgme_action_button_label').click({ timeout: 5000 });
+          } catch {
+            await page.locator('xpath=/html/body/div[2]/div[2]/div/div[7]/a/span').click({ timeout: 5000 }).catch(() => {});
+          }
+        }
+        await page.waitForTimeout(3000);
+
+        // Wait for Telegram Web chat input to appear (BotFather chat loaded)
+        await page.waitForSelector('.input-message-input', { timeout: 30_000 });
+        await page.waitForTimeout(2000);
+
+        // ── Phase C: /newbot flow ──
+        // Click the message input (contenteditable div)
+        await page.locator('.input-message-input').first().click({ timeout: 8000 });
+        await page.waitForTimeout(500);
+        await page.keyboard.type('/newbot');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(4000); // Wait for BotFather to ask for bot name
+
+        // Type bot display name
+        await page.locator('.input-message-input').first().click({ timeout: 5000 });
+        await page.keyboard.type('EGDesk OpenClaw');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(4000); // Wait for BotFather to ask for username
+
+        // Type bot username
+        await page.locator('.input-message-input').first().click({ timeout: 5000 });
+        await page.keyboard.type('egdesk_openclaw_bot');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(6000); // Wait for BotFather to return token
+
+        // Extract all bot tokens from BotFather's chat — tokens are always in <code class="monospace-text">
+        const allBotTokens: string[] = [];
+        try {
+          const codeEls = await page.locator('code.monospace-text').allTextContents();
+          for (const text of codeEls) {
+            const t = text.trim();
+            if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(t) && !allBotTokens.includes(t)) {
+              allBotTokens.push(t);
+            }
+          }
+        } catch {
+          // Token extraction failed — non-fatal
+        }
+        // Fallback: scan all message text if code element approach missed any
+        if (allBotTokens.length === 0) {
+          try {
+            const messageTexts = await page.locator('.message').allTextContents();
+            for (const text of messageTexts) {
+              const matches = text.matchAll(/(\d{8,12}:[A-Za-z0-9_-]{35,})/g);
+              for (const m of matches) {
+                if (!allBotTokens.includes(m[1])) allBotTokens.push(m[1]);
+              }
+            }
+          } catch {
+            // non-fatal
+          }
+        }
+        botToken = allBotTokens[allBotTokens.length - 1] ?? null; // most recent token
+
+        // Save to profile.json
+        const metaPath = path.join(profileDir, 'profile.json');
+        const existing = fs.existsSync(metaPath)
+          ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          : {};
+        fs.writeFileSync(metaPath, JSON.stringify({
+          ...existing,
+          telegramBotToken: botToken ?? existing.telegramBotToken,
+          telegramBotTokens: allBotTokens.length > 0 ? allBotTokens : (existing.telegramBotTokens ?? []),
+          telegramSetupAt: new Date().toISOString(),
+        }, null, 2));
+
+        // Wait for user to close the browser
+        await new Promise<void>((resolve) => {
+          context.once('close', resolve);
+        });
+
+        return { success: true, token: botToken, tokens: allBotTokens };
+      } catch (automationError) {
+        await context.close().catch(() => {});
+        return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
+      }
+    } catch (error) {
+      console.error('[Telegram Setup] error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Check if a saved Google profile is still authenticated by navigating to
+   * mail.google.com and seeing whether we land on the inbox or get redirected
+   * to a login page.
+   */
+  ipcMain.handle('google-profile:check', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) {
+        return { success: false, authenticated: false, error: 'Profile not found' };
+      }
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: true,
+        channel: 'chrome',
+        viewport: { width: 1280, height: 800 },
+        args: ['--disable-blink-features=AutomationControlled'],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
+      try {
+        await page.goto('https://mail.google.com', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForTimeout(3000);
+        const url = page.url();
+        const authenticated = !url.includes('accounts.google.com') && !url.includes('/signin');
+
+        // Update lastCheckedAt in metadata
+        const metaPath = path.join(profileDir, 'profile.json');
+        if (fs.existsSync(metaPath)) {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          fs.writeFileSync(metaPath, JSON.stringify({
+            ...meta,
+            lastCheckedAt: new Date().toISOString(),
+            authenticated,
+          }, null, 2));
+        }
+
+        await context.close();
+        return { success: true, authenticated, finalUrl: url };
+      } catch (navError) {
+        await context.close();
+        return { success: false, authenticated: false, error: navError instanceof Error ? navError.message : String(navError) };
+      }
+    } catch (error) {
+      console.error('[Google Profile] check error:', error);
+      return { success: false, authenticated: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * List all saved Google profiles with their metadata.
+   */
+  ipcMain.handle('google-profile:list', async () => {
+    try {
+      const profilesDir = getGoogleProfilesDir();
+      if (!fs.existsSync(profilesDir)) return { success: true, profiles: [] };
+
+      const entries = fs.readdirSync(profilesDir, { withFileTypes: true })
+        .filter(e => e.isDirectory())
+        .map(e => {
+          const metaPath = path.join(profilesDir, e.name, 'profile.json');
+          const meta = fs.existsSync(metaPath)
+            ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+            : { profileName: e.name };
+          return meta;
+        });
+
+      return { success: true, profiles: entries };
+    } catch (error) {
+      return { success: false, profiles: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Delete a saved Google profile directory.
+   */
+  ipcMain.handle('google-profile:delete', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) return { success: false, error: 'Profile not found' };
+      fs.rmSync(profileDir, { recursive: true, force: true });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // GitHub Account Creation — uses a saved Google profile to sign up on GitHub
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a GitHub account using a saved Google Chrome profile.
+   * The automation follows the recorded flow:
+   *   1. Navigate to github.com/login
+   *   2. Click "Continue with Google"
+   *   3. Select the Google account from the profile
+   *   4. Fill in the desired GitHub username
+   *   5. Click "Create account"
+   */
+  ipcMain.handle('github:create-account', async (_event, { profileName, githubUsername }: { profileName: string; githubUsername: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) {
+        return { success: false, error: `Profile "${profileName}" not found. Launch & Login first.` };
+      }
+      if (!githubUsername || !githubUsername.trim()) {
+        return { success: false, error: 'GitHub username is required.' };
+      }
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: false,
+        channel: 'chrome',
+        viewport: null,
+        args: [
+          '--window-size=907,867',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const pages = context.pages();
+      const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+      try {
+        // Step 1: Navigate to GitHub login
+        await page.goto('https://github.com/login', { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        // Step 2: Click "Continue with Google".
+        // If all selectors fail it means GitHub already redirected us (already logged in) — treat as existing account.
+        let continueWithGoogleClicked = false;
+        try {
+          try {
+            const locator = page.getByRole('span', { name: 'Continue with Google' });
+            await locator.hover({ force: true });
+            await locator.click({ timeout: 8000 });
+            continueWithGoogleClicked = true;
+          } catch {
+            try {
+              await page.locator('.Button-content:nth-match(2)').click({ timeout: 5000 });
+              continueWithGoogleClicked = true;
+            } catch {
+              await page.locator('xpath=/html/body/div[1]/div[4]/main/div/div[2]/webauthn-status/form[2]/button/span').click({ timeout: 5000 });
+              continueWithGoogleClicked = true;
+            }
+          }
+        } catch {
+          // All "Continue with Google" selectors timed out — GitHub already has a session,
+          // which means this Google account is already linked to a GitHub account.
+          continueWithGoogleClicked = false;
+        }
+        await page.waitForTimeout(3000);
+
+        // Step 3: Google account selection — the profile should already be logged in,
+        // so Playwright picks the first listed account automatically.
+        if (continueWithGoogleClicked) {
+          try {
+            const accountLocator = page.locator('.LbOduc').first();
+            await accountLocator.hover({ force: true });
+            await accountLocator.click({ timeout: 8000 });
+          } catch {
+            // Account may have been auto-selected or the selector changed; continue
+          }
+          await page.waitForTimeout(3000);
+        }
+
+        // Step 4: Check if this Google account already has a GitHub account linked.
+        // If [id="login"] is visible, it's a new signup. If not (or if step 2 was skipped),
+        // the user is already logged in — detect the existing username.
+        let finalUsername = githubUsername.trim();
+        let isExistingAccount = !continueWithGoogleClicked;
+
+        await page.waitForTimeout(2000);
+        const loginVisible = !isExistingAccount &&
+          await page.locator('[id="login"]').isVisible({ timeout: 4000 }).catch(() => false);
+
+        if (loginVisible) {
+          // New account: fill username and click Create account
+          await page.locator('[id="login"]').click({ timeout: 8000 });
+          await page.waitForTimeout(1000);
+          await page.fill('[id="login"]', finalUsername);
+          await page.waitForTimeout(3000);
+
+          // Step 5: Click "Create account"
+          try {
+            const createBtn = page.getByRole('span', { name: 'Create account' });
+            await createBtn.hover({ force: true });
+            await createBtn.click({ timeout: 8000 });
+          } catch {
+            try {
+              await page.locator('.Button-label:nth-match(2)').click({ timeout: 5000 });
+            } catch {
+              await page.locator('xpath=/html/body/div[1]/div[5]/div/main/div/div[2]/div[2]/div/div[2]/div/signup-form/form/div[2]/button/span/span').click({ timeout: 5000 });
+            }
+          }
+        } else {
+          // Existing account: Google email is already linked to a GitHub account
+          // (either "Continue with Google" was never shown, or [id="login"] wasn't found).
+          isExistingAccount = true;
+          try {
+            await page.goto('https://github.com', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await page.waitForTimeout(2000);
+            // Open avatar menu
+            await page.locator('.prc-Avatar-Avatar-0xaUi').first().click({ timeout: 5000 });
+            await page.waitForTimeout(1500);
+            // Click Profile
+            await page.getByRole('span', { name: 'Profile' }).click({ timeout: 5000 }).catch(() =>
+              page.locator('[id="_r_1j_--label"]').click({ timeout: 3000 })
+            );
+            await page.waitForTimeout(2000);
+            // Read username from .p-nickname
+            const nickname = await page.locator('.p-nickname').first().innerText().catch(() => '');
+            if (nickname.trim()) finalUsername = nickname.trim();
+          } catch {
+            // Keep generated username as fallback
+          }
+        }
+
+        // Save metadata — record the resolved username
+        const metaPath = path.join(profileDir, 'profile.json');
+        const existing = fs.existsSync(metaPath)
+          ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          : {};
+        const githubAccounts: string[] = existing.githubAccounts ?? [];
+        if (!githubAccounts.includes(finalUsername)) {
+          githubAccounts.push(finalUsername);
+        }
+        fs.writeFileSync(metaPath, JSON.stringify({
+          ...existing,
+          githubAccounts,
+          lastGithubCreatedAt: new Date().toISOString(),
+        }, null, 2));
+
+        // Wait for the user to complete any remaining steps (e.g. CAPTCHA, email verify)
+        await new Promise<void>((resolve) => {
+          context.once('close', resolve);
+        });
+
+        return { success: true, githubUsername: finalUsername, isExistingAccount };
+      } catch (automationError) {
+        await context.close().catch(() => {});
+        return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
+      }
+    } catch (error) {
+      console.error('[GitHub Create Account] error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // GitHub Token Creation — generates a classic PAT using a saved Google profile
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generate a GitHub classic personal access token using a saved Google profile.
+   * Navigates through Developer Settings → Tokens (classic) → Generate new token,
+   * fills name "egdesk-openclaw", sets 30-day expiry, checks repo/workflow/
+   * write:packages/delete:packages scopes, and returns the token value.
+   */
+  ipcMain.handle('github:create-token', async (_event, { profileName, githubUsername }: { profileName: string; githubUsername: string }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) {
+        return { success: false, error: `Profile "${profileName}" not found.` };
+      }
+
+      const { chromium: chromiumExtra } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromiumExtra.use(StealthPlugin());
+
+      const context = await chromiumExtra.launchPersistentContext(profileDir, {
+        headless: false,
+        channel: 'chrome',
+        viewport: null,
+        args: [
+          '--window-size=907,867',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const pages = context.pages();
+      const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+      try {
+        // Step 1: Go to classic tokens list page directly — no menu navigation needed.
+        await page.goto('https://github.com/settings/tokens', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForTimeout(2000);
+
+        if (page.url().includes('/login')) {
+          await context.close();
+          return { success: false, error: 'Not logged in to GitHub. Please create an account first.' };
+        }
+
+        // Step 2: Open "Generate new token" dropdown and pick "Tokens (classic)" / "For general use"
+        try {
+          await page.getByRole('summary', { name: /Generate new token/i }).click({ timeout: 8000 });
+        } catch {
+          // Fallback: the button may not be a <summary> — try any visible Generate button
+          await page.locator('summary, button').filter({ hasText: /Generate new token/i }).first().click({ timeout: 5000 });
+        }
+        await page.waitForTimeout(1500);
+
+        // Click "Tokens (classic)" or "For general use" from the dropdown
+        try {
+          await page.getByRole('link', { name: /Tokens \(classic\)/i }).click({ timeout: 5000 });
+        } catch {
+          try {
+            await page.getByText('For general use').click({ timeout: 5000 });
+          } catch {
+            // Already on classic form (no dropdown shown), continue
+          }
+        }
+        await page.waitForTimeout(2000);
+
+        // Verify we landed on the token creation form
+        const onForm = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
+        if (!onForm) {
+          // Last resort: navigate directly
+          await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+          await page.waitForTimeout(2000);
+        }
+
+        // Fill token name
+        await page.locator('[id="oauth_access_description"]').click({ timeout: 8000 });
+        await page.waitForTimeout(500);
+        await page.fill('[id="oauth_access_description"]', 'egdesk-openclaw');
+        await page.waitForTimeout(1000);
+
+        await page.waitForTimeout(1500);
+
+        // Check scopes using the recorded selectors (.js-checkbox-scope) with XPath fallbacks
+        // repo
+        try {
+          await page.locator('.js-checkbox-scope:nth-match(1)').check({ timeout: 5000 });
+        } catch {
+          await page.locator('xpath=/html/body/div[1]/div[6]/main/div/div/div[2]/div/div/form/div/dl/dd/div/ul/li[1]/div/label/div[1]/input').check({ timeout: 5000 });
+        }
+        await page.waitForTimeout(500);
+
+        // workflow
+        try {
+          await page.locator('.js-checkbox-scope:nth-match(7)').check({ timeout: 5000 });
+        } catch {
+          await page.locator('xpath=/html/body/div[1]/div[6]/main/div/div/div[2]/div/div/form/div/dl/dd/div/ul/li[2]/div/label/div[1]/input').check({ timeout: 5000 });
+        }
+        await page.waitForTimeout(500);
+
+        // write:packages
+        try {
+          await page.locator('.js-checkbox-scope:nth-match(8)').check({ timeout: 5000 });
+        } catch {
+          await page.locator('xpath=/html/body/div[1]/div[6]/main/div/div/div[2]/div/div/form/div/dl/dd/div/ul/li[3]/div/label/div[1]/input').check({ timeout: 5000 });
+        }
+        await page.waitForTimeout(500);
+
+        // delete:packages
+        try {
+          await page.locator('.js-checkbox-scope:nth-match(10)').check({ timeout: 5000 });
+        } catch {
+          await page.locator('xpath=/html/body/div[1]/div[6]/main/div/div/div[2]/div/div/form/div/dl/dd/div/ul/li[4]/div/label/div[1]/input').check({ timeout: 5000 });
+        }
+        await page.waitForTimeout(1000);
+
+        // Click "Generate token"
+        try {
+          await page.getByRole('button', { name: 'Generate token' }).click({ timeout: 8000 });
+        } catch {
+          try {
+            await page.locator('.btn-primary:nth-match(5)').click({ timeout: 5000 });
+          } catch {
+            await page.locator('xpath=/html/body/div[1]/div[6]/main/div/div/div[2]/div/div/form/p/button').click({ timeout: 5000 });
+          }
+        }
+
+        // Wait for the token to appear
+        await page.waitForSelector('[id="new-oauth-token"]', { timeout: 15_000 });
+        await page.waitForTimeout(1000);
+
+        const token = await page.locator('[id="new-oauth-token"]').innerText().catch(() => '');
+
+        if (!token.trim()) {
+          await context.close();
+          return { success: false, error: 'Token was generated but could not be extracted from the page.' };
+        }
+
+        // Save token to profile metadata
+        const metaPath = path.join(profileDir, 'profile.json');
+        const existingMeta = fs.existsSync(metaPath)
+          ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          : {};
+        const githubTokens: Record<string, string> = existingMeta.githubTokens ?? {};
+        githubTokens[githubUsername] = token.trim();
+        fs.writeFileSync(metaPath, JSON.stringify({
+          ...existingMeta,
+          githubTokens,
+          lastTokenCreatedAt: new Date().toISOString(),
+        }, null, 2));
+
+        await context.close();
+        return { success: true, token: token.trim(), githubUsername };
+      } catch (automationError) {
+        await context.close().catch(() => {});
+        return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
+      }
+    } catch (error) {
+      console.error('[GitHub Create Token] error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

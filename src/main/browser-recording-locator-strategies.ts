@@ -18,10 +18,14 @@ export interface RecordedActionLocatorFields {
 }
 
 function normalizeSelectorForPlaywright(raw: string): string {
-  const s = raw.trim();
+  let s = raw.trim();
   if (!s) return s;
   if (/^[a-zA-Z][a-zA-Z0-9_-]*=/.test(s)) return s;
   if (s.startsWith('/')) return `xpath=${s}`;
+  
+  // Strip :nth-match(n) as it's our custom internal hint
+  s = s.replace(/:nth-match\(\d+\)$/i, '');
+  
   return s;
 }
 
@@ -84,7 +88,9 @@ async function trySemanticClick(root: Root, action: RecordedActionLocatorFields,
 
 async function tryCssClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
   if (!action.selector) throw new Error('missing selector');
-  const locator = root.locator(action.selector);
+  const base = root.locator(normalizeSelectorForPlaywright(action.selector));
+  const idx = getDatePickerNthIndexFromCss(action.selector);
+  const locator = idx !== undefined ? base.nth(idx) : base;
   if (!headless) await locator.hover({ force: true });
   await locator.click({ force: headless, timeout: 5000 });
 }
@@ -205,7 +211,10 @@ export async function fillWithOrderedStrategies(
   for (const strategy of order) {
     try {
       if (strategy === 'css') {
-        await root.locator(action.selector).fill(val);
+        const base = root.locator(normalizeSelectorForPlaywright(action.selector));
+        const idx = getDatePickerNthIndexFromCss(action.selector);
+        const locator = idx !== undefined ? base.nth(idx) : base;
+        await locator.fill(val);
       } else {
         if (!action.xpath) throw new Error('missing xpath');
         await root.locator(`xpath=${action.xpath}`).fill(val);
@@ -239,14 +248,11 @@ export interface DatePickerReplayComponent {
 }
 
 /**
- * Recorded CSS may use :nth-of-type(n), :nth-child(n), or :nth-match(n). Duplicate IDs often make
- * `//*[@id="day"]` match multiple nodes; use the same 0-based index with locator.nth() when falling back to XPath.
+ * Recorded CSS may use our custom :nth-match(n) hint.
+ * Duplicate IDs often make `//*[@id="day"]` match multiple nodes;
+ * use the same 0-based index with locator.nth() when falling back to XPath.
  */
 export function getDatePickerNthIndexFromCss(cssSelector: string): number | undefined {
-  const nthType = cssSelector.match(/:nth-of-type\((\d+)\)/i);
-  if (nthType) return Math.max(0, parseInt(nthType[1], 10) - 1);
-  const nthChild = cssSelector.match(/:nth-child\((\d+)\)/i);
-  if (nthChild) return Math.max(0, parseInt(nthChild[1], 10) - 1);
   const nthMatch = cssSelector.match(/:nth-match\((\d+)\)/i);
   if (nthMatch) return Math.max(0, parseInt(nthMatch[1], 10) - 1);
   return undefined;
@@ -286,7 +292,10 @@ export async function replayDatePickerComponent(
 ): Promise<void> {
   if (comp.elementType === 'select') {
     try {
-      await page.locator(normalizeSelectorForPlaywright(comp.selector)).selectOption(value, { timeout: 15000 });
+      const base = page.locator(normalizeSelectorForPlaywright(comp.selector));
+      const idx = getDatePickerNthIndexFromCss(comp.selector);
+      const locator = idx !== undefined ? base.nth(idx) : base;
+      await locator.selectOption(value, { timeout: 15000 });
     } catch (e) {
       if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
       console.log(`    ↪︎ date select css failed, trying xpath: ${(e as Error)?.message || e}`);
@@ -297,7 +306,23 @@ export async function replayDatePickerComponent(
 
   if (comp.elementType === 'input') {
     try {
-      await page.locator(normalizeSelectorForPlaywright(comp.selector)).fill(value, { timeout: 15000 });
+      const stripped = normalizeSelectorForPlaywright(comp.selector);
+      const base = page.locator(stripped);
+      const idx = getDatePickerNthIndexFromCss(comp.selector);
+      const locator = idx !== undefined ? base.nth(idx) : base;
+      
+      // If the input is hidden, Playwright's .fill() will fail. 
+      // We try to fill normally first, then fallback to force-setting the value.
+      try {
+        await locator.fill(value, { timeout: 5000 });
+      } catch (fillErr) {
+        console.log(`    ↪︎ standard fill failed, trying force fill (hidden element?): ${(fillErr as Error).message}`);
+        await locator.evaluate((el: HTMLInputElement, val) => {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, value);
+      }
     } catch (e) {
       if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
       console.log(`    ↪︎ date fill css failed, trying xpath: ${(e as Error)?.message || e}`);
@@ -308,9 +333,12 @@ export async function replayDatePickerComponent(
 
   // button — open, then pick from list (dropdownSelector optional; matches codegen)
   if (comp.selector.includes(':has-text')) {
-    const baseSelector = comp.selector.split(':has-text')[0];
     try {
-      await page.locator(baseSelector).filter({ hasText: value }).click({ timeout: 15000 });
+      const stripped = normalizeSelectorForPlaywright(comp.selector);
+      const base = page.locator(stripped);
+      const idx = getDatePickerNthIndexFromCss(comp.selector);
+      const locator = idx !== undefined ? base.nth(idx) : base;
+      await locator.click({ timeout: 15000 });
     } catch (e) {
       if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
       console.log(`    ↪︎ date button :has-text click failed, trying xpath: ${(e as Error)?.message || e}`);
@@ -318,7 +346,11 @@ export async function replayDatePickerComponent(
     }
   } else {
     try {
-      await page.locator(normalizeSelectorForPlaywright(comp.selector)).click({ timeout: 15000 });
+      const stripped = normalizeSelectorForPlaywright(comp.selector);
+      const base = page.locator(stripped);
+      const idx = getDatePickerNthIndexFromCss(comp.selector);
+      const locator = idx !== undefined ? base.nth(idx) : base;
+      await locator.click({ timeout: 15000 });
     } catch (e) {
       if (!comp.xpath?.trim()) throw e instanceof Error ? e : new Error(String(e));
       console.log(`    ↪︎ date button css click failed, trying xpath: ${(e as Error)?.message || e}`);
@@ -329,20 +361,76 @@ export async function replayDatePickerComponent(
   await page.waitForTimeout(500);
 
   if (comp.dropdownSelector) {
-    const raw = comp.dropdownSelector.trim();
+    const idx = getDatePickerNthIndexFromCss(comp.dropdownSelector);
     const scoped = normalizeSelectorForPlaywright(comp.dropdownSelector);
+
     try {
-      await page.locator(scoped).locator(`text="${value}"`).first().click({ timeout: 15000 });
+      // Find the dropdown container. Use recorded index if available, else find visible ones.
+      let targetContainer: Locator;
+
+      if (idx !== undefined) {
+        targetContainer = page.locator(scoped).nth(idx);
+      } else {
+        const containers = page.locator(scoped).filter({ visible: true });
+        const count = await containers.count();
+        targetContainer = containers.first();
+
+        if (count > 1) {
+          for (let i = 0; i < count; i++) {
+            const c = containers.nth(i);
+            if ((await c.locator(`text=${value}`).count()) > 0) {
+              targetContainer = c;
+              break;
+            }
+          }
+        }
+      }
+
+      await targetContainer.locator(`text=${value}`).first().click({ timeout: 15000 });
     } catch (e) {
-      console.log(`    ↪︎ date dropdown text= failed, trying hasText filter: ${(e as Error)?.message || e}`);
-      await page
-        .locator(`${raw} a, ${raw} button, ${raw} div, ${raw} li`)
-        .filter({ hasText: value })
-        .first()
-        .click({ timeout: 15000 });
+      console.log(
+        `    ↪︎ date dropdown text= failed, trying broader search: ${
+          (e as Error)?.message || e
+        }`
+      );
+      // Fallback: search ALL visible dropdowns for the value
+      const allDropdowns = page.locator(scoped).filter({ visible: true });
+      const count = await allDropdowns.count();
+      let found = false;
+      for (let i = 0; i < count; i++) {
+        const c = allDropdowns.nth(i);
+        if ((await c.locator(`text=${value}`).count()) > 0) {
+          await c.locator(`text=${value}`).first().click({ timeout: 10000 });
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        // Last resort: search every potential clickable element on the page
+        await page
+          .locator('a, button, div, li, span, td')
+          .filter({ hasText: value, visible: true })
+          .first()
+          .click({ timeout: 10000 });
+      }
     }
   } else {
-    await page.locator('a, button, div, li').filter({ hasText: value }).first().click({ timeout: 15000 });
+    // No dropdown selector recorded - try to find visible elements with the text.
+    try {
+      await page
+        .locator('a, button, div, li, span, td')
+        .filter({ hasText: value, visible: true })
+        .first()
+        .click({ timeout: 5000 });
+    } catch (e) {
+      // Fallback: search all if no visible ones found (might be animating/scrolling)
+      await page
+        .locator('a, button, div, li, span, td')
+        .filter({ hasText: value })
+        .first()
+        .click({ timeout: 10000 });
+    }
   }
 }
 

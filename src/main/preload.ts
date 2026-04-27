@@ -84,6 +84,12 @@ export type Channels =
   | 'ai-stream-event'
   | 'coding-ai:stream-event'
   | 'website-viewer:refresh'
+  | 'update-code'
+  | 'actions-updated'
+  | 'set-view-mode'
+  | 'update-wait-settings'
+  | 'delete-action'
+  | 'play-to-action'
   | 'auth:token-invalid';
 
 /**
@@ -2112,7 +2118,7 @@ const electronHandler = {
     startWooriAutomation: (id?: string, password?: string, proxy?: string, geminiApiKey?: string) => ipcRenderer.invoke('start-woori-automation', { id, password, proxy, geminiApiKey }),
     launchChrome: () => ipcRenderer.invoke('launch-chrome'),
     launchChromeWithUrl: (url: string, proxy?: string, openDevTools?: boolean, runLighthouse?: boolean) => ipcRenderer.invoke('launch-chrome-with-url', { url, proxy, openDevTools, runLighthouse }),
-    launchBrowserRecorderEnhanced: (params: { url: string; extensionPaths?: string[]; chainId?: string; previousDownload?: string; previousScriptPath?: string }) => ipcRenderer.invoke('launch-browser-recorder-enhanced', params),
+    launchBrowserRecorderEnhanced: (params: { url: string; extensionPaths?: string[]; profileName?: string; chainId?: string; previousDownload?: string; previousScriptPath?: string }) => ipcRenderer.invoke('launch-browser-recorder-enhanced', params),
     stopBrowserRecorderEnhanced: () => ipcRenderer.invoke('stop-browser-recorder-enhanced'),
     getPlaywrightTests: () => ipcRenderer.invoke('get-playwright-tests'),
     getBrowserRecordingReplayOptions: (testFile: string) =>
@@ -2199,6 +2205,27 @@ const electronHandler = {
     crawlWebsite: (url: string, proxy?: string, openDevTools?: boolean) => ipcRenderer.invoke('crawl-website', { url, proxy, openDevTools }),
     generateLighthouseReports: (urls: string[], proxy?: string) => ipcRenderer.invoke('generate-lighthouse-reports', { urls, proxy }),
     testPasteComponent: () => ipcRenderer.invoke('test-paste-component'),
+    // Google Chrome profile session tester
+    googleProfile: {
+      launch: (profileName: string) => ipcRenderer.invoke('google-profile:launch', { profileName }),
+      check: (profileName: string) => ipcRenderer.invoke('google-profile:check', { profileName }),
+      getEmail: (profileName: string) => ipcRenderer.invoke('google-profile:get-email', { profileName }),
+      getPhone: (profileName: string) => ipcRenderer.invoke('google-profile:get-phone', { profileName }),
+      list: () => ipcRenderer.invoke('google-profile:list'),
+      delete: (profileName: string) => ipcRenderer.invoke('google-profile:delete', { profileName }),
+    },
+    // GitHub account creation via saved Google profile
+    github: {
+      createAccount: (profileName: string, githubUsername: string) =>
+        ipcRenderer.invoke('github:create-account', { profileName, githubUsername }),
+      createToken: (profileName: string, githubUsername: string) =>
+        ipcRenderer.invoke('github:create-token', { profileName, githubUsername }),
+    },
+    // Telegram setup via saved Google profile
+    telegram: {
+      setup: (profileName: string, phoneNumber: string) =>
+        ipcRenderer.invoke('telegram:setup', { profileName, phoneNumber }),
+    },
   },
 
   /**

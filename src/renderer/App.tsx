@@ -59,9 +59,11 @@ import { UserDataPage } from './components/UserData';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
+import CodeViewerWindow from './components/BrowserRecorder/CodeViewerWindow';
 import DesktopRecorderPage from './components/DesktopRecorder/DesktopRecorderPage';
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
+import OpenClawPage from './components/OpenClaw/OpenClawPage';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
 
 /** Ollama tag: Gemma 3 ~4B (e.g. gemma3:4b) */
@@ -602,14 +604,29 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [naverContent, setNaverContent] = useState('This is a test post content');
   const [naverTags, setNaverTags] = useState('#test #naver');
 
+  // Google Profile Session state
+  const [googleProfileName, setGoogleProfileName] = useState('default');
+  const [googleProfiles, setGoogleProfiles] = useState<any[]>([]);
+  const [googleProfileLoading, setGoogleProfileLoading] = useState(false);
+  const [googleProfileStatus, setGoogleProfileStatus] = useState<Record<string, { authenticated?: boolean; checking?: boolean }>>({});
 
-  // Define addDebugLog function at the component level
+// Define addDebugLog function at the component level
   const addDebugLog = (message: string) => {
     setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
 
+  const loadGoogleProfiles = async () => {
+    try {
+      const result = await (window as any).electron.debug.googleProfile.list();
+      if (result?.success) setGoogleProfiles(result.profiles || []);
+    } catch (e) {
+      console.error('Failed to list google profiles:', e);
+    }
+  };
 
-
+  useEffect(() => {
+    if (isOpen) loadGoogleProfiles();
+  }, [isOpen]);
 
 
 
@@ -1927,6 +1944,151 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </button>
           </div>
 
+          {/* Google Chrome Profile Session Tester */}
+          <div>
+            <h3 style={{ color: '#4285F4', marginBottom: '10px' }}>Google Chrome Profile Session</h3>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px', margin: '0 0 12px 0' }}>
+              Log in once and keep the Chrome profile on disk. Click "Launch & Login", complete the Google login, then <strong style={{ color: '#ccc' }}>close Chrome</strong> when done — the session is saved automatically. Use "Check" to verify the session is still alive without re-opening Chrome.
+            </p>
+
+            {/* Create / Launch */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Profile name (e.g. work, personal)"
+                value={googleProfileName}
+                onChange={(e) => setGoogleProfileName(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', flex: 1 }}
+              />
+              <button
+                disabled={googleProfileLoading}
+                onClick={async () => {
+                  if (!googleProfileName.trim()) { alert('Enter a profile name'); return; }
+                  setGoogleProfileLoading(true);
+                  addDebugLog(`🚀 Launching Chrome with profile "${googleProfileName}"...`);
+                  try {
+                    const result = await (window as any).electron.debug.googleProfile.launch(googleProfileName.trim());
+                    if (result?.success) {
+                      addDebugLog(`✅ Session closed and saved: ${result.profileDir}`);
+                      await loadGoogleProfiles();
+                    } else {
+                      addDebugLog(`❌ Launch failed: ${result?.error}`);
+                    }
+                  } catch (e: any) {
+                    addDebugLog(`❌ Error: ${e?.message || e}`);
+                  } finally {
+                    setGoogleProfileLoading(false);
+                  }
+                }}
+                style={{ padding: '8px 16px', backgroundColor: '#4285F4', color: '#fff', border: 'none', borderRadius: '4px', cursor: googleProfileLoading ? 'not-allowed' : 'pointer', opacity: googleProfileLoading ? 0.6 : 1, whiteSpace: 'nowrap', fontWeight: 'bold' }}
+              >
+                {googleProfileLoading ? 'Launching...' : 'Launch & Login'}
+              </button>
+              <button
+                onClick={async () => { await loadGoogleProfiles(); addDebugLog('🔄 Refreshed profile list'); }}
+                style={{ padding: '8px 12px', backgroundColor: '#2a2a2a', color: '#fff', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Refresh
+              </button>
+            </div>
+
+            {/* Saved Profiles List */}
+            {googleProfiles.length === 0 ? (
+              <div style={{ color: '#666', fontSize: '12px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '4px', border: '1px solid #333' }}>
+                No saved profiles yet. Enter a name above and click "Launch & Login".
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {googleProfiles.map((profile: any) => {
+                  const name: string = profile.profileName || 'unknown';
+                  const status = googleProfileStatus[name];
+                  const lastUsed = profile.lastUsedAt ? new Date(profile.lastUsedAt).toLocaleString() : '—';
+                  const lastChecked = profile.lastCheckedAt ? new Date(profile.lastCheckedAt).toLocaleString() : '—';
+
+                  let authBadge = null;
+                  if (status?.checking) {
+                    authBadge = <span style={{ padding: '2px 8px', backgroundColor: '#555', color: '#ccc', borderRadius: '3px', fontSize: '11px' }}>Checking...</span>;
+                  } else if (status?.authenticated === true) {
+                    authBadge = <span style={{ padding: '2px 8px', backgroundColor: '#1b5e20', color: '#81c784', borderRadius: '3px', fontSize: '11px' }}>Authenticated</span>;
+                  } else if (status?.authenticated === false) {
+                    authBadge = <span style={{ padding: '2px 8px', backgroundColor: '#4e1a1a', color: '#e57373', borderRadius: '3px', fontSize: '11px' }}>Session Expired</span>;
+                  } else if (profile.authenticated === true) {
+                    authBadge = <span style={{ padding: '2px 8px', backgroundColor: '#2a3a2a', color: '#aed6a3', borderRadius: '3px', fontSize: '11px' }}>Last check: OK</span>;
+                  } else if (profile.authenticated === false) {
+                    authBadge = <span style={{ padding: '2px 8px', backgroundColor: '#3a2a2a', color: '#d6a3a3', borderRadius: '3px', fontSize: '11px' }}>Last check: Expired</span>;
+                  }
+
+                  return (
+                    <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '4px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '13px' }}>{name}</div>
+                        <div style={{ color: '#666', fontSize: '11px' }}>Last used: {lastUsed} · Last checked: {lastChecked}</div>
+                      </div>
+                      {authBadge}
+                      <button
+                        disabled={status?.checking}
+                        onClick={async () => {
+                          setGoogleProfileStatus(prev => ({ ...prev, [name]: { ...prev[name], checking: true } }));
+                          addDebugLog(`🔍 Checking session for "${name}"...`);
+                          try {
+                            const result = await (window as any).electron.debug.googleProfile.check(name);
+                            const auth: boolean = result?.authenticated ?? false;
+                            setGoogleProfileStatus(prev => ({ ...prev, [name]: { authenticated: auth, checking: false } }));
+                            addDebugLog(auth ? `✅ "${name}" is still authenticated` : `⚠️ "${name}" session has expired`);
+                            await loadGoogleProfiles();
+                          } catch (e: any) {
+                            setGoogleProfileStatus(prev => ({ ...prev, [name]: { checking: false } }));
+                            addDebugLog(`❌ Check error: ${e?.message || e}`);
+                          }
+                        }}
+                        style={{ padding: '6px 12px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: status?.checking ? 'not-allowed' : 'pointer', fontSize: '12px', opacity: status?.checking ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                      >
+                        Check
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setGoogleProfileLoading(true);
+                          addDebugLog(`🚀 Re-opening Chrome for profile "${name}"...`);
+                          try {
+                            const result = await (window as any).electron.debug.googleProfile.launch(name);
+                            if (result?.success) {
+                              addDebugLog(`✅ Session updated for "${name}"`);
+                              await loadGoogleProfiles();
+                            } else {
+                              addDebugLog(`❌ Launch failed: ${result?.error}`);
+                            }
+                          } catch (e: any) {
+                            addDebugLog(`❌ Error: ${e?.message || e}`);
+                          } finally {
+                            setGoogleProfileLoading(false);
+                          }
+                        }}
+                        style={{ padding: '6px 12px', backgroundColor: '#1a3a5c', color: '#fff', border: '1px solid #2a5a8c', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
+                      >
+                        Re-login
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete profile "${name}"? This removes the saved Chrome session.`)) return;
+                          try {
+                            await (window as any).electron.debug.googleProfile.delete(name);
+                            addDebugLog(`🗑️ Deleted profile "${name}"`);
+                            await loadGoogleProfiles();
+                          } catch (e: any) {
+                            addDebugLog(`❌ Delete error: ${e?.message || e}`);
+                          }
+                        }}
+                        style={{ padding: '6px 12px', backgroundColor: '#3a1a1a', color: '#e57373', border: '1px solid #5a2a2a', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (
             <div>
@@ -2805,8 +2967,10 @@ function AppContent() {
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />
+            <Route path="/code-viewer" element={<CodeViewerWindow />} />
             <Route path="/desktop-recorder" element={<DesktopRecorderPage />} />
             <Route path="/rookie" element={<RookiePage />} />
+            <Route path="/openclaw" element={<OpenClawPage />} />
 
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -10,7 +10,7 @@
  * @property {number} [interKeyMs] - delay between repeated keys (default 300)
  */
 
-const { sendEnterKeyViaSendKeys } = require('./windows-uia-native');
+const { sendEnterKeyViaSendKeys, getFocusedNativeElementName, dismissNativeDeletionConfirmDialog } = require('./windows-uia-native');
 
 /**
  * @param {import('./arduino-hid-bank').ArduinoHidBankSession} hid
@@ -40,6 +40,19 @@ async function runNativeCertArduinoSteps(hid, page, certificatePassword, steps, 
         await hid.sendKey(step.key);
         if (r < repeat - 1) {
           await page.waitForTimeout(inter);
+        }
+        if (step.key === 'TAB') {
+          const focusedName = getFocusedNativeElementName();
+          if (focusedName.includes('삭제')) {
+            warn(`[cert-steps] TAB landed on 삭제 element ("${focusedName}") — sending extra TAB to skip`);
+            await page.waitForTimeout(300);
+            const dismissResult = dismissNativeDeletionConfirmDialog();
+            if (dismissResult === 'clicked') {
+              warn('[cert-steps] Deletion confirmation dialog detected — clicked 취소');
+            }
+            await hid.sendKey('TAB');
+            await page.waitForTimeout(inter);
+          }
         }
       }
       continue;

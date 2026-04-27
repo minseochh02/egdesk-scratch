@@ -276,6 +276,62 @@ async function waitForNativeCertificateDialogWindow(opts = {}) {
 }
 
 /**
+ * Returns the Name property of the currently focused native UI element via UIA FocusedElement.
+ * Used to detect if TAB navigation has landed on a dangerous button (e.g. 삭제) in a native dialog.
+ * Returns '' on non-Windows or any failure.
+ */
+function getFocusedNativeElementName() {
+  if (!isWindows()) return '';
+  try {
+    return runPowerShellUtf8(
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+      'if ($f) { $f.Current.Name } else { \'\' }',
+      { timeoutMs: 3000 }
+    );
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * If a deletion confirmation dialog is currently focused (i.e. after accidentally triggering 삭제),
+ * finds a '취소' button within that dialog via UIA and invokes it.
+ * Returns 'clicked' | 'no_cancel_button' | 'no_window' | 'no_focus' | '' (non-Windows/error).
+ */
+function dismissNativeDeletionConfirmDialog() {
+  if (!isWindows()) return '';
+  try {
+    return runPowerShellUtf8(
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+      'if (-not $f) { "no_focus"; exit } ' +
+      '$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker; ' +
+      '$node = $f; $win = $null; ' +
+      'for ($i = 0; $i -lt 15; $i++) { ' +
+      '  $p = $walker.GetParent($node); ' +
+      '  if ($p -eq $null) { break } ' +
+      '  if ($p.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { $win = $p; break } ' +
+      '  $node = $p ' +
+      '} ' +
+      'if (-not $win) { "no_window"; exit } ' +
+      '$cond = New-Object System.Windows.Automation.AndCondition(' +
+      '  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)),' +
+      '  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, "취소"))' +
+      '); ' +
+      '$btn = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond); ' +
+      'if (-not $btn) { "no_cancel_button"; exit } ' +
+      '$ip = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern); ' +
+      '$ip.Invoke(); ' +
+      '"clicked"',
+      { timeoutMs: 5000 }
+    );
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
  * Send Enter to the foreground window (fallback after typing cert password).
  */
 function sendEnterKeyViaSendKeys() {
@@ -301,5 +357,7 @@ module.exports = {
   waitForRootWindowByClassName,
   probeNativeCertificateDialogWindow,
   waitForNativeCertificateDialogWindow,
+  getFocusedNativeElementName,
+  dismissNativeDeletionConfirmDialog,
   sendEnterKeyViaSendKeys,
 };
