@@ -26,7 +26,7 @@ const OpenClawPage: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [createdAccounts, setCreatedAccounts] = useState<string[]>([]);
   const [githubTokens, setGithubTokens] = useState<Record<string, string>>({});
-  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramBotTokens, setTelegramBotTokens] = useState<string[]>([]);
   const [telegramSetup, setTelegramSetup] = useState(false);
   const [error, setError] = useState('');
 
@@ -126,8 +126,11 @@ const OpenClawPage: React.FC = () => {
       if (result?.success) {
         addLog('✅ Telegram + BotFather setup complete!');
         setTelegramSetup(true);
-        if (result.token) {
-          setTelegramBotToken(result.token);
+        if (result.tokens?.length > 0) {
+          setTelegramBotTokens(result.tokens);
+          addLog(`🤖 ${result.tokens.length} bot token(s) found.`);
+        } else if (result.token) {
+          setTelegramBotTokens([result.token]);
           addLog(`🤖 Bot token saved.`);
         }
       } else {
@@ -202,7 +205,7 @@ const OpenClawPage: React.FC = () => {
     setLogs([]);
     setCreatedAccounts([]);
     setGithubTokens({});
-    setTelegramBotToken('');
+    setTelegramBotTokens([]);
     setTelegramSetup(false);
     setError('');
   };
@@ -441,15 +444,15 @@ const OpenClawPage: React.FC = () => {
                 borderRadius: '8px',
                 padding: '14px 18px',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: telegramBotToken ? '10px' : '0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: telegramBotTokens.length > 0 ? '10px' : '0' }}>
                   <span style={{ fontSize: '20px' }}>✈️</span>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '14px' }}>Telegram</div>
                     <div style={{ color: '#888', fontSize: '13px' }}>BotFather — egdesk_openclaw_bot</div>
                   </div>
                 </div>
-                {telegramBotToken && (
-                  <div style={{
+                {telegramBotTokens.map((token, i) => (
+                  <div key={token} style={{
                     marginTop: '8px',
                     padding: '8px 10px',
                     backgroundColor: '#0d1117',
@@ -457,7 +460,7 @@ const OpenClawPage: React.FC = () => {
                     borderRadius: '6px',
                   }}>
                     <div style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>
-                      🤖 Bot Token
+                      🤖 Bot Token {telegramBotTokens.length > 1 ? `#${i + 1}` : ''}
                     </div>
                     <div style={{
                       color: '#3fb950',
@@ -465,10 +468,10 @@ const OpenClawPage: React.FC = () => {
                       fontFamily: 'monospace',
                       wordBreak: 'break-all',
                     }}>
-                      {telegramBotToken}
+                      {token}
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>
