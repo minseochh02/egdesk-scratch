@@ -55,7 +55,14 @@ const BrowserRecorderPage: React.FC = () => {
   const [selectedExtensionPaths, setSelectedExtensionPaths] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [insightTab, setInsightTab] = useState<'code' | 'downloads' | 'debug'>('code');
+  const [insightTab, setInsightTab] = useState<'code' | 'downloads' | 'debug' | 'profiles'>('code');
+
+  // Google Profile Session state
+  const [googleProfileName, setGoogleProfileName] = useState('default');
+  const [googleProfiles, setGoogleProfiles] = useState<any[]>([]);
+  const [googleProfileLoading, setGoogleProfileLoading] = useState(false);
+  const [googleProfileStatus, setGoogleProfileStatus] = useState<Record<string, { authenticated?: boolean; checking?: boolean }>>({});
+  const [selectedProfileName, setSelectedProfileName] = useState<string>('');
 
   // Action Chain state
   const [justStoppedRecording, setJustStoppedRecording] = useState(false);
@@ -366,6 +373,15 @@ const BrowserRecorderPage: React.FC = () => {
     }
   };
 
+  const loadGoogleProfiles = async () => {
+    try {
+      const result = await (window as any).electron.debug.googleProfile.list();
+      if (result?.success) setGoogleProfiles(result.profiles || []);
+    } catch (e) {
+      console.error('Failed to list google profiles:', e);
+    }
+  };
+
   const handleOpenDownload = async (filePath: string) => {
     try {
       await (window as any).electron.debug.openPlaywrightDownload(filePath);
@@ -401,6 +417,11 @@ const BrowserRecorderPage: React.FC = () => {
   // Load playwright downloads when component mounts
   useEffect(() => {
     loadPlaywrightDownloads();
+  }, []);
+
+  // Load google profiles when component mounts
+  useEffect(() => {
+    loadGoogleProfiles();
   }, []);
 
   // Load saved extension preferences when component mounts
@@ -585,6 +606,7 @@ const BrowserRecorderPage: React.FC = () => {
         previousDownload: lastDownloadPath,  // Use full path instead of just filename
         previousScriptPath: lastRecordingScriptPath,  // Path to the download script
         extensionPaths: selectedExtensionPaths,
+        profileName: selectedProfileName || undefined,
       });
 
       if (result?.success) {
@@ -771,6 +793,24 @@ const BrowserRecorderPage: React.FC = () => {
                         >
                           🧩 Extensions ({selectedExtensionPaths.length})
                         </button>
+
+                        <div className="browser-recorder-profile-selector" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <select
+                            value={selectedProfileName}
+                            onChange={(e) => setSelectedProfileName(e.target.value)}
+                            className="browser-recorder-form-select"
+                            style={{ padding: '6px 30px 6px 10px', fontSize: '12px', minWidth: '140px' }}
+                            disabled={isRecordingEnhanced}
+                          >
+                            <option value="">👤 Temporary Profile</option>
+                            {googleProfiles.map(p => (
+                              <option key={p.profileName} value={p.profileName}>
+                                👤 {p.profileName} {p.authenticated ? '✅' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
                         <button
                           onClick={async () => {
                             try {
@@ -783,10 +823,14 @@ const BrowserRecorderPage: React.FC = () => {
                               if (selectedExtensionPaths.length > 0) {
                                 addDebugLog(`🧩 Loading ${selectedExtensionPaths.length} Chrome extension(s)`);
                               }
+                              if (selectedProfileName) {
+                                addDebugLog(`👤 Using Chrome profile: ${selectedProfileName}`);
+                              }
 
                               const result = await (window as any).electron.debug.launchBrowserRecorderEnhanced({
                                 url: chromeUrl.startsWith('http') ? chromeUrl : `https://${chromeUrl}`,
-                                extensionPaths: selectedExtensionPaths
+                                extensionPaths: selectedExtensionPaths,
+                                profileName: selectedProfileName || undefined
                               });
 
                               if (result?.success) {
@@ -910,6 +954,12 @@ const BrowserRecorderPage: React.FC = () => {
                         Downloads
                       </button>
                       <button
+                        onClick={() => setInsightTab('profiles')}
+                        className={`browser-recorder-btn browser-recorder-btn-sm ${insightTab === 'profiles' ? 'browser-recorder-tab-active' : 'browser-recorder-btn-secondary'}`}
+                      >
+                        Profiles
+                      </button>
+                      <button
                         onClick={() => setInsightTab('debug')}
                         className={`browser-recorder-btn browser-recorder-btn-sm ${insightTab === 'debug' ? 'browser-recorder-tab-active' : 'browser-recorder-btn-secondary'}`}
                       >
@@ -977,6 +1027,156 @@ const BrowserRecorderPage: React.FC = () => {
                         </div>
                       )}
                     </>
+                  )}
+
+                  {insightTab === 'profiles' && (
+                    <div className="google-profile-session-container">
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                        <input
+                          type="text"
+                          placeholder="Profile name (e.g. work, personal)"
+                          value={googleProfileName}
+                          onChange={(e) => setGoogleProfileName(e.target.value)}
+                          className="browser-recorder-url-input"
+                          style={{ flex: 1 }}
+                        />
+                        <button
+                          disabled={googleProfileLoading}
+                          onClick={async () => {
+                            if (!googleProfileName.trim()) { alert('Enter a profile name'); return; }
+                            setGoogleProfileLoading(true);
+                            addDebugLog(`🚀 Launching Chrome with profile "${googleProfileName}"...`);
+                            try {
+                              const result = await (window as any).electron.debug.googleProfile.launch(googleProfileName.trim());
+                              if (result?.success) {
+                                addDebugLog(`✅ Session closed and saved: ${result.profileDir}`);
+                                await loadGoogleProfiles();
+                              } else {
+                                addDebugLog(`❌ Launch failed: ${result?.error}`);
+                              }
+                            } catch (e: any) {
+                              addDebugLog(`❌ Error: ${e?.message || e}`);
+                            } finally {
+                              setGoogleProfileLoading(false);
+                            }
+                          }}
+                          className="browser-recorder-btn browser-recorder-btn-primary"
+                          style={{ padding: '8px 16px', opacity: googleProfileLoading ? 0.6 : 1 }}
+                        >
+                          {googleProfileLoading ? 'Launching...' : 'Launch & Login'}
+                        </button>
+                        <button
+                          onClick={async () => { await loadGoogleProfiles(); addDebugLog('🔄 Refreshed profile list'); }}
+                          className="browser-recorder-btn browser-recorder-btn-secondary"
+                          style={{ padding: '8px 12px' }}
+                        >
+                          Refresh
+                        </button>
+                      </div>
+
+                      {googleProfiles.length === 0 ? (
+                        <p className="browser-recorder-empty-message">No saved profiles yet. Enter a name above and click "Launch & Login".</p>
+                      ) : (
+                        <div className="browser-recorder-downloads-container">
+                          {googleProfiles.map((profile: any) => {
+                            const name: string = profile.profileName || 'unknown';
+                            const status = googleProfileStatus[name];
+                            const lastUsed = profile.lastUsedAt ? new Date(profile.lastUsedAt).toLocaleString() : '—';
+                            const lastChecked = profile.lastCheckedAt ? new Date(profile.lastCheckedAt).toLocaleString() : '—';
+
+                            let authBadge = null;
+                            if (status?.checking) {
+                              authBadge = <span className="browser-recorder-test-badge" style={{ backgroundColor: '#555', color: '#ccc' }}>Checking...</span>;
+                            } else if (status?.authenticated === true) {
+                              authBadge = <span className="browser-recorder-test-badge" style={{ backgroundColor: '#1b5e20', color: '#81c784' }}>Authenticated</span>;
+                            } else if (status?.authenticated === false) {
+                              authBadge = <span className="browser-recorder-test-badge" style={{ backgroundColor: '#4e1a1a', color: '#e57373' }}>Session Expired</span>;
+                            } else if (profile.authenticated === true) {
+                              authBadge = <span className="browser-recorder-test-badge" style={{ backgroundColor: '#2a3a2a', color: '#aed6a3' }}>Last check: OK</span>;
+                            } else if (profile.authenticated === false) {
+                              authBadge = <span className="browser-recorder-test-badge" style={{ backgroundColor: '#3a2a2a', color: '#d6a3a3' }}>Last check: Expired</span>;
+                            }
+
+                            return (
+                              <div key={name} className="browser-recorder-download-item" style={{ cursor: 'default' }}>
+                                <div className="browser-recorder-download-info">
+                                  <div className="browser-recorder-download-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span>👤 {name}</span>
+                                    {authBadge}
+                                  </div>
+                                  <div className="browser-recorder-download-meta">
+                                    Last used: {lastUsed} · Last checked: {lastChecked}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button
+                                    disabled={status?.checking}
+                                    onClick={async () => {
+                                      setGoogleProfileStatus(prev => ({ ...prev, [name]: { ...prev[name], checking: true } }));
+                                      addDebugLog(`🔍 Checking session for "${name}"...`);
+                                      try {
+                                        const result = await (window as any).electron.debug.googleProfile.check(name);
+                                        const auth: boolean = result?.authenticated ?? false;
+                                        setGoogleProfileStatus(prev => ({ ...prev, [name]: { authenticated: auth, checking: false } }));
+                                        addDebugLog(auth ? `✅ "${name}" is still authenticated` : `⚠️ "${name}" session has expired`);
+                                        await loadGoogleProfiles();
+                                      } catch (e: any) {
+                                        setGoogleProfileStatus(prev => ({ ...prev, [name]: { checking: false } }));
+                                        addDebugLog(`❌ Check error: ${e?.message || e}`);
+                                      }
+                                    }}
+                                    className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-secondary"
+                                    style={{ padding: '6px 10px', fontSize: '11px' }}
+                                  >
+                                    Check
+                                  </button>
+                                  <button
+                                    disabled={googleProfileLoading}
+                                    onClick={async () => {
+                                      setGoogleProfileLoading(true);
+                                      addDebugLog(`🚀 Re-opening Chrome for profile "${name}"...`);
+                                      try {
+                                        const result = await (window as any).electron.debug.googleProfile.launch(name);
+                                        if (result?.success) {
+                                          addDebugLog(`✅ Session updated for "${name}"`);
+                                          await loadGoogleProfiles();
+                                        } else {
+                                          addDebugLog(`❌ Launch failed: ${result?.error}`);
+                                        }
+                                      } catch (e: any) {
+                                        addDebugLog(`❌ Error: ${e?.message || e}`);
+                                      } finally {
+                                        setGoogleProfileLoading(false);
+                                      }
+                                    }}
+                                    className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-view"
+                                    style={{ padding: '6px 10px', fontSize: '11px' }}
+                                  >
+                                    Re-login
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Delete profile "${name}"? This removes the saved Chrome session.`)) return;
+                                      try {
+                                        await (window as any).electron.debug.googleProfile.delete(name);
+                                        addDebugLog(`🗑️ Deleted profile "${name}"`);
+                                        await loadGoogleProfiles();
+                                      } catch (e: any) {
+                                        addDebugLog(`❌ Delete error: ${e?.message || e}`);
+                                      }
+                                    }}
+                                    className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-delete"
+                                    style={{ padding: '6px 10px', fontSize: '11px' }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {insightTab === 'debug' && (

@@ -1,5 +1,8 @@
-import { BrowserWindow, screen, ipcMain } from 'electron';
+import { BrowserWindow, screen, ipcMain, app } from 'electron';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import { resolveHtmlPath } from './util';
 
 export class CodeViewerWindow {
   private window: BrowserWindow | null = null;
@@ -42,7 +45,6 @@ export class CodeViewerWindow {
     ipcMain.handle('save-test-code', async (event) => {
       if (this.isViewMode && this.currentTestPath && this.currentCode) {
         try {
-          const fs = require('fs');
           fs.writeFileSync(this.currentTestPath, this.currentCode, 'utf8');
           console.log('💾 Saved test code to:', this.currentTestPath);
           return { success: true, message: 'Test saved successfully' };
@@ -96,20 +98,20 @@ export class CodeViewerWindow {
 
   updateActions(actions: any[]) {
     console.log('📊 updateActions called with', actions.length, 'actions');
-    // Log each action to see if coordinates and frameSelector are present
-    actions.forEach((action, i) => {
-      if (action.type === 'click') {
-        console.log(`  Action ${i}: click - coordinates:`, action.coordinates, 'selector:', action.selector, 'frame:', action.frameSelector || 'main');
-      }
-    });
     this.actions = actions;
 
     // Notify renderer if window is ready, otherwise actions will be sent when it becomes ready
-    if (this.isReady && this.window && !this.window.isDestroyed()) {
-      console.log('📤 Sending', actions.length, 'actions to renderer immediately (window already ready)');
-      this.window.webContents.send('actions-updated', actions);
+    if (this.window && !this.window.isDestroyed()) {
+      if (this.isReady) {
+        console.log('📤 Sending', actions.length, 'actions to renderer immediately');
+        this.window.webContents.send('actions-updated', actions);
+      } else {
+        console.log('⏳ Window not fully ready, but queuing actions for soon-to-be-ready window');
+        // We can still try to send, it will be queued by Electron's WebContents
+        this.window.webContents.send('actions-updated', actions);
+      }
     } else {
-      console.log('⏳ Window not ready yet, actions saved but will be sent when renderer is ready');
+      console.log('❌ Window is null or destroyed, actions saved but not sent');
     }
   }
 
@@ -238,782 +240,85 @@ export class CodeViewerWindow {
     this.window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
-      x: 0, // Position on left
+      x: 0,
       y: 0,
       title: 'Playwright Test Code',
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
+        preload: app.isPackaged
+          ? path.join(app.getAppPath(), 'dist', 'main', 'preload.js')
+          : path.join(app.getAppPath(), '.erb', 'dll', 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
       },
       backgroundColor: '#1e1e1e',
       show: false
     });
     
-    // Load the HTML
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Playwright Test Code</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      background-color: #1e1e1e;
-      color: #d4d4d4;
-      overflow: hidden;
-    }
-    .header {
-      background-color: #2d2d30;
-      padding: 10px 20px;
-      border-bottom: 1px solid #474747;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .header h2 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: normal;
-      color: #cccccc;
-    }
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 12px;
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: #4CAF50;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-    .controls-panel {
-      background-color: #252526;
-      padding: 12px 20px;
-      border-bottom: 1px solid #474747;
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      font-size: 13px;
-    }
-    .control-group {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .control-group label {
-      color: #cccccc;
-      font-weight: 500;
-    }
-    .control-group input[type="range"] {
-      width: 150px;
-      cursor: pointer;
-    }
-    .control-group input[type="number"] {
-      width: 60px;
-      padding: 4px 8px;
-      background-color: #3c3c3c;
-      border: 1px solid #555;
-      border-radius: 4px;
-      color: #cccccc;
-      font-size: 12px;
-    }
-    .control-group .value-display {
-      color: #4CAF50;
-      font-weight: 600;
-      min-width: 40px;
-    }
-    .control-group button {
-      padding: 6px 16px;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background-color 0.2s;
-    }
-    .control-group button:hover {
-      background-color: #45a049;
-    }
-    .control-group button:disabled {
-      background-color: #666;
-      cursor: not-allowed;
-      opacity: 0.6;
-    }
-    .code-container {
-      height: calc(100vh - 110px);
-      overflow: auto;
-      padding: 20px;
-      padding-bottom: 120px;
-      scroll-behavior: smooth;
-    }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-    code {
-      font-size: 14px;
-      line-height: 1.6;
-    }
-    /* Syntax highlighting */
-    .keyword { color: #569cd6; }
-    .string { color: #ce9178; }
-    .comment { color: #6a9955; }
-    .function { color: #dcdcaa; }
-    .bracket { color: #ffd700; }
-    /* Action blocks */
-    .actions-container {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding-bottom: 120px;
-    }
-    .action-block {
-      background-color: #2d2d30;
-      border: 1px solid #474747;
-      border-radius: 4px;
-      padding: 10px 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      transition: background-color 0.2s;
-    }
-    .action-block:hover {
-      background-color: #333337;
-    }
-    .action-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .action-type {
-      color: #4ec9b0;
-      font-weight: 600;
-      font-size: 13px;
-    }
-    .action-details {
-      color: #9cdcfe;
-      font-size: 12px;
-    }
-    .action-delete-btn {
-      background-color: #c13030;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: background-color 0.2s;
-      margin-left: 10px;
-    }
-    .action-delete-btn:hover {
-      background-color: #d83030;
-    }
-    .action-play-btn {
-      background-color: #2196F3;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: all 0.2s;
-      margin-left: 10px;
-    }
-    .action-play-btn:hover {
-      background-color: #1976D2;
-    }
-    .action-play-btn:active {
-      transform: scale(0.95);
-    }
-    .action-block.executing {
-      background-color: #1e3a5f;
-      border-left: 3px solid #2196F3;
-    }
-    .view-mode-notice {
-      display: none;
-      background-color: #3c3c3c;
-      padding: 10px;
-      margin-bottom: 10px;
-      border-radius: 4px;
-      text-align: center;
-      color: #cccccc;
-    }
-    .gemini-analysis-container {
-      margin-bottom: 20px;
-      padding: 15px;
-      background-color: #2d2d30;
-      border: 1px solid #474747;
-      border-radius: 8px;
-    }
-    .gemini-analysis-container h3 {
-      margin: 0 0 10px 0;
-      color: #4CAF50;
-      font-size: 16px;
-    }
-    .gemini-analysis-container img {
-      max-width: 100%;
-      height: auto;
-      border: 2px solid #474747;
-      border-radius: 4px;
-      margin: 10px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h2>📝 Playwright Test Code (Real-time)</h2>
-    <div class="status">
-      <div class="status-dot"></div>
-      <span>Recording...</span>
-    </div>
-  </div>
-  <div class="controls-panel">
-    <div class="control-group">
-      <label>⏱️ Wait Time Multiplier:</label>
-      <input type="range" id="wait-multiplier-slider" min="0" max="3" step="0.1" value="1">
-      <span class="value-display" id="wait-multiplier-value">1.0x</span>
-    </div>
-    <div class="control-group">
-      <label>Max Delay (ms):</label>
-      <input type="number" id="max-delay-input" min="0" max="10000" step="100" value="3000">
-    </div>
-    <div class="control-group" id="save-button-group" style="margin-left: auto; display: none;">
-      <button id="save-test-button">💾 Save Changes</button>
-    </div>
-  </div>
-  <div class="code-container">
-    <div class="view-mode-notice" id="view-mode-notice">
-      ℹ️ Viewing saved test - Actions are read-only. Record a new test to edit actions.
-    </div>
-    <div id="gemini-analysis-container" class="gemini-analysis-container" style="display: none;">
-      <!-- Gemini AI analysis will be rendered here -->
-    </div>
-    <div id="actions-container" class="actions-container" style="display: none;">
-      <!-- Actions will be rendered here -->
-    </div>
-    <pre><code id="code-display">import { test, expect } from '@playwright/test';
-
-test('recorded test', async ({ page }) => {
-  // Recording in progress...
-});</code></pre>
-  </div>
-  <script>
-    const { ipcRenderer } = require('electron');
-
-    console.log('Script loaded, setting up IPC listeners');
-
-    // Global settings for wait times
-    window.waitSettings = {
-      multiplier: 1.0,
-      maxDelay: 3000
-    };
-
-    // Global view mode state
-    window.isViewMode = false;
+    // Load the React route
+    const htmlPath = resolveHtmlPath('index.html');
+    const url = `${htmlPath}#/code-viewer`;
     
-    // Listen for code updates immediately
-    ipcRenderer.on('update-code', (event, code) => {
-      console.log('Received update-code event via IPC, code length:', code.length);
-      if (window.updateCode) {
-        window.updateCode(code);
-      } else {
-        console.log('window.updateCode not yet defined, waiting...');
-        // Try again after DOM is ready
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', () => {
-            if (window.updateCode) {
-              window.updateCode(code);
-            }
-          });
-        } else {
-          setTimeout(() => {
-            if (window.updateCode) {
-              window.updateCode(code);
-            }
-          }, 100);
-        }
-      }
+    console.log('📄 Loading Code Viewer URL:', url);
+    
+    this.window.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Code Viewer failed to load:', errorCode, errorDescription);
+      // Even if it fails, mark as ready so we can try to send data anyway
+      this.isReady = true;
     });
 
-    // Listen for view mode changes
-    ipcRenderer.on('set-view-mode', (event, isViewMode) => {
-      console.log('View mode changed:', isViewMode);
-      window.isViewMode = isViewMode;
-
-      const saveButtonGroup = document.getElementById('save-button-group');
-      const statusText = document.querySelector('.status span');
-      const viewModeNotice = document.getElementById('view-mode-notice');
-
-      if (saveButtonGroup) {
-        saveButtonGroup.style.display = isViewMode ? 'flex' : 'none';
-      }
-
-      if (statusText) {
-        statusText.textContent = isViewMode ? 'View Mode' : 'Recording...';
-      }
-
-      if (viewModeNotice) {
-        viewModeNotice.style.display = isViewMode ? 'block' : 'none';
-      }
-
-      // Re-render actions to update delete button visibility
-      ipcRenderer.invoke('get-actions').then(actions => {
-        if (actions && actions.length > 0) {
-          renderActions(actions);
-        }
-      });
-    });
-
-    // Listen for actions updates
-    ipcRenderer.on('actions-updated', (event, actions) => {
-      console.log('🎬 Actions updated, count:', actions.length);
-      // Log click actions to see if coordinates are present
-      actions.forEach((action, i) => {
-        if (action.type === 'click') {
-          console.log(\`  📍 Action \${i} (click) - Has coords: \${!!action.coordinates}, coords:\`, action.coordinates, 'selector:', action.selector);
-        }
-      });
-      renderActions(actions);
-    });
-    
-    // Wait for DOM to be ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeCodeViewer);
-    } else {
-      initializeCodeViewer();
+    try {
+      await this.window.loadURL(url);
+      console.log('Code Viewer URL loaded successfully');
+    } catch (loadError) {
+      console.error('Failed to load Code Viewer URL:', loadError);
+      this.isReady = true; // Safety
     }
-    
-    function initializeCodeViewer() {
-      console.log('DOM is ready, initializing code viewer');
-      const codeElement = document.getElementById('code-display');
-      if (!codeElement) {
-        console.error('CRITICAL: code-display element not found in DOM!');
-      } else {
-        console.log('code-display element found successfully');
-      }
-
-      // Set up wait time controls
-      const multiplierSlider = document.getElementById('wait-multiplier-slider');
-      const multiplierValue = document.getElementById('wait-multiplier-value');
-      const maxDelayInput = document.getElementById('max-delay-input');
-      const saveButton = document.getElementById('save-test-button');
-      const saveButtonGroup = document.getElementById('save-button-group');
-
-      console.log('Control elements:', {
-        slider: !!multiplierSlider,
-        value: !!multiplierValue,
-        maxDelay: !!maxDelayInput,
-        saveButton: !!saveButton
-      });
-
-      // Set up save button
-      if (saveButton) {
-        saveButton.addEventListener('click', async () => {
-          console.log('Save button clicked');
-          saveButton.disabled = true;
-          saveButton.textContent = '💾 Saving...';
-
-          try {
-            const result = await ipcRenderer.invoke('save-test-code');
-            if (result.success) {
-              saveButton.textContent = '✅ Saved!';
-              setTimeout(() => {
-                saveButton.textContent = '💾 Save Changes';
-                saveButton.disabled = false;
-              }, 2000);
-            } else {
-              saveButton.textContent = '❌ Failed';
-              setTimeout(() => {
-                saveButton.textContent = '💾 Save Changes';
-                saveButton.disabled = false;
-              }, 2000);
-            }
-          } catch (error) {
-            console.error('Save error:', error);
-            saveButton.textContent = '❌ Error';
-            setTimeout(() => {
-              saveButton.textContent = '💾 Save Changes';
-              saveButton.disabled = false;
-            }, 2000);
-          }
-        });
-      }
-
-      if (multiplierSlider && multiplierValue) {
-        console.log('Setting up multiplier slider event listener');
-        multiplierSlider.addEventListener('input', (e) => {
-          console.log('Slider input event fired, target:', e.target);
-          const value = parseFloat(e.target.value);
-          console.log('Slider value changed to:', value);
-          window.waitSettings.multiplier = value;
-          multiplierValue.textContent = value.toFixed(1) + 'x';
-          console.log('Updated multiplier value display to:', multiplierValue.textContent);
-
-          // Notify main process to regenerate code with new settings
-          console.log('Sending update-wait-settings to main process:', window.waitSettings);
-          ipcRenderer.send('update-wait-settings', window.waitSettings);
-        });
-        console.log('Multiplier slider event listener added successfully');
-      } else {
-        console.error('Could not find multiplier slider or value display elements');
-      }
-
-      if (maxDelayInput) {
-        console.log('Setting up max delay input event listener');
-        maxDelayInput.addEventListener('change', (e) => {
-          console.log('Max delay input changed');
-          const value = parseInt(e.target.value);
-          console.log('Max delay value changed to:', value);
-          window.waitSettings.maxDelay = value;
-
-          // Notify main process to regenerate code with new settings
-          console.log('Sending update-wait-settings to main process:', window.waitSettings);
-          ipcRenderer.send('update-wait-settings', window.waitSettings);
-        });
-        console.log('Max delay input event listener added successfully');
-      } else {
-        console.error('Could not find max delay input element');
-      }
-    }
-    
-    // Render actions as interactive blocks
-    function renderActions(actions) {
-      const actionsContainer = document.getElementById('actions-container');
-      const codeDisplay = document.getElementById('code-display');
-
-      if (!actionsContainer || !codeDisplay) {
-        console.error('Actions container or code display not found');
-        return;
-      }
-
-      if (actions && actions.length > 0) {
-        // Show actions container, hide code display
-        actionsContainer.style.display = 'flex';
-        codeDisplay.parentElement.style.display = 'none';
-
-        // Clear existing actions
-        actionsContainer.innerHTML = '';
-
-        // Render each action
-        actions.forEach((action, index) => {
-          const actionBlock = document.createElement('div');
-          actionBlock.className = 'action-block';
-
-          const actionInfo = document.createElement('div');
-          actionInfo.className = 'action-info';
-
-          const actionType = document.createElement('div');
-          actionType.className = 'action-type';
-          actionType.textContent = getActionTypeLabel(action.type, action);
-
-          const actionDetails = document.createElement('div');
-          actionDetails.className = 'action-details';
-          actionDetails.textContent = getActionDetails(action);
-
-          actionInfo.appendChild(actionType);
-          actionInfo.appendChild(actionDetails);
-
-          actionBlock.appendChild(actionInfo);
-
-          // Add Play to Here button (show in both recording and view modes)
-          const playBtn = document.createElement('button');
-          playBtn.className = 'action-play-btn';
-          playBtn.innerHTML = '▶️ Play';
-          playBtn.title = \`Execute actions 0-\${index} and pause (\${index + 1} actions total)\`;
-          playBtn.onclick = () => {
-            console.log('▶️ Play to action clicked for index:', index);
-
-            // Confirm with user
-            const confirmMsg = \`Execute actions 0-\${index} (\${index + 1} actions total) and leave browser open?\`;
-            if (confirm(confirmMsg)) {
-              ipcRenderer.send('play-to-action', index);
-            }
-          };
-          actionBlock.appendChild(playBtn);
-
-          // Show delete button in both modes
-          const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'action-delete-btn';
-          deleteBtn.textContent = '✕ Delete';
-          deleteBtn.onclick = () => {
-            console.log('Delete button clicked for index:', index);
-            ipcRenderer.send('delete-action', index);
-          };
-
-          actionBlock.appendChild(deleteBtn);
-
-          actionsContainer.appendChild(actionBlock);
-        });
-      } else {
-        // No actions, hide actions container, show code display
-        actionsContainer.style.display = 'none';
-        codeDisplay.parentElement.style.display = 'block';
-      }
-    }
-
-    function getActionTypeLabel(type, action) {
-      // Check for coordinate-based click
-      if (type === 'click' && action.coordinates) {
-        return '📍 Click (Coords)';
-      }
-
-      const labels = {
-        'navigate': '🌐 Navigate',
-        'click': '🖱️ Click',
-        'clickUntilGone': '🔄 Click Until Gone',
-        'fill': '📝 Fill',
-        'keypress': '⌨️ Keypress',
-        'screenshot': '📸 Screenshot',
-        'waitForElement': '⏳ Wait',
-        'download': '📥 Download',
-        'datePickerGroup': '📅 Date Picker',
-        'captureTable': '📊 Capture Table',
-        'captureLabeledFields': '📋 Labeled Fields',
-        'newTab': '🆕 New Tab',
-        'closeTab': '🚪 Close Tab',
-        'print': '🖨️ Print'
-      };
-      return labels[type] || type;
-    }
-
-    function getActionDetails(action) {
-      switch (action.type) {
-        case 'navigate':
-          return action.url || '';
-        case 'click':
-          let details = '';
-          if (action.coordinates) {
-            details = \`X: \${action.coordinates.x}, Y: \${action.coordinates.y}\`;
-          } else {
-            details = action.selector || '';
-          }
-          if (action.frameSelector) {
-            details += \` (in iframe: \${action.frameSelector})\`;
-          }
-          return details;
-        case 'clickUntilGone':
-          return \`\${action.selector} (max: \${action.maxIterations || 100} clicks)\`;
-        case 'fill':
-          let fillDetails = \`\${action.selector}: "\${action.value}"\`;
-          if (action.frameSelector) {
-            fillDetails += \` (in iframe: \${action.frameSelector})\`;
-          }
-          return fillDetails;
-        case 'keypress':
-          return \`Key: \${action.key}\`;
-        case 'waitForElement':
-          return \`\${action.selector} (\${action.waitCondition || 'visible'})\`;
-        case 'datePickerGroup':
-          const offsetText = action.dateOffset === 0 ? 'today' :
-                           action.dateOffset > 0 ? \`today + \${action.dateOffset} days\` :
-                           \`today - \${Math.abs(action.dateOffset)} days\`;
-          return offsetText;
-        case 'download':
-          return action.value || 'Download event';
-        case 'captureTable':
-          return \`\${action.tables?.length || 0} table(s)\`;
-        case 'captureLabeledFields':
-          return \`\${action.labeledFields?.length || 0} field(s)\`;
-        case 'newTab':
-          return action.newTabUrl || 'New tab opened';
-        case 'closeTab':
-          return action.closedTabUrl || 'Tab closed, switched back to previous page';
-        case 'print':
-          return 'Print dialog triggered';
-        default:
-          return action.selector || '';
-      }
-    }
-
-    // Simple syntax highlighting
-    function highlightCode(code) {
-      try {
-        // First escape HTML to prevent injection
-        const escaped = code
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-
-        // Then apply syntax highlighting
-        const keywordPattern = /\\b(import|from|async|await|const|let|var|function|return|if|else|for|while)\\b/g;
-        const stringPattern = /('([^']*)'|"([^"]*)"|` + '`([^`]*)`' + `)/g;
-        const commentPattern = /\\/\\/.*/g;
-        const functionPattern = /\\b(test|expect|page|locator|element|selectors|bounds|attributes|styles)\\b/g;
-        const bracketPattern = /[\\{\\}\\(\\)\\[\\]]/g;
-
-        return escaped
-          .replace(keywordPattern, '<span class="keyword">$1</span>')
-          .replace(stringPattern, '<span class="string">$1</span>')
-          .replace(commentPattern, '<span class="comment">$&</span>')
-          .replace(functionPattern, '<span class="function">$1</span>')
-          .replace(bracketPattern, '<span class="bracket">$&</span>');
-      } catch (e) {
-        console.error('Error in highlightCode:', e);
-        // Return escaped code without highlighting if error occurs
-        return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-    }
-    
-    // Update code display - make it global
-    window.updateCode = function(code) {
-      console.log('Updating code display, length:', code.length);
-      const codeElement = document.getElementById('code-display');
-      const codeContainer = document.querySelector('.code-container');
-      const headerTitle = document.querySelector('.header h2');
-      const statusText = document.querySelector('.status span');
-      const geminiContainer = document.getElementById('gemini-analysis-container');
-
-      // Check if this is Gemini element analysis with HTML content
-      const isGeminiAnalysis = code.includes('<!-- Gemini Element Analysis -->');
-
-      console.log('Is Gemini Analysis:', isGeminiAnalysis, 'Has img tag:', code.includes('<img'));
-
-      if (isGeminiAnalysis) {
-        if (headerTitle) headerTitle.textContent = '🔍 Gemini Element Analysis';
-        if (statusText) statusText.textContent = 'Element Info';
-
-        // Show Gemini analysis in dedicated container (check if image data exists, not just <img tag)
-        if (geminiContainer) {
-          console.log('Rendering Gemini content in dedicated container');
-
-          // Extract the HTML content (everything before the JavaScript code)
-          const htmlMatch = code.match(/(<!-- Gemini Element Analysis -->[\s\S]*?<\\/div>)/);
-
-          console.log('HTML Match found:', !!htmlMatch);
-          if (htmlMatch) {
-            console.log('HTML content length:', htmlMatch[1].length);
-            console.log('HTML preview:', htmlMatch[1].substring(0, 200));
-            geminiContainer.innerHTML = htmlMatch[1];
-            geminiContainer.style.display = 'block';
-            console.log('✅ Gemini HTML content rendered successfully');
-          } else {
-            console.warn('⚠️ No HTML match found in Gemini content');
-          }
-        }
-      } else {
-        if (headerTitle) headerTitle.textContent = '📝 Playwright Test Code (Real-time)';
-        if (statusText) statusText.textContent = 'Recording...';
-
-        // Hide Gemini container for regular code
-        if (geminiContainer) {
-          geminiContainer.style.display = 'none';
-        }
-      }
-
-      // Always update code display for non-Gemini content
-      if (!isGeminiAnalysis) {
-        if (codeElement) {
-          console.log('Found code element, updating innerHTML');
-          try {
-            const highlighted = highlightCode(code);
-            console.log('Highlighted code preview:', highlighted.substring(0, 100) + '...');
-            codeElement.innerHTML = highlighted;
-            console.log('innerHTML updated successfully');
-
-            // Auto-scroll to bottom to show new lines
-            if (codeContainer) {
-              // Use requestAnimationFrame to ensure DOM has updated
-              requestAnimationFrame(() => {
-                codeContainer.scrollTop = codeContainer.scrollHeight;
-              });
-            }
-          } catch (e) {
-            console.error('Error updating code display:', e);
-            // Fallback: display raw text content
-            console.log('Using fallback - setting textContent');
-            codeElement.textContent = code;
-
-            // Auto-scroll even in fallback
-            if (codeContainer) {
-              requestAnimationFrame(() => {
-                codeContainer.scrollTop = codeContainer.scrollHeight;
-              });
-            }
-          }
-        } else {
-          console.error('Could not find element with id "code-display"');
-          // Try again after a short delay
-          setTimeout(() => {
-            const retryElement = document.getElementById('code-display');
-            if (retryElement) {
-              console.log('Found element on retry, updating');
-              retryElement.textContent = code;
-
-              // Auto-scroll on retry
-              if (codeContainer) {
-                codeContainer.scrollTop = codeContainer.scrollHeight;
-              }
-            }
-          }, 100);
-        }
-      }
-    }
-    
-
-    // Get initial code (actions will come via 'actions-updated' event)
-    ipcRenderer.invoke('get-current-code').then(code => {
-      console.log('Got initial code:', code);
-      if (code) window.updateCode(code);
-    });
-
-    // Don't fetch actions here - they'll be sent via 'actions-updated' event
-    // This avoids race condition where we fetch before updateActions() is called
-  </script>
-</body>
-</html>
-    `;
-    
-    this.window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
     
     // Wait for content to load
     this.window.webContents.once('did-finish-load', () => {
       console.log('🌟 Code viewer window loaded');
 
-      // Give the script time to initialize
+      // Give the React app time to mount and setup listeners
       setTimeout(() => {
         this.isReady = true;
 
-        // Send any pending code updates
+        // Send any pending updates
         if (this.pendingUpdates.length > 0) {
           const latestCode = this.pendingUpdates[this.pendingUpdates.length - 1];
           this.pendingUpdates = [];
           this.updateCode(latestCode);
         }
 
-        // Send actions if they exist
-        console.log('🔍 Checking actions on window ready: length =', this.actions.length);
         if (this.actions.length > 0 && this.window && !this.window.isDestroyed()) {
-          console.log('📤 Sending', this.actions.length, 'actions to renderer now that window is ready');
+          console.log('📤 Sending initial actions to renderer:', this.actions.length);
           this.window.webContents.send('actions-updated', this.actions);
-        } else if (this.actions.length === 0) {
-          console.log('⚠️ No actions to send - actions array is empty!');
         }
-      }, 100);
+      }, 500); 
     });
     
     // Show when ready
     this.window.once('ready-to-show', () => {
+      console.log('✨ Code viewer window ready to show');
       this.window?.show();
-      // Only open DevTools if needed for debugging
-      // this.window?.webContents.openDevTools({ mode: 'detach' });
     });
+
+    // Fallback show and mark ready after 3 seconds
+    setTimeout(() => {
+      if (this.window && !this.window.isDestroyed()) {
+        if (!this.window.isVisible()) {
+          console.log('⚠️ Fallback: Showing code viewer window manually');
+          this.window.show();
+        }
+        if (!this.isReady) {
+          console.log('⚠️ Fallback: Marking code viewer as ready');
+          this.isReady = true;
+          // Send actions in fallback too
+          if (this.actions.length > 0) {
+            this.window.webContents.send('actions-updated', this.actions);
+          }
+        }
+      }
+    }, 3000);
     
     // Handle close
     this.window.on('closed', () => {
@@ -1027,40 +332,19 @@ test('recorded test', async ({ page }) => {
     console.log('📝 CodeViewerWindow.updateCode called with code length:', code.length);
     this.currentCode = code;
     
-    if (!this.isReady) {
-      console.log('⏳ Window not ready yet, queuing update');
-      this.pendingUpdates.push(code);
-      return;
-    }
-    
     if (this.window && !this.window.isDestroyed()) {
-      console.log('📤 Sending update-code event to window');
-      this.window.webContents.send('update-code', code);
-      
-      // Also try executeJavaScript as a backup after a delay to ensure window.updateCode is defined
-      setTimeout(() => {
-        if (this.window && !this.window.isDestroyed()) {
-          this.window.webContents.executeJavaScript(`
-            try {
-              console.log('executeJavaScript: Attempting to update code');
-              if (typeof window !== 'undefined' && window.updateCode) {
-                window.updateCode(${JSON.stringify(code)});
-                console.log('executeJavaScript: window.updateCode called successfully');
-              } else {
-                console.error('executeJavaScript: window.updateCode is not defined');
-              }
-            } catch (e) {
-              console.error('executeJavaScript: Error in code update:', e);
-            }
-          `).then(() => {
-            console.log('✅ executeJavaScript completed successfully');
-          }).catch(err => {
-            console.error('❌ Failed to execute JavaScript:', err);
-          });
-        }
-      }, 200);
+      if (this.isReady) {
+        console.log('📤 Sending update-code event to window');
+        this.window.webContents.send('update-code', code);
+      } else {
+        console.log('⏳ Window not ready, queuing update-code and pending update');
+        this.pendingUpdates.push(code);
+        // Also try sending anyway, Electron will queue it
+        this.window.webContents.send('update-code', code);
+      }
     } else {
-      console.log('❌ Window is null or destroyed');
+      console.log('❌ Window is null or destroyed, update queued');
+      this.pendingUpdates.push(code);
     }
   }
   
@@ -1073,6 +357,13 @@ test('recorded test', async ({ page }) => {
   
   isOpen(): boolean {
     return this.window !== null && !this.window.isDestroyed();
+  }
+
+  bringToFront() {
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.moveTop();
+      this.window.focus();
+    }
   }
 }
 

@@ -1,4 +1,7 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
+import { chromium as chromiumExtra } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import type { Browser, BrowserContext, Page } from 'playwright-core';
+chromiumExtra.use(StealthPlugin());
 import { screen, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,9 +32,9 @@ interface RecordedAction {
   innerText?: string; // innerText (visible text)
   // Date picker fields
   dateComponents?: {
-    year: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    month: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    day: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    year: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day: { selector: string; xpath?: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   };
   dateOffset?: number; // Days from today (0 = today, 1 = tomorrow, -1 = yesterday)
   // Table capture fields
@@ -190,6 +193,7 @@ export class BrowserRecorder {
   private controllerCheckInterval: NodeJS.Timeout | null = null;
   private waitSettings = { multiplier: 1.0, maxDelay: 3000 };
   private profileDir: string | null = null;
+  private isPersistentProfile: boolean = false; // When true, profileDir is never deleted on stop
   private pageStack: Page[] = []; // Track page history for switching back
   private scriptName: string = 'egdesk-browser-recorder'; // Name for unique download paths
   private extensionPaths: string[] = []; // Chrome extension paths to load
@@ -440,7 +444,7 @@ export class BrowserRecorder {
     return `[id="${id}"]`;
   }
 
-  async start(url: string, onBrowserClosed?: () => void): Promise<void> {
+  async start(url: string, onBrowserClosed?: () => void, profileName?: string): Promise<void> {
     // Get screen dimensions
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
@@ -460,25 +464,37 @@ export class BrowserRecorder {
     }
     console.log('📥 Downloads will be saved to:', downloadsPath);
 
-    // Create temporary profile directory in userData (avoids macOS permission issues)
-    // Fallback to os.tmpdir() if userData is not available
-    let profilesDir: string;
-    try {
-      const userData = app.getPath('userData');
-      if (!userData || userData === '/' || userData.length < 3) {
-        throw new Error('Invalid userData path');
+    // Profile directory logic
+    if (profileName) {
+      // Use existing persistent profile
+      const googleProfilesDir = path.join(app.getPath('userData'), 'chrome-profiles', 'persistent', 'google');
+      this.profileDir = path.join(googleProfilesDir, profileName);
+      this.isPersistentProfile = true;
+      if (!fs.existsSync(this.profileDir)) {
+        fs.mkdirSync(this.profileDir, { recursive: true });
       }
-      profilesDir = path.join(userData, 'chrome-profiles');
-    } catch (err) {
-      console.warn('⚠️ userData not available, using os.tmpdir():', err);
-      profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
-    }
+      console.log('👤 Using persistent profile directory:', this.profileDir);
+    } else {
+      // Create temporary profile directory in userData (avoids macOS permission issues)
+      // Fallback to os.tmpdir() if userData is not available
+      let profilesDir: string;
+      try {
+        const userData = app.getPath('userData');
+        if (!userData || userData === '/' || userData.length < 3) {
+          throw new Error('Invalid userData path');
+        }
+        profilesDir = path.join(userData, 'chrome-profiles');
+      } catch (err) {
+        console.warn('⚠️ userData not available, using os.tmpdir():', err);
+        profilesDir = path.join(os.tmpdir(), 'playwright-profiles');
+      }
 
-    if (!fs.existsSync(profilesDir)) {
-      fs.mkdirSync(profilesDir, { recursive: true });
+      if (!fs.existsSync(profilesDir)) {
+        fs.mkdirSync(profilesDir, { recursive: true });
+      }
+      this.profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-recording-'));
+      console.log('📁 Using temporary profile directory:', this.profileDir);
     }
-    this.profileDir = fs.mkdtempSync(path.join(profilesDir, 'playwright-recording-'));
-    console.log('📁 Using profile directory:', this.profileDir);
 
     // Launch browser using Playwright's persistent context
     console.log('🎭 Launching browser with persistent context');
@@ -504,13 +520,20 @@ export class BrowserRecorder {
         '--no-default-browser-check',
         '--disable-blink-features=AutomationControlled',
         '--no-first-run',
-        // Permission handling for localhost and private network access
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--allow-running-insecure-content',
-        '--disable-features=PrivateNetworkAccessSendPreflights',
-        '--disable-features=PrivateNetworkAccessRespectPreflightResults'
       ];
+
+      // Only add localhost/private-network flags for non-persistent sessions.
+      // These flags are detectable by Google/GitHub fingerprinting and will
+      // cause login sessions to be rejected.
+      if (!this.isPersistentProfile) {
+        args.push(
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--allow-running-insecure-content',
+          '--disable-features=PrivateNetworkAccessSendPreflights',
+          '--disable-features=PrivateNetworkAccessRespectPreflightResults',
+        );
+      }
 
       // Add Chrome extension args if extensions were successfully copied
       if (copiedExtensionPaths.length > 0) {
@@ -521,14 +544,15 @@ export class BrowserRecorder {
       }
 
       // Use launchPersistentContext for more reliable browser management
-      this.context = await chromium.launchPersistentContext(this.profileDir, {
+      this.context = await chromiumExtra.launchPersistentContext(this.profileDir, {
         headless: false,
         channel: 'chrome',
         viewport: null,
         permissions: ['clipboard-read', 'clipboard-write'],
         acceptDownloads: true,
         downloadsPath: downloadsPath,
-        args: args
+        args: args,
+        ignoreDefaultArgs: ['--enable-automation']
       });
       console.log('✅ Browser launched successfully with channel: chrome');
     } catch (err) {
@@ -537,12 +561,13 @@ export class BrowserRecorder {
       // Fallback: try without channel (uses Playwright's bundled Chromium)
       try {
         console.log('🔄 Trying fallback: Playwright bundled Chromium');
-        this.context = await chromium.launchPersistentContext(this.profileDir, {
+        this.context = await chromiumExtra.launchPersistentContext(this.profileDir, {
           headless: false,
           viewport: null,
           permissions: ['clipboard-read', 'clipboard-write'],
           acceptDownloads: true,
           downloadsPath: downloadsPath,
+          ignoreDefaultArgs: ['--enable-automation'],
           args: [
             `--window-size=${browserWidth},${browserHeight}`,
             `--window-position=${browserX},${browserY}`,
@@ -3755,10 +3780,10 @@ export class BrowserRecorder {
               const tag = dateElement.tagName.toLowerCase();
               selector = `${tag}[id="${dateElement.id}"][data-own-layer-box-id="${layerId}"]`;
             } else {
-              // Use nth-of-type as fallback for non-unique IDs
+              // Use nth-match as fallback for non-unique IDs (global index)
               const elementsWithId = Array.from(document.querySelectorAll(`[id="${dateElement.id}"]`));
               const index = elementsWithId.indexOf(dateElement);
-              selector = `${dateElement.tagName.toLowerCase()}[id="${dateElement.id}"]:nth-of-type(${index + 1})`;
+              selector = `${dateElement.tagName.toLowerCase()}[id="${dateElement.id}"]:nth-match(${index + 1})`;
             }
           }
         } else if (dateElement.getAttribute('name')) {
@@ -3810,7 +3835,7 @@ export class BrowserRecorder {
               // Fallback to nth-of-type
               const allWithDataId = Array.from(matches);
               const index = allWithDataId.indexOf(dateElement);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         } else if (!selector && dateElement.getAttribute('data-cid')) {
@@ -3841,7 +3866,7 @@ export class BrowserRecorder {
             } else {
               const allWithDataCid = Array.from(matches);
               const index = allWithDataCid.indexOf(dateElement);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         } else if (!selector && dateElement.getAttribute('data-testid')) {
@@ -3883,7 +3908,7 @@ export class BrowserRecorder {
             } else {
               const allWithType = Array.from(matches);
               const index = allWithType.indexOf(dateElement);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         }
@@ -3919,10 +3944,22 @@ export class BrowserRecorder {
         }
 
         if (!selector) {
-          // Use nth-of-type as last resort fallback
+          // Use nth-match as last resort fallback
           const elements = Array.from(document.querySelectorAll(dateElement.tagName.toLowerCase()));
           const index = elements.indexOf(dateElement);
-          selector = `${dateElement.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
+          selector = `${dateElement.tagName.toLowerCase()}:nth-match(${index + 1})`;
+        }
+
+        // CRITICAL: Ensure the selector is unique. If not, append nth-match.
+        // Skip this for selectors that already have nth-match or nth-child/nth-of-type (which are usually structural)
+        if (selector && !selector.includes(':nth-match') && !selector.includes(':nth-child') && !selector.includes(':nth-of-type')) {
+          const matches = document.querySelectorAll(selector);
+          if (matches.length > 1) {
+            const index = Array.from(matches).indexOf(dateElement);
+            if (index >= 0) {
+              selector = `${selector}:nth-match(${index + 1})`;
+            }
+          }
         }
 
         // Generate XPath for robust fallback (same as regular clicks)
@@ -4011,11 +4048,33 @@ export class BrowserRecorder {
             ];
 
             for (const pattern of dropdownPatterns) {
-              const dropdowns = document.querySelectorAll(pattern);
+              const dropdowns = Array.from(document.querySelectorAll(pattern)).filter(el => {
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden' && el.getBoundingClientRect().height > 0;
+              }) as HTMLElement[];
+
               if (dropdowns.length > 0) {
-                // Found dropdown - use the pattern as selector
-                dropdownSelector = pattern;
-                console.log('📋 Detected dropdown menu:', dropdownSelector);
+                // Pick the dropdown closest to the clicked element if there are multiple
+                let targetDropdown = dropdowns[0];
+                if (dropdowns.length > 1) {
+                  const btnRect = dateElement.getBoundingClientRect();
+                  let minDistance = Infinity;
+                  for (const d of dropdowns) {
+                    const dRect = d.getBoundingClientRect();
+                    const distance = Math.sqrt(Math.pow(btnRect.left - dRect.left, 2) + Math.pow(btnRect.top - dRect.top, 2));
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                      targetDropdown = d;
+                    }
+                  }
+                }
+
+                // Generate a specific selector for this dropdown instance
+                const allMatchingPattern = Array.from(document.querySelectorAll(pattern));
+                const index = allMatchingPattern.indexOf(targetDropdown);
+                dropdownSelector = index >= 0 ? `${pattern}:nth-match(${index + 1})` : pattern;
+
+                console.log('📋 Detected specific dropdown menu:', dropdownSelector);
                 break;
               }
             }
@@ -4440,15 +4499,8 @@ export class BrowserRecorder {
               const dataAttr = target.getAttribute('data-layer-controller');
               capturedSelector = `${target.tagName.toLowerCase()}[data-layer-controller="${dataAttr}"]`;
             } else {
-              // Last resort: use nth-child (position among all siblings, not just same type)
-              const parent = target.parentElement;
-              if (parent) {
-                const siblings = Array.from(parent.children);
-                const index = siblings.indexOf(target) + 1;
-                capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-child(${index})`;
-              } else {
-                capturedSelector = `[id="${target.id}"]`;
-              }
+              // Fallback: use ID + tag
+              capturedSelector = `${target.tagName.toLowerCase()}[id="${target.id}"]`;
             }
           }
         } else if (target.className) {
@@ -4456,6 +4508,16 @@ export class BrowserRecorder {
           capturedSelector = `.${firstClass}`;
         } else {
           capturedSelector = target.tagName.toLowerCase();
+        }
+
+        // CRITICAL: Ensure the selector is unique. If not, append nth-match.
+        // We do this BEFORE deferred processing to ensure accuracy.
+        const allMatching = document.querySelectorAll(capturedSelector);
+        if (allMatching.length > 1) {
+          const index = Array.from(allMatching).indexOf(target);
+          if (index >= 0) {
+            capturedSelector = `${capturedSelector}:nth-match(${index + 1})`;
+          }
         }
 
         // Generate XPath (Priority 3 - last resort fallback)
@@ -4835,10 +4897,10 @@ export class BrowserRecorder {
               const tag = target.tagName.toLowerCase();
               selector = `${tag}[id="${target.id}"][data-testid="${testid}"]`;
             } else {
-              // Use nth-of-type as fallback for non-unique IDs
+              // Use nth-match as fallback for non-unique IDs (global index)
               const elementsWithId = Array.from(document.querySelectorAll(`[id="${target.id}"]`));
               const index = elementsWithId.indexOf(target);
-              selector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-of-type(${index + 1})`;
+              selector = `${target.tagName.toLowerCase()}[id="${target.id}"]:nth-match(${index + 1})`;
             }
           }
         }
@@ -4870,7 +4932,7 @@ export class BrowserRecorder {
             } else {
               const allWithTestid = Array.from(matches);
               const index = allWithTestid.indexOf(target);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         }
@@ -5153,7 +5215,7 @@ export class BrowserRecorder {
               } else {
                 const allWithDataId = Array.from(matches);
                 const index = allWithDataId.indexOf(target);
-                selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+                selector = `${candidateSelector}:nth-match(${index + 1})`;
               }
             }
           } else if (target.getAttribute('data-cid')) {
@@ -5183,7 +5245,7 @@ export class BrowserRecorder {
               } else {
                 const allWithDataCid = Array.from(matches);
                 const index = allWithDataCid.indexOf(target);
-                selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+                selector = `${candidateSelector}:nth-match(${index + 1})`;
               }
             }
           } else {
@@ -5219,7 +5281,7 @@ export class BrowserRecorder {
             } else {
               const allWithDataId = Array.from(matches);
               const index = allWithDataId.indexOf(target);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         }
@@ -5251,7 +5313,7 @@ export class BrowserRecorder {
             } else {
               const allWithDataCid = Array.from(matches);
               const index = allWithDataCid.indexOf(target);
-              selector = `${candidateSelector}:nth-of-type(${index + 1})`;
+              selector = `${candidateSelector}:nth-match(${index + 1})`;
             }
           }
         }
@@ -5491,8 +5553,8 @@ export class BrowserRecorder {
                         const iframes = Array.from(parent.querySelectorAll('iframe'));
                         const index = iframes.indexOf(iframe);
                         if (index >= 0) {
-                          iframeSelector = `iframe:nth-of-type(${index + 1})`;
-                          console.log('🖼️ Using nth-of-type selector:', iframeSelector);
+                          iframeSelector = `iframe:nth-match(${index + 1})`;
+                          console.log('🖼️ Using nth-match selector:', iframeSelector);
                         }
                       }
                     } catch (e2) {
@@ -6084,8 +6146,8 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
           }
         }
 
-        // Clean up profile directory
-        if (this.profileDir) {
+        // Clean up profile directory (skip for persistent profiles)
+        if (this.profileDir && !this.isPersistentProfile) {
           try {
             fs.rmSync(this.profileDir, { recursive: true, force: true });
             console.log('🧹 Cleaned up profile directory');
@@ -6528,16 +6590,17 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       }
     }
 
-    // Clean up profile directory
-    if (this.profileDir) {
+    // Clean up profile directory (skip for persistent profiles)
+    if (this.profileDir && !this.isPersistentProfile) {
       try {
         fs.rmSync(this.profileDir, { recursive: true, force: true });
         console.log('🧹 Cleaned up profile directory:', this.profileDir);
       } catch (err) {
         console.warn('Failed to clean up profile directory:', err);
       }
-      this.profileDir = null;
     }
+    this.profileDir = null;
+    this.isPersistentProfile = false;
 
     // Clean up temporary extensions directory
     this.cleanupTempExtensions();

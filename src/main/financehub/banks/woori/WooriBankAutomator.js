@@ -295,9 +295,24 @@ class WooriBankAutomator extends BaseBankAutomator {
       for (let i = 1; i <= 20; i++) {
         await this._arduinoHid.sendKey('TAB');
         await this.page.waitForTimeout(300);
-        focused = await this.page.evaluate(
-          () => document.activeElement?.id || document.activeElement?.tagName || ''
-        );
+        const focusInfo = await this.page.evaluate(() => ({
+          id: document.activeElement?.id || '',
+          tag: document.activeElement?.tagName || '',
+          text: (document.activeElement?.textContent || '').trim(),
+        }));
+        focused = focusInfo.id || focusInfo.tag;
+        if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
+          this.warn(`[WOORI] TAB landed on 삭제 button — skipping (i=${i})`);
+          await this.page.waitForTimeout(300);
+          const cancelBtn = this.page.locator('button:has-text("취소")').first();
+          const isCancelVisible = await cancelBtn.isVisible({ timeout: 800 }).catch(() => false);
+          if (isCancelVisible) {
+            this.warn('[WOORI] Deletion confirmation modal detected — clicking 취소');
+            await cancelBtn.click({ timeout: 3000 }).catch(() => {});
+            await this.page.waitForTimeout(300);
+          }
+          continue;
+        }
         if (focused === 'xwup_certselect_tek_input1') break;
       }
       if (focused !== 'xwup_certselect_tek_input1') {

@@ -1,4 +1,4 @@
-import { Page } from 'playwright-core';
+import { Page } from 'patchright';
 import {
   generateYouTubeContent,
   GeneratedYouTubeContent,

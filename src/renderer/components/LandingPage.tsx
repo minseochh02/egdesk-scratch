@@ -22,6 +22,7 @@ import {
   faRecordVinyl,
   faCode,
   faCloud,
+  faCodeBranch,
 } from '../utils/fontAwesomeIcons';
 import './LandingPage.css';
 
@@ -281,6 +282,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Data Import</span>
                 <span className="egdesk-landing-feature-tag">Auto Sync</span>
                 <span className="egdesk-landing-feature-tag">Table Viewer</span>
+              </div>
+            </Link>
+
+            <Link to="/openclaw" className="egdesk-landing-action-card egdesk-landing-openclaw-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faCodeBranch} />
+              </div>
+              <h3 className="egdesk-landing-card-title">OpenClaw</h3>
+              <p className="egdesk-landing-card-description">
+                Auto-create accounts and manage tokens using your Google profile.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">GitHub Signup</span>
+                <span className="egdesk-landing-feature-tag">Google Profile</span>
+                <span className="egdesk-landing-feature-tag">Token Management</span>
               </div>
             </Link>
 

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { app } from "electron";
 
-import { chromium, Page } from 'playwright-core';
+import { chromium, Page } from 'patchright';
 
 import { createYouTubePost, YouTubePostOptions, YouTubeContentPlan } from "./youtube-post";
 import {

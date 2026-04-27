@@ -13,6 +13,14 @@ const configuration: webpack.Configuration = {
     // Explicitly exclude heavy optional deps from bundling
     'playwright',
     'playwright-core',
+    'playwright-extra',
+    'patchright',
+    'patchright-core',
+    'puppeteer-extra',
+    'puppeteer-extra-plugin-stealth',
+    'puppeteer-extra-plugin',
+    'puppeteer-extra-plugin-user-data-dir',
+    'puppeteer-extra-plugin-user-preferences',
     'lighthouse',
     'playwright-lighthouse',
     // Native modules for desktop recorder
