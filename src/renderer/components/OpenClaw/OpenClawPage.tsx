@@ -8,6 +8,7 @@ type Step =
   | 'creating'     // Running GitHub signup automation
   | 'token'        // Generating GitHub token
   | 'telegram'     // Telegram login + BotFather setup
+  | 'installing'   // OpenClaw CLI + config
   | 'done';        // Accounts dashboard
 
 function cleanGmailToUsername(email: string): string {
@@ -28,6 +29,9 @@ const OpenClawPage: React.FC = () => {
   const [githubTokens, setGithubTokens] = useState<Record<string, string>>({});
   const [telegramBotTokens, setTelegramBotTokens] = useState<string[]>([]);
   const [telegramSetup, setTelegramSetup] = useState(false);
+  const [openclawInstalled, setOpenclawInstalled] = useState(false);
+  const [openclawStatus, setOpenclawStatus] = useState('');
+  const [openclawPairingCode, setOpenclawPairingCode] = useState('');
   const [error, setError] = useState('');
 
   const addLog = (msg: string) =>
@@ -43,6 +47,13 @@ const OpenClawPage: React.FC = () => {
           setCreatedAccounts(profile.githubAccounts);
           if (profile.googleEmail) setGoogleEmail(profile.googleEmail);
           if (profile.githubTokens) setGithubTokens(profile.githubTokens);
+          if (profile.telegramBotTokens?.length) {
+            setTelegramBotTokens(profile.telegramBotTokens);
+            setTelegramSetup(true);
+          } else if (profile.telegramBotToken) {
+            setTelegramBotTokens([profile.telegramBotToken]);
+            setTelegramSetup(true);
+          }
           setStep('done');
         }
       } catch (_) {}
@@ -109,15 +120,45 @@ const OpenClawPage: React.FC = () => {
     await runTelegramSetup();
   };
 
+  const runOpenclawSetup = async (botToken: string) => {
+    setStep('installing');
+    addLog('Installing OpenClaw…');
+    try {
+      const result = await (window as any).electron.debug.openclaw.setup(PROFILE_NAME, botToken);
+      if (result?.success) {
+        addLog(
+          result.alreadyInstalled ? '✅ OpenClaw already on PATH.' : '✅ OpenClaw installed.'
+        );
+        addLog(`✅ Config written to ${result.configPath ?? '~/.openclaw/openclaw.json'}`);
+        if (result.pairingCode) {
+          addLog(`🔗 Pairing code: ${result.pairingCode}`);
+          addLog(`✅ Approved: openclaw pairing approve telegram ${result.pairingCode}`);
+          setOpenclawPairingCode(result.pairingCode);
+        } else if (result.pairingError) {
+          addLog(`⚠️ Pairing step: ${result.pairingError}`);
+        }
+        if (result.status) addLog(`Status: ${result.status}`);
+        setOpenclawInstalled(true);
+        setOpenclawStatus(result.status ?? '');
+      } else {
+        addLog(`⚠️ OpenClaw setup failed: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      addLog(`⚠️ OpenClaw error: ${e?.message || e}`);
+    }
+    setStep('done');
+  };
+
   const runTelegramSetup = async () => {
     setStep('telegram');
     addLog('Opening Telegram Web — enter the verification code sent to your phone…');
 
+    let tokenForOpenClaw = '';
     try {
       const phone = googlePhoneRef.current;
       if (!phone) {
         addLog('⚠️ No phone number detected — skipping Telegram setup.');
-        setStep('done');
+        await runOpenclawSetup('');
         return;
       }
 
@@ -128,9 +169,11 @@ const OpenClawPage: React.FC = () => {
         setTelegramSetup(true);
         if (result.tokens?.length > 0) {
           setTelegramBotTokens(result.tokens);
+          tokenForOpenClaw = result.tokens[result.tokens.length - 1];
           addLog(`🤖 ${result.tokens.length} bot token(s) found.`);
         } else if (result.token) {
           setTelegramBotTokens([result.token]);
+          tokenForOpenClaw = result.token;
           addLog(`🤖 Bot token saved.`);
         }
       } else {
@@ -139,7 +182,7 @@ const OpenClawPage: React.FC = () => {
     } catch (e: any) {
       addLog(`⚠️ Telegram error: ${e?.message || e}`);
     }
-    setStep('done');
+    await runOpenclawSetup(tokenForOpenClaw);
   };
 
   const handleGetStarted = async () => {
@@ -196,6 +239,98 @@ const OpenClawPage: React.FC = () => {
     await runTokenCreation(username);
   };
 
+  const [isPairing, setIsPairing] = useState(false);
+  const [gatewayRunning, setGatewayRunning] = useState(false);
+  const [telegramConnected, setTelegramConnected] = useState(false);
+  const [gatewayStatusText, setGatewayStatusText] = useState('');
+  const [isTogglingGateway, setIsTogglingGateway] = useState(false);
+
+  const refreshStatus = async () => {
+    try {
+      const result = await (window as any).electron.debug.openclaw.status();
+      setGatewayRunning(result?.running ?? false);
+      setTelegramConnected(result?.connected ?? false);
+      setGatewayStatusText(result?.statusOutput ?? '');
+    } catch { /* non-fatal */ }
+  };
+
+  // Poll status every 10s when on the done screen
+  useEffect(() => {
+    if (step !== 'done') return;
+    refreshStatus();
+    const interval = setInterval(refreshStatus, 10_000);
+    return () => clearInterval(interval);
+  }, [step]);
+
+  const handleStartGateway = async () => {
+    setIsTogglingGateway(true);
+    addLog('Starting OpenClaw gateway…');
+    try {
+      await (window as any).electron.debug.openclaw.start();
+      addLog('✅ Gateway started.');
+      // Optimistically mark running; then poll until status confirms or gives up
+      setGatewayRunning(true);
+      for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const s = await (window as any).electron.debug.openclaw.status();
+        setGatewayRunning(s?.running ?? true);
+        setTelegramConnected(s?.connected ?? false);
+        setGatewayStatusText(s?.statusOutput ?? '');
+        if (s?.running) break;
+      }
+    } catch (e: any) {
+      addLog(`⚠️ Start failed: ${e?.message || e}`);
+      await refreshStatus();
+    }
+    setIsTogglingGateway(false);
+  };
+
+  const handleStopGateway = async () => {
+    setIsTogglingGateway(true);
+    addLog('Stopping OpenClaw gateway…');
+    try {
+      await (window as any).electron.debug.openclaw.stop();
+      addLog('✅ Gateway stopped.');
+    } catch (e: any) {
+      addLog(`⚠️ Stop failed: ${e?.message || e}`);
+    }
+    await refreshStatus();
+    setIsTogglingGateway(false);
+  };
+
+  const runPairing = async () => {
+    setIsPairing(true);
+    setLogs([]);
+    addLog('Retrying Telegram pairing…');
+    try {
+      const result = await (window as any).electron.debug.openclaw.pair(PROFILE_NAME);
+
+      // Display all backend logs first so the user sees step-by-step what happened
+      if (result?.logs?.length) {
+        for (const l of result.logs) addLog(`  ${l}`);
+      }
+
+      if (result?.success) {
+        const connected = result.status?.includes('connected');
+        if (result.pairingCode) {
+          setOpenclawPairingCode(result.pairingCode);
+          addLog(`✅ Telegram pairing approved (code: ${result.pairingCode})`);
+        } else if (connected) {
+          addLog('✅ Telegram already connected — nothing to do.');
+        } else if (result.pairingError) {
+          addLog(`⚠️ Pairing: ${result.pairingError}`);
+        } else {
+          addLog('✅ Pairing complete.');
+        }
+      } else {
+        addLog(`⚠️ Pairing failed: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      addLog(`⚠️ Pairing error: ${e?.message || e}`);
+    }
+    setIsPairing(false);
+  };
+
   const handleReset = () => {
     setStep('welcome');
     setGoogleEmail('');
@@ -207,6 +342,14 @@ const OpenClawPage: React.FC = () => {
     setGithubTokens({});
     setTelegramBotTokens([]);
     setTelegramSetup(false);
+    setOpenclawInstalled(false);
+    setOpenclawStatus('');
+    setOpenclawPairingCode('');
+    setIsPairing(false);
+    setGatewayRunning(false);
+    setTelegramConnected(false);
+    setGatewayStatusText('');
+    setIsTogglingGateway(false);
     setError('');
   };
 
@@ -353,6 +496,18 @@ const OpenClawPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── INSTALLING OPENCLAW ── */}
+      {step === 'installing' && (
+        <div style={{ textAlign: 'center', maxWidth: '480px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚙️</div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px' }}>Installing OpenClaw</h2>
+          <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
+            Downloading and configuring OpenClaw with your Telegram bot token…
+          </p>
+          <Console logs={logs} />
+        </div>
+      )}
+
       {/* ── TELEGRAM ── */}
       {step === 'telegram' && (
         <div style={{ textAlign: 'center', maxWidth: '480px' }}>
@@ -474,6 +629,108 @@ const OpenClawPage: React.FC = () => {
                 ))}
               </div>
             )}
+
+            {openclawInstalled && (
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: '8px',
+                padding: '14px 18px',
+                marginBottom: '10px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '20px' }}>⚙️</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px' }}>OpenClaw</div>
+                    <div style={{ color: '#888', fontSize: '12px' }}>~/.openclaw/openclaw.json configured</div>
+                  </div>
+                </div>
+                {openclawPairingCode && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '6px',
+                  }}>
+                    <div style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>🔗 Telegram pairing approved</div>
+                    <div style={{ color: '#3fb950', fontSize: '12px', fontFamily: 'monospace' }}>
+                      {openclawPairingCode}
+                    </div>
+                  </div>
+                )}
+                {openclawStatus && (
+                  <div style={{
+                    marginTop: '8px',
+                    color: '#888',
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}>
+                    {openclawStatus}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Gateway status card ── */}
+          <div style={{
+            backgroundColor: '#161b22',
+            border: `1px solid ${gatewayRunning ? '#1a5a3a' : '#30363d'}`,
+            borderRadius: '8px',
+            padding: '14px 18px',
+            marginBottom: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '20px' }}>🦀</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '14px' }}>OpenClaw Gateway</div>
+                  <div style={{ fontSize: '12px', marginTop: '2px' }}>
+                    <span style={{
+                      color: gatewayRunning ? '#4ade80' : '#666',
+                      marginRight: '10px',
+                    }}>
+                      {gatewayRunning ? '● Running' : '○ Stopped'}
+                    </span>
+                    <span style={{ color: telegramConnected ? '#4ade80' : '#666' }}>
+                      {telegramConnected ? '✓ Telegram connected' : '✗ Telegram not connected'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={gatewayRunning ? handleStopGateway : handleStartGateway}
+                disabled={isTogglingGateway}
+                style={{
+                  padding: '6px 16px',
+                  backgroundColor: gatewayRunning ? '#3a1a1a' : '#0a3a2a',
+                  color: isTogglingGateway ? '#666' : (gatewayRunning ? '#f87171' : '#4ade80'),
+                  border: `1px solid ${gatewayRunning ? '#5a2a2a' : '#1a5a3a'}`,
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: isTogglingGateway ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {isTogglingGateway ? '⏳' : (gatewayRunning ? 'Stop' : 'Start')}
+              </button>
+            </div>
+            {gatewayStatusText && (
+              <div style={{
+                marginTop: '10px',
+                color: '#666',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>
+                {gatewayStatusText}
+              </div>
+            )}
           </div>
 
           {error && (
@@ -499,6 +756,25 @@ const OpenClawPage: React.FC = () => {
               🔑 Generate Token
             </button>
           )}
+
+          <button
+            onClick={runPairing}
+            disabled={isPairing}
+            style={{
+              padding: '10px 24px',
+              backgroundColor: isPairing ? '#1a3a2a' : '#0a3a2a',
+              color: isPairing ? '#666' : '#4ade80',
+              border: '1px solid #1a5a3a',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: isPairing ? 'not-allowed' : 'pointer',
+              marginBottom: '10px',
+              marginRight: '8px',
+            }}
+          >
+            {isPairing ? '⏳ Pairing…' : '🔗 Retry Telegram Pairing'}
+          </button>
 
           <button
             onClick={handleReset}
