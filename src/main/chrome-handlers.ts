@@ -30,6 +30,7 @@ import {
   type LocatorStrategyKind,
 } from './browser-recording-locator-strategies';
 import { getSQLiteManager } from './sqlite/manager';
+import { registerOpenClawHandlers } from './openclaw-handlers';
 import { restartPlaywrightScheduler } from './scheduler/playwright-scheduler-instance';
 import type { PlaywrightScheduledTest } from './sqlite/playwright-scheduler';
 
@@ -4593,6 +4594,16 @@ test('recorded test', async ({ page }) => {
         }
         botToken = allBotTokens[allBotTokens.length - 1] ?? null; // most recent token
 
+        // Extract bot username from BotFather's success message (looks like "t.me/username")
+        let botUsername = 'egdesk_openclaw_bot'; // fallback to what we typed
+        try {
+          const allMsgTexts = await page.locator('.message').allTextContents();
+          for (const text of allMsgTexts) {
+            const m = text.match(/t\.me\/([A-Za-z0-9_]{5,})/);
+            if (m) botUsername = m[1];
+          }
+        } catch { /* non-fatal */ }
+
         // Save to profile.json
         const metaPath = path.join(profileDir, 'profile.json');
         const existing = fs.existsSync(metaPath)
@@ -4602,6 +4613,7 @@ test('recorded test', async ({ page }) => {
           ...existing,
           telegramBotToken: botToken ?? existing.telegramBotToken,
           telegramBotTokens: allBotTokens.length > 0 ? allBotTokens : (existing.telegramBotTokens ?? []),
+          telegramBotUsername: botUsername ?? existing.telegramBotUsername,
           telegramSetupAt: new Date().toISOString(),
         }, null, 2));
 
@@ -4610,7 +4622,7 @@ test('recorded test', async ({ page }) => {
           context.once('close', resolve);
         });
 
-        return { success: true, token: botToken, tokens: allBotTokens };
+        return { success: true, token: botToken, tokens: allBotTokens, botUsername };
       } catch (automationError) {
         await context.close().catch(() => {});
         return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
@@ -4620,6 +4632,8 @@ test('recorded test', async ({ page }) => {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
+
+  registerOpenClawHandlers(getGoogleProfilesDir);
 
   /**
    * Check if a saved Google profile is still authenticated by navigating to

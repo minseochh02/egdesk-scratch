@@ -2226,6 +2226,18 @@ const electronHandler = {
       setup: (profileName: string, phoneNumber: string) =>
         ipcRenderer.invoke('telegram:setup', { profileName, phoneNumber }),
     },
+    openclaw: {
+      setup: (profileName: string, botToken: string) =>
+        ipcRenderer.invoke('openclaw:setup', { profileName, botToken }),
+      pair: (profileName: string) =>
+        ipcRenderer.invoke('openclaw:pair', { profileName }),
+      status: () =>
+        ipcRenderer.invoke('openclaw:status'),
+      start: () =>
+        ipcRenderer.invoke('openclaw:start'),
+      stop: () =>
+        ipcRenderer.invoke('openclaw:stop'),
+    },
   },
 
   /**
