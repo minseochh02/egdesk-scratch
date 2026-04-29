@@ -1092,11 +1092,14 @@ class KookminBankAutomator extends BaseBankAutomator {
   async getTransactionsWithParsing(accountNumber, startDate, endDate) {
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
     
+    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
     if (!downloadResult || downloadResult.length === 0) {
+      this.log('Kookmin: getTransactions returned empty (no data), returning success with empty transactions.');
       return {
-        success: false,
-        error: 'Failed to fetch transaction data - no result returned',
-        downloadResult,
+        success: true,
+        transactions: [],
+        metadata: { bankName: 'KB국민은행', accountNumber, totalCount: 0 },
+        summary: { totalCount: 0 }
       };
     }
     

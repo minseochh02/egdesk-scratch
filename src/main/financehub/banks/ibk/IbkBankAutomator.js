@@ -222,8 +222,13 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
       this.log(`   ✅ 포커스 성공! (${focusResult.method})`);
 
-      // TAB 단계를 완전히 제외한 입력 스텝 준비
-      const inputSteps = IBK_NATIVE_CERT_STEPS.filter(s => s.key !== 'TAB');
+      // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
+      const pwIndex = IBK_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
+      const inputSteps = IBK_NATIVE_CERT_STEPS.filter((s, idx) => {
+        if (s.key === 'TAB') return false;
+        if (s.key === 'ENTER' && idx < pwIndex) return false;
+        return true;
+      });
 
       await runNativeCertArduinoSteps(
         this._arduinoHid,
@@ -973,11 +978,15 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   async getTransactionsWithParsing(accountNumber, startDate, endDate) {
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    
+    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
     if (!downloadResult || downloadResult.length === 0) {
+      this.log('IBK: getTransactions returned empty (no data), returning success with empty transactions.');
       return {
-        success: false,
-        error: 'Failed to fetch transaction data - no result returned',
-        downloadResult,
+        success: true,
+        transactions: [],
+        metadata: { bankName: 'IBK기업은행', accountNumber, totalCount: 0 },
+        summary: { totalCount: 0 }
       };
     }
     const resultItem = downloadResult[0];

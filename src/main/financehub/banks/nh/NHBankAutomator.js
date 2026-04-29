@@ -12,6 +12,9 @@ const {
   createExcelFromData
 } = require('../../utils/transactionParser');
 const { typePasswordWithKeyboard } = require('./virtualKeyboard');
+const os = require('os');
+const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
+const isWindows = () => os.platform() === 'win32';
 
 /**
  * NH Bank Automator
@@ -127,6 +130,225 @@ class NHBankAutomator extends BaseBankAutomator {
 
   // Note: Session management methods (startSessionKeepAlive, stopSessionKeepAlive, extendSession)
   // are now inherited from BaseBankAutomator
+
+  // ============================================================================
+  // CORPORATE CERTIFICATE LOGIN
+  // ============================================================================
+
+  async prepareCorporateCertificateLogin(proxyUrl) {
+    if (!isWindows()) {
+      return { success: false, error: 'NH 기업 인증서 연결은 Windows에서만 지원됩니다.' };
+    }
+    const proxy = this.buildProxyOption(proxyUrl);
+    try {
+      if (this.browser) {
+        try { await this.browser.close(); } catch (e) {}
+        this.browser = null;
+        this.context = null;
+        this.page = null;
+      }
+      const corpDownloadsPath = path.join(this.outputDir, 'corporate-cert-downloads');
+      this.ensureOutputDirectory(corpDownloadsPath);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults',
+          '--allow-running-insecure-content',
+          '--safebrowsing-disable-download-protection',
+        ],
+        viewport: null,
+        acceptDownloads: true,
+        downloadsPath: corpDownloadsPath,
+      });
+      this.browser = browser;
+      this.context = context;
+      await this.context.grantPermissions(['local-network-access', 'clipboard-read', 'clipboard-write']);
+      this.page = context.pages()[0] || await context.newPage();
+      this.page.on('dialog', async (dialog) => {
+        try { await dialog.accept(); } catch (e) {}
+      });
+
+      this.log('[NH Corporate] Navigating to ibz.nonghyup.com...');
+      await this.page.goto('https://ibz.nonghyup.com/');
+      await this.page.waitForTimeout(3000);
+
+      this.log('[NH Corporate] Clicking 로그인...');
+      try {
+        await this.page.locator('.login').first().click({ timeout: 10000 });
+      } catch (e) {
+        await this.page.locator('a:has-text("로그인")').first().click({ timeout: 10000 });
+      }
+      await this.page.waitForTimeout(2000);
+
+      this.log('[NH Corporate] Clicking 공동인증서 로그인...');
+      try {
+        await this.page.locator('span:has-text("공동인증서 로그인")').click({ timeout: 10000 });
+      } catch (e) {
+        await this.page.locator('xpath=/html/body/div[5]/div[2]/form[2]/div/div[1]/a[2]/p/span').click();
+      }
+      await this.page.waitForTimeout(3000);
+
+      this.log('[NH Corporate] Waiting for cert dialog table...');
+      let tableFound = false;
+      for (let i = 0; i < 15; i++) {
+        const found = await this.page.evaluate(() => {
+          return document.querySelectorAll('#certificate_signature_area tr.data').length > 0 ||
+                 document.querySelectorAll('tr.data').length > 0;
+        });
+        if (found) {
+          tableFound = true;
+          break;
+        }
+        await this.page.waitForTimeout(1000);
+      }
+
+      if (!tableFound) {
+        return { success: false, error: '인증서 목록 테이블을 찾지 못했습니다.' };
+      }
+
+      this.log('[NH Corporate] Reading certificate list...');
+      const certList = await this.page.evaluate(() => {
+        let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+        if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+        return Array.from(rows).map((row, i) => {
+          const cells = Array.from(row.querySelectorAll('td'));
+          const cellTexts = cells.map(c => c.textContent.trim());
+          const expiryMatch = cellTexts.join(' ').match(/(\d{4}-\d{2}-\d{2})/);
+          return {
+            index: i,
+            active: row.classList.contains('active'),
+            expiry: expiryMatch ? expiryMatch[1] : '',
+            text: cellTexts.join(' | ')
+          };
+        });
+      });
+
+      let targetIndex = 0;
+      if (certList.length > 1) {
+        let latestExpiry = '';
+        for (const cert of certList) {
+          if (cert.expiry > latestExpiry) {
+            latestExpiry = cert.expiry;
+            targetIndex = cert.index;
+          }
+        }
+        this.log(`[NH Corporate] Selecting cert with latest expiry: index=${targetIndex} expiry=${latestExpiry}`);
+      }
+
+      await this.page.evaluate((idx) => {
+        const rows = document.querySelectorAll('#certificate_signature_area tr.data');
+        if (rows[idx]) rows[idx].click();
+      }, targetIndex);
+      await this.page.waitForTimeout(1000);
+
+      this._nhCorporateCertPhase = 'awaiting_password';
+      this.isLoggedIn = false;
+      return {
+        success: true,
+        phase: 'awaiting_password',
+        certWindowName: 'NH INIpay Certificate (In-Browser)',
+        message: '인증서 창이 열렸습니다.',
+      };
+
+    } catch (error) {
+      this.error('prepareCorporateCertificateLogin (nh) failed:', error.message);
+      this._nhCorporateCertPhase = 'idle';
+      return { success: false, error: error.message };
+    }
+  }
+
+  async completeCorporateCertificateLogin(creds) {
+    const { certificatePassword } = creds || {};
+    if (this._nhCorporateCertPhase !== 'awaiting_password') {
+      return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
+    }
+    if (!certificatePassword) {
+      return { success: false, error: '인증서 비밀번호가 필요합니다.' };
+    }
+    if (!this.page || this.page.isClosed()) {
+      this._nhCorporateCertPhase = 'idle';
+      return { success: false, error: '브라우저 세션이 없습니다.' };
+    }
+    if (!this.arduinoPort) {
+      return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
+    }
+
+    try {
+      this._arduinoHid = new ArduinoHidBankSession({
+        portPath: this.arduinoPort,
+        baudRate: this.arduinoBaudRate,
+        log: (m) => this.log(m),
+      });
+      await this._arduinoHid.connect();
+
+      this.log('[NH Corporate] Tabbing to password input...');
+      let focused = '';
+      for (let i = 1; i <= 20; i++) {
+        await this._arduinoHid.sendKey('TAB');
+        await this.page.waitForTimeout(300);
+        focused = await this.page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
+        if (focused === 'ini_cert_pwd') {
+          this.log(`[NH Corporate] ✓ Password input focused after ${i} Tab(s).`);
+          break;
+        }
+      }
+      if (focused !== 'ini_cert_pwd') {
+        throw new Error(`Could not Tab to password input. Last focused: "${focused}"`);
+      }
+
+      this.log('[NH Corporate] Typing password via Arduino...');
+      await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
+      await this.page.waitForTimeout(1000);
+
+      this.log('[NH Corporate] Clicking 확인...');
+      try {
+        await this.page.locator('[id="INI_certSubmit"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('button:has-text("확인")').first().click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(5000);
+
+      await this._arduinoHid.disconnect();
+      this._arduinoHid = null;
+
+      // Navigate to Transaction Inquiry
+      this.log('[NH Corporate] Navigating to 입출금거래내역조회...');
+      try {
+        await this.page.locator('.ibz-tooltip-ctrl:has-text("조회")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('button:has-text("조회")').first().click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(2000);
+
+      try {
+        await this.page.locator('a:has-text("입출금거래내역조회")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.locator('.text-link:has-text("입출금거래내역조회")').first().click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(3000);
+
+      this.isLoggedIn = true;
+      this._nhCorporateCertPhase = 'completed';
+
+      return {
+        success: true,
+        message: '로그인 및 거래내역 메뉴 진입 완료',
+      };
+    } catch (error) {
+      this.error('completeCorporateCertificateLogin (nh) failed:', error.message);
+      if (this._arduinoHid) {
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+      }
+      this._nhCorporateCertPhase = 'idle';
+      return { success: false, error: error.message };
+    }
+  }
 
   // ============================================================================
   // MAIN LOGIN METHOD
@@ -820,12 +1042,14 @@ class NHBankAutomator extends BaseBankAutomator {
     // Use the existing getTransactions method which already does parsing
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
     
-    // Check if we got a result
+    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
     if (!downloadResult || downloadResult.length === 0) {
+      this.log('NH: getTransactions returned empty (no data), returning success with empty transactions.');
       return {
-        success: false,
-        error: 'Failed to fetch transaction data - no result returned',
-        downloadResult,
+        success: true,
+        transactions: [],
+        metadata: { bankName: 'NH농협은행', accountNumber, totalCount: 0 },
+        summary: { totalCount: 0 }
       };
     }
     

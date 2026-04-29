@@ -774,7 +774,7 @@ const createWindow = async () => {
       );
 
       /** 기업 공동인증서 (native or in-page) — shinhan | kookmin | ibk | hana | woori */
-      const CORPORATE_NATIVE_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+      const CORPORATE_NATIVE_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh']);
 
       ipcMain.handle(
         'finance-hub:corporate-cert-prepare',

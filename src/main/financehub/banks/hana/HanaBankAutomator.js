@@ -93,8 +93,36 @@ class HanaBankAutomator extends BaseBankAutomator {
     try {
       if (this.browser) {
         try {
-          await this.browser.close();
-        } catch (e) {}
+          const pages = this.context?.pages() || [];
+          const activePage = pages.find(p => !p.isClosed());
+          if (activePage) {
+            this.page = activePage;
+            const currentUrl = this.page.url();
+            // If already on Hana Bank site and not explicitly closed, try to reuse
+            if (currentUrl.includes('hanabank.com')) {
+              this.log('Hana: Reusing existing browser session...');
+              await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+              await this._closeHanaPopups();
+              const frame = await this._waitForHanaMainframe({ maxWaitMs: 5000 });
+              if (frame) {
+                // Check if already logged in by looking for logout button or similar
+                const isLoggedIn = await frame.evaluate(() => {
+                  return !!Array.from(document.querySelectorAll('button, a, span')).find(e => e.textContent?.includes('로그아웃'));
+                }).catch(() => false);
+                
+                if (isLoggedIn) {
+                  this.log('Hana: Already logged in, skipping auth steps.');
+                  this.isLoggedIn = true;
+                  return { success: true, isLoggedIn: true, message: 'Already logged in.' };
+                }
+              }
+            }
+          }
+          // If not reusable, close and start fresh
+          await this.browser.close().catch(() => {});
+        } catch (e) {
+          this.warn('Hana: Failed to reuse browser:', e.message);
+        }
         this.browser = null;
         this.context = null;
         this.page = null;
@@ -611,21 +639,37 @@ class HanaBankAutomator extends BaseBankAutomator {
         this.log(`Hana: retry search complete with startDate=${yStr}`);
       }
 
-      // 조회 버튼 클릭 후 바로 '내역 없음' 팝업이 뜨는지 선제적 체크
+      await this.page.waitForTimeout(2000); // [추가] 로딩 대기 시간: 오판 방지용
+
+      // [정밀화] 명확하게 지정된 문구만 감지
       const earlyNoData = await frame.evaluate(() => {
-        const body = document.body.textContent || '';
-        return (
-          body.includes('조회된 내역이 없습니다') ||
-          body.includes('조회 내역이 없습니다') ||
-          body.includes('거래내역이 존재하지 않습니다') ||
-          body.includes('조회된 결과가 없습니다')
-        );
+        const targetPhrases = ['조회 결과가 없습니다', '조회결과가 없습니다'];
+        
+        // 보이는 모든 요소에서 정확한 문구 검색
+        const allElements = document.querySelectorAll('div, span, p, td, th, li');
+        for (const el of allElements) {
+          if (el.offsetParent !== null) { // 현재 화면에 보이는 요소만
+            const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (targetPhrases.some(phrase => text.includes(phrase))) return true;
+          }
+        }
+        return false;
       });
 
       if (earlyNoData) {
-        this.log('Hana: detected "no data" popup immediately after search');
+        this.log('Hana: confirmed "조회 결과가 없습니다" (Graceful Exit)');
         try {
-          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+          // 확인 버튼 클릭하여 팝업 정리
+          await frame.evaluate(() => {
+            const btns = document.querySelectorAll('button, a, span');
+            for (const b of btns) {
+              const txt = (b.textContent || '').trim();
+              if ((txt === '확인' || txt === '닫기') && b.offsetParent !== null) {
+                b.click();
+                return;
+              }
+            }
+          });
         } catch (e) {}
         return [];
       }
@@ -673,8 +717,10 @@ class HanaBankAutomator extends BaseBankAutomator {
         });
 
         if (noDataMsg) {
-          this.log('Hana: confirmed no data, skipping.');
-          try { await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 }); } catch (e) {}
+          this.log('Hana: confirmed no data via message check (Graceful Exit)');
+          try { 
+            await frame.locator('button:has-text("확인")').first().click({ timeout: 2000 }).catch(() => {}); 
+          } catch (e) {}
           return [];
         }
 
@@ -788,11 +834,15 @@ class HanaBankAutomator extends BaseBankAutomator {
 
   async getTransactionsWithParsing(accountNumber, startDate, endDate) {
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+    
+    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
     if (!downloadResult || downloadResult.length === 0) {
+      this.log('Hana: getTransactions returned empty (no data), returning success with empty transactions.');
       return {
-        success: false,
-        error: 'Failed to fetch transaction data - no result returned',
-        downloadResult,
+        success: true,
+        transactions: [],
+        metadata: { bankName: '하나은행', accountNumber, totalCount: 0 },
+        summary: { totalCount: 0 }
       };
     }
     const resultItem = downloadResult[0];

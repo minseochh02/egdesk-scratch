@@ -45,39 +45,66 @@ class ArduinoHidBankSession {
 
   /**
    * @param {string} text
-   * @param {{ minDelay?: number, maxDelay?: number }} [options]
    */
-  async typeViaNaturalTiming(text, options = {}) {
-    const { minDelay = 80, maxDelay = 200 } = options;
-    if (!this.arduino) await this.connect();
-    this.log(`Typing ${text.length} chars via Arduino HID`);
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      await new Promise((resolve, reject) => {
-        this.arduino.write(char + '\n', (err) => {
-          if (err) return reject(err);
-          setTimeout(() => resolve(), 950);
-        });
+  async typeViaNaturalTiming(text) {
+    if (!this.arduino || !this.arduino.isOpen) await this.connect();
+    this.log(`Typing via Arduino TYPE: command`);
+    await new Promise((resolve, reject) => {
+      this.arduino.write(`TYPE:${text}\n`, (err) => {
+        if (err) return reject(err);
+        // TYPE 명령은 내부적으로 지연시간이 있으므로 충분히 기다림
+        setTimeout(() => resolve(), text.length * 500 + 1000);
       });
-      if (i < text.length - 1) {
-        const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
+    });
   }
 
   /**
    * @param {string} keyName e.g. ENTER, TAB, ESC
    */
   async sendKey(keyName) {
-    if (!this.arduino || !this.arduino.isOpen) {
-      throw new Error('Arduino serial not open');
-    }
+    if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
     this.log(`Arduino KEY:${keyName}`);
     await new Promise((resolve, reject) => {
       this.arduino.write(`KEY:${keyName}\n`, (err) => {
         if (err) return reject(err);
-        setTimeout(() => resolve(), 550);
+        setTimeout(() => resolve(), 600);
+      });
+    });
+  }
+
+  /**
+   * @param {number} x - Target screen X
+   * @param {number} y - Target screen Y
+   */
+  async moveTo(x, y) {
+    if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
+    this.log(`Arduino Absolute Move to ${x},${y}`);
+    
+    // 1. 원점(0,0)으로 이동 (충분히 큰 음수 값을 여러 번 보내 구석으로 보냄)
+    for (let i = 0; i < 4; i++) {
+      await new Promise(r => this.arduino.write(`MOUSE_MOVE:-3000,-3000\n`, () => setTimeout(r, 100)));
+    }
+    
+    // 2. 목적지 좌표만큼 상대 이동
+    await new Promise((resolve, reject) => {
+      this.arduino.write(`MOUSE_MOVE:${x},${y}\n`, (err) => {
+        if (err) return reject(err);
+        setTimeout(() => resolve(), 1000);
+      });
+    });
+  }
+
+  /**
+   * @param {string} button - left, right, middle
+   */
+  async click(button = 'left') {
+    if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
+    const btn = button === 'L' ? 'left' : (button === 'R' ? 'right' : button);
+    this.log(`Arduino MOUSE_CLICK:${btn}`);
+    await new Promise((resolve, reject) => {
+      this.arduino.write(`MOUSE_CLICK:${btn}\n`, (err) => {
+        if (err) return reject(err);
+        setTimeout(() => resolve(), 500);
       });
     });
   }
