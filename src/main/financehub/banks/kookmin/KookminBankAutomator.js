@@ -481,18 +481,27 @@ class KookminBankAutomator extends BaseBankAutomator {
         log: (m) => this.log(m),
       });
       await this._arduinoHid.connect();
+
+      this.log(`[KB] 인증서 입력 단계 시작 (TAB 이동 방식)...`);
+      
+      const inputSteps = KOOKMIN_NATIVE_CERT_STEPS;
+
       await runNativeCertArduinoSteps(
         this._arduinoHid,
         this.page,
         certificatePassword,
-        KOOKMIN_NATIVE_CERT_STEPS,
+        inputSteps,
         {
           log: this.log.bind(this),
           warn: this.warn.bind(this),
           sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
         }
       );
-      await this._arduinoHid.disconnect();
+
+      // 확인 버튼은 ENTER로 처리
+      await this._arduinoHid.sendKey('ENTER');
+
+      await this._disconnectArduinoHid();
       this._arduinoHid = null;
 
       await this.page.waitForTimeout(5000);
@@ -539,86 +548,66 @@ class KookminBankAutomator extends BaseBankAutomator {
   }
 
   async _navigateKookminBizTransactionInquiry() {
-    try {
-      const bizPos = await this.page.evaluate(() => {
-        const els = document.querySelectorAll('a, button, span');
-        for (const el of els) {
-          if (el.textContent.trim() === '기업') {
-            const rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-              return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
-            }
-          }
+    this.log('[NAV] 메뉴 탐색 시작 (엔진 레벨 마우스 클릭 방식)...');
+    
+    // 헬퍼: 요소를 찾아 중심 좌표 반환
+    const getPos = async (selector, text) => {
+      return await this.page.evaluate(({ sel, txt }) => {
+        const els = Array.from(document.querySelectorAll(sel));
+        const match = els.find(e => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && e.textContent.trim() === txt;
+        });
+        if (match) {
+          const r = match.getBoundingClientRect();
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
         }
         return null;
-      });
-      if (bizPos) {
-        await this.page.mouse.click(bizPos.x, bizPos.y);
-        await this.page.waitForTimeout(2000);
-      }
-    } catch (e) {
-      this.warn('기업 tab:', e.message);
-    }
+      }, { sel: selector, txt: text });
+    };
 
-    const menuPos = await this.page.evaluate(() => {
-      const links = document.querySelectorAll('a');
-      for (const a of links) {
-        if (a.textContent.trim() === '조회/이체') {
-          const rect = a.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
-          }
-        }
-      }
-      return null;
-    });
+    // 1. "기업" 탭 클릭
+    const bizPos = await getPos('a, button, span', '기업');
+    if (bizPos) {
+      await this.page.mouse.click(bizPos.x, bizPos.y);
+      this.log(`   - [STEP 1] 기업 탭 클릭 (${bizPos.x}, ${bizPos.y})`);
+    } else {
+      this.log('   - [STEP 1] 기업 탭 발견 실패');
+    }
+    await this.page.waitForTimeout(3000);
+
+    // 2. "조회/이체" 메뉴 호버
+    const menuPos = await getPos('a', '조회/이체');
     if (menuPos) {
       await this.page.mouse.move(menuPos.x, menuPos.y);
-      await this.page.waitForTimeout(2000);
-    }
-
-    const allSubs = await this.page.evaluate(() => {
-      const links = document.querySelectorAll('a');
-      const matches = [];
-      for (const a of links) {
-        if (a.textContent.trim() === '거래내역조회') {
-          const rect = a.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            matches.push({ x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
-          }
-        }
-      }
-      return matches;
-    });
-
-    if (allSubs.length >= 1) {
-      await this.page.mouse.click(allSubs[0].x, allSubs[0].y);
-      await this.page.waitForTimeout(2000);
-      const debugLinks = await this.page.evaluate(() => {
-        const links = document.querySelectorAll('a');
-        const results = [];
-        for (const a of links) {
-          if (a.textContent.includes('거래내역')) {
-            const rect = a.getBoundingClientRect();
-            results.push({
-              text: a.textContent.trim(),
-              visible: rect.width > 0 && rect.height > 0,
-              x: Math.round(rect.x + rect.width / 2),
-              y: Math.round(rect.y + rect.height / 2),
-            });
-          }
-        }
-        return results;
-      });
-      const targetLink = debugLinks.find((l) => l.visible && l.text === '거래내역 조회');
-      if (targetLink) {
-        await this.page.mouse.click(targetLink.x, targetLink.y);
-      } else {
-        await this.page.goto(this.config.xpaths.bizTransactionAltUrl, { waitUntil: 'domcontentloaded' });
-      }
+      await this.page.mouse.click(menuPos.x, menuPos.y);
+      this.log(`   - [STEP 2] 조회/이체 메뉴 호버 (${menuPos.x}, ${menuPos.y})`);
     } else {
-      await this.page.goto(this.config.xpaths.bizTransactionFallbackUrl, { waitUntil: 'domcontentloaded' });
+      this.log('   - [STEP 2] 조회/이체 메뉴 발견 실패');
     }
+    await this.page.waitForTimeout(3000);
+
+    // 3. 첫 번째 "거래내역조회" (카테고리) 클릭
+    const catPos = await getPos('a', '거래내역조회');
+    if (catPos) {
+      await this.page.mouse.click(catPos.x, catPos.y);
+      this.log(`   - [STEP 3] 거래내역조회(카테고리) 클릭 (${catPos.x}, ${catPos.y})`);
+    } else {
+      this.log('   - [STEP 3] 거래내역조회 발견 실패');
+    }
+    await this.page.waitForTimeout(3000);
+
+    // 4. "거래내역 조회" (공백 포함) 실제 링크 클릭
+    let finalPos = await getPos('a', '거래내역 조회');
+    if (!finalPos) finalPos = await getPos('a', '거래내역조회');
+
+    if (finalPos) {
+      await this.page.mouse.click(finalPos.x, finalPos.y);
+      this.log(`   - [STEP 4] 거래내역 조회(최종) 클릭 (${finalPos.x}, ${finalPos.y})`);
+    } else {
+      this.warn('[NAV] 최종 메뉴 진입 실패 (좌표를 찾을 수 없음)');
+    }
+
     await this.page.waitForTimeout(5000);
   }
 
