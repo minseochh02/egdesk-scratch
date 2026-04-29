@@ -1,7 +1,7 @@
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
-const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
+const { isWindows, waitForNativeCertificateDialogWindow, focusCertElement } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -172,6 +172,7 @@ class IbkBankAutomator extends BaseBankAutomator {
         this._ibkCorporateCertPhase = 'idle';
         return { success: false, error: uia.error || '인증서 창을 찾지 못했습니다.' };
       }
+      this._ibkCertWindowClass = uia.matchedClass;
       this._ibkCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
       return {
@@ -211,11 +212,24 @@ class IbkBankAutomator extends BaseBankAutomator {
         log: (m) => this.log(m),
       });
       await this._arduinoHid.connect();
+
+      // [개선] 직접 포커스 시도
+      this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
+      const focusResult = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+      
+      if (!focusResult.ok) {
+        throw new Error(`인증서 입력창 포커스 실패: ${focusResult.error}`);
+      }
+      this.log(`   ✅ 포커스 성공! (${focusResult.method})`);
+
+      // TAB 단계를 완전히 제외한 입력 스텝 준비
+      const inputSteps = IBK_NATIVE_CERT_STEPS.filter(s => s.key !== 'TAB');
+
       await runNativeCertArduinoSteps(
         this._arduinoHid,
         this.page,
         certificatePassword,
-        IBK_NATIVE_CERT_STEPS,
+        inputSteps,
         {
           log: this.log.bind(this),
           warn: this.warn.bind(this),
@@ -541,13 +555,25 @@ class IbkBankAutomator extends BaseBankAutomator {
       const endDD = String(endOfYear.getDate()).padStart(2, '0');
 
       try {
-        await mainframe.locator('[id="inqy_sttg_ymd_yy"]').selectOption(startYY);
-        await mainframe.locator('[id="inqy_sttg_ymd_mm"]').selectOption(startMM);
-        await mainframe.locator('[id="inqy_sttg_ymd_dd"]').selectOption(startDD);
-        await mainframe.locator('[id="inqy_eymd_yy"]').selectOption(endYY);
-        await mainframe.locator('[id="inqy_eymd_mm"]').selectOption(endMM);
-        await mainframe.locator('[id="inqy_eymd_dd"]').selectOption(endDD);
-        this.log(`IBK promissory: date range ${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD}`);
+        await mainframe.evaluate(({ sy, sm, sd, ey, em, ed }) => {
+          const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.value = val;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              if (typeof el.onchange === 'function') el.onchange();
+              return true;
+            }
+            return false;
+          };
+          setVal('inqy_sttg_ymd_yy', sy);
+          setVal('inqy_sttg_ymd_mm', sm);
+          setVal('inqy_sttg_ymd_dd', sd);
+          setVal('inqy_eymd_yy', ey);
+          setVal('inqy_eymd_mm', em);
+          setVal('inqy_eymd_dd', ed);
+        }, { sy: startYY, sm: startMM, sd: startDD, ey: endYY, em: endMM, ed: endDD });
+        this.log(`IBK promissory: date range set via evaluate (${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD})`);
       } catch (e) {
         this.warn('IBK promissory: date selects failed:', e.message);
       }
@@ -702,9 +728,41 @@ class IbkBankAutomator extends BaseBankAutomator {
       const yestDD = String(yesterday.getDate()).padStart(2, '0');
 
       const setYmdTriplet = async (prefix, y, m, day) => {
-        await frame.locator(`[id="${prefix}_yy"]`).selectOption(y);
-        await frame.locator(`[id="${prefix}_mm"]`).selectOption(m);
-        await frame.locator(`[id="${prefix}_dd"]`).selectOption(day);
+        const report = await frame.evaluate(({ p, year, month, d }) => {
+          const results = {};
+          const setVal = (suffix, val) => {
+            const id = `${p}_${suffix}`;
+            const el = document.getElementById(id);
+            if (el) {
+              el.value = val;
+              // 표준 이벤트 발생
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              // 인라인 핸들러(onchange) 강제 호출
+              if (typeof el.onchange === 'function') {
+                el.onchange();
+              } else if (el.getAttribute('onchange')) {
+                // attribute로만 존재하는 경우 eval (위험할 수 있으나 IBK 환경에선 필요)
+                try { new Function(el.getAttribute('onchange')).call(el); } catch(e) {}
+              }
+              results[id] = 'ok';
+              return true;
+            }
+            results[id] = 'not_found';
+            return false;
+          };
+          setVal('yy', year);
+          setVal('mm', month);
+          setVal('dd', d);
+          return results;
+        }, { p: prefix, year: y, month: m, d: day });
+
+        const missing = Object.entries(report).filter(([_, status]) => status !== 'ok').map(([id]) => id);
+        if (missing.length > 0) {
+          this.warn(`[IBK] 날짜 설정 요소 찾지 못함: ${missing.join(', ')}`);
+        } else {
+          this.log(`   [IBK] 날짜 설정 완료 (${prefix}: ${y}-${m}-${day})`);
+        }
       };
 
       try {
@@ -720,6 +778,18 @@ class IbkBankAutomator extends BaseBankAutomator {
         await frame.locator('button:has-text("조회")').click({ timeout: 5000 });
       }
       await this.page.waitForTimeout(3000);
+
+      // [신규] "조회 결과 없음" 사전 체크
+      const noDataFoundEarly = await frame.evaluate(() => {
+        const checkPhrases = ['까지 조회결과가 없습니다', '조회된 데이터가 없습니다', '저장할 데이터가 없습니다'];
+        const allText = document.body.innerText || '';
+        return checkPhrases.some(phrase => allText.includes(phrase));
+      });
+
+      if (noDataFoundEarly) {
+        this.log('   [IBK] 조회 결과 없음이 확인되었습니다. (다운로드 스킵)');
+        return [];
+      }
 
       const dateAlert = await frame.evaluate(() => {
         const els = document.querySelectorAll('.alert, .popup, [class*="msg"], [class*="alert"]');
@@ -748,43 +818,69 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       await this.focusPlaywrightPage();
       const exportStartedAt = Date.now();
-      const downloadPromise = this.waitForNextDownload({ timeout: 60000 });
+      
+      // [개선] 페이지가 아닌 컨텍스트 전체에서 다운로드 감시 (팝업 다운로드 대응)
+      const downloadPromise = this.context.waitForEvent('download', { timeout: 60000 });
       
       // Step 1: Trigger download sequence
       try {
-        await frame.locator('span:has-text("저장")').first().click({ timeout: 5000 });
-        await this.page.waitForTimeout(800);
-        await frame.locator('span:has-text("엑셀파일저장")').first().click({ timeout: 5000 });
-        await this.page.waitForTimeout(800);
+        console.log('   [IBK] "저장" -> "엑셀파일저장" 직접 클릭 시도...');
+        await frame.evaluate(() => {
+          const findAndClick = (txt) => {
+            const el = Array.from(document.querySelectorAll('span, a, button'))
+              .find(e => e.textContent.includes(txt));
+            if (el) el.click();
+          };
+          findAndClick('저장');
+        });
+        await this.page.waitForTimeout(1000);
+
+        await frame.evaluate(() => {
+          const el = Array.from(document.querySelectorAll('span, a, button'))
+            .find(e => e.textContent.includes('엑셀파일저장'));
+          if (el) el.click();
+        });
+        await this.page.waitForTimeout(1500);
         
-        // Handle radio button only if visible; it's often already checked but visually hidden
-        const radio = frame.locator('[id="DownloadExcel"]');
-        if (await radio.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await radio.click({ timeout: 2000 }).catch(() => {});
-        }
-        
-        await this.page.waitForTimeout(400);
-        await frame.locator('[id="DownloadButton"]').click({ timeout: 5000 });
+        // 라디오 버튼 및 최종 다운로드 버튼 클릭
+        await frame.evaluate(() => {
+          const radio = document.getElementById('DownloadExcel');
+          if (radio) radio.click();
+          
+          const btn = document.getElementById('DownloadButton');
+          if (btn) btn.click();
+        });
+        console.log('   [IBK] 다운로드 트리거 완료.');
       } catch (e) {
-        this.warn('IBK: Error during download click sequence, will check for fallback anyway:', e.message);
+        this.warn('IBK: Error during download click sequence:', e.message);
       }
 
-      // Step 2: Race download vs "No Data" message vs Timeout (shortened for faster failure/fallback)
+      // Step 2: [개선] 다운로드 이벤트와 파일 시스템 폴링을 동시에 Race
+      console.log('   [IBK] 다운로드 완료 대기 중 (Event + Polling)...');
+      
+      const pollForFile = async (startTime) => {
+        for (let i = 0; i < 30; i++) { // 최대 30초 폴링
+          const found = this.findRecentDownloadFile(
+            [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+            startTime
+          );
+          if (found) return { type: 'polling', data: found };
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        throw new Error('polling timeout');
+      };
+
       const raced = await Promise.race([
         downloadPromise.then((dl) => ({ type: 'download', data: dl })),
-        this.page.waitForTimeout(15000).then(() => ({ type: 'timeout' })),
+        pollForFile(exportStartedAt),
+        this.page.waitForTimeout(40000).then(() => ({ type: 'timeout' })),
         frame.evaluate(() => {
           return new Promise((resolve) => {
             const check = () => {
-              const checkPhrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다'];
-              const allElements = Array.from(document.querySelectorAll('body *'));
-              const found = allElements.some(el => {
-                const style = window.getComputedStyle(el);
-                const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0;
-                return isVisible && checkPhrases.some(phrase => (el.textContent || '').includes(phrase));
-              });
-              if (found) resolve({ type: 'nodata' });
-              else setTimeout(check, 500);
+              const checkPhrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다', '까지 조회결과가 없습니다'];
+              const allText = document.body.innerText || '';
+              if (checkPhrases.some(phrase => allText.includes(phrase))) resolve({ type: 'nodata' });
+              else setTimeout(check, 1000);
             };
             check();
           });
@@ -796,27 +892,21 @@ class IbkBankAutomator extends BaseBankAutomator {
       let fallbackFile = null;
 
       if (raced.type === 'nodata') {
-        this.log('IBK: confirmed no data to export via popup/message');
-        try {
-          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 }).catch(() => {});
-        } catch (e) {}
+        this.log('   [IBK] 데이터 없음 확인 (메시지 감지)');
         return [];
       }
 
-      if (raced.type === 'timeout' || !raced.type) {
-        this.warn('IBK: download event timed out or error occurred, checking file system fallback...');
-        fallbackFile = this.findRecentDownloadFile(
-          [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
-          exportStartedAt
-        );
-        if (!fallbackFile) {
-          this.error('IBK: No download event and no fallback file found.');
-          return [];
-        }
+      if (raced.type === 'polling') {
+        this.log(`   [IBK] 파일 시스템 폴링으로 다운로드 감지 성공: ${path.basename(raced.data.path)}`);
+        fallbackFile = raced.data;
         suggested = path.basename(fallbackFile.path);
-      } else {
+      } else if (raced.type === 'download') {
+        this.log('   [IBK] 브라우저 다운로드 이벤트 감지 성공');
         download = raced.data;
         suggested = download.suggestedFilename() || suggested;
+      } else {
+        this.error('   [IBK] 다운로드 감지 실패 (타임아웃)');
+        return [];
       }
 
       const ext = path.extname(suggested) || '.xls';
