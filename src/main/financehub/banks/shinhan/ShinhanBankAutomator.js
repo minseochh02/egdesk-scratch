@@ -1251,12 +1251,14 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     // We reuse the getTransactions method which now does parsing internally
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
     
-    // Check if the method returned any result
+    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
     if (!downloadResult || downloadResult.length === 0) {
+      this.log('Shinhan: getTransactions returned empty (no data), returning success with empty transactions.');
       return {
-        success: false,
-        error: 'Failed to fetch transaction data - no result returned',
-        downloadResult,
+        success: true,
+        transactions: [],
+        metadata: { bankName: '신한은행', accountNumber, totalCount: 0 },
+        summary: { totalCount: 0 }
       };
     }
     

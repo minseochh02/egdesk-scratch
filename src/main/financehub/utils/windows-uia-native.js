@@ -295,6 +295,149 @@ function getFocusedNativeElementName() {
 }
 
 /**
+ * Returns a JSON string of properties for the currently focused native UI element.
+ * Useful for debugging and verifying password field state.
+ */
+function getFocusedElementProperties() {
+  if (!isWindows()) return '{}';
+  try {
+    const script = 
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+      'if (-not $f) { return "{}" } ' +
+      '$props = @{ ' +
+      '  Name = $f.Current.Name; ' +
+      '  ClassName = $f.Current.ClassName; ' +
+      '  ControlType = $f.Current.ControlType.ProgrammaticName; ' +
+      '  IsEnabled = $f.Current.IsEnabled; ' +
+      '  IsPassword = $f.Current.IsPassword; ' +
+      '  HelpText = $f.Current.HelpText; ' +
+      '}; ' +
+      'try { $props["Value"] = $f.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } catch {} ' +
+      'try { ' +
+      '  $legacy = $f.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern).Current; ' +
+      '  $props["LegacyValue"] = $legacy.Value; ' +
+      '  $props["LegacyDescription"] = $legacy.Description; ' +
+      '} catch {} ' +
+      'return $props | ConvertTo-Json -Compress';
+    return runPowerShellUtf8(script, { timeoutMs: 5000 });
+  } catch (e) {
+    return '{}';
+  }
+}
+
+/**
+ * Specifically targets elements containing masked characters (*, ●, •, etc.)
+ * and returns their lengths to verify password input.
+ */
+/**
+ * Lists all buttons in the certificate window with their names and states.
+ * Used to verify safety before/during TAB navigation.
+ */
+function getMaskedInputVerification(windowClass) {
+  if (!isWindows()) return '[]';
+  try {
+    const script = 
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${windowClass}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+      'if (-not $w) { return "[]" } ' +
+      '$els = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition); ' +
+      '$results = @(); ' +
+      'foreach ($e in $els) { ' +
+      '  $vals = @($e.Current.Name, $e.Current.HelpText); ' +
+      '  try { $vals += $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } catch {} ' +
+      '  try { $vals += $e.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern).Current.Value } catch {} ' +
+      '  foreach ($v in $vals) { ' +
+      '    if ($v -and $v.Trim().Length -gt 0) { ' +
+      '      $maskCount = ($v.ToCharArray() | Where-Object { $_ -match "[*●⚫•○◦⦿⏺]" }).Count; ' +
+      '      if ($maskCount -gt 0) { ' +
+      '        $results += @{ Class = $e.Current.ClassName; Length = $maskCount; Type = "Masked" }; ' +
+      '      } else { ' +
+      '        $results += @{ Class = $e.Current.ClassName; RawValue = $v; Type = "Raw" }; ' +
+      '      } ' +
+      '      break; ' +
+      '    } ' +
+      '  } ' +
+      '} ' +
+      'return $results | ConvertTo-Json -Compress';
+    return runPowerShellUtf8(script, { timeoutMs: 10000 });
+  } catch (e) {
+    return '[]';
+  }
+}
+
+/**
+ * Lists all buttons in the certificate window with their names and states.
+ * Used to verify safety before/during TAB navigation.
+ */
+function getNativeButtonsInfo(windowClass) {
+  if (!isWindows()) return '[]';
+  try {
+    const script = 
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${windowClass}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+      'if (-not $w) { return "[]" } ' +
+      '$els = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition); ' +
+      '$results = @(); ' +
+      'foreach ($e in $els) { ' +
+      '  $name = $e.Current.Name; ' +
+      '  if ($name -and $name.Trim().Length -gt 0) { ' +
+      '    $results += @{ Name = $name.Trim(); IsEnabled = $e.Current.IsEnabled; Class = $e.Current.ClassName; Control = $e.Current.ControlType.ProgrammaticName.Replace("ControlType.", "") }; ' +
+      '  } ' +
+      '} ' +
+      'return $results | ConvertTo-Json -Compress';
+    return runPowerShellUtf8(script, { timeoutMs: 10000 });
+  } catch (e) {
+    return '[]';
+  }
+}
+
+/**
+ * Directly focuses a named element inside the certificate window via UIA SetFocus().
+ * Eliminates dangerous TAB navigation by targeting the element directly.
+ * @param {string} windowClass - The window class (e.g. 'QWidget')
+ * @param {string} elementName - The Name property to search for (e.g. 'passwordFrame')
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function focusCertElement(windowClass, elementName) {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  try {
+    const result = runPowerShellUtf8(
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      'Add-Type -AssemblyName System.Windows.Forms; ' +
+      // mouse_event P/Invoke (here-string 없이 안전하게)
+      'Add-Type -MemberDefinition \'[DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);\' -Name Mouse -Namespace Win32 -ErrorAction SilentlyContinue; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      `$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${windowClass}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
+      'if (-not $w) { "window_not_found"; exit } ' +
+      `$nc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${elementName}'); ` +
+      '$el = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc); ' +
+      'if (-not $el) { "element_not_found"; exit } ' +
+      // BoundingRectangle으로 좌표를 구해서 마우스 클릭
+      '$rect = $el.Current.BoundingRectangle; ' +
+      'if ($rect.Width -le 0 -or $rect.Height -le 0) { "no_bounds"; exit } ' +
+      '$x = [int]($rect.X + $rect.Width / 2); ' +
+      '$y = [int]($rect.Y + $rect.Height / 2); ' +
+      '[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($x, $y); ' +
+      'Start-Sleep -Milliseconds 150; ' +
+      '[Win32.Mouse]::mouse_event(0x02, 0, 0, 0, 0); ' +
+      '[Win32.Mouse]::mouse_event(0x04, 0, 0, 0, 0); ' +
+      '"clicked_at_${x}_${y}"',
+      { timeoutMs: 10000 }
+    );
+    if (result.startsWith('clicked_at')) return { ok: true, method: result };
+    return { ok: false, error: result };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * If a deletion confirmation dialog is currently focused (i.e. after accidentally triggering 삭제),
  * finds a '취소' button within that dialog via UIA and invokes it.
  * Returns 'clicked' | 'no_cancel_button' | 'no_window' | 'no_focus' | '' (non-Windows/error).
@@ -358,6 +501,10 @@ module.exports = {
   probeNativeCertificateDialogWindow,
   waitForNativeCertificateDialogWindow,
   getFocusedNativeElementName,
+  getFocusedElementProperties,
+  getMaskedInputVerification,
+  getNativeButtonsInfo,
+  focusCertElement,
   dismissNativeDeletionConfirmDialog,
   sendEnterKeyViaSendKeys,
 };
