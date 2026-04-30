@@ -3,6 +3,7 @@ import { createHometaxSchema } from './migrations/002-hometax-schema';
 import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema';
 import { createTaxExemptInvoicesSchema } from './migrations/024-tax-exempt-invoices-schema';
 import { createTaxBillsSchema } from './migrations/025-tax-bills-schema';
+import { migrate026UpdateCardDedupIndex } from './migrations/026-update-card-dedup-index';
 import { runOnceMigration } from './migration-state';
 
 interface MigrationRunnerParams {
@@ -78,6 +79,12 @@ export async function runSqliteMigrations({
     migrate023CreatePromissoryNotes(financeHubDb);
   } catch (migration023Error: any) {
     console.error('⚠️ Migration 023 error:', migration023Error.message);
+  }
+
+  try {
+    migrate026UpdateCardDedupIndex(financeHubDb);
+  } catch (migration026Error: any) {
+    console.error('⚠️ Migration 026 error:', migration026Error.message);
   }
 
   // =============================================
