@@ -1512,37 +1512,80 @@ export class FinanceHubScheduler extends EventEmitter {
         });
       }
 
-      // Import all transactions under a single account (since card numbers are masked)
+      // Import transactions grouped by card number
       if (allTransactions.length > 0) {
-        const cardData = {
-          accountNumber: cardCompanyId, // Use company ID as account number
-          accountName: cardCompanyId === 'bc-card' ? 'BC카드 (전체)' : 
-                       cardCompanyId === 'shinhan-card' ? '신한카드 (전체)' :
-                       `${cardCompanyId} (전체)`,
-          customerName: '',
-          balance: 0,
-          availableBalance: 0,
-          openDate: '',
-        };
+        // Get existing accounts for this card company to match by last 6 digits
+        const existingAccounts = financeHubDb.getAccounts(cardCompanyId);
+        console.log(`[FinanceHubScheduler] 🔍 Found ${existingAccounts.length} existing accounts for ${cardCompanyId}`);
 
-        const syncMetadata = {
-          queryPeriodStart: startDate,
-          queryPeriodEnd: endDate,
-          excelFilePath
-        };
+        // Group transactions by matched accountNumber
+        const groups = new Map<string, { transactions: any[], accountName: string }>();
+        
+        for (const tx of allTransactions) {
+          const rawCardNumber = tx.cardNumber || tx.metadata?.cardNumber || '';
+          const cleanedNumber = rawCardNumber.replace(/[^\d]/g, '');
+          const last6 = cleanedNumber.length >= 6 ? cleanedNumber.slice(-6) : cleanedNumber;
+          
+          let matchedAccountNumber = cardCompanyId; // Default to "combined" account
+          let matchedAccountName = cardCompanyId === 'bc-card' ? 'BC카드 (전체)' : `${cardCompanyId} (전체)`;
 
-        const importResult = financeHubDb.importTransactions(
-          cardCompanyId,
-          cardData,
-          allTransactions,
-          syncMetadata,
-          true // isCard = true for proper card transaction transformation
-        );
+          if (last6) {
+            // Try to find an account that ends with these 6 digits
+            // CRITICAL: We only match against existing accounts to avoid creating "fake" masked accounts
+            const matchedAccount = existingAccounts.find(acc => 
+              acc.accountNumber && acc.accountNumber.replace(/[^\d]/g, '').endsWith(last6)
+            );
 
-        // importTransactions always succeeds or throws, no .success field
-        totalInserted = importResult.inserted;
-        totalSkipped = importResult.skipped;
-        console.log(`[FinanceHubScheduler] Imported ${importResult.inserted} transactions (all cards combined)`);
+            if (matchedAccount) {
+              matchedAccountNumber = matchedAccount.accountNumber;
+              matchedAccountName = matchedAccount.accountName;
+            } else {
+              // If no specific card matches, we use the company ID as account number
+              // This prevents creating generic "B123456" accounts that confused the user
+              matchedAccountNumber = cardCompanyId;
+              matchedAccountName = cardCompanyId === 'bc-card' ? 'BC카드 (미분류)' : `${cardCompanyId} (미분류)`;
+              console.warn(`[FinanceHubScheduler] ⚠️ No matching account found for last 6 digits: ${last6}. Routing to unclassified.`);
+            }
+          }
+
+          if (!groups.has(matchedAccountNumber)) {
+            groups.set(matchedAccountNumber, { transactions: [], accountName: matchedAccountName });
+          }
+          groups.get(matchedAccountNumber)!.transactions.push(tx);
+        }
+
+        console.log(`[FinanceHubScheduler] 📂 Grouped into ${groups.size} card accounts based on last 6 digits`);
+
+        for (const [accountNumber, groupData] of groups.entries()) {
+          const cardData = {
+            accountNumber: accountNumber,
+            accountName: groupData.accountName,
+            customerName: '',
+            balance: 0,
+            availableBalance: 0,
+            openDate: '',
+          };
+
+          const syncMetadata = {
+            queryPeriodStart: startDate,
+            queryPeriodEnd: endDate,
+            excelFilePath
+          };
+
+          console.log(`[FinanceHubScheduler] 📥 Importing ${groupData.transactions.length} transactions for account: ${accountNumber} (${groupData.accountName})`);
+          const importResult = financeHubDb.importTransactions(
+            cardCompanyId,
+            cardData,
+            groupData.transactions,
+            syncMetadata,
+            true // isCard = true
+          );
+
+          totalInserted += importResult.inserted;
+          totalSkipped += importResult.skipped;
+        }
+        
+        console.log(`[FinanceHubScheduler] ✅ Total Import Result: ${totalInserted} inserted, ${totalSkipped} skipped across all cards`);
       }
 
       // Determine final success status
