@@ -1239,52 +1239,68 @@ class NHBankAutomator extends BaseBankAutomator {
         this.log('No account dropdown found or failed to select, continuing...');
       }
 
-      // Set date range using the exact proven method from nhbank.spec.js (Button clicks only)
-      this.log(`[NH Corporate] Setting date range...`);
-      let dateSetSuccess = false;
-
-      // Try Corporate Banking quick buttons
-      try {
-        await this.page.locator('a:has-text("3개월")').click({ timeout: 5000 });
-        this.log('✅ "3개월" button clicked.');
-        await this.page.waitForTimeout(1000);
-        dateSetSuccess = true;
-      } catch (e) {
-        this.log('⚠️ "3개월" button not found, continuing with default date...');
-      }
-
-      // If quick button failed and we really need a specific date, fallback to dropdowns (Personal banking style)
-      if (!dateSetSuccess && startDate) {
-        this.log('Trying manual select dropdowns...');
+      // Set date range using exact Corporate Banking form structure
+      // NH 기업뱅킹은 frm.start_year / start_month / start_date (select) 폼 요소를 사용
+      this.log(`[NH Corporate] Setting custom date range to Start: ${startDate}, End: ${endDate || 'Default'}`);
+      
+      if (startDate) {
         try {
-          const startDateClean = startDate.replace(/-/g, '');
-          const startYear = startDateClean.substring(0, 4);
-          const startMonth = startDateClean.substring(4, 6);
-          const startDay = startDateClean.substring(6, 8);
-          
-          if (await this.page.locator(`xpath=${this.config.xpaths.startYearSelect}`).isVisible({timeout: 1000})) {
-            await this.page.click(`xpath=${this.config.xpaths.startYearSelect}`);
-            await this.page.waitForTimeout(300);
-            await this.page.selectOption(`xpath=${this.config.xpaths.startYearSelect}`, startYear);
-            await this.page.click('body');
-            await this.page.waitForTimeout(300);
-            
-            await this.page.click(`xpath=${this.config.xpaths.startMonthSelect}`);
-            await this.page.waitForTimeout(300);
-            await this.page.selectOption(`xpath=${this.config.xpaths.startMonthSelect}`, startMonth);
-            await this.page.click('body');
-            await this.page.waitForTimeout(300);
-            
-            await this.page.click(`xpath=${this.config.xpaths.startDaySelect}`);
-            await this.page.waitForTimeout(300);
-            await this.page.selectOption(`xpath=${this.config.xpaths.startDaySelect}`, startDay);
-            await this.page.click('body');
-            await this.page.waitForTimeout(500);
-          } else {
-            this.log('Date select dropdowns not visible, relying on default page date range.');
+          // 1. "기간직접 설정" 라디오 버튼 클릭 (inq_per == '1')
+          try {
+            const customDateRadio = this.page.locator('input[type="radio"][name="inq_per"][value="1"]');
+            if (await customDateRadio.isVisible({ timeout: 1000 })) {
+              await customDateRadio.click();
+              await this.page.waitForTimeout(500);
+              this.log('✅ "기간직접 설정" radio selected.');
+            }
+          } catch (e) {
+            this.log('기간직접 설정 radio not found, continuing...');
           }
+
+          // 2. 날짜 파싱 (YYYY, MM, DD)
+          const startClean = startDate.replace(/-/g, '');
+          const sYear = startClean.substring(0, 4);
+          const sMonth = startClean.substring(4, 6);
+          const sDay = startClean.substring(6, 8);
+
+          const endClean = endDate ? endDate.replace(/-/g, '') : null;
+          const eYear = endClean ? endClean.substring(0, 4) : null;
+          const eMonth = endClean ? endClean.substring(4, 6) : null;
+          const eDay = endClean ? endClean.substring(6, 8) : null;
+
+          // 3. page.evaluate로 폼 요소 값 직접 세팅 (커스텀 selectbox 위젯 우회)
+          const dateResult = await this.page.evaluate(({ sYear, sMonth, sDay, eYear, eMonth, eDay }) => {
+            const results = [];
+            // 시작일 세팅
+            const setVal = (name, val) => {
+              const el = document.querySelector(`select[name="${name}"], input[name="${name}"]`);
+              if (el) {
+                el.value = val;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                results.push(`${name}=${val} ✅`);
+                return true;
+              }
+              results.push(`${name} not found ❌`);
+              return false;
+            };
+            
+            setVal('start_year', sYear);
+            setVal('start_month', sMonth);
+            setVal('start_date', sDay);
+            
+            if (eYear) {
+              setVal('end_year', eYear);
+              setVal('end_month', eMonth);
+              setVal('end_date', eDay);
+            }
+            
+            return results;
+          }, { sYear, sMonth, sDay, eYear, eMonth, eDay });
+
+          this.log(`[NH Corporate] Date form results: ${dateResult.join(', ')}`);
+          await this.page.waitForTimeout(500);
         } catch (err) {
-          this.log('Failed to set manual date, continuing with default:', err.message);
+          this.log('Failed to set exact corporate date dropdowns:', err.message);
         }
       }
 
