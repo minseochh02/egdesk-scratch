@@ -117,6 +117,11 @@ const FinanceHub: React.FC = () => {
   const [selectedBank, setSelectedBank] = useState<BankConfig | null>(null);
   const [bankAuthMethod, setBankAuthMethod] = useState<'certificate' | 'id' | null>(null);
   const [credentials, setCredentials] = useState<BankCredentials>({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
+  
+  // Bank Certificate Selection States
+  const [bankCertificates, setBankCertificates] = useState<any[]>([]);
+  const [selectedBankCertificate, setSelectedBankCertificate] = useState<any | null>(null);
+  const [isFetchingBankCertificates, setIsFetchingBankCertificates] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState<string | null>(null);
   const [connectionProgress, setConnectionProgress] = useState<string>('');
@@ -2536,6 +2541,51 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  // Fetch NH Bank certificates automatically when Corporate + Cert are selected
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      selectedBank?.id === 'nh' &&
+      credentials.accountType === 'corporate' &&
+      bankAuthMethod === 'certificate' &&
+      !isConnecting &&
+      bankCertificates.length === 0 &&
+      !isFetchingBankCertificates
+    ) {
+      (async () => {
+        setIsFetchingBankCertificates(true);
+        setConnectionProgress('인증서 목록을 불러오는 중...');
+        try {
+          const result = await window.electron.financeHub.fetchBankCertificates(selectedBank.id);
+          console.log('[FinanceHub] fetchBankCertificates result:', result);
+          if (!cancelled) {
+            if (result.success && result.certificates) {
+              setBankCertificates(result.certificates);
+            } else {
+              console.warn('[FinanceHub] Failed to fetch bank certificates:', result.error);
+            }
+          }
+        } catch (e) {
+          console.error('[FinanceHub] Error fetching bank certificates:', e);
+        } finally {
+          if (!cancelled) {
+            setIsFetchingBankCertificates(false);
+            setConnectionProgress('');
+          }
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBank?.id, credentials.accountType, bankAuthMethod, bankCertificates.length, isFetchingBankCertificates, isConnecting]);
+
+  // Reset certificates when bank or method changes
+  useEffect(() => {
+    setBankCertificates([]);
+    setSelectedBankCertificate(null);
+  }, [selectedBank?.id, credentials.accountType, bankAuthMethod]);
+
   const handleConnect = async () => {
     const corporateNativeCertBankIds = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh'] as const;
     const corporateNativeCertFlow =
@@ -2576,7 +2626,8 @@ const FinanceHub: React.FC = () => {
           setConnectionProgress('인증서 비밀번호 입력 중...');
           const result = await window.electron.financeHub.corporateCertComplete(
             bankId,
-            credentials.certificatePassword || ''
+            credentials.certificatePassword || '',
+            selectedBankCertificate?.certificateIndex
           );
           if (result.success && result.isLoggedIn) {
             setCorporateNativeCertSessionActive(false);
@@ -2776,6 +2827,8 @@ const FinanceHub: React.FC = () => {
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
     setConnectionProgress('');
+    setBankCertificates([]);
+    setSelectedBankCertificate(null);
   };
   const handleBackToList = () => {
     if (corporateNativeCertSessionActive && selectedBank?.id) {
@@ -2786,6 +2839,8 @@ const FinanceHub: React.FC = () => {
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
     setConnectionProgress('');
+    setBankCertificates([]);
+    setSelectedBankCertificate(null);
   };
 
   // ============================================
@@ -3752,23 +3807,64 @@ const FinanceHub: React.FC = () => {
                     {/* Credential Fields - Show after auth method is selected */}
                     {bankAuthMethod === 'certificate' && (
                       <>
-                        <div className="finance-hub__login-notice" style={{ marginTop: '20px' }}>
-                          <div className="finance-hub__notice-icon">{credentials.accountType === 'corporate' ? '🏢' : '👤'}</div>
-                          <div>
-                            <strong>{credentials.accountType === 'corporate' ? '법인' : '개인'} 인터넷뱅킹</strong>
-                            <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
-                            {selectedBank &&
-                              ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'].includes(selectedBank.id) &&
-                              credentials.accountType === 'corporate' && (
-                              <p style={{ marginTop: '8px', fontSize: '0.9em', opacity: 0.9 }}>
-                                먼저 아래에 공동인증서 비밀번호를 입력한 뒤 연결하세요. 인증서 창이 열리면 보통 <strong>마지막으로 사용한 인증서</strong>가 선택됩니다.
-                                (Windows + Arduino HID 필요)
-                              </p>
-                            )}
+                        {/* NH 전용 인증서 선택 단계 (홈택스와 유사한 흐름) */}
+                        {selectedBank?.id === 'nh' && bankCertificates.length > 0 && (
+                          <div className="finance-hub__login-fields" style={{ padding: 0, marginTop: '20px' }}>
+                            <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)', fontSize: '1.1rem' }}>
+                              사용할 인증서를 선택하세요
+                            </h3>
+                            <div className="finance-hub__certificate-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                              {bankCertificates.map((cert: any, index: number) => (
+                                <div
+                                  key={`nh-cert-${index}`}
+                                  className={`finance-hub__certificate-item ${selectedBankCertificate === cert ? 'finance-hub__certificate-item--selected' : ''}`}
+                                  onClick={() => setSelectedBankCertificate(cert)}
+                                >
+                                  <div className="finance-hub__certificate-icon">🔐</div>
+                                  <div className="finance-hub__certificate-info">
+                                    <h4>{cert.소유자명 || cert.display || `인증서 ${cert.certificateIndex ?? index + 1}`}</h4>
+                                    <div className="finance-hub__certificate-details">
+                                      {cert.용도 && <span>용도: {cert.용도}</span>}
+                                      {cert.발급기관 && <span>발급: {cert.발급기관}</span>}
+                                      {cert.만료일 && <span>만료: {cert.만료일}</span>}
+                                    </div>
+                                  </div>
+                                  {selectedBankCertificate === cert && (
+                                    <span className="finance-hub__certificate-check">✓</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
-                        <div className="finance-hub__input-group">
+                        {/* 기본 인증 안내 (인증서 목록이 없을 때만 표시) */}
+                        {!(selectedBank?.id === 'nh' && bankCertificates.length > 0) && (
+                          <div className="finance-hub__login-notice" style={{ marginTop: '20px' }}>
+                            <div className="finance-hub__notice-icon">{credentials.accountType === 'corporate' ? '🏢' : '👤'}</div>
+                            <div>
+                              <strong>{credentials.accountType === 'corporate' ? '법인' : '개인'} 인터넷뱅킹</strong>
+                              <p>공동인증서(구 공인인증서)를 사용하여 인증합니다.</p>
+                              {selectedBank &&
+                                ['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh'].includes(selectedBank.id) &&
+                                credentials.accountType === 'corporate' && (
+                                <p style={{ marginTop: '8px', fontSize: '0.9em', opacity: 0.9 }}>
+                                  먼저 아래에 공동인증서 비밀번호를 입력한 뒤 연결하세요. 인증서 창이 열리면 보통 <strong>마지막으로 사용한 인증서</strong>가 선택됩니다.
+                                  (Windows + Arduino HID 필요)
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {isFetchingBankCertificates && (
+                          <div className="finance-hub__connection-progress" style={{ marginTop: '16px' }}>
+                            <span className="finance-hub__spinner"></span>
+                            <span>인증서 목록을 불러오는 중...</span>
+                          </div>
+                        )}
+
+                        <div className="finance-hub__input-group" style={{ marginTop: '20px' }}>
                           <label>공동인증서 비밀번호</label>
                           <input
                             type="password"
@@ -3794,7 +3890,11 @@ const FinanceHub: React.FC = () => {
                         <button
                           className="finance-hub__btn finance-hub__btn--primary finance-hub__btn--full"
                           onClick={handleConnect}
-                          disabled={isConnecting || !credentials.certificatePassword}
+                          disabled={
+                            isConnecting || 
+                            !credentials.certificatePassword || 
+                            (bankCertificates.length > 0 && !selectedBankCertificate)
+                          }
                         >
                           {isConnecting ? (
                             <><span className="finance-hub__spinner"></span> 연결 중...</>

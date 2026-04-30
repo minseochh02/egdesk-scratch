@@ -141,6 +141,35 @@ class NHBankAutomator extends BaseBankAutomator {
     }
     const proxy = this.buildProxyOption(proxyUrl);
     try {
+      // 이미 페이지가 있고 ibz.nonghyup.com에 있다면 재사용 시도
+      if (this.page && !this.page.isClosed()) {
+        const url = this.page.url();
+        if (url.includes('ibz.nonghyup.com')) {
+          this.log('[NH Corporate] Reusing existing browser session...');
+          
+          // 이미 인증서 창이 떠 있는지 확인 (좀 더 넓은 조건으로 확인)
+          const certTableVisible = await this.page.evaluate(() => {
+            return document.querySelectorAll('tr.data').length > 0 || 
+                   document.body.innerText.includes('2025-08-15');
+          });
+          
+          if (certTableVisible) {
+            this.log('[NH Corporate] Cert table or target text visible. Scraping...');
+            const certList = await this.scrapeIniCertificateRows(this.page);
+            this._nhCorporateCertPhase = 'awaiting_password';
+            return {
+              success: true,
+              phase: 'awaiting_password',
+              certWindowName: 'NH INIpay Certificate (In-Browser)',
+              certificates: certList,
+              message: '기존 브라우저 세션을 재사용합니다. 인증서를 선택하고 비밀번호를 입력하세요.',
+            };
+          } else {
+            this.warn('[NH Corporate] Existing browser found but cert table not visible. Proceeding with normal navigation.');
+          }
+        }
+      }
+
       if (this.browser) {
         try { await this.browser.close(); } catch (e) {}
         this.browser = null;
@@ -156,8 +185,7 @@ class NHBankAutomator extends BaseBankAutomator {
           '--no-default-browser-check',
           '--disable-blink-features=AutomationControlled',
           '--no-first-run',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults',
+          '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks',
           '--allow-running-insecure-content',
           '--safebrowsing-disable-download-protection',
         ],
@@ -228,23 +256,12 @@ class NHBankAutomator extends BaseBankAutomator {
         });
       });
 
-      let targetIndex = 0;
-      if (certList.length > 1) {
-        let latestExpiry = '';
-        for (const cert of certList) {
-          if (cert.expiry > latestExpiry) {
-            latestExpiry = cert.expiry;
-            targetIndex = cert.index;
-          }
-        }
-        this.log(`[NH Corporate] Selecting cert with latest expiry: index=${targetIndex} expiry=${latestExpiry}`);
+      const activeCert = certList.find(c => c.active);
+      if (activeCert) {
+        this.log(`[NH Corporate] Current active cert: ${activeCert.text} (Expiry: ${activeCert.expiry})`);
+      } else {
+        this.log('[NH Corporate] No cert is currently marked active. Relying on default selection.');
       }
-
-      await this.page.evaluate((idx) => {
-        const rows = document.querySelectorAll('#certificate_signature_area tr.data');
-        if (rows[idx]) rows[idx].click();
-      }, targetIndex);
-      await this.page.waitForTimeout(1000);
 
       this._nhCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
@@ -252,7 +269,7 @@ class NHBankAutomator extends BaseBankAutomator {
         success: true,
         phase: 'awaiting_password',
         certWindowName: 'NH INIpay Certificate (In-Browser)',
-        message: '인증서 창이 열렸습니다.',
+        message: '인증서 창이 열렸습니다. 필요하면 인증서 목록에서 인증서를 바꿀 수 있습니다.',
       };
 
     } catch (error) {
@@ -262,8 +279,129 @@ class NHBankAutomator extends BaseBankAutomator {
     }
   }
 
+  /**
+   * Reads all rows from the INIpay cert table.
+   * @param {import('playwright-core').Page} page
+   * @returns {Promise<Array>}
+   */
+  async scrapeIniCertificateRows(page) {
+    return page.evaluate(() => {
+      let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+      if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+      
+      return Array.from(rows).map((row, index) => {
+        const cells = Array.from(row.querySelectorAll('td')).map((td) =>
+          (td.textContent || '').replace(/\s+/g, ' ').trim()
+        );
+        const fullText = (row.textContent || '').replace(/\s+/g, ' ').trim();
+        
+        // 상세 정보 추출 (로그 분석 결과 기반 매핑)
+        // 0: 선택됨, 1: 정상, 2: 용도, 3: 소유자명, 4: 만료일, 5: 발급기관
+        const purpose = cells[2] || '';
+        const owner = cells[3] || '';
+        const issuer = cells[5] || cells[cells.length - 1] || '';
+        
+        let expiry = cells[4] || '';
+        if (!/\d{4}-\d{2}-\d{2}/.test(expiry)) {
+          const expiryMatch = fullText.match(/(\d{4}-\d{2}-\d{2})/);
+          if (expiryMatch) expiry = expiryMatch[1];
+        }
+
+        const display = `${owner} (${purpose})`.trim() || fullText || `인증서 ${index + 1}`;
+
+        return {
+          index,
+          certificateIndex: index + 1,
+          cells,
+          display,
+          fullText,
+          expiry,
+          소유자명: owner,
+          용도: purpose,
+          발급기관: issuer,
+          만료일: expiry,
+          className: row.className,
+          id: row.id
+        };
+      });
+    });
+  }
+
+  /**
+   * One-shot method to fetch certificates for the UI without starting a full login flow.
+   */
+  async fetchCertificates(proxyUrl) {
+    const proxy = this.buildProxyOption(proxyUrl);
+    try {
+      this.log('[NH] Fetching certificate list for UI...');
+      
+      // 이미 열려있는 브라우저가 있다면 닫고 새로 시작 (클린 상태 보장)
+      if (this.browser) {
+        try { await this.browser.close(); } catch (e) {}
+        this.browser = null;
+      }
+
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true,
+        headless: false,
+      });
+      this.browser = browser;
+      this.context = context;
+      const page = context.pages()[0] || await context.newPage();
+      this.page = page;
+
+      try {
+        await page.goto('https://ibz.nonghyup.com/', { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        // 로그인 버튼 클릭
+        try {
+          await page.locator('.login').first().click({ timeout: 5000 });
+        } catch (e) {
+          await page.locator('a:has-text("로그인")').first().click({ timeout: 5000 });
+        }
+        await page.waitForTimeout(2000);
+
+        // 공동인증서 버튼 클릭
+        try {
+          await page.locator('span:has-text("공동인증서 로그인")').click({ timeout: 5000 });
+        } catch (e) {
+          await page.locator('a[onclick*="공동인증서"]').first().click({ timeout: 5000 });
+        }
+        
+        // 과거 로직의 정교한 대기 시간 적용
+        await page.waitForTimeout(1775);
+
+        const rowSel = 'tr.data';
+        try {
+          await page.locator(rowSel).first().waitFor({ state: 'visible', timeout: 15000 });
+        } catch (e) {
+          this.warn('Cert table not visible in time:', e.message);
+        }
+        await page.waitForTimeout(2000);
+
+        const certificates = await this.scrapeIniCertificateRows(page);
+        
+        if (certificates.length === 0) {
+          this.error('[NH] Scraped 0 certificates. HTML structure might have changed.');
+          return { success: false, error: '인증서 목록을 찾을 수 없습니다.' };
+        }
+
+        this.log(`[NH] Successfully scraped ${certificates.length} certificates.`);
+        return { success: true, certificates };
+      } catch (err) {
+        this.error('[NH] Error during fetchCertificates page interaction:', err.message);
+        await browser.close();
+        this.browser = null;
+        throw err;
+      }
+    } catch (error) {
+      this.error('[NH] fetchCertificates failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword } = creds || {};
+    const { certificatePassword, certificateIndex } = creds || {};
     if (this._nhCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -285,6 +423,22 @@ class NHBankAutomator extends BaseBankAutomator {
         log: (m) => this.log(m),
       });
       await this._arduinoHid.connect();
+
+      // UI에서 인증서를 선택한 경우 해당 인증서 클릭
+      if (certificateIndex != null) {
+        this.log(`[NH Corporate] Selecting certificate at index ${certificateIndex}...`);
+        await this.page.evaluate((idx) => {
+          let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+          if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+          const target = rows[idx - 1]; // 1-based to 0-based
+          if (target) {
+            target.click();
+            return true;
+          }
+          return false;
+        }, certificateIndex);
+        await this.page.waitForTimeout(1000);
+      }
 
       this.log('[NH Corporate] Tabbing to password input...');
       let focused = '';
@@ -367,7 +521,9 @@ class NHBankAutomator extends BaseBankAutomator {
     try {
       // Step 1: Create browser
       this.log('Starting NH Bank automation...');
-      const { browser, context } = await this.createBrowser(proxy);
+      const { browser, context } = await this.createBrowser(proxy, {
+        useKbScriptPlaywrightProfile: true
+      });
       this.browser = browser;
       this.context = context;
 

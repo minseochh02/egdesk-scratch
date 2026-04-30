@@ -28,7 +28,7 @@ const NH_CONFIG = {
   
   // Chrome settings
   headless: false,
-  chromeProfile: 'Default',
+  chromeProfile: null,
   
   // XPath selectors
   xpaths: {

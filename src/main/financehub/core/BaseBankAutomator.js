@@ -289,11 +289,8 @@ class BaseBankAutomator {
       : [];
 
     const args = [
-      '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults',
       '--allow-running-insecure-content',
-      '--disable-features=PrivateNetworkAccessSendPreflights',
-      '--disable-features=PrivateNetworkAccessRespectPreflightResults',
       ...extraChromeArgs,
     ];
 

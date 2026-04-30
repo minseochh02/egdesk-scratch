@@ -250,15 +250,14 @@ class WooriBankAutomator extends BaseBankAutomator {
       await this._wooriClickLegacyCertButton();
       await this.page.waitForTimeout(3000);
 
-      await this._wooriClickCertTableCell();
-      await this.page.waitForTimeout(2000);
+      this.log('[WOORI] Cert dialog is open. Relying on default/active selection.');
 
       this._wooriCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
       return {
         success: true,
         phase: 'awaiting_password',
-        message: '인증서를 선택했습니다. 비밀번호 입력 후 연결을 완료하세요.',
+        message: '인증서 창이 열렸습니다. 필요하면 인증서 목록에서 다른 인증서를 선택할 수 있습니다.',
       };
     } catch (error) {
       this.error('prepareCorporateCertificateLogin (woori) failed:', error.message);
