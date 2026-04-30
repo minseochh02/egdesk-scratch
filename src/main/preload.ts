@@ -2258,8 +2258,8 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:fetch-bank-certificates', { bankId, proxyUrl }),
     corporateCertPrepare: (bankId: string, proxyUrl?: string) =>
       ipcRenderer.invoke('finance-hub:corporate-cert-prepare', { bankId, proxyUrl }),
-    corporateCertComplete: (bankId: string, certificatePassword: string) =>
-      ipcRenderer.invoke('finance-hub:corporate-cert-complete', { bankId, certificatePassword }),
+    corporateCertComplete: (bankId: string, certificatePassword: string, certificateIndex?: number) =>
+      ipcRenderer.invoke('finance-hub:corporate-cert-complete', { bankId, certificatePassword, certificateIndex }),
     corporateCertCancel: (bankId: string) =>
       ipcRenderer.invoke('finance-hub:corporate-cert-cancel', { bankId }),
     shinhanCorporateCertPrepare: (proxyUrl?: string) =>

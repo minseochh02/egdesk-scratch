@@ -768,8 +768,48 @@ const createWindow = async () => {
 
       ipcMain.handle(
         'finance-hub:fetch-bank-certificates',
-        async (_event, { bankId: _bankId, proxyUrl: _proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
-          return { success: false, error: '인증서 목록 조회를 지원하지 않습니다.' };
+        async (_event, { bankId, proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
+          const id = String(bankId || '').toLowerCase();
+          if (id !== 'nh') {
+            return { success: false, error: '인증서 목록 조회를 지원하지 않는 은행입니다.' };
+          }
+          
+          let automator = activeAutomators.get(id);
+          // fetchCertificates를 위해 새로 생성하거나 기존 것 사용 (기존 것이 있다면 정리 후 새로 생성)
+          if (automator && typeof automator.cleanup === 'function') {
+            try {
+              await automator.cleanup(false);
+            } catch (e) {
+              console.warn('[FINANCE-HUB] fetch-bank-certificates: cleanup existing automator', e);
+            }
+            activeAutomators.delete(id);
+          }
+          
+          const { createAutomator } = require('./financehub');
+          automator = createAutomator(id, { headless: false });
+          
+          try {
+            if (typeof automator.fetchCertificates !== 'function') {
+              await automator.cleanup(false);
+              return { success: false, error: '인증서 목록 조회를 지원하지 않습니다.' };
+            }
+            const result = await automator.fetchCertificates(proxyUrl);
+            console.log(`[FINANCE-HUB] fetch-bank-certificates result for ${bankId}: success=${result.success}, certCount=${result.certificates?.length || 0}`);
+            if (result.success) {
+              // 성공하면 activeAutomators에 저장하여 브라우저 유지
+              activeAutomators.set(id, automator);
+            } else {
+              await automator.cleanup(false);
+            }
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] fetch-bank-certificates failed:', error);
+            if (automator) await automator.cleanup(false);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
         }
       );
 
@@ -808,7 +848,7 @@ const createWindow = async () => {
         'finance-hub:corporate-cert-complete',
         async (
           _event,
-          { bankId, certificatePassword }: { bankId?: string; certificatePassword: string }
+          { bankId, certificatePassword, certificateIndex }: { bankId?: string; certificatePassword: string; certificateIndex?: number }
         ) => {
           try {
             const id = String(bankId || '').toLowerCase();
@@ -816,7 +856,7 @@ const createWindow = async () => {
             if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
               return { success: false, error: '활성 세션이 없습니다. 처음부터 다시 시도하세요.' };
             }
-            return await automator.completeCorporateCertificateLogin({ certificatePassword });
+            return await automator.completeCorporateCertificateLogin({ certificatePassword, certificateIndex });
           } catch (error) {
             console.error('[FINANCE-HUB] corporate-cert-complete failed:', error);
             return { success: false, error: error instanceof Error ? error.message : String(error) };
