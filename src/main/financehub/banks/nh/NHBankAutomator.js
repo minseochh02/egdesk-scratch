@@ -388,7 +388,10 @@ class NHBankAutomator extends BaseBankAutomator {
         }
 
         this.log(`[NH] Successfully scraped ${certificates.length} certificates.`);
-        return { success: true, certificates };
+        
+        // Ensure the certificates are fully serializable plain objects
+        const serializableCerts = JSON.parse(JSON.stringify(certificates));
+        return { success: true, certificates: serializableCerts };
       } catch (err) {
         this.error('[NH] Error during fetchCertificates page interaction:', err.message);
         await browser.close();
