@@ -407,7 +407,7 @@ class NHBankAutomator extends BaseBankAutomator {
     }
   }
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword, certificateIndex, xpath } = creds || {};
+    let { certificatePassword, certificateIndex, xpath } = creds || {};
     if (this._nhCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -430,21 +430,40 @@ class NHBankAutomator extends BaseBankAutomator {
       });
       await this._arduinoHid.connect();
 
-      // UI에서 인증서를 선택한 경우 해당 인증서 클릭
-      if (certificateIndex != null) {
+      // If no explicit cert selected (e.g. background sync), auto-select latest
+      if (certificateIndex == null && !xpath) {
+        this.log('[NH Corporate] No specific certificate provided. Auto-selecting latest expiry...');
+        const certsResult = await this.scrapeIniCertificateRows(this.page);
+        if (certsResult && certsResult.length > 0) {
+          let latestExpiry = '';
+          certsResult.forEach(c => {
+            if (c.expiry > latestExpiry) {
+              latestExpiry = c.expiry;
+              certificateIndex = c.certificateIndex;
+              xpath = c.xpath;
+            }
+          });
+          this.log(`[NH Corporate] Auto-selected cert with expiry: ${latestExpiry} (Index: ${certificateIndex})`);
+        } else {
+          this.log('[NH Corporate] Warning: Could not scrape certificates for auto-selection.');
+        }
+      }
+
+      // UI에서 인증서를 선택한 경우 또는 자동 선택된 경우 해당 인증서 클릭
+      if (certificateIndex != null || xpath) {
         this.log(`[NH Corporate] Attempting to select certificate (Index: ${certificateIndex}, XPath: ${xpath})...`);
         const clickResult = await this.page.evaluate(({ idx, xp }) => {
-          let target: HTMLElement | null = null;
+          let target = null;
           
           if (xp) {
             const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-            target = result.singleNodeValue as HTMLElement;
+            target = result.singleNodeValue;
           }
 
           if (!target && idx != null) {
             let rows = document.querySelectorAll('#certificate_signature_area tr.data');
             if (rows.length === 0) rows = document.querySelectorAll('tr.data');
-            target = rows[idx - 1] as HTMLElement;
+            target = rows[idx - 1];
           }
 
           if (target) {
@@ -520,9 +539,15 @@ class NHBankAutomator extends BaseBankAutomator {
       this.isLoggedIn = true;
       this._nhCorporateCertPhase = 'completed';
 
+      // Automatically fetch accounts after navigation
+      this.log('[NH Corporate] Fetching accounts...');
+      const accounts = await this.getAccounts();
+
       return {
         success: true,
-        message: '로그인 및 거래내역 메뉴 진입 완료',
+        isLoggedIn: true,
+        accounts,
+        message: '로그인 및 계좌 목록 조회 완료',
       };
     } catch (error) {
       this.error('completeCorporateCertificateLogin (nh) failed:', error.message);
@@ -546,9 +571,42 @@ class NHBankAutomator extends BaseBankAutomator {
    * @returns {Promise<Object>} Automation result
    */
   async login(credentials, proxyUrl) {
-    const { userId, password } = credentials;
-    const proxy = this.buildProxyOption(proxyUrl);
+    const { userId, password, accountType, certificatePassword } = credentials;
+    
+    // If this is a corporate account, use the certificate login flow
+    if (accountType === 'corporate') {
+      this.log('[NH] Detected corporate account, performing certificate login...');
+      
+      // 1. Prepare (open browser, go to cert window)
+      const prep = await this.prepareCorporateCertificateLogin(proxyUrl);
+      if (!prep.success) return prep;
 
+      // 2. Fetch certificates and select the best one (latest expiry)
+      const certsResult = await this.scrapeIniCertificateRows(this.page);
+      if (certsResult.length === 0) {
+        return { success: false, error: '인증서를 찾을 수 없습니다.' };
+      }
+
+      let targetIndex = 1; // Default to first
+      let latestExpiry = '';
+      certsResult.forEach(c => {
+        if (c.expiry > latestExpiry) {
+          latestExpiry = c.expiry;
+          targetIndex = c.certificateIndex;
+        }
+      });
+      this.log(`[NH] Automatically selected cert with latest expiry: ${latestExpiry} (Index: ${targetIndex})`);
+
+      // 3. Complete login
+      const result = await this.completeCorporateCertificateLogin({
+        certificatePassword: certificatePassword || password,
+        certificateIndex: targetIndex
+      });
+
+      return result;
+    }
+
+    const proxy = this.buildProxyOption(proxyUrl);
     try {
       // Step 1: Create browser
       this.log('Starting NH Bank automation...');
@@ -785,45 +843,78 @@ class NHBankAutomator extends BaseBankAutomator {
    * @returns {Promise<Array>} Array of account information
    */
   async getAccounts() {
-    if (!this.page) throw new Error('Browser page not initialized');
+    console.log('[NH DEBUG] getAccounts() called');
+    if (!this.page) {
+      this.error('[NH] getAccounts called but this.page is null');
+      throw new Error('Browser page not initialized');
+    }
 
     try {
-      // Don't navigate - we should already be on the inquiry page from menu clicks
+      this.log(`[NH] Current URL at getAccounts start: ${this.page.url()}`);
       this.log('Checking for accounts on current page...');
-      await this.page.waitForTimeout(1000);
+      
+      // Wait a bit more for the page to stabilize
+      await this.page.waitForTimeout(3000);
+
+      // Aggressive search for any select element that might be the account dropdown
+      const allSelects = await this.page.evaluate(() => {
+        const selects = Array.from(document.querySelectorAll('select')).map(s => ({
+          id: s.id,
+          name: s.name,
+          className: s.className,
+          optionCount: s.options.length,
+          firstOption: s.options[0]?.textContent?.trim() || '(none)',
+          html: s.outerHTML.substring(0, 200)
+        }));
+        return selects;
+      });
+      this.log(`[NH Debug] Found ${allSelects.length} select elements on page: ${JSON.stringify(allSelects, null, 2)}`);
 
       // First try to extract from dropdown
       let dropdownAccounts = [];
       try {
-        const accountDropdown = this.page.locator(`xpath=${this.config.xpaths.accountDropdown}`);
-        if (await accountDropdown.isVisible({ timeout: 3000 })) {
-          this.log('Found account dropdown, extracting options...');
-          dropdownAccounts = await accountDropdown.locator('option').evaluateAll(options => {
-            return options
-              .slice(1) // Skip first option (default placeholder)
-              .filter(opt => opt.value && opt.value !== '') // Exclude empty options
-              .map(opt => {
-                const text = opt.textContent.trim();
-                // Parse format: "302-1429-5472-31 NH사장님우대통장"
-                const match = text.match(/^(\d{3}-\d{4}-\d{4}-\d{2})\s*(.*)$/);
-                return {
-                  accountNumber: match ? match[1] : text,
-                  accountName: match ? match[2] : 'NH 계좌',
-                  value: opt.value,
-                  selected: opt.selected
-                };
+        // Broad search for account dropdowns
+        const accountDropdown = this.page.locator('select#drw_acno, select[id*="Acn"], select[id*="acn"], select#sel_account, select#accountNumber, select[title*="계좌"], select[title*="번호"]');
+        const count = await accountDropdown.count();
+        this.log(`Found ${count} potential account dropdowns via locator`);
+
+        if (count > 0) {
+          // Try each found dropdown until one yields accounts
+          for (let i = 0; i < count; i++) {
+            const targetDropdown = accountDropdown.nth(i);
+            if (await targetDropdown.isVisible({ timeout: 2000 })) {
+              this.log(`Testing dropdown ${i} (ID: ${await targetDropdown.getAttribute('id')})...`);
+              const extracted = await targetDropdown.locator('option').evaluateAll(options => {
+                return options
+                  .filter(opt => opt.value && opt.value !== '' && !opt.textContent.includes('선택'))
+                  .map(opt => {
+                    const text = opt.textContent.trim();
+                    const match = text.match(/([\d-]{10,22})/);
+                    return {
+                      accountNumber: match ? match[1] : text,
+                      accountName: text.replace(match ? match[1] : '', '').replace(/[\[\]\(\)]/g, '').trim() || 'NH 계좌',
+                      value: opt.value,
+                      selected: opt.selected
+                    };
+                  });
               });
-          });
-          this.log(`Found ${dropdownAccounts.length} accounts in dropdown`);
+              
+              if (extracted.length > 0) {
+                this.log(`✅ Successfully extracted ${extracted.length} accounts from dropdown ${i}`);
+                dropdownAccounts = extracted;
+                break;
+              }
+            }
+          }
         }
       } catch (dropdownError) {
         this.warn('Failed to extract from dropdown:', dropdownError.message);
       }
 
-      // If dropdown extraction succeeded, return those results
       if (dropdownAccounts.length > 0) {
         return dropdownAccounts.map(acc => ({
           accountNumber: acc.accountNumber,
+          accountNumberRaw: acc.value,
           accountName: acc.accountName || 'NH 계좌',
           bankId: 'nh',
           balance: 0,
@@ -840,9 +931,10 @@ class NHBankAutomator extends BaseBankAutomator {
         // Look for account dropdowns, lists, or tables
         // NH Bank account pattern: typically 3-2-6 or 3-3-6 digits
         const accountPatterns = [
+          /(\d{3}-\d{2,4}-\d{4,6}-\d{2})/g,
           /(\d{3}-\d{2}-\d{6})/g,
           /(\d{3}-\d{3}-\d{6})/g,
-          /(\d{11,14})/g,
+          /(\d{11,18})/g,
         ];
         
         // Search all text nodes
@@ -861,20 +953,16 @@ class NHBankAutomator extends BaseBankAutomator {
           for (const pattern of accountPatterns) {
             const matches = text.matchAll(pattern);
             for (const match of matches) {
-              const accountNum = match[1];
-              const normalized = accountNum.replace(/-/g, '');
-              
-              if (normalized.length < 11 || seenAccounts.has(normalized)) continue;
-              seenAccounts.add(normalized);
-              
-              results.push({
-                accountNumber: accountNum,
-                accountName: '농협은행 계좌',
-                bankId: 'nh',
-                balance: 0,
-                currency: 'KRW',
-                lastUpdated: new Date().toISOString()
-              });
+              const accNum = match[0];
+              if (!seenAccounts.has(accNum)) {
+                seenAccounts.add(accNum);
+                results.push({
+                  accountNumber: accNum,
+                  accountName: 'NH 계좌 (검색됨)',
+                  bankId: 'nh',
+                  balance: 0
+                });
+              }
             }
           }
         }
@@ -1099,61 +1187,142 @@ class NHBankAutomator extends BaseBankAutomator {
     try {
       this.log(`Fetching transactions for account ${accountNumber}...`);
 
-      // Navigate to inquiry page if not already there
-      if (!this.page.url().includes('IPAIP0071I')) {
+      // Navigate to inquiry page if not already there (only if NOT on corporate banking)
+      const currentUrl = this.page.url();
+      const isCorporate = currentUrl.includes('ibz.nonghyup.com');
+      
+      if (!isCorporate && !currentUrl.includes('IPAIP0071I')) {
+        this.log('Navigating to personal banking inquiry page...');
         await this.page.goto(this.config.xpaths.inquiryUrl, { waitUntil: 'domcontentloaded' });
         await this.page.waitForTimeout(3000);
+      } else if (isCorporate) {
+        this.log('Already in corporate banking session. Skipping personal inquiry navigation.');
       }
 
       // Select account if dropdown exists
       try {
-        const accountDropdown = this.page.locator(`xpath=${this.config.xpaths.accountDropdown}`);
-        if (await accountDropdown.isVisible({ timeout: 3000 })) {
-          await accountDropdown.selectOption({ label: new RegExp(accountNumber) });
-          await this.page.waitForTimeout(1000);
+        const accountDropdown = this.page.locator('select#drw_acno, select[id*="Acn"], select[id*="acn"], select#sel_account, select#accountNumber, select[title*="계좌"], select[title*="번호"]');
+        const count = await accountDropdown.count();
+        if (count > 0) {
+          for (let i = 0; i < count; i++) {
+            const dropdown = accountDropdown.nth(i);
+            if (await dropdown.isVisible({ timeout: 2000 })) {
+              this.log(`Attempting to select account ${accountNumber} in dropdown ${i}...`);
+              // Try to find the exact option value containing the account number
+              const options = await dropdown.locator('option').evaluateAll(opts => 
+                opts.map(o => ({ value: o.value, text: o.textContent }))
+              );
+              
+              // Find matching option (remove hyphens to compare purely numbers if needed)
+              const cleanTarget = accountNumber.replace(/-/g, '');
+              const matchedOpt = options.find(o => 
+                o.text.includes(accountNumber) || 
+                o.text.replace(/-/g, '').includes(cleanTarget) ||
+                o.value.replace(/-/g, '').includes(cleanTarget)
+              );
+              
+              if (matchedOpt && matchedOpt.value) {
+                await dropdown.selectOption({ value: matchedOpt.value });
+                this.log(`✅ Selected account option: ${matchedOpt.text}`);
+                await this.page.waitForTimeout(1000);
+                break;
+              } else {
+                // Fallback to label match
+                await dropdown.selectOption({ label: new RegExp(accountNumber) }).catch(() => {});
+                await this.page.waitForTimeout(1000);
+                break;
+              }
+            }
+          }
         }
       } catch (e) {
-        this.log('No account dropdown found, continuing...');
+        this.log('No account dropdown found or failed to select, continuing...');
       }
 
-      // Set date range using dropdown selects (click to open, then click option)
-      if (startDate) {
-        this.log('Setting start date:', startDate);
-        const startDateClean = startDate.replace(/-/g, '');
-        const startYear = startDateClean.substring(0, 4);
-        const startMonth = startDateClean.substring(4, 6);
-        const startDay = startDateClean.substring(6, 8);
-        
-        // Click year dropdown and select year
-        await this.page.click(`xpath=${this.config.xpaths.startYearSelect}`);
-        await this.page.waitForTimeout(300);
-        // Try to select the option using selectOption after opening
-        await this.page.selectOption(`xpath=${this.config.xpaths.startYearSelect}`, startYear);
-        // Click outside to close dropdown
-        await this.page.click('body');
-        await this.page.waitForTimeout(300);
-        
-        // Click month dropdown and select month (keep leading zero)
-        await this.page.click(`xpath=${this.config.xpaths.startMonthSelect}`);
-        await this.page.waitForTimeout(300);
-        await this.page.selectOption(`xpath=${this.config.xpaths.startMonthSelect}`, startMonth);
-        await this.page.click('body');
-        await this.page.waitForTimeout(300);
-        
-        // Click day dropdown and select day (keep leading zero)
-        await this.page.click(`xpath=${this.config.xpaths.startDaySelect}`);
-        await this.page.waitForTimeout(300);
-        await this.page.selectOption(`xpath=${this.config.xpaths.startDaySelect}`, startDay);
-        await this.page.click('body');
+      // Set date range using the exact proven method from nhbank.spec.js (Button clicks only)
+      this.log(`[NH Corporate] Setting date range...`);
+      let dateSetSuccess = false;
+
+      // Try Corporate Banking quick buttons
+      try {
+        await this.page.locator('a:has-text("3개월")').click({ timeout: 5000 });
+        this.log('✅ "3개월" button clicked.');
+        await this.page.waitForTimeout(1000);
+        dateSetSuccess = true;
+      } catch (e) {
+        this.log('⚠️ "3개월" button not found, continuing with default date...');
+      }
+
+      // If quick button failed and we really need a specific date, fallback to dropdowns (Personal banking style)
+      if (!dateSetSuccess && startDate) {
+        this.log('Trying manual select dropdowns...');
+        try {
+          const startDateClean = startDate.replace(/-/g, '');
+          const startYear = startDateClean.substring(0, 4);
+          const startMonth = startDateClean.substring(4, 6);
+          const startDay = startDateClean.substring(6, 8);
+          
+          if (await this.page.locator(`xpath=${this.config.xpaths.startYearSelect}`).isVisible({timeout: 1000})) {
+            await this.page.click(`xpath=${this.config.xpaths.startYearSelect}`);
+            await this.page.waitForTimeout(300);
+            await this.page.selectOption(`xpath=${this.config.xpaths.startYearSelect}`, startYear);
+            await this.page.click('body');
+            await this.page.waitForTimeout(300);
+            
+            await this.page.click(`xpath=${this.config.xpaths.startMonthSelect}`);
+            await this.page.waitForTimeout(300);
+            await this.page.selectOption(`xpath=${this.config.xpaths.startMonthSelect}`, startMonth);
+            await this.page.click('body');
+            await this.page.waitForTimeout(300);
+            
+            await this.page.click(`xpath=${this.config.xpaths.startDaySelect}`);
+            await this.page.waitForTimeout(300);
+            await this.page.selectOption(`xpath=${this.config.xpaths.startDaySelect}`, startDay);
+            await this.page.click('body');
+            await this.page.waitForTimeout(500);
+          } else {
+            this.log('Date select dropdowns not visible, relying on default page date range.');
+          }
+        } catch (err) {
+          this.log('Failed to set manual date, continuing with default:', err.message);
+        }
+      }
+
+      // Click inquiry button (Exact match to nhbank.spec.js)
+      this.log('Clicking 조회...');
+      try {
+        await this.page.locator('a.ibz-btn.size-lg.fill:text-is("조회")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await this.clickButton(this.page, this.config.xpaths.inquiryButton, '조회');
+      }
+      await this.page.waitForTimeout(3000);
+
+      // Handle potential date error popups (like "계좌 개설일보다 과거를 선택할 수 없습니다" from nhbank.spec.js)
+      const dateError = await this.page.evaluate(() => {
+        const body = document.body.textContent || '';
+        return body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') ||
+               body.includes('조회시작일이 계좌개설일');
+      });
+
+      if (dateError) {
+        this.log('⚠️ Date error detected (Start date before open date). Retrying with 1개월...');
+        // Click OK on the alert
+        try {
+          await this.page.locator('button:has-text("확인")').first().click({ timeout: 3000 });
+        } catch(e) {}
+        await this.page.waitForTimeout(1000);
+
+        // Try clicking 1 month button
+        try {
+          await this.page.locator('a:has-text("1개월")').click({ timeout: 5000 });
+        } catch(e) {}
         await this.page.waitForTimeout(500);
+
+        // Click Inquiry again
+        await this.page.locator('a.ibz-btn.size-lg.fill:text-is("조회")').first().click({ timeout: 5000 }).catch(() => {});
+        await this.page.waitForTimeout(3000);
+        this.log('✅ Retried with 1개월.');
       }
-
-      // Intentionally do not set end date selectors for NH.
-      // Keep NH page default end date (typically "today") and only control the start date.
-
-      // Click inquiry button
-      this.log('Clicking inquiry button...');
-      await this.clickButton(this.page, this.config.xpaths.inquiryButton, '조회');
 
       // Wait for results
       await this.page.waitForTimeout(3000);

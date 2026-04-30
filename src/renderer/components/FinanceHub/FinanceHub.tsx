@@ -712,7 +712,7 @@ const FinanceHub: React.FC = () => {
   };
 
   /** Matches main process CORPORATE_NATIVE_CERT_BANK_IDS + Excel download automators (scripts/bank-excel-download-automation). */
-  const CORPORATE_NATIVE_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'];
+  const CORPORATE_NATIVE_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh'];
 
   /**
    * Restores Playwright automator session from saved credentials (동기화 / 재연결 공통).
@@ -744,7 +744,7 @@ const FinanceHub: React.FC = () => {
         alert(`인증 준비 실패: ${prep.error || '알 수 없는 오류'}`);
         return false;
       }
-      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword);
+      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword, cred.certificateIndex, cred.certificateXPath);
       if (!done.success || !done.isLoggedIn) {
         await window.electron.financeHub.corporateCertCancel(bankId);
         alert(`기업 뱅킹 재연결 실패: ${done.error || '알 수 없는 오류'}`);
@@ -2634,7 +2634,14 @@ const FinanceHub: React.FC = () => {
           if (result.success && result.isLoggedIn) {
             setCorporateNativeCertSessionActive(false);
             setConnectionProgress('계좌 정보를 불러왔습니다!');
-            if (saveCredentials) await window.electron.financeHub.saveCredentials(bankId, { ...credentials, bankId });
+            if (saveCredentials) {
+              await window.electron.financeHub.saveCredentials(bankId, { 
+                ...credentials, 
+                bankId,
+                certificateIndex: selectedBankCertificate?.certificateIndex,
+                certificateXPath: selectedBankCertificate?.xpath
+              });
+            }
 
             const newConnection: ConnectedBank = {
               bankId,
