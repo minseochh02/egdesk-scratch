@@ -786,7 +786,8 @@ const createWindow = async () => {
           }
           
           const { createAutomator } = require('./financehub');
-          automator = createAutomator(id, { headless: false });
+          const arduinoPort = await getArduinoPort();
+          automator = createAutomator(id, { headless: false, arduinoPort });
           
           try {
             if (typeof automator.fetchCertificates !== 'function') {
@@ -848,7 +849,7 @@ const createWindow = async () => {
         'finance-hub:corporate-cert-complete',
         async (
           _event,
-          { bankId, certificatePassword, certificateIndex }: { bankId?: string; certificatePassword: string; certificateIndex?: number }
+          { bankId, certificatePassword, certificateIndex, xpath }: { bankId?: string; certificatePassword: string; certificateIndex?: number; xpath?: string }
         ) => {
           try {
             const id = String(bankId || '').toLowerCase();
@@ -856,7 +857,7 @@ const createWindow = async () => {
             if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
               return { success: false, error: '활성 세션이 없습니다. 처음부터 다시 시도하세요.' };
             }
-            return await automator.completeCorporateCertificateLogin({ certificatePassword, certificateIndex });
+            return await automator.completeCorporateCertificateLogin({ certificatePassword, certificateIndex, xpath });
           } catch (error) {
             console.error('[FINANCE-HUB] corporate-cert-complete failed:', error);
             return { success: false, error: error instanceof Error ? error.message : String(error) };
