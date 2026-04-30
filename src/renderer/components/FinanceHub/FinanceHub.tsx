@@ -2560,16 +2560,17 @@ const FinanceHub: React.FC = () => {
           console.log('[FinanceHub] fetchBankCertificates result:', result);
           if (!cancelled) {
             if (result.success && result.certificates) {
+              console.log(`[FinanceHub] Successfully received ${result.certificates.length} certificates`);
               setBankCertificates(result.certificates);
             } else {
-              console.warn('[FinanceHub] Failed to fetch bank certificates:', result.error);
+              console.warn('[FinanceHub] Failed to fetch bank certificates or no certificates in result:', result);
             }
           }
         } catch (e) {
           console.error('[FinanceHub] Error fetching bank certificates:', e);
         } finally {
+          setIsFetchingBankCertificates(false);
           if (!cancelled) {
-            setIsFetchingBankCertificates(false);
             setConnectionProgress('');
           }
         }
@@ -2578,7 +2579,7 @@ const FinanceHub: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedBank?.id, credentials.accountType, bankAuthMethod, bankCertificates.length, isFetchingBankCertificates, isConnecting]);
+  }, [selectedBank?.id, credentials.accountType, bankAuthMethod, bankCertificates.length, isConnecting]);
 
   // Reset certificates when bank or method changes
   useEffect(() => {
