@@ -2628,7 +2628,8 @@ const FinanceHub: React.FC = () => {
           const result = await window.electron.financeHub.corporateCertComplete(
             bankId,
             credentials.certificatePassword || '',
-            selectedBankCertificate?.certificateIndex
+            selectedBankCertificate?.certificateIndex,
+            selectedBankCertificate?.xpath
           );
           if (result.success && result.isLoggedIn) {
             setCorporateNativeCertSessionActive(false);

@@ -31,6 +31,8 @@ class NHBankAutomator extends BaseBankAutomator {
     super(config);
 
     this.outputDir = options.outputDir || this.getSafeOutputDir('nh');
+    this.arduinoPort = options.arduinoPort;
+    this.arduinoBaudRate = options.arduinoBaudRate || 9600;
   }
 
   // ============================================================================
@@ -312,6 +314,7 @@ class NHBankAutomator extends BaseBankAutomator {
         return {
           index,
           certificateIndex: index + 1,
+          xpath: `//*[@id="certificate_signature_area"]//tr[contains(@class, "data")][${index + 1}]`,
           cells,
           display,
           fullText,
@@ -404,7 +407,7 @@ class NHBankAutomator extends BaseBankAutomator {
     }
   }
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword, certificateIndex } = creds || {};
+    const { certificatePassword, certificateIndex, xpath } = creds || {};
     if (this._nhCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -429,18 +432,43 @@ class NHBankAutomator extends BaseBankAutomator {
 
       // UI에서 인증서를 선택한 경우 해당 인증서 클릭
       if (certificateIndex != null) {
-        this.log(`[NH Corporate] Selecting certificate at index ${certificateIndex}...`);
-        await this.page.evaluate((idx) => {
-          let rows = document.querySelectorAll('#certificate_signature_area tr.data');
-          if (rows.length === 0) rows = document.querySelectorAll('tr.data');
-          const target = rows[idx - 1]; // 1-based to 0-based
-          if (target) {
-            target.click();
-            return true;
+        this.log(`[NH Corporate] Attempting to select certificate (Index: ${certificateIndex}, XPath: ${xpath})...`);
+        const clickResult = await this.page.evaluate(({ idx, xp }) => {
+          let target: HTMLElement | null = null;
+          
+          if (xp) {
+            const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            target = result.singleNodeValue as HTMLElement;
           }
-          return false;
-        }, certificateIndex);
-        await this.page.waitForTimeout(1000);
+
+          if (!target && idx != null) {
+            let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+            if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+            target = rows[idx - 1] as HTMLElement;
+          }
+
+          if (target) {
+            // Find click target (prefer <a>, then <td>)
+            const clickTarget = target.querySelector('a') || target.querySelector('td') || target;
+            
+            const events = ['mousedown', 'mouseup', 'click'];
+            events.forEach(name => {
+              clickTarget.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true }));
+            });
+            return {
+              success: true,
+              text: target.textContent?.replace(/\s+/g, ' ').trim().substring(0, 50)
+            };
+          }
+          return { success: false };
+        }, { idx: certificateIndex, xp: xpath });
+
+        if (clickResult.success) {
+          this.log(`[NH Corporate] Selected certificate. Text: "${clickResult.text}"`);
+        } else {
+          this.warn(`[NH Corporate] Could not find certificate via XPath or Index.`);
+        }
+        await this.page.waitForTimeout(1500);
       }
 
       this.log('[NH Corporate] Tabbing to password input...');
