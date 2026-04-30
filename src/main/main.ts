@@ -641,8 +641,9 @@ const createWindow = async () => {
 
       ipcMain.handle('finance-hub:get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
+          const id = String(bankId || '').toLowerCase();
           // Check if we have an existing automator instance
-          let automator = activeAutomators.get(bankId);
+          let automator = activeAutomators.get(id);
           
           if (!automator) {
             const { createAutomator } = require('./financehub');
