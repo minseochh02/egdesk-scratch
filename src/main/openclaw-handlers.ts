@@ -141,6 +141,19 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               ...(existing.channels?.telegram ?? {}),
               botToken: resolvedToken,
             },
+            kakao: {
+              ...(existing.channels?.kakao ?? {}),
+              enabled: true,
+              webhookPath: '/kakao/skill',
+            },
+          },
+          plugins: {
+            ...(existing.plugins ?? {}),
+            entries: {
+              ...(existing.plugins?.entries ?? {}),
+              kakao: { enabled: true },
+              bonjour: { enabled: false },
+            },
           },
         };
 
@@ -170,7 +183,29 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
         fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
 
-        // ── 3. Run onboard daemon ──
+        // ── 3. Install kakao plugin ──
+        try {
+          // Resolve the bundled plugin path: process.resourcesPath in production,
+          // <appRoot>/resources/ in development.
+          const pluginPath = app
+            ? path.join(
+                process.resourcesPath ?? path.join(app.getAppPath(), '..', 'resources'),
+                'openclaw-kakao-plugin'
+              )
+            : path.join(__dirname, '../../../../resources/openclaw-kakao-plugin');
+
+          if (fs.existsSync(pluginPath)) {
+            await execAsync(`openclaw plugins install "${pluginPath}"`, {
+              env: cleanEnv,
+              timeout: 60_000,
+              maxBuffer: 5 * 1024 * 1024,
+            });
+          }
+        } catch {
+          // non-fatal — plugin may already be installed
+        }
+
+        // ── 5. Run onboard daemon ──
         try {
           await execAsync('openclaw onboard --install-daemon', {
             env: cleanEnv,
@@ -181,7 +216,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           // non-fatal — daemon may already exist
         }
 
-        // ── 4. Start openclaw gateway (needed before the bot can receive messages) ──
+        // ── 6. Start openclaw gateway (needed before the bot can receive messages) ──
         // Spawn it detached so it keeps running after this handler returns.
         const { spawn } = await import('child_process');
         try {

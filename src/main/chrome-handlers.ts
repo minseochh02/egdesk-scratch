@@ -31,6 +31,7 @@ import {
 } from './browser-recording-locator-strategies';
 import { getSQLiteManager } from './sqlite/manager';
 import { registerOpenClawHandlers } from './openclaw-handlers';
+import { registerKakaoHandlers } from './kakao-handlers';
 import { restartPlaywrightScheduler } from './scheduler/playwright-scheduler-instance';
 import type { PlaywrightScheduledTest } from './sqlite/playwright-scheduler';
 
@@ -4634,6 +4635,7 @@ test('recorded test', async ({ page }) => {
   });
 
   registerOpenClawHandlers(getGoogleProfilesDir);
+  registerKakaoHandlers(getGoogleProfilesDir);
 
   /**
    * Check if a saved Google profile is still authenticated by navigating to
