@@ -2226,6 +2226,13 @@ const electronHandler = {
       setup: (profileName: string, phoneNumber: string) =>
         ipcRenderer.invoke('telegram:setup', { profileName, phoneNumber }),
     },
+    // KakaoTalk channel + bot creation
+    kakao: {
+      createChannel: (profileName: string, channelName: string, searchId: string) =>
+        ipcRenderer.invoke('kakao:createChannel', { profileName, channelName, searchId }),
+      createBot: (profileName: string, botName: string, channelSearchId: string, skillUrl: string) =>
+        ipcRenderer.invoke('kakao:createBot', { profileName, botName, channelSearchId, skillUrl }),
+    },
     openclaw: {
       setup: (profileName: string, botToken: string) =>
         ipcRenderer.invoke('openclaw:setup', { profileName, botToken }),
@@ -2535,6 +2542,7 @@ const electronHandler = {
     start: (serverName: string, localServerUrl?: string) => ipcRenderer.invoke('mcp-tunnel-start', serverName, localServerUrl),
     stop: (serverName: string) => ipcRenderer.invoke('mcp-tunnel-stop', serverName),
     status: (serverName: string) => ipcRenderer.invoke('mcp-tunnel-status', serverName),
+    info: (serverName: string) => ipcRenderer.invoke('mcp-tunnel-info', serverName),
     list: () => ipcRenderer.invoke('mcp-tunnel-list'),
   },
 

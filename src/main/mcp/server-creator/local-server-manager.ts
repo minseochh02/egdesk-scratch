@@ -493,6 +493,18 @@ export class LocalServerManager {
       return;
     }
 
+    // KakaoTalk skill endpoint — forwards to OpenClaw WebSocket gateway
+    if ((url === '/kakao/skill' || url === '/webhook/start') && req.method === 'POST') {
+      await this.handleKakaoSkill(req, res);
+      return;
+    }
+
+    // KakaoTalk skill endpoint — synchronous (no callback), useful for testing
+    if (url === '/kakao/skill/sync' && req.method === 'POST') {
+      await this.handleKakaoSkillSync(req, res);
+      return;
+    }
+
     // Test endpoint (for development)
     if (url === '/test-gmail' && req.method === 'GET') {
       await this.handleTestGmail(req, res);
@@ -1619,6 +1631,55 @@ export class LocalServerManager {
       res.end(JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
+   * KakaoTalk skill endpoint.
+   * Receives a Kakao skill webhook and proxies it to the OpenClaw plugin at
+   * localhost:18789/kakao/skill, which handles the ACK, AI dispatch, and
+   * callback to KakaoTalk.
+   */
+  private async handleKakaoSkill(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    await this.proxyToOpenClaw(req, res);
+  }
+
+  /**
+   * Synchronous variant — same proxy, but without a callbackUrl in the body
+   * so the OpenClaw plugin returns the AI reply directly in the response.
+   */
+  private async handleKakaoSkillSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    await this.proxyToOpenClaw(req, res);
+  }
+
+  /**
+   * Forward the raw request body to OpenClaw's kakao plugin endpoint and
+   * stream the response back to the caller.
+   */
+  private async proxyToOpenClaw(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', resolve);
+    });
+    const body = Buffer.concat(chunks);
+
+    try {
+      const upstream = await fetch('http://localhost:18789/kakao/skill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      const text = await upstream.text();
+      res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+      res.end(text);
+    } catch (err) {
+      console.error('[KakaoProxy] Failed to reach OpenClaw:', err);
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        version: '2.0',
+        template: { outputs: [{ simpleText: { text: '오류가 발생했어요. 다시 시도해주세요.' } }] },
       }));
     }
   }

@@ -9,6 +9,7 @@ type Step =
   | 'token'        // Generating GitHub token
   | 'telegram'     // Telegram login + BotFather setup
   | 'installing'   // OpenClaw CLI + config
+  | 'kakao'        // KakaoTalk channel + bot creation
   | 'done';        // Accounts dashboard
 
 function cleanGmailToUsername(email: string): string {
@@ -29,6 +30,9 @@ const OpenClawPage: React.FC = () => {
   const [githubTokens, setGithubTokens] = useState<Record<string, string>>({});
   const [telegramBotTokens, setTelegramBotTokens] = useState<string[]>([]);
   const [telegramSetup, setTelegramSetup] = useState(false);
+  const [kakaoSetup, setKakaoSetup] = useState(false);
+  const [kakaoSearchId, setKakaoSearchId] = useState('');
+  const [kakaoBotName, setKakaoBotName] = useState('');
   const [openclawInstalled, setOpenclawInstalled] = useState(false);
   const [openclawStatus, setOpenclawStatus] = useState('');
   const [openclawPairingCode, setOpenclawPairingCode] = useState('');
@@ -146,6 +150,73 @@ const OpenClawPage: React.FC = () => {
     } catch (e: any) {
       addLog(`⚠️ OpenClaw error: ${e?.message || e}`);
     }
+    await runKakaoSetup();
+  };
+
+  const runKakaoSetup = async () => {
+    setStep('kakao');
+    addLog('Setting up KakaoTalk channel and bot...');
+
+    const rand = Math.floor(Math.random() * 9999);
+    const channelName = 'EGDesk OpenClaw';
+    const searchId = `egdesk_${rand}`;
+    const botName = `EGClaw Bot ${rand}`;
+
+    // Get tunnel URL — prefer already-populated tunnelUrl state, fall back to live lookup
+    let skillUrl = tunnelUrl;
+    if (!skillUrl) {
+      try {
+        const listResult = await (window as any).electron.tunnel.list();
+        const names: string[] = listResult?.tunnels ?? listResult ?? [];
+        for (const name of names) {
+          const info = await (window as any).electron.tunnel.info(name);
+          if (info?.isConnected && info?.publicUrl) {
+            skillUrl = info.publicUrl;
+            break;
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+    if (skillUrl) addLog(`Using tunnel URL: ${skillUrl}`);
+    else addLog('⚠️ No tunnel URL found — skill URL will be empty. Connect the MCP tunnel first.');
+
+    // Step A: Create Channel
+    addLog(`Creating KakaoTalk channel "@${searchId}"...`);
+    let channelOk = false;
+    try {
+      const channelResult = await (window as any).electron.debug.kakao.createChannel(
+        PROFILE_NAME, channelName, searchId
+      );
+      if (channelResult?.success) {
+        addLog(`✅ KakaoTalk channel created: @${searchId}`);
+        setKakaoSearchId(searchId);
+        channelOk = true;
+      } else {
+        addLog(`⚠️ KakaoTalk channel creation failed: ${channelResult?.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      addLog(`⚠️ KakaoTalk channel error: ${e?.message || e}`);
+    }
+
+    // Step B: Create Bot (only if channel was created)
+    if (channelOk) {
+      addLog(`Creating KakaoTalk bot "${botName}"...`);
+      try {
+        const botResult = await (window as any).electron.debug.kakao.createBot(
+          PROFILE_NAME, botName, `@${searchId}`, skillUrl
+        );
+        if (botResult?.success) {
+          addLog(`✅ KakaoTalk bot created and deployed: ${botName}`);
+          setKakaoBotName(botName);
+          setKakaoSetup(true);
+        } else {
+          addLog(`⚠️ KakaoTalk bot creation failed: ${botResult?.error || 'Unknown error'}`);
+        }
+      } catch (e: any) {
+        addLog(`⚠️ KakaoTalk bot error: ${e?.message || e}`);
+      }
+    }
+
     setStep('done');
   };
 
@@ -240,6 +311,30 @@ const OpenClawPage: React.FC = () => {
   };
 
   const [isPairing, setIsPairing] = useState(false);
+  const [isRunningKakao, setIsRunningKakao] = useState(false);
+
+  // ── Tunnel URL (for Kakao skill endpoint) ──
+  const [tunnelUrl, setTunnelUrl] = useState('');
+
+  const refreshTunnelUrl = async () => {
+    try {
+      const listResult = await (window as any).electron.tunnel.list();
+      const names: string[] = listResult?.tunnels ?? listResult ?? [];
+      for (const name of names) {
+        const info = await (window as any).electron.tunnel.info(name);
+        if (info?.isConnected && info?.publicUrl) {
+          setTunnelUrl(info.publicUrl);
+          return;
+        }
+      }
+      setTunnelUrl('');
+    } catch { /* non-fatal */ }
+  };
+
+  useEffect(() => {
+    if (step !== 'done') return;
+    refreshTunnelUrl();
+  }, [step]);
   const [gatewayRunning, setGatewayRunning] = useState(false);
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [gatewayStatusText, setGatewayStatusText] = useState('');
@@ -298,6 +393,13 @@ const OpenClawPage: React.FC = () => {
     setIsTogglingGateway(false);
   };
 
+  const retryKakaoSetup = async () => {
+    setIsRunningKakao(true);
+    setLogs([]);
+    await runKakaoSetup();
+    setIsRunningKakao(false);
+  };
+
   const runPairing = async () => {
     setIsPairing(true);
     setLogs([]);
@@ -342,6 +444,9 @@ const OpenClawPage: React.FC = () => {
     setGithubTokens({});
     setTelegramBotTokens([]);
     setTelegramSetup(false);
+    setKakaoSetup(false);
+    setKakaoSearchId('');
+    setKakaoBotName('');
     setOpenclawInstalled(false);
     setOpenclawStatus('');
     setOpenclawPairingCode('');
@@ -350,6 +455,7 @@ const OpenClawPage: React.FC = () => {
     setTelegramConnected(false);
     setGatewayStatusText('');
     setIsTogglingGateway(false);
+    setTunnelUrl('');
     setError('');
   };
 
@@ -541,6 +647,19 @@ const OpenClawPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── KAKAO ── */}
+      {step === 'kakao' && (
+        <div style={{ textAlign: 'center', maxWidth: '480px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '16px' }}>💬</div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px' }}>Setting Up KakaoTalk</h2>
+          <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
+            Creating a KakaoTalk channel and chatbot. The browser will open automatically —
+            this may take several minutes while waiting for callback approval.
+          </p>
+          <Console logs={logs} />
+        </div>
+      )}
+
       {/* ── DONE ── */}
       {step === 'done' && (
         <div style={{ width: '100%', maxWidth: '560px' }}>
@@ -627,6 +746,51 @@ const OpenClawPage: React.FC = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {kakaoSetup && (
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: '8px',
+                padding: '14px 18px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>💬</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px' }}>KakaoTalk</div>
+                    <div style={{ color: '#888', fontSize: '13px' }}>Channel + Chatbot deployed</div>
+                  </div>
+                </div>
+                {kakaoSearchId && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '6px',
+                  }}>
+                    <div style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>📢 Channel ID</div>
+                    <div style={{ color: '#fbbf24', fontSize: '12px', fontFamily: 'monospace' }}>
+                      @{kakaoSearchId}
+                    </div>
+                  </div>
+                )}
+                {kakaoBotName && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '6px',
+                  }}>
+                    <div style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>🤖 Bot Name</div>
+                    <div style={{ color: '#3fb950', fontSize: '12px', fontFamily: 'monospace' }}>
+                      {kakaoBotName}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -731,6 +895,27 @@ const OpenClawPage: React.FC = () => {
                 {gatewayStatusText}
               </div>
             )}
+            {tunnelUrl && (
+              <div style={{ marginTop: '10px', borderTop: '1px solid #21262d', paddingTop: '10px' }}>
+                <div style={{ color: '#666', fontSize: '11px', marginBottom: '4px' }}>💬 KakaoTalk skill endpoint</div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '6px 10px',
+                  backgroundColor: '#0d1117',
+                  border: '1px solid #21262d',
+                  borderRadius: '6px',
+                }}>
+                  <div style={{ color: '#60a5fa', fontSize: '11px', fontFamily: 'monospace', flex: 1, wordBreak: 'break-all' }}>
+                    {tunnelUrl}/kakao/skill
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`${tunnelUrl}/kakao/skill`)}
+                    style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '11px', padding: '0 4px', flexShrink: 0 }}
+                    title="Copy"
+                  >📋</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -774,6 +959,25 @@ const OpenClawPage: React.FC = () => {
             }}
           >
             {isPairing ? '⏳ Pairing…' : '🔗 Retry Telegram Pairing'}
+          </button>
+
+          <button
+            onClick={retryKakaoSetup}
+            disabled={isRunningKakao}
+            style={{
+              padding: '10px 24px',
+              backgroundColor: isRunningKakao ? '#1a1a3a' : '#0a1a3a',
+              color: isRunningKakao ? '#666' : '#60a5fa',
+              border: '1px solid #1a3a6a',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: isRunningKakao ? 'not-allowed' : 'pointer',
+              marginBottom: '10px',
+              marginRight: '8px',
+            }}
+          >
+            {isRunningKakao ? '⏳ Setting up KakaoTalk…' : '💬 Retry KakaoTalk Setup'}
           </button>
 
           <button
