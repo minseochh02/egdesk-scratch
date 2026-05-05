@@ -116,9 +116,9 @@ const InternalKnowledgeTab: React.FC<InternalKnowledgeTabProps> = ({ snapshotId 
 
   // Handle manual save (Cmd/Ctrl+S)
   const handleManualSave = useCallback(() => {
-    if (!activeDocument || !isDirty) return;
+    if (!activeDocument) return;
     saveDocument(activeDocument.id, activeDocument.content);
-  }, [activeDocument, isDirty, saveDocument]);
+  }, [activeDocument, saveDocument]);
 
   // Handle document selection
   const handleSelectDocument = useCallback((doc: InternalKnowledgeDocument) => {
@@ -266,7 +266,7 @@ const InternalKnowledgeTab: React.FC<InternalKnowledgeTabProps> = ({ snapshotId 
                     type="button"
                     className="internal-knowledge-action-btn"
                     onClick={handleManualSave}
-                    disabled={!isDirty}
+                    disabled={saveStatus === 'saving'}
                     title="Save (Cmd/Ctrl+S)"
                   >
                     <FontAwesomeIcon icon={faSave} />

@@ -24,6 +24,8 @@ import { SQLiteCompanyResearchManager } from './company-research';
 import { FinanceHubDbManager } from './financehub';
 import { UserDataDbManager } from './user-data';
 import { SyncConfigManager } from '../sync-config/sync-config-manager';
+import { NeuronDbManager } from './neuron-db';
+import { WorkflowDbManager } from './workflow-db';
 import { restartDockerScheduler } from '../docker/docker-scheduler-instance';
 import { getDockerSchedulerService } from '../docker/DockerSchedulerService';
 import { restartPlaywrightScheduler } from '../scheduler/playwright-scheduler-instance';
@@ -51,6 +53,7 @@ export class SQLiteManager {
   private financeHubDb: Database.Database | null = null;
   private schedulerDb: Database.Database | null = null;
   private userDataDb: Database.Database | null = null;
+  private neuronDb: Database.Database | null = null;
   
   // State management
   private isInitialized = false;
@@ -69,6 +72,8 @@ export class SQLiteManager {
   private financeHubManager: FinanceHubDbManager | null = null;
   private userDataManager: UserDataDbManager | null = null;
   private syncConfigManager: SyncConfigManager | null = null;
+  private neuronManager: NeuronDbManager | null = null;
+  private workflowManager: WorkflowDbManager | null = null;
   private vectorManager: any | null = null; // VectorDbManager - loaded dynamically
 
   private constructor() {
@@ -106,6 +111,7 @@ export class SQLiteManager {
       this.financeHubDb = result.financeHubDatabase!;
       this.schedulerDb = result.schedulerDatabase!;
       this.userDataDb = result.userDataDatabase!;
+      this.neuronDb = result.neuronDatabase!;
       this.taskManager = result.taskManager!;
       this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
       this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
@@ -118,6 +124,8 @@ export class SQLiteManager {
       this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
       this.userDataManager = new UserDataDbManager(this.userDataDb);
       this.syncConfigManager = new SyncConfigManager(this.userDataDb);
+      this.neuronManager = new NeuronDbManager(this.neuronDb);
+      this.workflowManager = new WorkflowDbManager(this.neuronDb);
 
       // Initialize vector manager if extension is loaded
       try {
@@ -437,6 +445,28 @@ export class SQLiteManager {
       this.syncConfigManager = new SyncConfigManager(this.userDataDb!);
     }
     return this.syncConfigManager;
+  }
+
+  /**
+   * Get Neuron DB Manager
+   */
+  public getNeuronManager(): NeuronDbManager {
+    this.ensureInitialized();
+    if (!this.neuronManager) {
+      this.neuronManager = new NeuronDbManager(this.neuronDb!);
+    }
+    return this.neuronManager;
+  }
+
+  /**
+   * Get Workflow DB Manager
+   */
+  public getWorkflowManager(): WorkflowDbManager {
+    this.ensureInitialized();
+    if (!this.workflowManager) {
+      this.workflowManager = new WorkflowDbManager(this.neuronDb!);
+    }
+    return this.workflowManager;
   }
 
   /**

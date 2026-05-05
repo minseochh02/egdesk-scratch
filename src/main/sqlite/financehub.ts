@@ -753,10 +753,19 @@ export class FinanceHubDbManager {
 
   getAllAccounts(): BankAccount[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts 
+      SELECT * FROM accounts
       ORDER BY bank_id, account_number
     `);
     return stmt.all().map((row: any) => this.mapRowToAccount(row));
+  }
+
+  getAccountTransactionCounts(): Record<string, number> {
+    const rows = this.db
+      .prepare(`SELECT account_id, COUNT(*) as cnt FROM transactions GROUP BY account_id`)
+      .all() as { account_id: string; cnt: number }[];
+    const result: Record<string, number> = {};
+    rows.forEach(r => { result[r.account_id] = r.cnt; });
+    return result;
   }
 
   updateAccountStatus(accountNumber: string, isActive: boolean): boolean {

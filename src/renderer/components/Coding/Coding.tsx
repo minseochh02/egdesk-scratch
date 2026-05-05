@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle, faPlus, faCopy, faStop, faTerminal, faTrash, faChevronDown, faChevronUp, faArrowDown } from '@fortawesome/free-solid-svg-icons';
+import { faCircle, faPlus, faCopy, faStop, faTerminal, faTrash, faChevronDown, faChevronUp, faArrowDown, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 import './Coding.css';
 
 interface Project {
@@ -24,6 +24,16 @@ interface RegisteredProject {
   mode: 'dev' | 'production';
 }
 
+import ModeSelectionModal from './ModeSelectionModal';
+
+const TEMPLATES = [
+  {
+    name: 'Excel to DB',
+    repoUrl: 'https://github.com/Charismagreat/ExcelToDB.git',
+    description: 'Excel to DB visualization dashboard'
+  }
+];
+
 const Coding: React.FC = () => {
   const navigate = useNavigate();
   const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
@@ -34,6 +44,27 @@ const Coding: React.FC = () => {
   const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(new Set());
   const [autoScroll, setAutoScroll] = useState<Record<string, boolean>>({});
   const terminalRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Modal state
+  const [isModeModalOpen, setIsModeModalOpen] = useState(false);
+  const [pendingProject, setPendingProject] = useState<RegisteredProject | null>(null);
+  const [pendingMode, setPendingMode] = useState<'dev' | 'production' | null>(null);
+
+  // Template state
+  const [isCloning, setIsCloning] = useState(false);
+
+  type StepStatus = 'pending' | 'active' | 'done' | 'error';
+  type CloneStep = { label: string; status: StepStatus; detail?: string };
+  const [cloneSteps, setCloneSteps] = useState<CloneStep[] | null>(null);
+
+  const updateStep = (index: number, status: StepStatus, detail?: string) => {
+    setCloneSteps(prev => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[index] = { ...next[index], status, ...(detail !== undefined ? { detail } : {}) };
+      return next;
+    });
+  };
 
   // Check Node.js installation
   useEffect(() => {
@@ -123,9 +154,122 @@ const Coding: React.FC = () => {
     }
   };
 
-  const handleCopyFromTemplates = () => {
-    console.log('Copy from templates');
-    // TODO: Implement template selection
+  const handleSelectTemplate = async (template: typeof TEMPLATES[0]) => {
+    const STEPS = [
+      { label: 'Cloning repository' },
+      { label: 'Starting HTTP server' },
+      { label: 'Starting tunnel' },
+      { label: 'Starting server' },
+    ];
+    setCloneSteps(STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'active' : 'pending' })));
+
+    try {
+      const electron = (window as any).electron;
+
+      // Determine base directory
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      let baseDir: string;
+      if (isMac) {
+        const homeDir = await electron.fileSystem.getHomeDirectory();
+        baseDir = `${homeDir}/Desktop/EGDesk-Templates`;
+      } else {
+        baseDir = 'C:\\EGDesk-Templates';
+      }
+
+      const repoName = template.repoUrl.split('/').pop()?.replace('.git', '') || 'template-project';
+      const destPath = `${baseDir}/${repoName}`;
+
+      // Step 0: Clone (or reuse existing)
+      setIsCloning(true);
+      const cloneResult = await electron.git.clone(template.repoUrl, destPath);
+      setIsCloning(false);
+
+      const alreadyExists =
+        !cloneResult.success &&
+        (cloneResult.error?.includes('already exists') ||
+          cloneResult.message?.includes('already exists'));
+
+      if (!cloneResult.success && !alreadyExists) {
+        updateStep(0, 'error', cloneResult.message || cloneResult.error || 'Clone failed');
+        return;
+      }
+      updateStep(0, 'done', alreadyExists ? `Already exists — reusing ${destPath}` : destPath);
+
+      // Step 1: HTTP server
+      updateStep(1, 'active');
+      const httpResult = await electron.httpsServer.start({ port: 8080, useHTTPS: false });
+      const httpPort = httpResult.port || 8080;
+      if (httpResult.success) {
+        updateStep(1, 'done', `Port ${httpPort}`);
+      } else if (httpResult.error?.includes('already running')) {
+        updateStep(1, 'done', `Already running on port ${httpPort}`);
+      } else {
+        updateStep(1, 'error', httpResult.error || 'Failed to start HTTP server');
+        // Non-fatal — tunnel can still attempt connection
+      }
+
+      // Step 2: Tunnel
+      updateStep(2, 'active');
+      const serverNameResult = await electron.ipcRenderer.invoke('get-mcp-server-name');
+      const tunnelName = serverNameResult?.serverName;
+      console.log('[TEMPLATE] tunnelName:', tunnelName);
+
+      let tunnelIsUp = false;
+      if (tunnelName) {
+        const localServerUrl = `http://localhost:${httpPort}`;
+        const tunnelResult = await electron.ipcRenderer.invoke('mcp-tunnel-start', tunnelName, localServerUrl);
+        console.log('[TEMPLATE] tunnel result:', tunnelResult.success, tunnelResult.message, tunnelResult.error);
+
+        const alreadyRunning = !tunnelResult.success &&
+          typeof tunnelResult.message === 'string' &&
+          tunnelResult.message.includes('already running');
+        tunnelIsUp = tunnelResult.success || alreadyRunning;
+
+        if (tunnelIsUp) {
+          updateStep(2, 'done', tunnelResult.publicUrl || tunnelName);
+        } else {
+          updateStep(2, 'error', tunnelResult.error || tunnelResult.message || 'Tunnel failed — using dev mode');
+        }
+      } else {
+        updateStep(2, 'error', 'No server name — using dev mode');
+      }
+
+      // Step 3: Start server
+      updateStep(3, 'active');
+      const mode = tunnelIsUp ? 'production' : 'dev';
+
+      if (tunnelIsUp) {
+        await electron.ipcRenderer.invoke('dev-server:set-tunnel-id', tunnelName);
+      }
+
+      const startResult = await electron.ipcRenderer.invoke('dev-server:start', destPath, mode);
+      console.log('[TEMPLATE] server start:', startResult.success, startResult.error);
+
+      if (startResult.success) {
+        updateStep(3, 'done', mode === 'production' ? 'Production mode' : 'Dev mode (no tunnel)');
+      } else {
+        updateStep(3, 'error', startResult.error || 'Failed to start server');
+        return;
+      }
+
+      // Store flags and navigate after a brief pause so the user sees the final state
+      localStorage.setItem('selected-project-folder', destPath);
+      localStorage.setItem(`template-cloning-${destPath}`, 'true');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      setCloneSteps(null);
+      navigate('/coding/developer');
+    } catch (error: any) {
+      setIsCloning(false);
+      console.error('Error cloning template:', error);
+      setCloneSteps(prev => {
+        if (!prev) return prev;
+        const activeIdx = prev.findIndex(s => s.status === 'active');
+        if (activeIdx === -1) return prev;
+        const next = [...prev];
+        next[activeIdx] = { ...next[activeIdx], status: 'error', detail: error?.message || 'Unknown error' };
+        return next;
+      });
+    }
   };
 
   const handleStopServer = async (folderPath: string, projectName: string) => {
@@ -149,19 +293,12 @@ const Coding: React.FC = () => {
   };
 
   const handleModeSwitch = async (project: RegisteredProject, newMode: 'dev' | 'production') => {
-    const modeLabel = newMode === 'dev' ? 'Development' : 'Production';
-    const modeDesc = newMode === 'dev'
-      ? '• Fast startup (~3-5s)\n• Hot reload enabled\n• Skip build step'
-      : '• Optimized build (~40-60s)\n• Production ready\n• Better performance';
+    setPendingProject(project);
+    setPendingMode(newMode);
+    setIsModeModalOpen(true);
+  };
 
-    const confirmed = window.confirm(
-      `Switch ${project.projectName} to ${modeLabel} mode?\n\n` +
-      `${modeDesc}\n\n` +
-      `Server will restart.`
-    );
-
-    if (!confirmed) return;
-
+  const executeModeSwitch = async (project: RegisteredProject, newMode: 'dev' | 'production') => {
     try {
       const electron = (window as any).electron;
       const result = await electron.ipcRenderer.invoke(
@@ -286,8 +423,51 @@ const Coding: React.FC = () => {
     setAutoScroll(prev => ({ ...prev, [folderPath]: isScrolledToBottom }));
   };
 
+  const stepIcon = (status: StepStatus) => {
+    switch (status) {
+      case 'active':  return <span className="clone-step-spinner" />;
+      case 'done':    return <span className="clone-step-icon done">✓</span>;
+      case 'error':   return <span className="clone-step-icon error">✗</span>;
+      default:        return <span className="clone-step-icon pending">○</span>;
+    }
+  };
+
   return (
     <div className="coding-container">
+      {cloneSteps && (
+        <div className="clone-overlay">
+          <div className="clone-overlay-card">
+            <h3 className="clone-overlay-title">Setting up template…</h3>
+            <div className="clone-steps">
+              {cloneSteps.map((step, i) => (
+                <div key={i} className={`clone-step clone-step-${step.status}`}>
+                  <div className="clone-step-left">{stepIcon(step.status)}</div>
+                  <div className="clone-step-right">
+                    <div className="clone-step-label">{step.label}</div>
+                    {step.detail && <div className="clone-step-detail">{step.detail}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      <ModeSelectionModal
+        isOpen={isModeModalOpen}
+        title="Switch Hosting Mode"
+        message={pendingProject ? `Switch ${pendingProject.projectName} to ${pendingMode === 'dev' ? 'Development' : 'Production'} mode? Server will restart.` : ''}
+        onSelect={(mode) => {
+          setIsModeModalOpen(false);
+          if (pendingProject) {
+            executeModeSwitch(pendingProject, mode);
+          }
+        }}
+        onCancel={() => {
+          setIsModeModalOpen(false);
+          setPendingProject(null);
+          setPendingMode(null);
+        }}
+      />
       <div className="coding-header">
         <h1>Projects</h1>
         <div className="coding-header-actions">
@@ -295,17 +475,9 @@ const Coding: React.FC = () => {
             className="coding-btn coding-btn-primary"
             onClick={handleCreateNew}
             disabled={nodeInstalled === false}
-            title={nodeInstalled === false ? 'Node.js is required to create projects' : ''}
+            title={nodeInstalled === false ? 'Node.js is required to open projects' : ''}
           >
-            <FontAwesomeIcon icon={faPlus} />
-            <span>Create New</span>
-          </button>
-          <button
-            className="coding-btn coding-btn-secondary"
-            onClick={handleCopyFromTemplates}
-          >
-            <FontAwesomeIcon icon={faCopy} />
-            <span>Copy from Templates</span>
+            <span>Open Project</span>
           </button>
         </div>
       </div>
@@ -374,11 +546,33 @@ const Coding: React.FC = () => {
       )}
 
       <div className="coding-cards-grid">
-        {registeredProjects.length === 0 && (
-          <div className="coding-empty-state">
-            <p>No active projects. Click "Create New" to start a development server.</p>
+        {/* New Project Card */}
+        <div
+          className="coding-project-card create-new-card"
+          onClick={handleCreateNew}
+        >
+          <div className="create-new-content">
+            <div className="create-new-icon">
+              <FontAwesomeIcon icon={faPlus} />
+            </div>
+            <div className="create-new-text">New Project</div>
           </div>
-        )}
+        </div>
+
+        {/* Template Cards */}
+        {TEMPLATES.map(template => (
+          <div
+            key={template.repoUrl}
+            className="coding-project-card create-new-card template-card"
+            onClick={() => handleSelectTemplate(template)}
+          >
+            <div className="create-new-content">
+              <div className="create-new-icon"><FontAwesomeIcon icon={faLayerGroup} /></div>
+              <div className="create-new-text">{template.name}</div>
+              <div className="template-card-desc">{template.description}</div>
+            </div>
+          </div>
+        ))}
 
         {registeredProjects.map(project => (
           <div key={project.projectName} className="coding-project-card">

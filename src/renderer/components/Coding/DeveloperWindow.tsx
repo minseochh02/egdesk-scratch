@@ -24,6 +24,8 @@ interface RegisteredProject {
   type?: 'nextjs' | 'vite' | 'react' | 'unknown';
 }
 
+import ModeSelectionModal from './ModeSelectionModal';
+
 const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
@@ -35,6 +37,10 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const terminalRef = useRef<HTMLDivElement | null>(null);
+
+  // Modal state
+  const [isModeModalOpen, setIsModeModalOpen] = useState(false);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
 
   // Removed automatic window creation on mount
   // Windows will be created after dev server starts successfully
@@ -124,7 +130,15 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     const storedPath = localStorage.getItem('selected-project-folder');
     if (storedPath) {
       setFolderPath(storedPath);
-      startDevServer(storedPath);
+      
+      // If this is a template clone, Coding.tsx already started the server — skip auto-start
+      const isTemplateCloning = localStorage.getItem(`template-cloning-${storedPath}`);
+      if (isTemplateCloning) {
+        console.log('ℹ️ Template clone detected — server started by Coding, skipping auto-start');
+        localStorage.removeItem(`template-cloning-${storedPath}`);
+      } else {
+        startDevServer(storedPath);
+      }
     }
   }, [nodeCheckDone]);
 
@@ -142,7 +156,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
           setRegisteredProject(result.project);
 
           // Update WebsiteViewer URL based on mode
-          if (result.project.type === 'nextjs') {
+          if (result.project.type === 'nextjs' || result.project.mode === 'production') {
             let viewerUrl: string;
 
             if (result.project.mode === 'production' && tunnelId) {
@@ -310,23 +324,23 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       // Determine mode if not provided
       let effectiveMode = mode;
       if (!effectiveMode) {
-        const tunnelConfig = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
-        const hasTunnel = tunnelConfig?.tunnel?.registered;
-
-        if (hasTunnel) {
-          effectiveMode = window.confirm(
-            '🚀 Tunnel is active. Start in PRODUCTION mode?\n\n' +
-            'Production:\n' +
-            '• Optimized for external hosting\n' +
-            '• ~40-60s build time\n' +
-            '• Production performance\n\n' +
-            'Dev (Cancel):\n' +
-            '• Fast startup ~3-5s\n' +
-            '• Hot reload enabled\n' +
-            '• Local development'
-          ) ? 'production' : 'dev';
+        // Check if a specific mode was requested (e.g. from template cloning)
+        const forcedMode = localStorage.getItem(`dev-server-mode-${path}`) as 'dev' | 'production' | null;
+        if (forcedMode) {
+          effectiveMode = forcedMode;
+          localStorage.removeItem(`dev-server-mode-${path}`); // Clear after use
         } else {
-          effectiveMode = 'dev';
+          const tunnelConfig = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+          const hasTunnel = tunnelConfig?.tunnel?.registered;
+
+          if (hasTunnel) {
+            setPendingPath(path);
+            setIsModeModalOpen(true);
+            setLoading(false); // Stop loading while waiting for choice
+            return;
+          } else {
+            effectiveMode = 'dev';
+          }
         }
       }
 
@@ -398,6 +412,22 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   return (
     <div className="developer-window">
       <h2>Developer Window</h2>
+
+      <ModeSelectionModal
+        isOpen={isModeModalOpen}
+        title="Select Hosting Mode"
+        message="🚀 Tunnel is active. How do you want to run this project?"
+        onSelect={(mode) => {
+          setIsModeModalOpen(false);
+          if (pendingPath) {
+            startDevServer(pendingPath, mode);
+          }
+        }}
+        onCancel={() => {
+          setIsModeModalOpen(false);
+          setPendingPath(null);
+        }}
+      />
 
       {folderPath && (
         <div className="developer-info">
@@ -482,7 +512,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
             return null;
           })()}
 
-          {tunnelId && registeredProject.type === 'nextjs' ? (
+          {tunnelId && (registeredProject.type === 'nextjs' || registeredProject.mode === 'production') ? (
             <>
               <p><strong>URL:</strong> <a
                 href={`http://localhost:${registeredProject.port}/t/${tunnelId}/p/${registeredProject.projectName}/`}
@@ -493,7 +523,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
                 http://localhost:{registeredProject.port}/t/{tunnelId}/p/{registeredProject.projectName}/
               </a></p>
               <p style={{ fontSize: '12px', color: '#f5a623', marginTop: '8px' }}>
-                ⚠️ Note: Next.js projects are configured with basePath for tunnel support. Access via tunnel or the URL above.
+                ⚠️ Note: Projects in production mode are configured with basePath for tunnel support. Access via tunnel or the URL above.
               </p>
             </>
           ) : tunnelId ? (

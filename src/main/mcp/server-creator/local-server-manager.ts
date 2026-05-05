@@ -27,6 +27,7 @@ import { UserDataMCPService } from '../user-data/user-data-mcp-service';
 import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
 import { InternalKnowledgeMCPService } from '../internal-knowledge/internal-knowledge-mcp-service';
 import { BrowserRecordingMCPService } from '../browser-recording/browser-recording-mcp-service';
+import { AICenterMCPService } from '../ai-center/ai-center-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 import { getSQLiteManager } from '../../sqlite/manager';
@@ -131,6 +132,7 @@ export class LocalServerManager {
   private financeHubMCPService: FinanceHubMCPService | null = null;
   private internalKnowledgeMCPService: InternalKnowledgeMCPService | null = null;
   private browserRecordingMCPService: BrowserRecordingMCPService | null = null;
+  private aiCenterMCPService: AICenterMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -493,6 +495,12 @@ export class LocalServerManager {
       return;
     }
 
+    // AI Center MCP Server endpoints (workflows + neuron entities/relations/tags)
+    if (url.startsWith('/ai-center')) {
+      await this.handleAICenterEndpoint(req, res, url);
+      return;
+    }
+
     // KakaoTalk skill endpoint — forwards to OpenClaw WebSocket gateway
     if ((url === '/kakao/skill' || url === '/webhook/start') && req.method === 'POST') {
       await this.handleKakaoSkill(req, res);
@@ -691,6 +699,13 @@ export class LocalServerManager {
       this.browserRecordingMCPService = new BrowserRecordingMCPService();
     }
     return this.browserRecordingMCPService;
+  }
+
+  private getAICenterMCPService(): AICenterMCPService {
+    if (!this.aiCenterMCPService) {
+      this.aiCenterMCPService = new AICenterMCPService();
+    }
+    return this.aiCenterMCPService;
   }
 
   /**
@@ -1757,6 +1772,46 @@ export class LocalServerManager {
         error: error instanceof Error ? error.message : 'Unknown error'
       }));
     }
+  }
+
+  private async handleAICenterEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    if (url === '/ai-center/tools' && req.method === 'GET') {
+      const tools = this.getAICenterMCPService().listTools();
+      res.writeHead(200);
+      res.end(JSON.stringify(tools, null, 2));
+      return;
+    }
+
+    if (url === '/ai-center/tools/call' && req.method === 'POST') {
+      try {
+        const body = await this.parseRequestBody(req);
+        const { tool, arguments: args } = body;
+        if (!tool) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing "tool" parameter in request body' }));
+          return;
+        }
+        console.log(`🤖 Calling AI Center tool: ${tool}`);
+        const result = await this.getAICenterMCPService().executeTool(tool, args || {});
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, result }, null, 2));
+      } catch (error) {
+        console.error('Error calling AI Center tool:', error);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }));
+      }
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'AI Center MCP endpoint not found',
+      availableEndpoints: [
+        '/ai-center/tools - List available tools',
+        '/ai-center/tools/call - Call a tool',
+      ],
+    }));
   }
 
   /**

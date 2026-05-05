@@ -10,6 +10,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import { app, BrowserWindow, ipcMain, shell, dialog, powerSaveBlocker } from 'electron';
@@ -566,6 +567,9 @@ const createWindow = async () => {
     // Only register IPC handlers once - skip if already registered
     if (!handlersRegistered) {
     try {
+      ipcMain.handle('get-home-dir', () => {
+        return os.homedir();
+      });
       ipcMain.handle('start-automation', async (_event, creds?: { id?: string; pw?: string; proxy?: string; title?: string; content?: string; tags?: string }) => {
         const { runAutomation } = require('./automator');
         return await runAutomation(creds?.id, creds?.pw, creds?.proxy, creds?.title, creds?.content, creds?.tags);
@@ -3103,6 +3107,16 @@ const createWindow = async () => {
               captureLog(`⚠️ Failed to auto-save tunnel config: ${saveError}`);
               // Don't fail the whole operation if save fails
             }
+          } else if (!result.success && result.message && result.message.includes('already running')) {
+            // Tunnel was already connected — still sync tunnelId into DevServerManager
+            try {
+              const { getDevServerManager } = require('./coding/dev-server-manager');
+              const devServerManager = getDevServerManager();
+              devServerManager.setTunnelId(serverName);
+              captureLog(`🔧 Tunnel already running — tunnel ID synced to DevServerManager: ${serverName}`);
+            } catch (syncError) {
+              captureLog(`⚠️ Failed to sync tunnel ID for already-running tunnel: ${syncError}`);
+            }
           }
           
           // Include captured logs in the result for debugging (remove internal _logs)
@@ -4945,6 +4959,14 @@ const createWindow = async () => {
     // Register Sync Configuration handlers
     const { registerSyncConfigIPCHandlers } = await import('./sync-config/sync-config-ipc-handler');
     registerSyncConfigIPCHandlers();
+
+    // Register Neuron Layer handlers
+    const { registerNeuronIPCHandlers } = await import('./neuron/neuron-ipc-handler');
+    registerNeuronIPCHandlers();
+
+    // Register Workflow handlers
+    const { registerWorkflowIPCHandlers } = await import('./workflow/workflow-ipc-handler');
+    registerWorkflowIPCHandlers();
 
     // Register File Watcher handlers
     const { registerFileWatcherIPCHandlers } = await import('./sync-config/file-watcher-ipc-handler');

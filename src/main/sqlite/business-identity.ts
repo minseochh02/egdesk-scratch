@@ -319,6 +319,13 @@ export class SQLiteBusinessIdentityManager {
     return rows.map((row) => this.mapSnapshot(row));
   }
 
+  getAllSnapshots(): BusinessIdentitySnapshot[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM business_identity_snapshots ORDER BY created_at DESC`)
+      .all() as any[];
+    return rows.map((row) => this.mapSnapshot(row));
+  }
+
   createAccount(data: CreateBusinessIdentitySnsAccount): BusinessIdentitySnsAccount {
     const id = this.generateId('bi_account');
     const now = new Date().toISOString();
@@ -729,6 +736,45 @@ export class SQLiteBusinessIdentityManager {
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
+  }
+
+  // ── Aggregate counts for Data Sources panel ───────────────────────────────
+
+  countAllSnsPlans(): { total: number; enabled: number } {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as total, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) as enabled FROM business_identity_sns_plans`)
+      .get() as { total: number; enabled: number };
+    return { total: row.total ?? 0, enabled: row.enabled ?? 0 };
+  }
+
+  countAllSnsAccounts(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as cnt FROM business_identity_sns_accounts`)
+      .get() as { cnt: number };
+    return row.cnt ?? 0;
+  }
+
+  countKnowledgeByCategory(): Record<string, number> {
+    const rows = this.db
+      .prepare(`SELECT category, COUNT(*) as cnt FROM internal_knowledge GROUP BY category`)
+      .all() as { category: string; cnt: number }[];
+    const result: Record<string, number> = {};
+    rows.forEach(r => { result[r.category] = r.cnt; });
+    return result;
+  }
+
+  countSnapshotsWithSeo(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as cnt FROM business_identity_snapshots WHERE seo_analysis_json IS NOT NULL`)
+      .get() as { cnt: number };
+    return row.cnt ?? 0;
+  }
+
+  countSnapshotsWithSsl(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as cnt FROM business_identity_snapshots WHERE ssl_analysis_json IS NOT NULL`)
+      .get() as { cnt: number };
+    return row.cnt ?? 0;
   }
 }
 

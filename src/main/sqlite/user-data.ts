@@ -686,6 +686,7 @@ export class UserDataDbManager {
     let skipped = 0;
     let duplicates = 0;
     const errors: string[] = [];
+    const insertedIds: number[] = [];
     const duplicateDetails: Array<{
       rowIndex: number;
       uniqueKeyValues: Record<string, any>;
@@ -879,8 +880,9 @@ export class UserDataDbManager {
               return this.convertValue(col, row[col.name]);
             });
 
-            insertStmt.run(...values);
+            const runResult = insertStmt.run(...values);
             inserted++;
+            insertedIds.push(Number(runResult.lastInsertRowid));
           } catch (error) {
             skipped++;
             const errorMessage =
@@ -927,6 +929,7 @@ export class UserDataDbManager {
       skipped,
       duplicates,
       errors,
+      insertedIds,
       duplicateDetails,
       errorDetails,
     };
@@ -1752,7 +1755,7 @@ export class UserDataDbManager {
         if (!columnExists) continue;
 
         // Parse operators (>, <, >=, <=, =, !=)
-        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        const operatorMatch = String(value).match(/^([><=!]+)(.+)$/);
         if (operatorMatch) {
           const [, operator, val] = operatorMatch;
           whereClauses.push(`"${column}" ${operator} ?`);
@@ -1855,7 +1858,7 @@ export class UserDataDbManager {
         const colExists = table.schema.some((col) => col.name === column);
         if (!colExists) continue;
 
-        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        const operatorMatch = String(value).match(/^([><=!]+)(.+)$/);
         if (operatorMatch) {
           const [, operator, val] = operatorMatch;
           whereClauses.push(`"${column}" ${operator} ?`);
@@ -2011,7 +2014,7 @@ export class UserDataDbManager {
         if (!columnExists) continue;
 
         // Parse operators (>, <, >=, <=, =, !=)
-        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        const operatorMatch = String(value).match(/^([><=!]+)(.+)$/);
         if (operatorMatch) {
           const [, operator, val] = operatorMatch;
           whereClauses.push(`"${column}" ${operator} ?`);
@@ -2101,7 +2104,7 @@ export class UserDataDbManager {
         if (!columnExists) continue;
 
         // Parse operators (>, <, >=, <=, =, !=)
-        const operatorMatch = value.match(/^([><=!]+)(.+)$/);
+        const operatorMatch = String(value).match(/^([><=!]+)(.+)$/);
         if (operatorMatch) {
           const [, operator, val] = operatorMatch;
           whereClauses.push(`"${column}" ${operator} ?`);

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSync, faEllipsisV, faEdit, faTrash, faCheck, faTimes, faDatabase, faUpload, faFile, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
+import { faSync, faEllipsisV, faEdit, faTrash, faCheck, faTimes, faDatabase, faUpload, faFile, faCalendarAlt, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { UserTable } from '../../hooks/useUserData';
 import { useSyncConfig } from '../../hooks/useSyncConfig';
 
@@ -30,6 +30,18 @@ export const TableList: React.FC<TableListProps> = ({
   const [newTableName, setNewTableName] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter tables based on search query
+  const filteredTables = useMemo(() => {
+    if (!searchQuery.trim()) return tables;
+    const query = searchQuery.toLowerCase().trim();
+    return tables.filter(table =>
+      table.displayName.toLowerCase().includes(query) ||
+      table.tableName.toLowerCase().includes(query) ||
+      (table.description && table.description.toLowerCase().includes(query))
+    );
+  }, [tables, searchQuery]);
 
   // Fetch sync configurations on mount
   useEffect(() => {
@@ -230,8 +242,33 @@ function testConnection() {
 
   return (
     <div className="table-list">
+      <div className="table-list-search-bar">
+        <div className="search-input-wrapper">
+          <FontAwesomeIcon icon={faSearch} className="search-icon" />
+          <input
+            type="text"
+            placeholder="Search tables by name or description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="table-search-input"
+          />
+          {searchQuery && (
+            <button
+              className="search-clear-btn"
+              onClick={() => setSearchQuery('')}
+              title="Clear search"
+            >
+              <FontAwesomeIcon icon={faTimes} />
+            </button>
+          )}
+        </div>
+        <div className="search-results-count">
+          {filteredTables.length} {filteredTables.length === 1 ? 'table' : 'tables'} found
+        </div>
+      </div>
+
       <div className="table-list-grid">
-        {tables.map((table) => (
+        {filteredTables.map((table) => (
           <div
             key={table.id}
             className="table-card"

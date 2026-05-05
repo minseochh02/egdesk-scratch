@@ -798,6 +798,7 @@ export class UserDataMCPService implements IMCPService {
             skipped: insertResult.skipped,
             duplicates: insertResult.duplicates,
             errors: insertResult.errors,
+            insertedIds: insertResult.insertedIds,
             duplicateDetails: insertResult.duplicateDetails,
             errorDetails: insertResult.errorDetails
           };
