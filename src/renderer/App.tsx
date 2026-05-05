@@ -30,6 +30,7 @@ import {
   faLaptopCode,
   faClock,
   faChessRook,
+  faPaw,
   faDatabase,
   faCloud,
   faBrain,
@@ -2321,6 +2322,13 @@ function NavigationBar({
             >
               <FontAwesomeIcon icon={faChessRook} fixedWidth />
               <span>Rookie</span>
+            </Link>
+            <Link
+              to="/openclaw"
+              className={`nav-dropdown-item ${location.pathname === '/openclaw' ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faPaw} fixedWidth />
+              <span>OpenClaw</span>
             </Link>
             <Link
               to="/user-data"
