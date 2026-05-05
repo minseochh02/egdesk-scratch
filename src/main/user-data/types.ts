@@ -93,6 +93,7 @@ export interface InsertResult {
   skipped: number;
   duplicates: number; // Number of duplicates skipped/updated
   errors: string[];
+  insertedIds: number[];
 }
 
 /**

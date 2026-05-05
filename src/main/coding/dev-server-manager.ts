@@ -63,6 +63,23 @@ export class DevServerManager {
   constructor() {
     this.setupIpcHandlers();
     this.initializeRuntime();
+    this.initializeTunnelId();
+  }
+
+  /**
+   * Initialize tunnel ID from store if available
+   */
+  private initializeTunnelId() {
+    try {
+      const store = getStore();
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      if (mcpConfig?.tunnel?.registered && mcpConfig?.tunnel?.serverName) {
+        this.tunnelId = mcpConfig.tunnel.serverName;
+        console.log(`🔧 DevServerManager: Initialized tunnel ID from store: ${this.tunnelId}`);
+      }
+    } catch (error) {
+      console.error('Failed to initialize tunnel ID from store:', error);
+    }
   }
 
   /**
@@ -232,6 +249,11 @@ export class DevServerManager {
         console.error('Failed to check Node.js installation:', error);
         return { success: false, error: error.message };
       }
+    });
+
+    ipcMain.handle('dev-server:set-tunnel-id', async (event, tunnelId: string) => {
+      this.setTunnelId(tunnelId);
+      return { success: true };
     });
 
     ipcMain.handle('dev-server:analyze-folder', async (event, folderPath: string) => {
@@ -1920,7 +1942,15 @@ export default nextConfig;
     const requiresTunnel = effectiveMode === 'production';
 
     if (!this.tunnelId && requiresTunnel) {
-      throw new Error('Tunnel required for production mode. Start tunnel in Settings or switch to dev mode.');
+      // Check if tunnel is already registered in store as a fallback
+      const store = getStore();
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      if (mcpConfig?.tunnel?.registered && mcpConfig?.tunnel?.serverName) {
+        console.log(`🔧 Found registered tunnel in store: ${mcpConfig.tunnel.serverName}`);
+        this.tunnelId = mcpConfig.tunnel.serverName;
+      } else {
+        throw new Error('Tunnel required for production mode. Start tunnel in Settings or switch to dev mode.');
+      }
     }
 
     if (!this.tunnelId) {

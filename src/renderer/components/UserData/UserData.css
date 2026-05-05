@@ -139,7 +139,78 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 10px;
+  gap: 16px;
+}
+
+.table-list-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--ud-surface);
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ud-border);
+  box-shadow: var(--ud-shadow-sm);
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--ud-text-muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.table-search-input {
+  width: 100%;
+  padding: 10px 36px;
+  border: 1px solid var(--ud-border-strong);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--ud-surface-soft);
+  color: var(--ud-text);
+  transition: all 0.2s ease;
+}
+
+.table-search-input:focus {
+  outline: none;
+  border-color: var(--ud-primary);
+  background: var(--ud-surface);
+  box-shadow: 0 0 0 3px rgba(58, 120, 255, 0.1);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--ud-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.search-clear-btn:hover {
+  background: #eee;
+  color: var(--ud-text);
+}
+
+.search-results-count {
+  font-size: 12px;
+  color: var(--ud-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .table-list-header {
@@ -2758,6 +2829,54 @@
 .source-badge.desktop {
   background: #f3e5f5;
   color: #7b1fa2;
+}
+
+/* ========================================
+   User Data / Neuron Layer Tab switcher
+   ======================================== */
+
+.ud-view-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--ud-border);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 16px;
+  width: fit-content;
+}
+
+.ud-view-tab {
+  padding: 6px 16px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ud-text-muted);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ud-view-tab:hover {
+  color: var(--ud-text);
+  background: rgba(255,255,255,0.6);
+}
+
+.ud-view-tab.active {
+  background: var(--ud-surface);
+  color: var(--ud-text);
+  box-shadow: 0 1px 4px rgba(21,34,56,0.12);
+}
+
+.ud-view-tab .tab-ai-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a855f7;
+  flex-shrink: 0;
 }
 
 /* ========================================

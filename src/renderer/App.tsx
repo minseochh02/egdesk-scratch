@@ -32,6 +32,7 @@ import {
   faChessRook,
   faDatabase,
   faCloud,
+  faBrain,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -56,6 +57,8 @@ import EGBusinessIdentity from './components/EGBusinessIdentity';
 import BusinessIdentityTab from './components/EGBusinessIdentity/BusinessIdentityTab';
 import FinanceHub from './components/FinanceHub/FinanceHub';
 import { UserDataPage } from './components/UserData';
+import { NeuronLayer } from './components/NeuronLayer';
+import { AICenter } from './components/AICenter';
 import { UpdateDialog } from './components/UpdateDialog';
 import { DockerManager } from './components/DockerManager';
 import BrowserRecorderPage from './components/BrowserRecorder/BrowserRecorderPage';
@@ -301,7 +304,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.2.1</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.0</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2179,7 +2182,7 @@ function NavDropdown({
         )}
       </button>
       {isOpen && (
-        <div className="nav-dropdown-menu">
+        <div className="nav-dropdown-menu" onClick={() => setIsOpen(false)}>
           {children}
         </div>
       )}
@@ -2228,7 +2231,9 @@ function NavigationBar({
     '/browser-recorder',
     '/desktop-recorder',
     '/rookie',
-    '/user-data'
+    '/user-data',
+    '/neuron',
+    '/ai-center',
   ].some(path => location.pathname.startsWith(path));
 
   const isSystemActive = [
@@ -2327,6 +2332,14 @@ function NavigationBar({
             <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faChartBar} fixedWidth />
               <span>Finance Hub</span>
+            </Link>
+            <Link to="/neuron" className={`nav-dropdown-item ${location.pathname.startsWith('/neuron') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faBrain} fixedWidth />
+              <span>Neuron</span>
+            </Link>
+            <Link to="/ai-center" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-center') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faBrain} fixedWidth />
+              <span>AI Center</span>
             </Link>
             <div
               className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
@@ -2964,6 +2977,8 @@ function AppContent() {
             <Route path="/blog-connector" element={<EGBlogging />} />
             <Route path="/finance-hub" element={<FinanceHub />} />
             <Route path="/user-data" element={<UserDataPage />} />
+            <Route path="/neuron" element={<NeuronLayer />} />
+            <Route path="/ai-center" element={<AICenter />} />
             <Route path="/scheduler-status" element={<SchedulerStatus />} />
             <Route path="/docker" element={<DockerManager />} />
             <Route path="/browser-recorder" element={<BrowserRecorderPage />} />

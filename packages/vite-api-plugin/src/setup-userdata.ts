@@ -658,6 +658,188 @@ export async function runBrowserRecording(
     ...options
   });
 }
+
+// ==========================================
+// AI CENTER (workflows, entities, relations, tags)
+// ==========================================
+
+/**
+ * Call EGDesk AI Center MCP tool.
+ *
+ * Uses \`/__ai_center_proxy\` (see @egdesk/vite-api-plugin). EGDesk must be running.
+ */
+export async function callAICenterTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const response = await fetch('/__ai_center_proxy', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ tool: toolName, arguments: args })
+  });
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+// ── Data Sources ─────────────────────────────────────────────────────────────
+
+/**
+ * List all data sources available for AI processing (user data tables, finance hub accounts,
+ * business identity snapshots, company research records) with processing state.
+ */
+export async function listDataSources() {
+  return callAICenterTool('ai_center_list_data_sources', {});
+}
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+
+/** List all AI workflows */
+export async function listWorkflows() {
+  return callAICenterTool('ai_center_list_workflows', {});
+}
+
+/** Get a single workflow by ID (includes action steps) */
+export async function getWorkflow(id: string) {
+  return callAICenterTool('ai_center_get_workflow', { id });
+}
+
+/** Create a new AI workflow */
+export async function createWorkflow(data: {
+  label: string;
+  inputTypes: string[];
+  hints: string[];
+  outputTables: string[];
+  actions: Array<{ actionId: string; params?: Record<string, string> }>;
+  status?: 'active' | 'suggested' | 'draft';
+  suggestedBy?: string;
+}) {
+  return callAICenterTool('ai_center_create_workflow', data);
+}
+
+/** Update metadata fields of an existing workflow */
+export async function updateWorkflow(
+  id: string,
+  data: {
+    label?: string;
+    status?: 'active' | 'suggested' | 'draft';
+    inputTypes?: string[];
+    hints?: string[];
+    outputTables?: string[];
+  }
+) {
+  return callAICenterTool('ai_center_update_workflow', { id, ...data });
+}
+
+/** Change the status of a workflow */
+export async function updateWorkflowStatus(
+  id: string,
+  status: 'active' | 'suggested' | 'draft'
+) {
+  return callAICenterTool('ai_center_update_workflow_status', { id, status });
+}
+
+/** Delete a workflow and all its action steps */
+export async function deleteWorkflow(id: string) {
+  return callAICenterTool('ai_center_delete_workflow', { id });
+}
+
+// ── Workflow actions ──────────────────────────────────────────────────────────
+
+/** Append or insert an action step into a workflow */
+export async function addWorkflowAction(
+  workflowId: string,
+  actionId: string,
+  params: Record<string, string>,
+  position: number = 0
+) {
+  return callAICenterTool('ai_center_add_workflow_action', { workflowId, actionId, params, position });
+}
+
+/** Remove a single action step from a workflow by its row ID */
+export async function removeWorkflowAction(rowId: string) {
+  return callAICenterTool('ai_center_remove_workflow_action', { rowId });
+}
+
+// ── Entities ──────────────────────────────────────────────────────────────────
+
+/** List all Neuron Layer entities, optionally filtered by type */
+export async function listEntities(types?: string[]) {
+  return callAICenterTool('ai_center_list_entities', types ? { types } : {});
+}
+
+/** Create a new entity in the Neuron Layer */
+export async function createEntity(data: {
+  type: string;
+  name: string;
+  source: 'ai' | 'human';
+  id?: string;
+  raw?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_entity', data);
+}
+
+/** Delete an entity from the Neuron Layer */
+export async function deleteEntity(id: string) {
+  return callAICenterTool('ai_center_delete_entity', { id });
+}
+
+// ── Relations ─────────────────────────────────────────────────────────────────
+
+/** List all relations, optionally filtered by source entity ID */
+export async function listRelations(fromId?: string) {
+  return callAICenterTool('ai_center_list_relations', fromId ? { fromId } : {});
+}
+
+/** Create a relation edge between two entities */
+export async function createRelation(data: {
+  from_type: string;
+  from_id: string;
+  to_type: string;
+  to_id: string;
+  relation: string;
+  source: 'ai' | 'human';
+  id?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_relation', data);
+}
+
+/** Delete a relation edge by ID */
+export async function deleteRelation(id: string) {
+  return callAICenterTool('ai_center_delete_relation', { id });
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
+
+/** List all tags, optionally filtered by entity ID */
+export async function listTags(entityId?: string) {
+  return callAICenterTool('ai_center_list_tags', entityId ? { entityId } : {});
+}
+
+/** Create a tag/property on an entity or document */
+export async function createTag(data: {
+  doc_type: string;
+  doc_id: string;
+  namespace: string;
+  value: string;
+  source: 'ai' | 'human';
+  id?: string;
+  doc_ref?: string;
+  entity_id?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_tag', data);
+}
+
+/** Delete a tag by ID */
+export async function deleteTag(id: string) {
+  return callAICenterTool('ai_center_delete_tag', { id });
+}
 `;
 
   fs.writeFileSync(helperPath, helperContent.replace(/\r?\n/g, os.EOL), 'utf-8');

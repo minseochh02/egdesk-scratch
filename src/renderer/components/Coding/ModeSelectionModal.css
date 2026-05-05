@@ -1,0 +1,169 @@
+.mode-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.mode-modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 450px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: modal-fade-in 0.2s ease-out;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.mode-modal-header {
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.mode-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #2c3e50;
+}
+
+.mode-modal-body {
+  padding: 20px;
+}
+
+.mode-modal-message {
+  margin: 0 0 20px 0;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.mode-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 2px solid #eee;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-option:hover {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.05);
+  transform: translateY(-2px);
+}
+
+.mode-option-icon {
+  font-size: 24px;
+}
+
+.mode-option-info {
+  flex: 1;
+}
+
+.mode-option-title {
+  font-weight: 600;
+  font-size: 16px;
+  color: #1a202c;
+  margin-bottom: 2px;
+}
+
+.mode-option-desc {
+  font-size: 12px;
+  color: #718096;
+}
+
+.mode-modal-footer {
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mode-modal-cancel-btn {
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #4a5568;
+  transition: all 0.2s ease;
+}
+
+.mode-modal-cancel-btn:hover {
+  background: #f1f1f1;
+  border-color: #ccc;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .mode-modal-content {
+    background: #2c2c2c;
+    color: #f0f0f0;
+  }
+
+  .mode-modal-header,
+  .mode-modal-footer {
+    background: #1e1e1e;
+    border-color: #404040;
+  }
+
+  .mode-modal-header h3 {
+    color: #f0f0f0;
+  }
+
+  .mode-modal-message {
+    color: #d0d0d0;
+  }
+
+  .mode-option {
+    border-color: #404040;
+    background: #333;
+  }
+
+  .mode-option:hover {
+    border-color: #4a9eff;
+    background-color: rgba(74, 158, 255, 0.1);
+  }
+
+  .mode-option-title {
+    color: #f0f0f0;
+  }
+
+  .mode-option-desc {
+    color: #a0aec0;
+  }
+
+  .mode-modal-cancel-btn {
+    background: #333;
+    border-color: #404040;
+    color: #d0d0d0;
+  }
+
+  .mode-modal-cancel-btn:hover {
+    background: #404040;
+  }
+}
