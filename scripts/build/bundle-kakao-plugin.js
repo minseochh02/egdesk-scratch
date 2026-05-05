@@ -29,6 +29,12 @@ function copyDir(src, dest) {
   }
 }
 
+// ── 0. Guard: skip if plugin source isn't checked out ─────────────────────
+if (!fs.existsSync(PLUGIN_SRC)) {
+  console.log(`Kakao plugin source not found at ${PLUGIN_SRC}, skipping.`);
+  process.exit(0);
+}
+
 // ── 1. Compile the plugin ──────────────────────────────────────────────────
 console.log('Compiling kakao plugin…');
 const installedPlugin = path.join(
