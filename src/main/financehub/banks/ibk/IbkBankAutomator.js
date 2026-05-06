@@ -661,6 +661,813 @@ class IbkBankAutomator extends BaseBankAutomator {
     }
   }
 
+  // ============================================================================
+  // IBK 대출 → 대출조회 → 대출계좌조회 → 거래내역조회 (per-account)
+  // Recording: output/browser-recorder-tests/ibk-대출거래.spec.js
+  // ============================================================================
+
+  /**
+   * Default = last 12 months: today minus 365 days → today.
+   */
+  _ibkDefaultLoanDateRange() {
+    const now = new Date();
+    const back = new Date(now.getTime() - 365 * 24 * 3600 * 1000);
+    const fmt = (d) =>
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    return { startDate: fmt(back), endDate: fmt(now) };
+  }
+
+  /**
+   * Navigate top-nav 뱅킹업무 → sidebar 대출 → 대출조회 → 대출계좌조회.
+   *
+   * The first step is required: 대출 lives in the sidebar that's only populated
+   * after clicking the 뱅킹업무 top-nav category icon (recording xpath
+   * /html/body/div[10]/div[1]/div[4]/div/ul/li[3]/a/img). Without it, 대출계좌조회
+   * resolves to a hidden element and the click hangs.
+   */
+  async _navigateIbkToLoanAccountList(mainframe) {
+    // 1) Top-nav: 뱅킹업무 icon. Try alt-text first, then a text/title match,
+    //    then fall back to the recording's positional xpath (li[3] under the
+    //    top-nav <ul>).
+    const bankingCandidates = [
+      () => mainframe.locator('img[alt="뱅킹업무"]').first(),
+      () => mainframe.locator('a[title="뱅킹업무"]').first(),
+      () => mainframe.locator('a').filter({ hasText: /^뱅킹업무$/ }).first(),
+      () => mainframe.locator('xpath=/html/body/div[10]/div[1]/div[4]/div/ul/li[3]/a/img').first(),
+    ];
+    let bankingClicked = false;
+    for (const get of bankingCandidates) {
+      try {
+        const el = get();
+        const visible = await el.isVisible({ timeout: 1500 }).catch(() => false);
+        if (!visible) continue;
+        await el.hover({ force: true }).catch(() => {});
+        await this.page.waitForTimeout(400);
+        await el.click({ force: true });
+        bankingClicked = true;
+        this.log('[IBK loan] 뱅킹업무 top-nav clicked');
+        break;
+      } catch (e) {
+        this.warn(`[IBK loan] 뱅킹업무 candidate failed: ${e.message}`);
+      }
+    }
+    if (!bankingClicked) {
+      this.warn('[IBK loan] could not click 뱅킹업무 — sidebar may not populate, but trying anyway');
+    }
+    await this.page.waitForTimeout(2000);
+
+    // 2) Sidebar drill via _robustClickMainframe (JS-dispatched click, bypasses
+    //    Playwright's visibility check — same pattern as syncPromissoryNotes).
+    //    Menu IDs come from the user's diagnostic log:
+    //      대출       → efncmenuid="E0600000000" (menulvlvl=2)
+    //      대출조회   → efncmenuid="E0601000000" (menulvlvl=3, inferred from siblings)
+    //      대출계좌조회 → efncmenuid="E0601010000" (menulvlvl=4, confirmed)
+
+    let ok = await this._robustClickMainframe(mainframe, 'a[efncmenuid="E0600000000"]');
+    if (!ok) {
+      this.warn('[IBK loan] 대출 not found by efncmenuid — trying exact-text fallback');
+      ok = await mainframe.evaluate(() => {
+        const cand = Array.from(document.querySelectorAll('a[efncmenuid^="E06"]')).find(
+          (a) => (a.textContent || '').trim() === '대출',
+        );
+        if (!cand) return false;
+        cand.scrollIntoView();
+        ['mousedown', 'mouseup', 'click'].forEach((t) =>
+          cand.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })),
+        );
+        if (typeof cand.onclick === 'function') cand.onclick();
+        return true;
+      });
+    }
+    if (!ok) throw new Error('대출 sidebar item not found');
+    await this.page.waitForTimeout(1500);
+
+    // 대출 click navigates the frame; let it settle before looking for the next item.
+    await this.page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
+    mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+    ok = await this._robustClickMainframe(mainframe, 'a[efncmenuid="E0601000000"]');
+    if (!ok) {
+      this.warn('[IBK loan] 대출조회 not found by efncmenuid — trying broad-text fallback');
+      const result = await mainframe.evaluate(() => {
+        // Cast a wide net: any element whose trimmed text is exactly "대출조회".
+        // Then walk up to the nearest <a> for the actual click target (recording
+        // showed the visible text often lives inside a <span> inside the <a>).
+        const all = Array.from(document.querySelectorAll('a, span, li, button, div'));
+        const matches = all.filter((el) => (el.textContent || '').trim() === '대출조회');
+        const anchor =
+          matches.find((el) => el.tagName === 'A') ||
+          matches.map((el) => el.closest && el.closest('a')).find((a) => !!a);
+
+        // Always return diagnostic info so the warn log can show what we saw.
+        const diag = matches.slice(0, 5).map((el) => ({
+          tag: el.tagName,
+          efncmenuid: el.getAttribute && el.getAttribute('efncmenuid'),
+          parentTag: el.parentElement && el.parentElement.tagName,
+          parentEfncmenuid: el.parentElement && el.parentElement.getAttribute
+            ? el.parentElement.getAttribute('efncmenuid')
+            : null,
+        }));
+
+        if (!anchor) {
+          // Also dump up to 8 anchors with efncmenuid starting with E06 so we can
+          // see what loan-related items are actually in the DOM.
+          const e06 = Array.from(document.querySelectorAll('a[efncmenuid^="E06"]'))
+            .slice(0, 12)
+            .map((a) => ({
+              efncmenuid: a.getAttribute('efncmenuid'),
+              text: (a.textContent || '').trim().slice(0, 40),
+              menulvl: a.getAttribute('menulvlvl'),
+            }));
+          return { ok: false, matchCount: matches.length, matches: diag, e06 };
+        }
+
+        anchor.scrollIntoView();
+        ['mousedown', 'mouseup', 'click'].forEach((t) =>
+          anchor.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })),
+        );
+        if (typeof anchor.onclick === 'function') anchor.onclick();
+        return { ok: true, matchCount: matches.length, matches: diag };
+      });
+      if (result && result.ok) {
+        ok = true;
+      } else {
+        this.warn(
+          `[IBK loan] 대출조회 fallback diagnostic: matchCount=${result?.matchCount}, matches=${JSON.stringify(result?.matches)}, e06=${JSON.stringify(result?.e06)}`,
+        );
+      }
+    }
+    if (!ok) throw new Error('대출조회 sidebar item not found');
+    await this.page.waitForTimeout(1500);
+
+    ok = await this._robustClickMainframe(mainframe, 'a[efncmenuid="E0601010000"]');
+    if (!ok) {
+      this.warn('[IBK loan] 대출계좌조회 not found by efncmenuid — trying exact-text fallback');
+      ok = await this._robustClickMainframe(mainframe, 'a', '대출계좌조회');
+    }
+    if (!ok) throw new Error('대출계좌조회 sidebar item not found');
+    await this.page.waitForTimeout(2500);
+  }
+
+  /**
+   * Read the loan-account list table and return one record per row.
+   * Each row's account_number is the cell that matches an IBK loan-account number
+   * pattern; extra cells go into `cellTexts` for diagnostics.
+   */
+  /**
+   * Poll the page until the loan-account table populates. The data grid loads
+   * asynchronously after navigating to 대출계좌조회 — a single read right after
+   * the menu click usually finds an empty grid.
+   */
+  async _readIbkLoanAccountRows(mainframe, { maxWaitMs = 20000, pollMs = 1500 } = {}) {
+    const deadline = Date.now() + maxWaitMs;
+    let attempt = 0;
+    let lastResult = null;
+    while (Date.now() < deadline) {
+      attempt++;
+      lastResult = await this._scanIbkLoanAccountTables(mainframe);
+      if (lastResult.rows.length > 0) {
+        this.log(
+          `IBK loan: discovered ${lastResult.rows.length} loan account row(s) after ${attempt} attempt(s) (table index=${lastResult.chosenTable})`,
+        );
+        return lastResult.rows;
+      }
+      await this.page.waitForTimeout(pollMs);
+    }
+    this.warn(
+      `[IBK loan] timed out (${maxWaitMs}ms, ${attempt} attempts) waiting for loan-account table. Diagnostic:`,
+    );
+    if (lastResult && lastResult.summaries) {
+      for (const s of lastResult.summaries) {
+        this.warn(
+          `  table[${s.tableIndex}] rows=${s.rowCount} matched=${s.matchedRows} parents=${JSON.stringify(s.parentChain)} sample=${JSON.stringify(s.sampleFirst3Rows)}`,
+        );
+      }
+    }
+    return (lastResult && lastResult.rows) || [];
+  }
+
+  /**
+   * Pure scan — no logging, no waiting. Used by `_readIbkLoanAccountRows`.
+   */
+  async _scanIbkLoanAccountTables(mainframe) {
+    return await mainframe.evaluate(() => {
+      // Per-row account detection — prefer hyphenated forms over bare digits.
+      // Iterate patterns from most-specific to least, scanning all cells per pattern
+      // before moving to the next one. This way "306-063568-04-036" wins over a
+      // bare 14-digit blob that may appear in another column (customer id, etc.).
+      const findAccountInRow = (texts) => {
+        const hyphenPatterns = [
+          /\d{3}-\d{2,6}-\d{2,4}-\d{1,4}/,
+          /\d{2,4}-\d{4,8}-\d{2,4}/,
+          /\d{3}-\d{6,10}/,
+        ];
+        for (const re of hyphenPatterns) {
+          for (const tx of texts) {
+            const m = String(tx || '').match(re);
+            if (m) return m[0];
+          }
+        }
+        // Last resort: bare 10–14 digit number.
+        for (const tx of texts) {
+          const m = String(tx || '').match(/\b\d{10,14}\b/);
+          if (m) return m[0];
+        }
+        return null;
+      };
+
+      const tables = Array.from(document.querySelectorAll('table'));
+      const tableSummaries = [];
+      const allFound = [];
+
+      for (let ti = 0; ti < tables.length; ti++) {
+        const t = tables[ti];
+        // tbody tr OR direct tr (some IBK grid widgets omit tbody)
+        const trs = Array.from(t.querySelectorAll(':scope > tbody > tr, :scope > tr'));
+        if (trs.length === 0) continue;
+
+        const rowsHere = [];
+        const sampleCells = [];
+        for (let i = 0; i < trs.length; i++) {
+          const tds = Array.from(trs[i].querySelectorAll(':scope > td'));
+          const texts = tds.map((td) => (td.textContent || '').trim().replace(/\s+/g, ' '));
+          if (i < 3) sampleCells.push(texts.slice(0, 12).map((s) => s.slice(0, 40)));
+          const acc = findAccountInRow(texts);
+          if (acc) {
+            rowsHere.push({ rowIndex: i, accountNumber: acc, cellTexts: texts });
+          }
+        }
+
+        const parentChain = (() => {
+          const chain = [];
+          let p = t.parentElement;
+          for (let n = 0; n < 5 && p; n++) {
+            chain.push(`${p.tagName}.${typeof p.className === 'string' ? p.className.slice(0, 30) : ''}`);
+            p = p.parentElement;
+          }
+          return chain;
+        })();
+
+        tableSummaries.push({
+          tableIndex: ti,
+          rowCount: trs.length,
+          matchedRows: rowsHere.length,
+          sampleFirst3Rows: sampleCells,
+          parentChain,
+        });
+
+        if (rowsHere.length > 0) allFound.push({ tableIndex: ti, rows: rowsHere });
+      }
+
+      allFound.sort((a, b) => b.rows.length - a.rows.length);
+      const best = allFound[0];
+      return {
+        rows: best ? best.rows : [],
+        chosenTable: best ? best.tableIndex : null,
+        totalTables: tables.length,
+        summaries: tableSummaries.slice(0, 12),
+      };
+    });
+  }
+
+  /**
+   * Close the IBK Excel-download popup that appears after the download finishes.
+   *
+   * IMPORTANT: this popup lives on the OUTER `page`, NOT inside `mainframe`.
+   * That's why `_cleanupIbkPopups` (mainframe-scoped) doesn't dismiss it.
+   *
+   * Recording xpath: /html/body/div[1]/div/div/div[6]/.../button/img
+   * The clickable target is the parent <button>, not the <img>.
+   */
+  async _closeIbkDownloadPopup() {
+    if (!this.page || this.page.isClosed()) return;
+
+    // Strategy 1: recording's exact xpath for the close <button>.
+    try {
+      const btn = this.page.locator(
+        'xpath=/html/body/div[1]/div/div/div[6]/div/div/div/div/div[1]/div[2]/button',
+      );
+      if (await btn.isVisible({ timeout: 800 }).catch(() => false)) {
+        await btn.click({ force: true, timeout: 2000 });
+        this.log('[IBK loan] download popup closed (xpath)');
+        return;
+      }
+    } catch (_) {
+      /* fall through */
+    }
+
+    // Strategy 2: any visible <button> on the outer page whose <img> child has
+    // a close-ish src/alt. The IBK download popup uses an icon button (no text).
+    try {
+      const closed = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        for (const b of buttons) {
+          if (!(b.offsetParent || b.getClientRects().length)) continue;
+          const img = b.querySelector('img');
+          if (!img) continue;
+          const src = (img.getAttribute('src') || '').toLowerCase();
+          const alt = (img.getAttribute('alt') || '').toLowerCase();
+          if (
+            /close|btn_x|btn-x|btn_close|x_icon|gnb_sub_close/.test(src) ||
+            /닫기|close/.test(alt)
+          ) {
+            b.click();
+            return true;
+          }
+        }
+        return false;
+      });
+      if (closed) {
+        this.log('[IBK loan] download popup closed (icon heuristic)');
+        return;
+      }
+    } catch (_) {
+      /* swallow */
+    }
+
+    this.warn('[IBK loan] could not close download popup (xpath+icon both missed)');
+  }
+
+  /**
+   * Click td[4] (the checkbox cell) of the given row in the loan-account table,
+   * via JS-dispatched mouse events. Re-resolves the table the same way the
+   * scanner does, so we click the exact same row that was enumerated.
+   * Returns true if the click landed.
+   */
+  async _clickIbkLoanAccountRow(mainframe, rowIndex) {
+    return await mainframe.evaluate((idx) => {
+      const findTable = () => {
+        const tables = Array.from(document.querySelectorAll('table'));
+        let best = null;
+        let bestMatched = 0;
+        const hyphen = /\d{3}-\d{2,6}-\d{2,4}-\d{1,4}|\d{2,4}-\d{4,8}-\d{2,4}/;
+        const bare = /\b\d{10,14}\b/;
+        for (const t of tables) {
+          const trs = Array.from(t.querySelectorAll(':scope > tbody > tr, :scope > tr'));
+          let matched = 0;
+          for (const tr of trs) {
+            const tds = Array.from(tr.querySelectorAll(':scope > td'));
+            const all = tds.map((td) => (td.textContent || '').trim()).join(' ');
+            if (hyphen.test(all) || bare.test(all)) matched++;
+          }
+          if (matched > bestMatched) {
+            bestMatched = matched;
+            best = t;
+          }
+        }
+        return best;
+      };
+      const table = findTable();
+      if (!table) return false;
+      const trs = Array.from(table.querySelectorAll(':scope > tbody > tr, :scope > tr'));
+      const tr = trs[idx];
+      if (!tr) return false;
+      const tds = Array.from(tr.querySelectorAll(':scope > td'));
+      // td[4] in the recording = index 3 zero-based (the checkbox cell). Fall
+      // back to td[0] then to <tr> if the table layout differs.
+      const target = tds[3] || tds[0] || tr;
+      target.scrollIntoView();
+      ['mousedown', 'mouseup', 'click'].forEach((t) =>
+        target.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })),
+      );
+      if (typeof target.onclick === 'function') target.onclick();
+      // Also tick any checkbox inside the row (some grids use real <input>s).
+      const cb = tr.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return true;
+    }, rowIndex);
+  }
+
+  /**
+   * Find the account-selector <select> on the inquiry page. Looks for the
+   * <select> whose options contain account-number-format strings; that's the
+   * "switch which account I'm querying" dropdown we use to iterate.
+   */
+  async _findIbkLoanAccountDropdown(mainframe) {
+    return await mainframe.evaluate(() => {
+      const accountRe = /\d{3}-\d{2,6}-\d{2,4}-\d{1,4}|\d{2,4}-\d{4,8}-\d{2,4}|\b\d{10,14}\b/;
+      const selects = Array.from(document.querySelectorAll('select'));
+      let bestSelect = null;
+      let bestMatched = 0;
+      for (const s of selects) {
+        let matched = 0;
+        for (const opt of s.options) {
+          const blob = `${opt.text || ''} ${opt.value || ''}`;
+          if (accountRe.test(blob)) matched++;
+        }
+        if (matched > bestMatched) {
+          bestMatched = matched;
+          bestSelect = s;
+        }
+      }
+      if (!bestSelect) return null;
+      return {
+        id: bestSelect.id,
+        name: bestSelect.name,
+        matchedCount: bestMatched,
+        options: Array.from(bestSelect.options).map((opt) => ({
+          value: opt.value || '',
+          text: (opt.text || '').trim(),
+        })),
+      };
+    });
+  }
+
+  /**
+   * Pull the hyphenated (preferred) or bare-digit account number out of a
+   * dropdown option's text/value.
+   */
+  _extractAccountFromText(text) {
+    const t = String(text || '');
+    const m1 = t.match(/\d{3}-\d{2,6}-\d{2,4}-\d{1,4}/);
+    if (m1) return m1[0];
+    const m2 = t.match(/\d{2,4}-\d{4,8}-\d{2,4}/);
+    if (m2) return m2[0];
+    const m3 = t.match(/\b\d{10,14}\b/);
+    if (m3) return m3[0];
+    return null;
+  }
+
+  /**
+   * Drive a date select trio (yy/mm/dd) for either start or end side.
+   */
+  async _setIbkLoanDate(mainframe, side, parts) {
+    const idYY = side === 'start' ? 'inqy_sttg_ymd_yy' : 'inqy_eymd_yy';
+    const idMM = side === 'start' ? 'inqy_sttg_ymd_mm' : 'inqy_eymd_mm';
+    const idDD = side === 'start' ? 'inqy_sttg_ymd_dd' : 'inqy_eymd_dd';
+    await mainframe.locator(`[id="${idYY}"]`).selectOption(parts.yyyy).catch(() => {});
+    await mainframe.locator(`[id="${idMM}"]`).selectOption(parts.mm).catch(() => {});
+    await mainframe.locator(`[id="${idDD}"]`).selectOption(parts.dd).catch(() => {});
+  }
+
+  _parseYmdParts(input) {
+    const d = String(input || '').replace(/\D/g, '');
+    if (d.length < 8) throw new Error(`Invalid date: ${input}`);
+    return { yyyy: d.slice(0, 4), mm: d.slice(4, 6), dd: d.slice(6, 8) };
+  }
+
+  /**
+   * Driver: walk every loan account row, run 거래내역조회, download or skip on
+   * "조회결과가 없습니다", import each Excel into `ibk_loan_transactions`.
+   *
+   * Returns aggregate counts; per-account warnings/errors are logged.
+   */
+  async syncLoanTransactions(opts = {}) {
+    if (!this.page) return { success: false, error: '브라우저 페이지가 없습니다.' };
+    this.ensureOutputDirectory(this.downloadDir);
+
+    let { startDate, endDate } =
+      opts.startDate && opts.endDate ? opts : this._ibkDefaultLoanDateRange();
+    const today = this._ibkDefaultLoanDateRange().endDate;
+    const sd = String(startDate || '').replace(/\D/g, '');
+    const ed = String(endDate || '').replace(/\D/g, '');
+    if (sd && sd > today) return { success: false, error: `시작일이 미래입니다 (${startDate} > 오늘 ${today}).` };
+    if (ed && ed > today) {
+      this.warn(`[IBK loan] endDate ${endDate} > today ${today} — clamping`);
+      endDate = today;
+    }
+    if (sd && ed && sd > ed) {
+      return { success: false, error: `시작일이 종료일보다 늦습니다 (${startDate} > ${endDate}).` };
+    }
+
+    this.log(`[IBK loan] syncLoanTransactions ${startDate} ~ ${endDate} 시작...`);
+
+    try {
+      await this._cleanupIbkPopups();
+      let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      if (!mainframe) {
+        await this.page.waitForTimeout(2000);
+        mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      }
+      if (!mainframe) return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
+
+      await this._navigateIbkToLoanAccountList(mainframe);
+      await this._cleanupIbkPopups();
+      mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+      const accountRows = await this._readIbkLoanAccountRows(mainframe);
+      if (!accountRows.length) {
+        return { success: false, error: '대출 계좌 목록을 찾지 못했습니다.' };
+      }
+      // Sanity-check: show what's actually in row 0 of the chosen table so we can
+      // verify it's the loan-accounts table, not a deposit-accounts grid that
+      // happens to have account-format strings in it.
+      this.log(
+        `[IBK loan] row[0] sample cells: ${JSON.stringify((accountRows[0].cellTexts || []).slice(0, 12))}`,
+      );
+
+      const sParts = this._parseYmdParts(startDate);
+      const eParts = this._parseYmdParts(endDate);
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getSQLiteManager } = (() => {
+        try {
+          // Lazy require so the file remains plain JS importable.
+          return require('../../../sqlite/manager');
+        } catch (_) {
+          return { getSQLiteManager: null };
+        }
+      })();
+
+      // ===========================================================
+      // ONE-TIME: navigate to inquiry page using row[0] of the loan list.
+      // After this we never go back to 목록으로 — we use the inquiry page's
+      // account dropdown to switch accounts.
+      // ===========================================================
+      const firstRow = accountRows[0];
+      this.log(`[IBK loan] one-time navigation to inquiry page via first row (${firstRow.accountNumber})`);
+
+      const firstRowXpath = `xpath=/html/body/div[8]/div[5]/div[2]/div[1]/div[3]/div/div/div/table/tbody/tr[3]/td[1]/div/div[1]/table/tbody/tr[${firstRow.rowIndex + 1}]/td[4]`;
+      const firstRowClicked = await mainframe
+        .locator(firstRowXpath)
+        .click({ force: true, timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!firstRowClicked) {
+        await this._clickIbkLoanAccountRow(mainframe, firstRow.rowIndex);
+      }
+      await this.page.waitForTimeout(500);
+      await mainframe
+        .locator('[id="tmpinput0"]')
+        .fill('on', { timeout: 1500 })
+        .catch(() => {});
+      await this.page.waitForTimeout(300);
+
+      // Click toolbar 거래내역조회 via sibling-walk from the data table.
+      const inquiryResult = await mainframe.evaluate(() => {
+        const findLoanTable = () => {
+          const tables = Array.from(document.querySelectorAll('table'));
+          let best = null;
+          let bestM = 0;
+          const hyphen = /\d{3}-\d{2,6}-\d{2,4}-\d{1,4}/;
+          for (const t of tables) {
+            const trs = Array.from(t.querySelectorAll(':scope > tbody > tr, :scope > tr'));
+            let m = 0;
+            for (const tr of trs) {
+              const all = Array.from(tr.querySelectorAll(':scope > td'))
+                .map((td) => td.textContent || '')
+                .join(' ');
+              if (hyphen.test(all)) m++;
+            }
+            if (m > bestM) { bestM = m; best = t; }
+          }
+          return best;
+        };
+        const table = findLoanTable();
+        if (!table) return { ok: false, reason: 'no-table' };
+        let node = table;
+        let depth = 0;
+        while (node && node !== document.body && depth < 25) {
+          const parent = node.parentElement;
+          if (!parent) break;
+          const sibs = Array.from(parent.children).filter((c) => c !== node && c.tagName === 'DIV');
+          for (const sib of sibs) {
+            const candidate = Array.from(sib.querySelectorAll('a, button, span')).find(
+              (el) => (el.textContent || '').trim() === '거래내역조회',
+            );
+            if (candidate) {
+              const anchor = candidate.closest('a, button') || candidate;
+              anchor.scrollIntoView();
+              ['mousedown', 'mouseup', 'click'].forEach((t) =>
+                anchor.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })),
+              );
+              if (typeof anchor.onclick === 'function') anchor.onclick();
+              return { ok: true, depth };
+            }
+          }
+          node = parent;
+          depth++;
+        }
+        return { ok: false, reason: 'no-toolbar-sibling' };
+      });
+      if (!inquiryResult || !inquiryResult.ok) {
+        return { success: false, error: `거래내역조회 click failed: ${JSON.stringify(inquiryResult)}` };
+      }
+      this.log(`[IBK loan] reached inquiry page (depth=${inquiryResult.depth})`);
+      await this.page.waitForTimeout(3000);
+
+      mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+      // ===========================================================
+      // Find the account dropdown on the inquiry page.
+      // ===========================================================
+      const dropdown = await this._findIbkLoanAccountDropdown(mainframe);
+      if (!dropdown || !dropdown.options || dropdown.options.length === 0) {
+        // Diagnostic: dump form to help debug
+        try {
+          const formDump = await mainframe.evaluate(() => {
+            const forms = Array.from(document.querySelectorAll('form'));
+            return forms.slice(0, 2).map((f) => ({
+              selects: Array.from(f.querySelectorAll('select')).map((s) => ({
+                id: s.id,
+                name: s.name,
+                optionCount: s.options.length,
+                firstOptions: Array.from(s.options).slice(0, 6).map((o) => (o.text || '').trim().slice(0, 40)),
+              })),
+              radios: Array.from(f.querySelectorAll('input[type="radio"]')).map((r) => ({
+                id: r.id, name: r.name, value: r.value, checked: r.checked,
+              })),
+            }));
+          });
+          this.warn(`[IBK loan] could not find account dropdown. Form dump: ${JSON.stringify(formDump)}`);
+        } catch (_) {}
+        return { success: false, error: '계좌 드롭다운을 찾지 못했습니다.' };
+      }
+      this.log(
+        `[IBK loan] account dropdown id="${dropdown.id}" name="${dropdown.name}" matchedOptions=${dropdown.matchedCount} totalOptions=${dropdown.options.length}`,
+      );
+
+      // Filter dropdown options to those that look like accounts (skip "선택" / placeholder).
+      const accountOpts = dropdown.options.filter((opt) => {
+        const blob = `${opt.text || ''} ${opt.value || ''}`;
+        return /\d{3}-\d{2,6}-\d{2,4}-\d{1,4}|\d{2,4}-\d{4,8}-\d{2,4}|\b\d{10,14}\b/.test(blob);
+      });
+      this.log(`[IBK loan] iterating ${accountOpts.length} accounts via dropdown`);
+
+      // ===========================================================
+      // Loop: select dropdown option → set dates → 조회 → download → import.
+      // No 목록으로 click — we stay on the inquiry page the entire time.
+      // ===========================================================
+      const perAccount = [];
+      for (let i = 0; i < accountOpts.length; i++) {
+        const opt = accountOpts[i];
+        const acct = this._extractAccountFromText(`${opt.text} ${opt.value}`) || opt.value || '(unknown)';
+        this.log(`[IBK loan] (${i + 1}/${accountOpts.length}) account=${acct}`);
+
+        try {
+          mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+          // Select the option in the dropdown — try by value, then by label.
+          const dropdownLoc = mainframe.locator(`[id="${dropdown.id}"]`);
+          let selectOk = false;
+          try {
+            await dropdownLoc.selectOption(opt.value, { timeout: 3000 });
+            selectOk = true;
+          } catch (e) {
+            this.warn(`[IBK loan] account=${acct}: selectOption(value=${opt.value}) failed: ${e.message}`);
+          }
+          if (!selectOk) {
+            try {
+              await dropdownLoc.selectOption({ label: opt.text }, { timeout: 3000 });
+              selectOk = true;
+            } catch (e) {
+              this.warn(`[IBK loan] account=${acct}: selectOption(label) failed: ${e.message}`);
+            }
+          }
+          this.log(`[IBK loan] account=${acct}: dropdown select → ${selectOk}`);
+          if (!selectOk) {
+            perAccount.push({ accountNumber: acct, imported: 0, error: 'dropdown select failed' });
+            continue;
+          }
+          await this.page.waitForTimeout(500);
+
+          // Set dates
+          this.log(`[IBK loan] account=${acct}: setting dates ${startDate} ~ ${endDate}`);
+          await this._setIbkLoanDate(mainframe, 'start', sParts);
+          await this._setIbkLoanDate(mainframe, 'end', eParts);
+          await this.page.waitForTimeout(400);
+
+          // Click 조회 (form-scoped to avoid sidebar matches)
+          let queryClicked = false;
+          try {
+            await mainframe.locator('form a.btn_ok').first().click({ force: true, timeout: 5000 });
+            queryClicked = true;
+          } catch (e) {
+            this.warn(`[IBK loan] form a.btn_ok click failed: ${e.message}`);
+          }
+          if (!queryClicked) {
+            try {
+              await mainframe
+                .locator('form')
+                .locator('a, button')
+                .filter({ hasText: /^조회$/ })
+                .first()
+                .click({ force: true, timeout: 3000 });
+              queryClicked = true;
+            } catch (e) {
+              this.warn(`[IBK loan] form 조회 exact-text fallback failed: ${e.message}`);
+            }
+          }
+          if (!queryClicked) {
+            perAccount.push({ accountNumber: acct, imported: 0, error: '조회 click failed' });
+            continue;
+          }
+          this.log(`[IBK loan] account=${acct}: 조회 clicked, waiting...`);
+          await this.page.waitForTimeout(3500);
+
+          // No-data check
+          const errText = await mainframe
+            .locator('[id="spErrTitle"]')
+            .first()
+            .textContent({ timeout: 1000 })
+            .catch(() => null);
+          this.log(`[IBK loan] account=${acct}: spErrTitle=${JSON.stringify((errText || '').slice(0, 80))}`);
+          if (errText && errText.includes('조회결과가 없습니다')) {
+            this.log(`[IBK loan] account=${acct} — no transactions (skip)`);
+            perAccount.push({ accountNumber: acct, imported: 0, skipped: true });
+            // No 목록으로 — stay on inquiry page, dropdown still active for next iteration.
+            continue;
+          }
+
+          // Trigger download
+          await this.focusPlaywrightPage();
+          const exportStartedAt = Date.now();
+          const downloadPromise = this.context.waitForEvent('download', { timeout: 60000 }).catch(() => null);
+
+          this.log(`[IBK loan] account=${acct}: clicking 저장 / 출력용 / DownloadExcel / DownloadButton`);
+          await this._robustClickMainframe(mainframe, '[id="save_to_file"]').catch(() => {});
+          await this.page.waitForTimeout(800);
+          await this._robustClickMainframe(mainframe, 'span', '엑셀파일저장(출력용)').catch(() => {});
+          await this.page.waitForTimeout(800);
+          await this._robustClickMainframe(mainframe, '[id="DownloadExcel"]').catch(() => {});
+          await this.page.waitForTimeout(400);
+          await this._robustClickMainframe(mainframe, '[id="DownloadButton"]').catch(() => {});
+
+          const download = await downloadPromise;
+          let suggested = '거래내역조회.xlsx';
+          let fallbackFile = null;
+          if (!download) {
+            this.warn('[IBK loan] no download event; checking filesystem fallback...');
+            fallbackFile = this.findRecentDownloadFile(
+              [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+              exportStartedAt,
+            );
+            if (!fallbackFile) {
+              this.warn(`[IBK loan] account=${acct} — download failed, skipping`);
+              perAccount.push({ accountNumber: acct, imported: 0, error: 'download failed' });
+              await this._closeIbkDownloadPopup().catch(() => {});
+              continue;
+            }
+            suggested = path.basename(fallbackFile.path);
+          } else {
+            suggested = download.suggestedFilename() || suggested;
+          }
+
+          const ext = path.extname(suggested) || '.xlsx';
+          const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const safeAcct = String(acct).replace(/[^\w-]/g, '_');
+          const finalName = `IBK_대출거래_${safeAcct}_${startDate}_${endDate}_${ts}${ext}`;
+          const finalPath = path.join(this.downloadDir, finalName);
+          const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+          if (!saved) {
+            perAccount.push({ accountNumber: acct, imported: 0, error: 'save failed' });
+            continue;
+          }
+          this.log(`[IBK loan] account=${acct} downloaded → ${finalPath}`);
+
+          // Close the post-download popup (page-level, not mainframe)
+          await this._closeIbkDownloadPopup();
+          await this.page.waitForTimeout(400);
+
+          // Import
+          let imported = 0;
+          if (getSQLiteManager) {
+            try {
+              const fhm = getSQLiteManager().getFinanceHubManager();
+              const imp = fhm.importIbkLoanTransactionsFromExcel(finalPath, acct);
+              imported = imp.imported || 0;
+              if (imp.warnings && imp.warnings.length) {
+                this.warn(`[IBK loan] account=${acct} parser warnings: ${imp.warnings.join('; ')}`);
+              }
+              if (imp.success === false) {
+                this.warn(`[IBK loan] account=${acct} import failed: ${imp.error}`);
+              }
+            } catch (importErr) {
+              this.warn(`[IBK loan] account=${acct} import threw: ${importErr.message}`);
+            }
+          }
+          perAccount.push({ accountNumber: acct, imported, filePath: finalPath });
+
+          // No 목록으로 — stay on inquiry page for the next dropdown iteration.
+        } catch (perAcctErr) {
+          this.error(`[IBK loan] account=${acct} loop error:`, perAcctErr.message);
+          perAccount.push({ accountNumber: acct, imported: 0, error: perAcctErr.message });
+          await this._closeIbkDownloadPopup().catch(() => {});
+        }
+      }
+
+      const totalImported = perAccount.reduce((a, b) => a + (b.imported || 0), 0);
+      const skipped = perAccount.filter((r) => r.skipped).length;
+      this.log(`[IBK loan] complete. accounts=${perAccount.length}, imported=${totalImported}, skipped=${skipped}`);
+      return {
+        success: true,
+        accounts: perAccount.length,
+        imported: totalImported,
+        skipped,
+        perAccount,
+      };
+    } catch (error) {
+      this.error('[IBK loan] syncLoanTransactions failed:', error.message);
+      try {
+        await this._cleanupIbkPopups();
+      } catch (e) {}
+      return { success: false, error: error.message };
+    }
+  }
+
   /**
    * ibk.spec.js — mainframe, ecb_user_num01, inqy_sttg_ymd_* (시작), 저장 → 엑셀파일저장 → DownloadExcel → DownloadButton
    * @returns {Promise<Array<{status:string,filename?:string|null,path?:string|null,extractedData:object}>>}

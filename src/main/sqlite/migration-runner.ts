@@ -108,6 +108,15 @@ export async function runSqliteMigrations({
   }
 
   try {
+    const { migrate031CreateIbkLoanTransactions } = await import(
+      './migrations/031-create-ibk-loan-transactions'
+    );
+    migrate031CreateIbkLoanTransactions(financeHubDb);
+  } catch (migration031Error: any) {
+    console.error('⚠️ Migration 031 error:', migration031Error.message);
+  }
+
+  try {
     migrate026UpdateCardDedupIndex(financeHubDb);
   } catch (migration026Error: any) {
     console.error('⚠️ Migration 026 error:', migration026Error.message);
