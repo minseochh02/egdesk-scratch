@@ -4,6 +4,7 @@ import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema'
 import { createTaxExemptInvoicesSchema } from './migrations/024-tax-exempt-invoices-schema';
 import { createTaxBillsSchema } from './migrations/025-tax-bills-schema';
 import { migrate026UpdateCardDedupIndex } from './migrations/026-update-card-dedup-index';
+import { migrate027CleanupCardDuplicates } from './migrations/027-cleanup-card-duplicates';
 import { runOnceMigration } from './migration-state';
 
 interface MigrationRunnerParams {
@@ -85,6 +86,12 @@ export async function runSqliteMigrations({
     migrate026UpdateCardDedupIndex(financeHubDb);
   } catch (migration026Error: any) {
     console.error('⚠️ Migration 026 error:', migration026Error.message);
+  }
+
+  try {
+    migrate027CleanupCardDuplicates(financeHubDb);
+  } catch (migration027Error: any) {
+    console.error('⚠️ Migration 027 error:', migration027Error.message);
   }
 
   // =============================================
