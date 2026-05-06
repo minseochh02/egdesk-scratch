@@ -83,6 +83,31 @@ export async function runSqliteMigrations({
   }
 
   try {
+    const { migrate028CreateIbkB2bReceivables } = await import('./migrations/028-create-ibk-b2b-receivables');
+    migrate028CreateIbkB2bReceivables(financeHubDb);
+  } catch (migration028Error: any) {
+    console.error('⚠️ Migration 028 error:', migration028Error.message);
+  }
+
+  try {
+    const { migrate029CreateWooriB2bLoanExecutions } = await import(
+      './migrations/029-create-woori-b2b-loan-executions'
+    );
+    migrate029CreateWooriB2bLoanExecutions(financeHubDb);
+  } catch (migration029Error: any) {
+    console.error('⚠️ Migration 029 error:', migration029Error.message);
+  }
+
+  try {
+    const { migrate030LoosenWooriB2bLoanExecutionsUnique } = await import(
+      './migrations/030-loosen-woori-b2b-loan-executions-unique'
+    );
+    migrate030LoosenWooriB2bLoanExecutionsUnique(financeHubDb);
+  } catch (migration030Error: any) {
+    console.error('⚠️ Migration 030 error:', migration030Error.message);
+  }
+
+  try {
     migrate026UpdateCardDedupIndex(financeHubDb);
   } catch (migration026Error: any) {
     console.error('⚠️ Migration 026 error:', migration026Error.message);

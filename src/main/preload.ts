@@ -2299,6 +2299,9 @@ const electronHandler = {
     /** Bank-scoped 어음 sync (no per-account range; one action per connected bank). */
     syncPromissoryNotes: (bankId: string) =>
       ipcRenderer.invoke('finance-hub:sync-promissory-notes', { bankId }),
+    /** Woori 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역. Optional date range (YYYYMMDD). */
+    syncWooriB2bLoanExecutions: (opts?: { startDate?: string; endDate?: string }) =>
+      ipcRenderer.invoke('finance-hub:sync-woori-b2b-loan-executions', opts || {}),
     bank: {
       importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
         ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),
@@ -2443,6 +2446,8 @@ const electronHandler = {
     getAllAccounts: () => ipcRenderer.invoke('sqlite-financehub-get-all-accounts'),
     getAccountsByBank: (bankId: string) => ipcRenderer.invoke('sqlite-financehub-get-accounts-by-bank', bankId),
     getPromissoryNotes: () => ipcRenderer.invoke('sqlite-financehub-get-promissory-notes'),
+    getIbkB2bReceivables: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-b2b-receivables'),
+    getWooriB2bLoanExecutions: () => ipcRenderer.invoke('sqlite-financehub-get-woori-b2b-loan-executions'),
     queryTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-query-transactions', options),
     getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
     getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),

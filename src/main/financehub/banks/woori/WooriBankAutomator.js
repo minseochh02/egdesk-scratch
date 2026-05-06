@@ -294,22 +294,25 @@ class WooriBankAutomator extends BaseBankAutomator {
       for (let i = 1; i <= 20; i++) {
         await this._arduinoHid.sendKey('TAB');
         await this.page.waitForTimeout(300);
-        const focusInfo = await this.page.evaluate(() => ({
-          id: document.activeElement?.id || '',
-          tag: document.activeElement?.tagName || '',
-          text: (document.activeElement?.textContent || '').trim(),
-        }));
+        const focusInfo = await this.page.evaluate(() => {
+          const ae = document.activeElement;
+          if (!ae) return { id: '', tag: '', text: '', className: '', name: '', role: '', type: '', ariaLabel: '', title: '' };
+          return {
+            id: ae.id || '',
+            tag: ae.tagName || '',
+            text: (ae.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+            className: typeof ae.className === 'string' ? ae.className : '',
+            name: ae.getAttribute?.('name') || '',
+            role: ae.getAttribute?.('role') || '',
+            type: ae.getAttribute?.('type') || '',
+            ariaLabel: ae.getAttribute?.('aria-label') || '',
+            title: ae.getAttribute?.('title') || '',
+          };
+        });
+        this.log(`[WOORI TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} type="${focusInfo.type}" name="${focusInfo.name}" role="${focusInfo.role}" aria="${focusInfo.ariaLabel}" title="${focusInfo.title}" class="${focusInfo.className}" text="${focusInfo.text}"`);
         focused = focusInfo.id || focusInfo.tag;
         if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
-          this.warn(`[WOORI] TAB landed on 삭제 button — skipping (i=${i})`);
-          await this.page.waitForTimeout(300);
-          const cancelBtn = this.page.locator('button:has-text("취소")').first();
-          const isCancelVisible = await cancelBtn.isVisible({ timeout: 800 }).catch(() => false);
-          if (isCancelVisible) {
-            this.warn('[WOORI] Deletion confirmation modal detected — clicking 취소');
-            await cancelBtn.click({ timeout: 3000 }).catch(() => {});
-            await this.page.waitForTimeout(300);
-          }
+          this.warn(`[WOORI] TAB landed on 삭제 button — sending another TAB to skip (i=${i})`);
           continue;
         }
         if (focused === 'xwup_certselect_tek_input1') break;
@@ -371,6 +374,414 @@ class WooriBankAutomator extends BaseBankAutomator {
       await this.page.locator('a').filter({ hasText: '거래내역조회' }).first().click({ timeout: 5000 }).catch(() => {});
     }
     await this.page.waitForTimeout(3000);
+  }
+
+  // ============================================================================
+  // Woori 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역
+  // (woori_b2b_loan_executions table)
+  // ============================================================================
+
+  /**
+   * Navigate to 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역.
+   * Idempotent — closes leftover popups first.
+   */
+  async _navigateWooriToB2bLoanExecutions() {
+    if (!this.page || this.page.isClosed()) throw new Error('No page');
+    await this._closeWooriOpenPopups();
+
+    // Top-nav: 전자결제 tab
+    try {
+      await this.page.getByRole('link', { name: '전자결제' }).first().click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('header a').filter({ hasText: '전자결제' }).first().click({ timeout: 5000 });
+    }
+    await this.page.waitForTimeout(1500);
+
+    // Mega-menu: B2B대출(협력)
+    try {
+      await this.page.getByRole('link', { name: 'B2B대출(협력)' }).first().click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('a').filter({ hasText: 'B2B대출(협력)' }).first().click({ timeout: 5000 });
+    }
+    await this.page.waitForTimeout(2500);
+
+    // Side-nav: hover parent 대출_신청 to expand its submenu, then click 실행내역.
+    // We scope to `main nav` so we don't match top-level mega-menu links like
+    // "무역금융실행내역조회" which contain "실행내역" as a substring.
+    const sideNav = this.page.locator('main nav').first();
+
+    const sideNavLink = (text) =>
+      sideNav.locator('a').filter({ hasText: new RegExp(`^${text}$`) }).first();
+
+    const parentLoan = sideNavLink('대출_신청');
+    await parentLoan.waitFor({ state: 'visible', timeout: 5000 });
+    await parentLoan.hover({ force: true });
+    await this.page.waitForTimeout(400);
+    // Click as well — the recording shows both hover (implicit) and click are
+    // used to keep the submenu open while we move the mouse.
+    try {
+      await parentLoan.click({ timeout: 4000 });
+    } catch (e) {
+      this.warn('[WOORI b2b] 대출_신청 click failed (hover may be enough):', e.message);
+    }
+    await this.page.waitForTimeout(800);
+
+    const execHistory = sideNavLink('실행내역');
+    // Re-hover the parent right before clicking the child in case the submenu
+    // collapsed during the move.
+    await parentLoan.hover({ force: true });
+    await this.page.waitForTimeout(200);
+    await execHistory.waitFor({ state: 'visible', timeout: 5000 });
+    await execHistory.hover({ force: true });
+    await execHistory.click({ timeout: 5000 });
+    await this.page.waitForTimeout(2500);
+  }
+
+  /**
+   * Click the company picker. The 실행내역 page shows a single-row table at the top
+   * where clicking the cell reveals a list of company buttons; click the first one.
+   */
+  async _wooriPickFirstCompany() {
+    try {
+      // The cell that opens the picker
+      await this.page.locator('main table tr td > div > div').first().click({ timeout: 5000 }).catch(() => {});
+      await this.page.waitForTimeout(800);
+      // Pick the first company button that appears
+      const btn = this.page.locator('main table tr td > div button').first();
+      const visible = await btn.isVisible({ timeout: 1500 }).catch(() => false);
+      if (visible) {
+        await btn.click({ timeout: 5000 });
+        await this.page.waitForTimeout(800);
+      } else {
+        this.warn('[WOORI b2b] company picker button not visible — proceeding without explicit selection');
+      }
+    } catch (e) {
+      this.warn('[WOORI b2b] company picker failed:', e.message);
+    }
+  }
+
+  /**
+   * Convert YYYYMMDD or YYYY-MM-DD or Date to { yyyy, mm, dd } strings.
+   */
+  _wooriParseDateParts(input) {
+    if (input instanceof Date && !Number.isNaN(input.getTime())) {
+      return {
+        yyyy: String(input.getFullYear()),
+        mm: String(input.getMonth() + 1).padStart(2, '0'),
+        dd: String(input.getDate()).padStart(2, '0'),
+      };
+    }
+    const digits = String(input || '').replace(/\D/g, '');
+    if (digits.length < 8) throw new Error(`Invalid date: ${input}`);
+    return { yyyy: digits.slice(0, 4), mm: digits.slice(4, 6), dd: digits.slice(6, 8) };
+  }
+
+  /**
+   * Open the dual-side calendar overlay via #staDtBtn, set start + end year/month/day,
+   * then confirm with .btn-com1. Typing into #inqSdt10 / #inqEdt10 directly does NOT work
+   * on this page — the calendar UI is the only reliable path.
+   */
+  async _wooriPickDateRange(startDate, endDate) {
+    const start = this._wooriParseDateParts(startDate);
+    const end = this._wooriParseDateParts(endDate);
+    this.log(
+      `[WOORI b2b] picking date range ${start.yyyy}-${start.mm}-${start.dd} ~ ${end.yyyy}-${end.mm}-${end.dd}`,
+    );
+
+    // Open the overlay
+    try {
+      await this.page.getByRole('button', { name: '조회시작일' }).first().click({ timeout: 5000 });
+    } catch (e) {
+      await this.page.locator('[id="staDtBtn"]').click({ timeout: 5000 });
+    }
+    await this.page.waitForTimeout(800);
+
+    // Scope every subsequent locator to #uiMultiDate so we never accidentally match
+    // selects/tables that appear elsewhere on the page (e.g. results tables).
+    const overlayRoot = this.page.locator('#uiMultiDate');
+    await overlayRoot.waitFor({ state: 'visible', timeout: 5000 });
+
+    const yearSelects = overlayRoot.locator('select.rt-qc-ui-datepicker-year');
+    const monthSelects = overlayRoot.locator('select.rt-qc-ui-datepicker-month');
+    const calendarTables = overlayRoot.locator('table:has(a.rt-qc-ui-state-default)');
+
+    /**
+     * Day-cell click that re-resolves the locator against the *current* DOM, ignores
+     * greyed-out previous/next-month cells, and waits for the cell to be stable.
+     * The end calendar's day cells are re-rendered when its month changes, so we MUST
+     * locate them after `selectOption()` completes — not before.
+     */
+    const clickDayInTable = async (table, dd, label) => {
+      const want = String(parseInt(dd, 10));
+      // Re-query each call so we get the freshly-rendered cells.
+      const cells = table.locator('a.rt-qc-ui-state-default');
+      const count = await cells.count();
+      // Filter to cells whose exact text is the target day. Skip cells visually
+      // greyed-out for previous/next month (rt-qc-ui-priority-secondary) — these
+      // also have the day text and would steal a `.first()` match.
+      for (let i = 0; i < count; i++) {
+        const c = cells.nth(i);
+        const text = ((await c.textContent()) || '').trim();
+        if (text !== want) continue;
+        const cls = (await c.getAttribute('class')) || '';
+        if (/rt-qc-ui-priority-secondary|disabled/i.test(cls)) continue;
+        await c.scrollIntoViewIfNeeded().catch(() => {});
+        await c.click({ timeout: 3000 });
+        return;
+      }
+      throw new Error(`Could not find ${label} day cell ${dd}`);
+    };
+
+    // ---- Start side: year → month → day, with a settle wait between month & day ----
+    await yearSelects.nth(0).selectOption(start.yyyy);
+    await monthSelects.nth(0).selectOption(start.mm);
+    await this.page.waitForTimeout(500);
+    await clickDayInTable(calendarTables.nth(0), start.dd, 'start');
+    await this.page.waitForTimeout(300);
+
+    // ---- End side: same pattern. Locators re-resolve fresh against the new DOM. ----
+    await yearSelects.nth(1).selectOption(end.yyyy);
+    await monthSelects.nth(1).selectOption(end.mm);
+    await this.page.waitForTimeout(500);
+    await clickDayInTable(calendarTables.nth(1), end.dd, 'end');
+    await this.page.waitForTimeout(300);
+
+    // Confirm. Tricky bit: the 확인 button may live in a <section> that's a sibling
+    // of #uiMultiDate rather than inside it (recorded xpath was body/div[4]/section/div[2]/button,
+    // dialog id is on a different div). Try several strategies, log which one lands,
+    // and let click errors surface instead of swallowing them.
+    const overlay = this.page.locator('#uiMultiDate');
+    const strategies = [
+      { name: 'overlay > button.btn-com1', loc: () => overlay.locator('button.btn-com1').first() },
+      { name: 'overlay > button:has-text("확인")', loc: () => overlay.locator('button:has-text("확인")').first() },
+      // Visible-only global match — cheapest way to skip hidden duplicates on the page.
+      { name: 'global button.btn-com1:visible', loc: () => this.page.locator('button.btn-com1:visible').first() },
+      // Dialog-shape match (any open modal-dialog with a btn-com1 inside).
+      {
+        name: 'open dialog > button.btn-com1',
+        loc: () => this.page.locator('div[role="dialog"][aria-modal="true"].open button.btn-com1').first(),
+      },
+      // Section that contains the calendar tables (the date overlay's content section).
+      {
+        name: 'section :has(.rt-qc-ui-datepicker-year) button.btn-com1',
+        loc: () =>
+          this.page
+            .locator('section:has(.rt-qc-ui-datepicker-year)')
+            .first()
+            .locator('button.btn-com1')
+            .first(),
+      },
+    ];
+
+    let confirmedBy = null;
+    for (const s of strategies) {
+      try {
+        const btn = s.loc();
+        const visible = await btn.isVisible({ timeout: 500 }).catch(() => false);
+        if (!visible) {
+          this.log(`[WOORI b2b] 확인 strategy "${s.name}" not visible — skipping`);
+          continue;
+        }
+        await btn.click({ timeout: 3000 });
+        confirmedBy = s.name;
+        this.log(`[WOORI b2b] 확인 clicked via "${s.name}"`);
+        break;
+      } catch (e) {
+        this.warn(`[WOORI b2b] 확인 strategy "${s.name}" failed: ${e.message}`);
+      }
+    }
+
+    if (!confirmedBy) {
+      // Diagnostic dump so the next attempt has actionable info.
+      const dump = await this.page.evaluate(() => {
+        const list = (sel) =>
+          Array.from(document.querySelectorAll(sel))
+            .slice(0, 8)
+            .map((el) => ({
+              text: (el.textContent || '').trim().slice(0, 60),
+              className: typeof el.className === 'string' ? el.className : '',
+              id: el.id || '',
+              visible: !!(el.offsetParent || el.getClientRects().length),
+            }));
+        return {
+          btnCom1: list('button.btn-com1'),
+          confirmTexts: list('button'),
+          uiMultiDate: !!document.getElementById('uiMultiDate'),
+        };
+      });
+      this.warn(`[WOORI b2b] 확인 not clicked. Diagnostic: ${JSON.stringify(dump)}`);
+      throw new Error('Could not click 확인 to close the date-picker overlay');
+    }
+
+    // Wait for the overlay to actually disappear before returning. If it stays
+    // open, the next click (조회 / 파일저장) will be intercepted.
+    const closed = await overlay
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!closed) {
+      this.warn(`[WOORI b2b] #uiMultiDate did not close after 확인 (clicked via ${confirmedBy})`);
+      // Don't press Escape — that would CANCEL the date selection. Instead, try
+      // clicking once more then surface the error so we don't run 조회 with a
+      // blocked viewport.
+      await this.page
+        .locator('button.btn-com1:visible')
+        .first()
+        .click({ timeout: 2000 })
+        .catch(() => {});
+      const closed2 = await overlay
+        .waitFor({ state: 'hidden', timeout: 2000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!closed2) {
+        throw new Error('#uiMultiDate stayed open after 확인 — date range may be invalid (range too wide / future date / etc.)');
+      }
+    }
+    await this.page.waitForTimeout(400);
+  }
+
+  /**
+   * Default = current month: 1st of this month → today.
+   */
+  _wooriDefaultB2bDateRange() {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      startDate: `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}01`,
+      endDate: `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`,
+    };
+  }
+
+  /**
+   * Sync 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역.
+   *
+   * @param {{ startDate?: string, endDate?: string }} [opts] YYYYMMDD or YYYY-MM-DD; defaults to current month.
+   * @returns {Promise<{ success: boolean, imported?: number, filePath?: string|null, error?: string, message?: string }>}
+   */
+  async syncB2bLoanExecutions(opts = {}) {
+    if (!this.page) return { success: false, error: '브라우저 페이지가 없습니다.' };
+    this.ensureOutputDirectory(this.downloadDir);
+    let { startDate, endDate } =
+      opts.startDate && opts.endDate ? opts : this._wooriDefaultB2bDateRange();
+
+    // Reject / clamp future dates — the bank UI rejects them anyway, fail fast here.
+    const today = this._wooriDefaultB2bDateRange().endDate;
+    const sDigits = String(startDate || '').replace(/\D/g, '');
+    const eDigits = String(endDate || '').replace(/\D/g, '');
+    if (sDigits && sDigits > today) {
+      return { success: false, error: `시작일이 미래입니다 (${startDate} > 오늘 ${today}).` };
+    }
+    if (eDigits && eDigits > today) {
+      this.warn(`[WOORI b2b] endDate ${endDate} > today ${today} — clamping to today`);
+      endDate = today;
+    }
+    if (sDigits && eDigits && sDigits > eDigits) {
+      return { success: false, error: `시작일이 종료일보다 늦습니다 (${startDate} > ${endDate}).` };
+    }
+
+    this.log(`[WOORI b2b] syncB2bLoanExecutions ${startDate} ~ ${endDate} 시작...`);
+
+    try {
+      await this._navigateWooriToB2bLoanExecutions();
+      await this._wooriPickFirstCompany();
+      await this._wooriPickDateRange(startDate, endDate);
+
+      // Trigger 조회. Must use #btnDoInquiry (or exact-name match) — `name: '조회'` is a
+      // SUBSTRING match in Playwright, so it also matches #staDtBtn ("조회시작일") which
+      // would re-open the date picker and block every subsequent click.
+      try {
+        await this.page.locator('[id="btnDoInquiry"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '조회', exact: true }).first().click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(3000);
+
+      // Check for "해당 자료가 존재하지 않습니다" alert (BELAM00004)
+      const alertText = await this.page
+        .locator('.js-alert')
+        .first()
+        .textContent({ timeout: 1500 })
+        .catch(() => null);
+      if (alertText && alertText.includes('해당 자료가 존재하지 않습니다')) {
+        this.log('[WOORI b2b] no data alert detected — dismissing');
+        try {
+          await this.page.locator('.js-alert button').filter({ hasText: '확인' }).first().click({ timeout: 3000 });
+        } catch (e) {}
+        return { success: true, imported: 0, filePath: null, message: '해당 자료가 존재하지 않습니다.' };
+      }
+
+      // Trigger download
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
+      const downloadPromise = this.waitForNextDownload({ timeout: 120000 });
+
+      try {
+        await this.page.locator('[id="qcell_qcExportFile"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '파일저장' }).click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(2000);
+      try {
+        await this.page.locator('[id="excelExportBtn"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('button', { name: '엑셀저장' }).click({ timeout: 5000 });
+      }
+
+      // Race download event vs filesystem polling (matches getTransactions pattern)
+      const scanDirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+      const pollForFile = async () => {
+        for (let i = 0; i < 60; i++) {
+          const found = this.findRecentDownloadFile(scanDirs, exportStartedAt);
+          if (found) return { type: 'polling', data: found };
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        return { type: 'polling-timeout' };
+      };
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })).catch(() => ({ type: 'download-error' })),
+        pollForFile(),
+      ]);
+
+      let download = null;
+      let fallbackFile = null;
+      let suggested = '실행내역조회.xlsx';
+
+      if (raced.type === 'download') {
+        download = raced.data;
+        suggested = download.suggestedFilename() || suggested;
+      } else if (raced.type === 'polling') {
+        fallbackFile = raced.data;
+        suggested = path.basename(fallbackFile.path);
+      } else {
+        const lastChance = this.findRecentDownloadFile(scanDirs, exportStartedAt);
+        if (!lastChance) throw new Error('Failed to capture download or detect fallback file');
+        fallbackFile = lastChance;
+        suggested = path.basename(fallbackFile.path);
+      }
+
+      const ext = path.extname(suggested) || '.xlsx';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const finalName = `우리_B2B대출실행내역_${startDate}_${endDate}_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) throw new Error('Failed to save Woori B2B loan-executions export');
+      this.log(`[WOORI b2b] download saved to ${finalPath}`);
+
+      await this._closeWooriOpenPopups();
+
+      return {
+        success: true,
+        imported: 0,
+        filePath: finalPath,
+        message: 'Download complete; Woori Excel will be imported in the main process after this call.',
+      };
+    } catch (error) {
+      this.error('[WOORI b2b] syncB2bLoanExecutions failed:', error.message);
+      try {
+        await this._closeWooriOpenPopups();
+      } catch (e) {}
+      return { success: false, error: error.message };
+    }
   }
 
   /** Resync often leaves the session on another page; inquiry needs #startDate / #noAccount. */
@@ -440,6 +851,108 @@ class WooriBankAutomator extends BaseBankAutomator {
     return t.slice(0, 80);
   }
 
+  /**
+   * Close any open Woori popup (e.g. excel-download confirmation `c049855Pop`).
+   * Search is scoped to each open `.pop-modal1.open` / `div[role="dialog"].open` so we
+   * don't accidentally click an unrelated close button elsewhere on the page.
+   * Falls back to Escape + force-hide if the close button isn't found or doesn't dismiss.
+   */
+  async _closeWooriOpenPopups() {
+    if (!this.page || this.page.isClosed()) return;
+    try {
+      const result = await this.page.evaluate(() => {
+        const dialogs = Array.from(
+          document.querySelectorAll('div[role="dialog"].open, .pop-modal1.open, .pop-modal1.animate.open')
+        ).filter((d) => d.offsetParent || d.getClientRects().length);
+        const selectors = [
+          'button.btn-close', 'a.btn-close',
+          'button.btn_close', 'a.btn_close',
+          'button.btnClose', 'a.btnClose',
+          'button.btn-pop-close', 'a.btn-pop-close', '.btn-pop-close',
+          '.pop_close', '.popClose', '.popup-close', '.popupClose', '.layer-close', '.layerClose',
+          'button[title*="닫기"]', 'a[title*="닫기"]', '[title="닫기"]',
+          '[aria-label*="닫기"]', 'button[aria-label="Close"]', '[aria-label="close"]',
+          'img[alt*="닫기"]', 'img[src*="close"]', 'img[src*="gnb_sub_close"]', 'img[src*="btn_close"]',
+          'i.ico-close', '.ico-close', '.ico_close', '.icon-close', '.icon_close',
+          'button.close', 'a.close', 'span.close',
+        ].join(', ');
+
+        const dialogInfo = [];
+        let clicked = 0;
+        for (const dlg of dialogs) {
+          const r = dlg.getBoundingClientRect();
+          // 1) Try our known close-shape selectors scoped to the dialog
+          const candidates = Array.from(dlg.querySelectorAll(selectors));
+          for (const el of candidates) {
+            const target = el.closest('a, button') || el;
+            try { target.click(); clicked++; } catch (e) {}
+          }
+          // 2) Heuristic fallback — any clickable element in the top-right quadrant of the
+          //    dialog that has a small size and X-ish text/onclick. Common pattern when the
+          //    close is just <a onclick="popup.close()"><img src="..."></a> with no class.
+          if (candidates.length === 0) {
+            const allClickable = Array.from(dlg.querySelectorAll('a, button, [onclick], [role="button"]'));
+            const topRight = allClickable.filter((el) => {
+              const er = el.getBoundingClientRect();
+              if (er.width === 0 || er.height === 0) return false;
+              const inTopBand = er.top - r.top < 80;
+              const inRightHalf = er.right > r.left + r.width / 2;
+              const isSmall = er.width < 80 && er.height < 80;
+              const text = (el.textContent || '').trim();
+              const txMatch = text === '×' || text === 'X' || text === '✕' || text === '닫기' || /close/i.test(text);
+              const childImg = el.querySelector('img');
+              const imgMatch = childImg && /close|btn_x|btn-x|닫기/i.test((childImg.src || '') + (childImg.alt || ''));
+              return inTopBand && inRightHalf && (isSmall || txMatch || imgMatch);
+            });
+            for (const el of topRight) {
+              try { el.click(); clicked++; } catch (e) {}
+            }
+            // 3) If still nothing matched, dump diagnostic info so we can see the actual structure
+            if (topRight.length === 0) {
+              const sample = allClickable.slice(0, 20).map((el) => ({
+                tag: el.tagName,
+                id: el.id || '',
+                className: typeof el.className === 'string' ? el.className : '',
+                text: (el.textContent || '').trim().slice(0, 40),
+                onclick: el.getAttribute('onclick')?.slice(0, 80) || '',
+                imgSrc: el.querySelector('img')?.getAttribute('src') || '',
+                imgAlt: el.querySelector('img')?.getAttribute('alt') || '',
+              }));
+              dialogInfo.push({ id: dlg.id, className: dlg.className, clickableSample: sample });
+            }
+          }
+        }
+        return { dialogCount: dialogs.length, clicked, dialogInfo };
+      });
+      this.log(`[WOORI] close popup: dialogs=${result.dialogCount}, clicks=${result.clicked}`);
+      if (result.dialogInfo && result.dialogInfo.length > 0) {
+        for (const d of result.dialogInfo) {
+          this.warn(`[WOORI POPUP DEBUG] id="${d.id}" class="${d.className}" — no close button matched. Clickable sample:`);
+          for (const s of d.clickableSample) {
+            this.warn(`  ${JSON.stringify(s)}`);
+          }
+        }
+      }
+      if (result.dialogCount === 0) return;
+      await this.page.waitForTimeout(500);
+
+      const stillOpen = await this.page
+        .locator('div[role="dialog"].open, .pop-modal1.open')
+        .count()
+        .catch(() => 0);
+      if (stillOpen > 0) {
+        // Don't force-hide via CSS — that leaves the popup's internal "open" state set, so
+        // subsequent calls to the trigger button (e.g. #qcell_qcExportFile) become no-ops.
+        // Press Escape only; if that fails we leave it for the next call's diagnostic dump.
+        this.warn(`[WOORI] ${stillOpen} popup(s) still open — pressing Escape (skipping force-hide so popup state stays consistent)`);
+        await this.page.keyboard.press('Escape').catch(() => {});
+        await this.page.waitForTimeout(300);
+      }
+    } catch (e) {
+      this.warn('[WOORI] _closeWooriOpenPopups failed:', e.message);
+    }
+  }
+
   async _selectWooriAccountByIndex(index) {
     await this.page.locator('[id="noAccount"]').click({ timeout: 5000 });
     await this.page.waitForTimeout(800);
@@ -480,6 +993,8 @@ class WooriBankAutomator extends BaseBankAutomator {
 
     try {
       await this._ensureWooriTransactionInquiryPage();
+      // Guard against a leftover excel-download popup from a previous account blocking #noAccount
+      await this._closeWooriOpenPopups();
       const accounts = await this._getWooriAccountsFromPage();
       const ai = this._indexForWooriAccount(accountNumber, accounts);
       this.log(`Woori: account candidates=${accounts.length}, selectedIndex=${ai}`);
@@ -567,66 +1082,75 @@ class WooriBankAutomator extends BaseBankAutomator {
         this.log('Woori: excel export click via role(button=엑셀저장)');
       }
 
+      // Race download event vs filesystem polling. No-data text check is deferred until both
+      // fail, because the phrase ("거래내역이 없습니다" etc.) often lives in a hidden empty-state
+      // template in the DOM and would otherwise win instantly even when data is present.
+      // Matches the proven pattern in scripts/bank-excel-download-automation/hana.spec.js.
+      const scanDirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+      const pollForFile = async () => {
+        for (let i = 0; i < 60; i++) {
+          const found = this.findRecentDownloadFile(scanDirs, exportStartedAt);
+          if (found) return { type: 'polling', data: found };
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        return { type: 'polling-timeout' };
+      };
+
+      const raced = await Promise.race([
+        downloadPromise.then((dl) => ({ type: 'download', data: dl })).catch(() => ({ type: 'download-error' })),
+        pollForFile(),
+      ]);
+
       let download = null;
       let fallbackFile = null;
-      try {
-        download = await downloadPromise;
-        this.log(`Woori: download event received (${download.suggestedFilename()})`);
-      } catch (e) {
-        this.warn('Woori: download event timeout/failure, searching filesystem fallback...');
-        const noDataMsg = await this.page.evaluate(() => {
-          const body = document.body?.textContent || '';
-          return (
-            body.includes('저장할 데이터가 없습니다') ||
-            body.includes('조회결과가 없습니다') ||
-            body.includes('거래내역이 없습니다') ||
-            body.includes('조회된 데이터가 없습니다')
-          );
-        });
-        if (noDataMsg) {
-          this.log('Woori: no data to export determined by UI message');
+      let suggested = 'woori-export.xls';
+
+      if (raced.type === 'download') {
+        download = raced.data;
+        suggested = download.suggestedFilename() || suggested;
+        this.log(`Woori: download event received (${suggested})`);
+      } else if (raced.type === 'polling') {
+        fallbackFile = raced.data;
+        suggested = path.basename(fallbackFile.path);
+        this.log(`Woori: filesystem polling detected download (${suggested})`);
+      } else {
+        // Both signals failed — only NOW check for no-data text (after the download has had
+        // time to fail). Then last-chance filesystem scan before giving up.
+        const noDataPhrases = [
+          '저장할 데이터가 없습니다',
+          '조회결과가 없습니다',
+          '거래내역이 없습니다',
+          '조회된 데이터가 없습니다',
+        ];
+        const hitPhrase = await this.page
+          .evaluate((phrases) => {
+            const body = document.body?.innerText || '';
+            return phrases.find((p) => body.includes(p)) || null;
+          }, noDataPhrases)
+          .catch(() => null);
+        if (hitPhrase) {
+          this.log(`Woori: no-data message detected after download failure ("${hitPhrase}") — returning empty`);
           return [];
         }
-        
-        // Scan both corporate downloads and Woori specific downloads
-        const scanDirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
-        fallbackFile = this.findRecentDownloadFile(exportStartedAt, scanDirs);
-        if (!fallbackFile) throw new Error('Failed to capture download or detect fallback file');
+        const lastChance = this.findRecentDownloadFile(scanDirs, exportStartedAt);
+        if (lastChance) {
+          fallbackFile = lastChance;
+          suggested = path.basename(fallbackFile.path);
+          this.log(`Woori: last-chance scan detected download (${suggested})`);
+        } else {
+          throw new Error('Failed to capture download or detect fallback file');
+        }
       }
 
-      const finalName = `우리기업_${this._sanitizeWooriFilenamePart(accountNumber)}_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.xls`;
+      const ext = path.extname(suggested) || '.xls';
+      const finalName = `우리기업_${this._sanitizeWooriFilenamePart(accountNumber)}_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}${ext}`;
       const finalPath = path.join(this.downloadDir, finalName);
-      
+
       const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
       if (!saved) throw new Error('Failed to save Woori export via all methods');
       this.log(`Woori: download saved to ${finalPath}`);
 
-      // Close download popup safely - Using the proven IBK pattern
-      try {
-        await this.page.evaluate(() => {
-          const closeSelectors = [
-            'img[src*="gnb_sub_close"]',
-            'img[src*="close"]',
-            '[title*="닫기"]',
-            'button.btn-close',
-            '.btn-pop-close',
-            'a.btn-close',
-            '.pop_close'
-          ].join(', ');
-
-          const closeBtn = document.querySelector(closeSelectors);
-          if (closeBtn) {
-            (closeBtn.closest('a, button') || closeBtn).click();
-          } else {
-            // Last resort: Force hide
-            document.querySelectorAll('div[role="dialog"].open, .pop-modal1.open').forEach(m => {
-              m.style.display = 'none';
-              m.style.visibility = 'hidden';
-            });
-          }
-        });
-        await this.page.waitForTimeout(800);
-      } catch (e) {}
+      await this._closeWooriOpenPopups();
 
       let extractedData;
       try {
