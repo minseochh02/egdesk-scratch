@@ -803,6 +803,34 @@ const createWindow = async () => {
         },
       );
 
+      /**
+       * IBK 대출 → 대출조회 → 대출계좌조회 → (per-account) 거래내역조회 sync.
+       * Per-account import happens inside the automator; this handler just returns
+       * the aggregate result. Optional date range; defaults to last 12 months.
+       */
+      ipcMain.handle(
+        'finance-hub:sync-ibk-loan-transactions',
+        async (_event, opts: { startDate?: string; endDate?: string } = {}) => {
+          try {
+            const automator = activeAutomators.get('ibk');
+            if (!automator) {
+              return { success: false, error: '활성 IBK 세션이 없습니다. 먼저 로그인해 주세요.' };
+            }
+            type IbkAutomator = {
+              syncLoanTransactions?: (o: { startDate?: string; endDate?: string }) => Promise<Record<string, unknown>>;
+            };
+            const a = automator as IbkAutomator;
+            if (typeof a.syncLoanTransactions !== 'function') {
+              return { success: false, error: 'IBK 자동화에 syncLoanTransactions 메서드가 없습니다.' };
+            }
+            return await a.syncLoanTransactions(opts);
+          } catch (error) {
+            console.error('[FINANCE-HUB] sync-ibk-loan-transactions failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        },
+      );
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance

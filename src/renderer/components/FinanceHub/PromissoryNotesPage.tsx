@@ -83,6 +83,22 @@ const WOORI_B2B_LOAN_EXECUTIONS_COLS: ColumnDef[] = [
   { key: 'syncedAt', sql: 'synced_at' },
 ];
 
+const IBK_LOAN_TRANSACTIONS_COLS: ColumnDef[] = [
+  { key: 'accountNumber', sql: 'account_number' },
+  { key: 'transactionDate', sql: 'transaction_date' },
+  { key: 'transactionType', sql: 'transaction_type' },
+  { key: 'currency', sql: 'currency' },
+  { key: 'transactionAmount', sql: 'transaction_amount', align: 'right', format: 'currency' },
+  { key: 'principalAmount', sql: 'principal_amount', align: 'right', format: 'currency' },
+  { key: 'interestAmount', sql: 'interest_amount', align: 'right', format: 'currency' },
+  { key: 'loanBalance', sql: 'loan_balance', align: 'right', format: 'currency' },
+  { key: 'interestRate', sql: 'interest_rate', align: 'right', format: 'rate' },
+  { key: 'startDate', sql: 'start_date' },
+  { key: 'endDate', sql: 'end_date' },
+  { key: 'status', sql: 'status' },
+  { key: 'syncedAt', sql: 'synced_at' },
+];
+
 // ------- Helpers -------
 
 function todayYmd(): string {
@@ -93,6 +109,12 @@ function todayYmd(): string {
 function firstOfThisMonthYmd(): string {
   const d = new Date();
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}01`;
+}
+
+function oneYearAgoYmd(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatCell(value: unknown, format?: Format): string {
@@ -132,6 +154,19 @@ const TABLE_SECTIONS: TableSection[] = [
       return await window.electron.financeHub.syncWooriB2bLoanExecutions(opts);
     },
     columns: WOORI_B2B_LOAN_EXECUTIONS_COLS,
+  },
+  {
+    slug: 'ibk_loan_transactions',
+    title: 'IBK 대출거래내역',
+    subtitle: '대출 → 대출조회 → 대출계좌조회 → (계좌별) 거래내역조회',
+    bankId: 'ibk',
+    acceptsDateRange: true,
+    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
+    load: () => window.electron.financeHubDb.getIbkLoanTransactions(),
+    sync: async (opts) => {
+      return await window.electron.financeHub.syncIbkLoanTransactions(opts);
+    },
+    columns: IBK_LOAN_TRANSACTIONS_COLS,
   },
 ];
 
