@@ -177,7 +177,6 @@ export {
 // Game icons
 export {
   faChessRook,
-  faPaw,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Brand icons

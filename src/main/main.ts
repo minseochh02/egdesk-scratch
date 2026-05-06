@@ -1282,47 +1282,79 @@ const createWindow = async () => {
             };
           }
 
-          // Use provided card number or extract from first transaction
-          const accountNumber = cardNumber || transactionsData[0]?.cardNumber || transactionsData[0]?.['카드번호'] || 'MANUAL-IMPORT';
+          // 1. Group transactions by card number
+          const transactionsByCard = new Map<string, any[]>();
+          transactionsData.forEach((tx: any) => {
+            const txCardNumber = tx.cardNumber || tx['카드번호'] || tx['이용카드'] || tx.cardUsed || 'MANUAL-IMPORT';
+            if (!transactionsByCard.has(txCardNumber)) {
+              transactionsByCard.set(txCardNumber, []);
+            }
+            transactionsByCard.get(txCardNumber)!.push(tx);
+          });
 
-          const cardData = {
-            accountNumber: accountNumber,
-            accountName: extractedData.metadata?.cardName || '수동 업로드 카드',
-            customerName: extractedData.metadata?.customerName || '',
-            balance: 0,
-            availableBalance: 0,
-            openDate: ''
-          };
+          console.log(`[FINANCE-HUB] Found transactions for ${transactionsByCard.size} cards in Excel`);
 
-          // Determine date range from transactions
-          const dates = transactionsData
-            .map(tx => tx.approvalDate || tx['승인일'] || tx['이용일시']?.split(' ')[0] || '')
-            .filter(d => d);
-          const queryPeriodStart = dates.length > 0 ? Math.min(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
-          const queryPeriodEnd = dates.length > 0 ? Math.max(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
+          // 2. Get existing accounts for matching
+          const existingAccounts = financeHubDb.getAccountsByBank(cardCompanyId);
 
-          const syncMetadata = {
-            queryPeriodStart: String(queryPeriodStart),
-            queryPeriodEnd: String(queryPeriodEnd),
-            filePath: filePath
-          };
+          let totalInserted = 0;
+          let totalSkipped = 0;
 
-          const importResult = financeHubDb.importTransactions(
-            cardCompanyId,
-            cardData,
-            transactionsData,
-            syncMetadata
-            // isCard auto-detected by bankId.includes('-card')
-          );
+          // 3. Import each card group separately
+          for (const [txCardNumber, cardTransactions] of transactionsByCard.entries()) {
+            // Try to find a matching account
+            const cleanedTxNumber = String(txCardNumber).replace(/[^\d]/g, '');
+            const last6 = cleanedTxNumber.length >= 6 ? cleanedTxNumber.slice(-6) : cleanedTxNumber;
 
-          console.log(`[FINANCE-HUB] Card Excel import complete: ${importResult.inserted} inserted, ${importResult.skipped} skipped`);
+            let matchedAccount = existingAccounts.find(acc => 
+              acc.accountNumber === txCardNumber || 
+              (last6 && acc.accountNumber.replace(/[^\d]/g, '').endsWith(last6))
+            );
+
+            const accountNumber = matchedAccount ? matchedAccount.accountNumber : txCardNumber;
+            const accountName = matchedAccount ? matchedAccount.accountName : (extractedData.metadata?.cardName || '수동 업로드 카드');
+
+            const cardData = {
+              accountNumber: accountNumber,
+              accountName: accountName,
+              customerName: extractedData.metadata?.customerName || '',
+              balance: 0,
+              availableBalance: 0,
+              openDate: ''
+            };
+
+            // Determine date range for this group
+            const dates = cardTransactions
+              .map(tx => tx.approvalDate || tx['승인일'] || tx['이용일시']?.split(' ')[0] || '')
+              .filter(d => d);
+            const queryPeriodStart = dates.length > 0 ? Math.min(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
+            const queryPeriodEnd = dates.length > 0 ? Math.max(...dates.map(d => d.replace(/[^0-9]/g, ''))) : 'unknown';
+
+            const syncMetadata = {
+              queryPeriodStart: String(queryPeriodStart),
+              queryPeriodEnd: String(queryPeriodEnd),
+              filePath: filePath
+            };
+
+            const importResult = financeHubDb.importTransactions(
+              cardCompanyId,
+              cardData,
+              cardTransactions,
+              syncMetadata,
+              true // isCard = true
+            );
+
+            totalInserted += importResult.inserted;
+            totalSkipped += importResult.skipped;
+          }
+
+          console.log(`[FINANCE-HUB] Card Excel import complete: ${totalInserted} inserted, ${totalSkipped} skipped`);
 
           return {
             success: true,
-            inserted: importResult.inserted,
-            skipped: importResult.skipped,
-            total: transactionsData.length,
-            accountNumber: accountNumber
+            inserted: totalInserted,
+            skipped: totalSkipped,
+            total: transactionsData.length
           };
         } catch (error) {
           console.error('[FINANCE-HUB] Card Excel import error:', error);

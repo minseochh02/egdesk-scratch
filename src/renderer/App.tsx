@@ -30,7 +30,6 @@ import {
   faLaptopCode,
   faClock,
   faChessRook,
-  faPaw,
   faDatabase,
   faCloud,
   faBrain,
@@ -68,6 +67,7 @@ import DesktopRecorderPage from './components/DesktopRecorder/DesktopRecorderPag
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 import OpenClawPage from './components/OpenClaw/OpenClawPage';
+import openclawIcon from '../../assets/openclaw.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
 
 /** Ollama tag: Gemma 3 ~4B (e.g. gemma3:4b) */
@@ -2327,7 +2327,7 @@ function NavigationBar({
               to="/openclaw"
               className={`nav-dropdown-item ${location.pathname === '/openclaw' ? 'active' : ''}`}
             >
-              <FontAwesomeIcon icon={faPaw} fixedWidth />
+              <img src={openclawIcon} alt="OpenClaw" style={{ width: '1em', height: '1em' }} />
               <span>OpenClaw</span>
             </Link>
             <Link
