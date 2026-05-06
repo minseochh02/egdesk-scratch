@@ -74,7 +74,7 @@ class HanaBankAutomator extends BaseBankAutomator {
   /**
    * Wait for hanaMainframe — close popups on main document between attempts (overlay can block frame).
    */
-  async _waitForHanaMainframe({ maxWaitMs = 20000 } = {}) {
+  async _waitForHanaMainframe({ maxWaitMs = 40000 } = {}) {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
       await this._closeHanaPopups();
@@ -166,7 +166,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this._closeHanaPopups();
       await this.page.waitForTimeout(500);
 
-      const frame = await this._waitForHanaMainframe({ maxWaitMs: 20000 });
+      const frame = await this._waitForHanaMainframe({ maxWaitMs: 40000 });
       if (!frame) {
         this._hanaCorporateCertPhase = 'idle';
         return { success: false, error: 'hanaMainframe not found' };
@@ -176,7 +176,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this._closeHanaPopups();
       await this.page.waitForTimeout(1000);
 
-      await frame.locator('button:has-text("로그인")').first().click({ timeout: 10000 });
+      await frame.locator('button:has-text("로그인")').first().click({ timeout: 20000 });
       await this.page.waitForTimeout(2000);
 
       try {
@@ -187,7 +187,7 @@ class HanaBankAutomator extends BaseBankAutomator {
         });
       } catch (e) {}
 
-      await frame.locator(`[id="${this.config.xpaths.certLoginButtonId}"]`).click({ timeout: 10000 });
+      await frame.locator(`[id="${this.config.xpaths.certLoginButtonId}"]`).click({ timeout: 20000 });
 
       const uia = await waitForNativeCertificateDialogWindow({
         timeoutMs: 60000,

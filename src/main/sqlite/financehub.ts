@@ -2966,6 +2966,430 @@ export class FinanceHubDbManager {
     }
   }
 
+  // ============================================================================
+  // IBK 외상매출채권 (`ibk_b2b_receivables`) — first table under the
+  // per-bank, per-product convention. See src/main/financehub/promissory-products.md.
+  // ============================================================================
+
+  /**
+   * Read all rows from `ibk_b2b_receivables`. Returns camelCase fields matching
+   * the snake_case columns 1:1.
+   */
+  getIbkB2bReceivables(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_b2b_receivables' LIMIT 1`)
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, note_number, serial_number,
+            buyer_name, buyer_biz_no,
+            kind, status, cancellation_requested, cash_equivalent,
+            receivable_amount, original_note_amount,
+            registered_date, maturity_date, payment_date, tax_issued_date,
+            loan_available_date, loan_executed, loan_amount,
+            deposit_account_number, payment_branch,
+            seizure_amount, seizure_claimant,
+            synced_at, created_at, updated_at
+          FROM ibk_b2b_receivables
+          ORDER BY maturity_date ASC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        noteNumber: row.note_number,
+        serialNumber: row.serial_number,
+        buyerName: row.buyer_name,
+        buyerBizNo: row.buyer_biz_no,
+        kind: row.kind,
+        status: row.status,
+        cancellationRequested: row.cancellation_requested,
+        cashEquivalent: row.cash_equivalent,
+        receivableAmount: row.receivable_amount,
+        originalNoteAmount: row.original_note_amount,
+        registeredDate: row.registered_date,
+        maturityDate: row.maturity_date,
+        paymentDate: row.payment_date,
+        taxIssuedDate: row.tax_issued_date,
+        loanAvailableDate: row.loan_available_date,
+        loanExecuted: row.loan_executed,
+        loanAmount: row.loan_amount,
+        depositAccountNumber: row.deposit_account_number,
+        paymentBranch: row.payment_branch,
+        seizureAmount: row.seizure_amount,
+        seizureClaimant: row.seizure_claimant,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getIbkB2bReceivables:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Parse IBK 외상매출채권 Excel and upsert into `ibk_b2b_receivables`.
+   * Uses the existing parser (`ibk-promissory-notes-excel.js`) and remaps its
+   * output to the new per-product schema. `id` is generated via the same
+   * stablePromissoryNoteId() so it matches the IDs migrated from
+   * `promissory_notes` — upserts hit existing rows correctly.
+   */
+  importIbkB2bReceivablesFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkPromissoryNotesExcel } = require('../financehub/utils/ibk-promissory-notes-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_b2b_receivables'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'ibk_b2b_receivables 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { rows, warnings } = parseIbkPromissoryNotesExcel(filePath) as {
+        rows: Array<{
+          noteNumber: string;
+          issuerName: string;
+          issuerRegistrationNumber: string | null;
+          amount: number;
+          issueDate: string;
+          maturityDate: string;
+          collectionDate: string | null;
+          status: string;
+          category: string | null;
+          bankBranch: string | null;
+          memo: string | null;
+          metadata: Record<string, unknown>;
+        }>;
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO ibk_b2b_receivables (
+          id, note_number, serial_number, buyer_name, buyer_biz_no,
+          kind, status, cancellation_requested, cash_equivalent,
+          receivable_amount, original_note_amount,
+          registered_date, maturity_date, payment_date, tax_issued_date,
+          loan_available_date, loan_executed, loan_amount,
+          deposit_account_number, payment_branch,
+          seizure_amount, seizure_claimant,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @note_number, @serial_number, @buyer_name, @buyer_biz_no,
+          @kind, @status, @cancellation_requested, @cash_equivalent,
+          @receivable_amount, @original_note_amount,
+          @registered_date, @maturity_date, @payment_date, @tax_issued_date,
+          @loan_available_date, @loan_executed, @loan_amount,
+          @deposit_account_number, @payment_branch,
+          @seizure_amount, @seizure_claimant,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(note_number) DO UPDATE SET
+          serial_number = excluded.serial_number,
+          buyer_name = excluded.buyer_name,
+          buyer_biz_no = excluded.buyer_biz_no,
+          kind = excluded.kind,
+          status = excluded.status,
+          cancellation_requested = excluded.cancellation_requested,
+          cash_equivalent = excluded.cash_equivalent,
+          receivable_amount = excluded.receivable_amount,
+          original_note_amount = excluded.original_note_amount,
+          registered_date = excluded.registered_date,
+          maturity_date = excluded.maturity_date,
+          payment_date = excluded.payment_date,
+          tax_issued_date = excluded.tax_issued_date,
+          loan_available_date = excluded.loan_available_date,
+          loan_executed = excluded.loan_executed,
+          loan_amount = excluded.loan_amount,
+          deposit_account_number = excluded.deposit_account_number,
+          payment_branch = excluded.payment_branch,
+          seizure_amount = excluded.seizure_amount,
+          seizure_claimant = excluded.seizure_claimant,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const num = (v: unknown): number | null => {
+        if (v == null || v === '') return null;
+        if (typeof v === 'number') return Math.round(v);
+        const n = parseInt(String(v).replace(/[,원\s]/g, ''), 10);
+        return Number.isFinite(n) ? n : null;
+      };
+      const str = (v: unknown): string | null => {
+        if (v == null) return null;
+        const s = String(v).trim();
+        return s === '' ? null : s;
+      };
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stablePromissoryNoteId('ibk', r.noteNumber);
+          const m = r.metadata || {};
+          upsert.run({
+            id,
+            note_number: r.noteNumber,
+            serial_number: str(m.serial),
+            buyer_name: r.issuerName,
+            buyer_biz_no: r.issuerRegistrationNumber,
+            kind: r.category,
+            status: str(m.rawStatus) || r.status,
+            cancellation_requested: str(m.cancellationRequested),
+            cash_equivalent: str(m.cashLike),
+            receivable_amount: r.amount,
+            original_note_amount: num(m.originalNoteAmount),
+            registered_date: r.issueDate,
+            maturity_date: r.maturityDate,
+            payment_date: r.collectionDate,
+            tax_issued_date: str(m.taxIssueDate),
+            loan_available_date: str(m.loanAvailableDate),
+            loan_executed: str(m.loanExecuted),
+            loan_amount: num(m.loanAmount),
+            deposit_account_number: str(m.depositAccountNumber),
+            payment_branch: r.bankBranch,
+            seizure_amount: num(m.seizureAmount),
+            seizure_claimant: str(m.seizureClaimant),
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkB2bReceivablesFromExcel: ${imported} rows from ${filePath}`);
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkB2bReceivablesFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
+  // Woori 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역 (`woori_b2b_loan_executions`)
+  // ============================================================================
+
+  getWooriB2bLoanExecutions(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(
+          `SELECT 1 FROM sqlite_master WHERE type='table' AND name='woori_b2b_loan_executions' LIMIT 1`,
+        )
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, transaction_number, receivable_number, vendor,
+            received_date, deposit_date, receivable_maturity_date, loan_maturity_date,
+            applied_amount, interest_amount, deposit_amount, receivable_amount, loan_balance,
+            loan_interest_rate,
+            synced_at, created_at, updated_at
+          FROM woori_b2b_loan_executions
+          ORDER BY deposit_date DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        transactionNumber: row.transaction_number,
+        receivableNumber: row.receivable_number,
+        vendor: row.vendor,
+        receivedDate: row.received_date,
+        depositDate: row.deposit_date,
+        receivableMaturityDate: row.receivable_maturity_date,
+        loanMaturityDate: row.loan_maturity_date,
+        appliedAmount: row.applied_amount,
+        interestAmount: row.interest_amount,
+        depositAmount: row.deposit_amount,
+        receivableAmount: row.receivable_amount,
+        loanBalance: row.loan_balance,
+        loanInterestRate: row.loan_interest_rate,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getWooriB2bLoanExecutions:', e?.message || e);
+      return [];
+    }
+  }
+
+  importWooriB2bLoanExecutionsFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseWooriB2bLoanExecutionsExcel } = require('../financehub/utils/woori-b2b-loan-executions-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='woori_b2b_loan_executions'`,
+        )
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'woori_b2b_loan_executions 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { rows, warnings } = parseWooriB2bLoanExecutionsExcel(filePath) as {
+        rows: Array<{
+          receivableNumber: string;
+          transactionNumber: string | null;
+          vendor: string | null;
+          receivedDate: string | null;
+          depositDate: string | null;
+          receivableMaturityDate: string | null;
+          loanMaturityDate: string | null;
+          appliedAmount: number | null;
+          interestAmount: number | null;
+          depositAmount: number | null;
+          receivableAmount: number | null;
+          loanBalance: number | null;
+          loanInterestRate: number | null;
+        }>;
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      // Conflict on `id` (PK). Don't conflict on transaction_number — 거래번호 in this
+      // export is the seller's master contract id and repeats across all rows.
+      const upsert = this.db.prepare(`
+        INSERT INTO woori_b2b_loan_executions (
+          id, transaction_number, receivable_number, vendor,
+          received_date, deposit_date, receivable_maturity_date, loan_maturity_date,
+          applied_amount, interest_amount, deposit_amount, receivable_amount, loan_balance,
+          loan_interest_rate,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @transaction_number, @receivable_number, @vendor,
+          @received_date, @deposit_date, @receivable_maturity_date, @loan_maturity_date,
+          @applied_amount, @interest_amount, @deposit_amount, @receivable_amount, @loan_balance,
+          @loan_interest_rate,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          transaction_number = excluded.transaction_number,
+          vendor = excluded.vendor,
+          received_date = excluded.received_date,
+          deposit_date = excluded.deposit_date,
+          receivable_maturity_date = excluded.receivable_maturity_date,
+          loan_maturity_date = excluded.loan_maturity_date,
+          applied_amount = excluded.applied_amount,
+          interest_amount = excluded.interest_amount,
+          deposit_amount = excluded.deposit_amount,
+          receivable_amount = excluded.receivable_amount,
+          loan_balance = excluded.loan_balance,
+          loan_interest_rate = excluded.loan_interest_rate,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const idFor = (receivableNumber: string): string => {
+        const h = createHash('sha256').update(`woori_b2b_loan_executions\n${receivableNumber}`).digest('hex');
+        return `wblx_${h.slice(0, 40)}`;
+      };
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          upsert.run({
+            id: idFor(r.receivableNumber),
+            transaction_number: r.transactionNumber,
+            receivable_number: r.receivableNumber,
+            vendor: r.vendor,
+            received_date: r.receivedDate,
+            deposit_date: r.depositDate,
+            receivable_maturity_date: r.receivableMaturityDate,
+            loan_maturity_date: r.loanMaturityDate,
+            applied_amount: r.appliedAmount,
+            interest_amount: r.interestAmount,
+            deposit_amount: r.depositAmount,
+            receivable_amount: r.receivableAmount,
+            loan_balance: r.loanBalance,
+            loan_interest_rate: r.loanInterestRate,
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(
+        `[FinanceHubDb] importWooriB2bLoanExecutionsFromExcel: ${imported} rows from ${filePath}`,
+      );
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importWooriB2bLoanExecutionsFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
   /**
    * Execute raw SQL query (DEBUG/DEV ONLY)
    * @param {string} sql - SQL query to execute

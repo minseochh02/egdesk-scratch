@@ -801,6 +801,16 @@ interface FinanceHubAPI {
     importError?: string;
     importWarnings?: string[];
   }>;
+  syncWooriB2bLoanExecutions: (opts?: { startDate?: string; endDate?: string }) => Promise<{
+    success: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    filePath?: string | null;
+    message?: string;
+    importError?: string;
+    importWarnings?: string[];
+  }>;
 }
 
 /**
@@ -811,6 +821,8 @@ interface FinanceHubDbAPI {
   getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getPromissoryNotes: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getIbkB2bReceivables: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getWooriB2bLoanExecutions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   queryTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;

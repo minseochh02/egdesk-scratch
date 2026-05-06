@@ -711,7 +711,7 @@ const createWindow = async () => {
                 ) {
                   try {
                     const financeHubManager = getSQLiteManager().getFinanceHubManager();
-                    const imp = financeHubManager.importIbkPromissoryNotesFromExcel(result.filePath as string);
+                    const imp = financeHubManager.importIbkB2bReceivablesFromExcel(result.filePath as string);
                     return {
                       ...result,
                       imported: imp.imported ?? 0,
@@ -737,6 +737,64 @@ const createWindow = async () => {
             };
           } catch (error) {
             console.error(`[FINANCE-HUB] sync-promissory-notes failed for ${bankId}:`, error);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
+      /**
+       * Woori 전자결제 → B2B대출(협력) → 대출_신청 → 실행내역 sync.
+       * Optional date range (YYYYMMDD or YYYY-MM-DD); defaults to current month.
+       */
+      ipcMain.handle(
+        'finance-hub:sync-woori-b2b-loan-executions',
+        async (_event, opts: { startDate?: string; endDate?: string } = {}) => {
+          try {
+            const automator = activeAutomators.get('woori');
+            if (!automator) {
+              return {
+                success: false,
+                error: '활성 우리은행 세션이 없습니다. 먼저 로그인해 주세요.',
+              };
+            }
+            type WooriAutomator = {
+              syncB2bLoanExecutions?: (o: { startDate?: string; endDate?: string }) => Promise<Record<string, unknown>>;
+            };
+            const a = automator as WooriAutomator;
+            if (typeof a.syncB2bLoanExecutions !== 'function') {
+              return { success: false, error: '우리은행 자동화에 syncB2bLoanExecutions 메서드가 없습니다.' };
+            }
+            const result = await a.syncB2bLoanExecutions(opts);
+            if (
+              result &&
+              typeof result === 'object' &&
+              result.success === true &&
+              typeof result.filePath === 'string'
+            ) {
+              try {
+                const financeHubManager = getSQLiteManager().getFinanceHubManager();
+                const imp = financeHubManager.importWooriB2bLoanExecutionsFromExcel(result.filePath as string);
+                return {
+                  ...result,
+                  imported: imp.imported ?? 0,
+                  skipped: imp.skipped ?? 0,
+                  importWarnings: imp.warnings,
+                  ...(imp.success === false && imp.error ? { importError: imp.error } : {}),
+                };
+              } catch (importErr: unknown) {
+                return {
+                  ...result,
+                  imported: 0,
+                  importError: importErr instanceof Error ? importErr.message : String(importErr),
+                };
+              }
+            }
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] sync-woori-b2b-loan-executions failed:', error);
             return {
               success: false,
               error: error instanceof Error ? error.message : String(error),

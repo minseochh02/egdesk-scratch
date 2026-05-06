@@ -799,6 +799,24 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-financehub-get-ibk-b2b-receivables', async () => {
+      try {
+        const rows = this.getFinanceHubManager().getIbkB2bReceivables();
+        return { success: true, data: rows };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
+      }
+    });
+
+    ipcMain.handle('sqlite-financehub-get-woori-b2b-loan-executions', async () => {
+      try {
+        const rows = this.getFinanceHubManager().getWooriB2bLoanExecutions();
+        return { success: true, data: rows };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
+      }
+    });
+
     // Query transactions
     ipcMain.handle('sqlite-financehub-query-transactions', async (event, options) => {
       try {
