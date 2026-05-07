@@ -816,6 +816,8 @@ function normalizeUrl(url: string): string {
  * Replay a saved spec by executing RECORDED_ACTIONS in-process so optional date
  * parameters can override datePickerGroup steps.
  */
+let activeReplayContext: BrowserContext | null = null;
+
 async function runBrowserRecordingActionReplay(
   testFile: string,
   replayParams: BrowserRecordingReplayParams,
@@ -881,6 +883,11 @@ async function runBrowserRecordingActionReplay(
       '--disable-features=PrivateNetworkAccessSendPreflights',
       '--disable-features=PrivateNetworkAccessRespectPreflightResults',
     ],
+  });
+
+  activeReplayContext = context;
+  context.on('close', () => {
+    if (activeReplayContext === context) activeReplayContext = null;
   });
 
   let page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
@@ -2506,6 +2513,21 @@ test('recorded test', async ({ page }) => {
     }
   );
 
+  ipcMain.handle('stop-browser-recording-replay', async () => {
+    try {
+      if (activeReplayContext) {
+        console.log('⏹️ Stopping active replay context...');
+        await activeReplayContext.close();
+        activeReplayContext = null;
+        return { success: true };
+      }
+      return { success: false, error: 'No active replay found' };
+    } catch (error: any) {
+      console.error('Error stopping replay:', error);
+      return { success: false, error: error?.message || 'Failed to stop replay' };
+    }
+  });
+
   // Get list of saved Playwright tests
   ipcMain.handle('get-playwright-tests', async () => {
     try {
@@ -3416,6 +3438,15 @@ test('recorded test', async ({ page }) => {
             pathMapping,
             metadata.schedules
           );
+        }
+
+        try {
+          const { FileWatcherService } = await import('./sync-config/file-watcher-service');
+          const fileWatcherService = FileWatcherService.getInstance();
+          await fileWatcherService.reload();
+          console.log('✅ File Watcher Service reloaded after import');
+        } catch (watcherError) {
+          console.warn('⚠️ Failed to reload File Watcher Service:', watcherError);
         }
 
         console.log(
