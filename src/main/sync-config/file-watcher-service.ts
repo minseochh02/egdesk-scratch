@@ -13,11 +13,19 @@ import { getSQLiteManager } from '../sqlite/manager';
  * new Excel and CSV files based on saved sync configurations.
  */
 
+interface QueuedFile {
+  filename: string;
+  filePath: string;
+  mtime: number;
+}
+
 interface WatcherInstance {
   configId: string;
   folderPath: string;
   watcher: FSWatcher;
   processedFiles: Set<string>;
+  fileQueue: QueuedFile[];
+  isProcessingQueue: boolean;
 }
 
 export class FileWatcherService {
@@ -158,6 +166,8 @@ export class FileWatcherService {
       folderPath: config.scriptFolderPath,
       watcher,
       processedFiles,
+      fileQueue: [],
+      isProcessingQueue: false,
     };
 
     this.watchers.set(configId, watcherInstance);
@@ -210,58 +220,99 @@ export class FileWatcherService {
   }
 
   /**
-   * Handle file system event
+   * Handle file system event — enqueue the file for ordered processing
    */
-  private async handleFileEvent(configId: string, filename: string): Promise<void> {
+  private handleFileEvent(configId: string, filename: string): void {
     const watcherInstance = this.watchers.get(configId);
     if (!watcherInstance) return;
 
     const filePath = path.join(watcherInstance.folderPath, filename);
 
     // Check if file exists (rename event also fires on delete)
-    if (!fs.existsSync(filePath)) {
-      return;
-    }
+    if (!fs.existsSync(filePath)) return;
 
     // Only process supported files (Excel and CSV)
-    if (!this.isSupportedFile(filename)) {
-      return;
-    }
+    if (!this.isSupportedFile(filename)) return;
 
-    // Skip if already processed
-    if (watcherInstance.processedFiles.has(filename)) {
-      return;
-    }
+    // Skip if already processed or queued
+    if (watcherInstance.processedFiles.has(filename)) return;
+    if (watcherInstance.fileQueue.some((q) => q.filename === filename)) return;
 
     // Skip if in "processed" or "failed" folders
-    if (filename.includes('processed') || filename.includes('failed')) {
-      return;
+    if (filename.includes('processed') || filename.includes('failed')) return;
+
+    // Get file mtime for chronological ordering
+    let mtime: number;
+    try {
+      mtime = fs.statSync(filePath).mtimeMs;
+    } catch {
+      return; // file disappeared
     }
 
-    // Skip if currently being processed
-    if (this.processingFiles.has(filePath)) {
-      return;
+    console.log(`📂 New file queued: ${filename} (mtime: ${new Date(mtime).toISOString()})`);
+
+    // Insert into queue sorted by mtime (oldest first — FIFO)
+    const entry: QueuedFile = { filename, filePath, mtime };
+    const insertAt = watcherInstance.fileQueue.findIndex((q) => q.mtime > mtime);
+    if (insertAt === -1) {
+      watcherInstance.fileQueue.push(entry);
+    } else {
+      watcherInstance.fileQueue.splice(insertAt, 0, entry);
     }
 
-    console.log(`📂 New file detected: ${filename} in ${watcherInstance.folderPath}`);
+    // Kick off queue processing if not already running
+    this.processQueue(configId);
+  }
 
-    // Wait for file to be stable (fully written)
-    await this.waitForFileStability(filePath);
+  /**
+   * Drain the file queue for a watcher in chronological order (FIFO)
+   */
+  private async processQueue(configId: string): Promise<void> {
+    const watcherInstance = this.watchers.get(configId);
+    if (!watcherInstance || watcherInstance.isProcessingQueue) return;
 
-    // Mark as being processed
-    this.processingFiles.add(filePath);
+    watcherInstance.isProcessingQueue = true;
 
     try {
-      // Auto-import the file
-      await this.autoImportFile(configId, filePath, filename);
+      while (watcherInstance.fileQueue.length > 0) {
+        const { filename, filePath } = watcherInstance.fileQueue[0];
 
-      // Mark as processed
-      watcherInstance.processedFiles.add(filename);
-    } catch (error) {
-      console.error(`Failed to auto-import ${filename}:`, error);
+        // Skip if already processed (can happen if the same file fires multiple events)
+        if (watcherInstance.processedFiles.has(filename)) {
+          watcherInstance.fileQueue.shift();
+          continue;
+        }
+
+        // Skip if currently being processed by another path (shouldn't happen, but guard anyway)
+        if (this.processingFiles.has(filePath)) {
+          break;
+        }
+
+        console.log(`⏳ Processing queued file: ${filename}`);
+
+        // Wait for file to be stable (fully written)
+        try {
+          await this.waitForFileStability(filePath);
+        } catch {
+          console.warn(`⚠️ File became inaccessible before processing: ${filename}`);
+          watcherInstance.fileQueue.shift();
+          continue;
+        }
+
+        this.processingFiles.add(filePath);
+
+        try {
+          await this.autoImportFile(configId, filePath, filename);
+          watcherInstance.processedFiles.add(filename);
+        } catch (error) {
+          console.error(`Failed to auto-import ${filename}:`, error);
+        } finally {
+          this.processingFiles.delete(filePath);
+          watcherInstance.fileQueue.shift();
+        }
+      }
     } finally {
-      // Remove from processing set
-      this.processingFiles.delete(filePath);
+      watcherInstance.isProcessingQueue = false;
     }
   }
 

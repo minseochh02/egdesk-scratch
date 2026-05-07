@@ -2132,6 +2132,7 @@ const electronHandler = {
         headless?: boolean;
       }
     ) => ipcRenderer.invoke('run-browser-recording-replay', { testFile, replayParams }),
+    stopBrowserRecordingReplay: () => ipcRenderer.invoke('stop-browser-recording-replay'),
     runChain: (chainId: string) => ipcRenderer.invoke('run-chain', { chainId }),
     setTestHeadless: (testPath: string, headless: boolean) => ipcRenderer.invoke('set-test-headless', { testPath, headless }),
     deletePlaywrightTest: (testPath: string) => ipcRenderer.invoke('delete-playwright-test', { testPath }),

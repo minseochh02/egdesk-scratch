@@ -26,6 +26,7 @@ const BrowserRecorderPage: React.FC = () => {
   const [savedTests, setSavedTests] = useState<any[]>([]);
   const [showSavedTests, setShowSavedTests] = useState(true);
   const [isRecordingEnhanced, setIsRecordingEnhanced] = useState(false);
+  const [isReplaying, setIsReplaying] = useState(false);
   const [currentTestCode, setCurrentTestCode] = useState<string>('');
   const [playwrightDownloads, setPlaywrightDownloads] = useState<any[]>([]);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
@@ -270,6 +271,7 @@ const BrowserRecorderPage: React.FC = () => {
       const labeledBlocks = opts.labeledFieldReplayBlocks ?? [];
       const hasLabeledFields = labeledBlocks.length > 0;
       if (opts.ui === 'none' && !hasLabeledFields) {
+        setIsReplaying(true);
         // Pass empty replayParams so main process uses in-process action replay (executeAction +
         // preferredLocatorStrategy). Without this, replayParams is undefined and the handler runs
         // the extracted script via Node, which ignores RECORDED_ACTIONS preferences.
@@ -278,6 +280,7 @@ const BrowserRecorderPage: React.FC = () => {
           console.log(`🎬 Running test with timing: ${test.name}`);
           addDebugLog(`🎬⏱️ Running test: ${test.name}${test.headless ? ' (headless)' : ''}`);
         } else {
+          setIsReplaying(false);
           alert(`Failed to run test: ${result.error}`);
         }
         return;
@@ -349,14 +352,17 @@ const BrowserRecorderPage: React.FC = () => {
     }
     const testName = replayModal.name;
     try {
+      setIsReplaying(true);
       const result = await dbg.runBrowserRecordingReplay(replayModal.path, replayParams);
       closeReplayModal();
       if (result.success) {
         addDebugLog(`🎬 Replay with date options: ${testName}${currentTest?.headless ? ' (headless)' : ''}`);
       } else {
+        setIsReplaying(false);
         alert(`Failed to run test: ${result.error}`);
       }
     } catch (e: any) {
+      setIsReplaying(false);
       closeReplayModal();
       alert(`Failed to run test: ${e?.message || e}`);
     }
@@ -547,6 +553,7 @@ const BrowserRecorderPage: React.FC = () => {
     };
 
     const handleTestCompleted = (data: any) => {
+      setIsReplaying(false);
       if (data.success) {
         addDebugLog(`✅ Test completed successfully`);
       } else {
@@ -626,6 +633,22 @@ const BrowserRecorderPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Error starting upload recording:', error);
+      addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleStopReplay = async () => {
+    try {
+      addDebugLog('⏹️ Stopping replay...');
+      const result = await (window as any).electron.debug.stopBrowserRecordingReplay();
+      if (result.success) {
+        addDebugLog('✅ Replay stopped');
+        setIsReplaying(false);
+      } else {
+        addDebugLog(`❌ Failed to stop replay: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error stopping replay:', error);
       addDebugLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -768,8 +791,29 @@ const BrowserRecorderPage: React.FC = () => {
             <div className={`browser-recorder-layout-split ${!showSavedTests ? 'saved-tests-collapsed' : ''}`}>
               <div className="browser-recorder-layout-left">
                 {/* Sticky command bar */}
-                <div className="browser-recorder-section browser-recorder-command-bar">
-                  <h2 className="browser-recorder-section-title">Step 1. Record New Test</h2>
+                <div className={`browser-recorder-section browser-recorder-command-bar ${isRecordingEnhanced || isReplaying ? 'recording-active' : ''}`}>
+                  <div className="browser-recorder-section-header">
+                    <h2 className="browser-recorder-section-title">Step 1. Record New Test</h2>
+                    {isRecordingEnhanced && (
+                      <div className="browser-recorder-live-status recording">
+                        <span className="browser-recorder-status-dot"></span>
+                        RECORDING IN PROGRESS
+                      </div>
+                    )}
+                    {isReplaying && (
+                      <div className="browser-recorder-live-status replaying">
+                        <span className="browser-recorder-status-dot"></span>
+                        REPLAY IN PROGRESS
+                        <button
+                          onClick={handleStopReplay}
+                          className="browser-recorder-btn-stop-mini"
+                          title="Stop Replay"
+                        >
+                          ✕ Stop
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="browser-recorder-url-input-container">
                     <input
@@ -849,6 +893,7 @@ const BrowserRecorderPage: React.FC = () => {
                             }
                           }}
                           className="browser-recorder-btn browser-recorder-btn-primary browser-recorder-btn-record"
+                          disabled={isRecordingEnhanced || isReplaying}
                         >
                           🎹 Start Recording
                         </button>
@@ -1253,6 +1298,7 @@ const BrowserRecorderPage: React.FC = () => {
                                 onClick={() => openRenameModal(test)}
                                 className="browser-recorder-test-rename-icon"
                                 title="Rename test"
+                                disabled={isReplaying || isRecordingEnhanced}
                               >
                                 ✏️
                               </button>
@@ -1292,7 +1338,7 @@ const BrowserRecorderPage: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleExportSingle(test)}
-                              disabled={exporting}
+                              disabled={exporting || isReplaying || isRecordingEnhanced}
                               className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-secondary"
                               title="Export test"
                             >
@@ -1301,6 +1347,7 @@ const BrowserRecorderPage: React.FC = () => {
                             <button
                               onClick={() => handleReplayTest(test)}
                               className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-replay"
+                              disabled={isReplaying || isRecordingEnhanced}
                             >
                               ▶️ Replay
                             </button>
@@ -1319,18 +1366,21 @@ const BrowserRecorderPage: React.FC = () => {
                             {test.chainId && test.chainScripts && test.chainScripts.length > 1 && (
                               <button
                                 onClick={async () => {
+                                  setIsReplaying(true);
                                   addDebugLog(`🔗 Running chain: ${test.chainId}`);
                                   const result = await (window as any).electron.debug.runChain(test.chainId);
                                   if (result.success) {
                                     console.log(`🔗 Chain execution completed: ${test.chainId}`);
                                     addDebugLog(`✅ Chain execution completed`);
                                   } else {
+                                    setIsReplaying(false);
                                     alert(`Failed to run chain: ${result.error}`);
                                     addDebugLog(`❌ Chain execution failed: ${result.error}`);
                                   }
                                 }}
                                 className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-chain"
                                 title="Run entire chain of tests"
+                                disabled={isReplaying || isRecordingEnhanced}
                               >
                                 🔗 Replay Chain ({test.chainScripts.length} steps)
                               </button>
@@ -1339,30 +1389,32 @@ const BrowserRecorderPage: React.FC = () => {
                               onClick={() => openScheduleModal(test.path)}
                               className={`browser-recorder-btn btn-sm browser-recorder-btn-schedule ${schedules.find(s => s.testPath === test.path && s.enabled) ? 'scheduled' : ''}`}
                               title="Schedule test"
+                              disabled={isReplaying || isRecordingEnhanced}
                             >
                               📅
                             </button>
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Are you sure you want to delete "${test.name}"?`)) {
-                                  const result = await (window as any).electron.debug.deletePlaywrightTest(test.path);
-                                  if (result.success) {
-                                    // Refresh the test list
-                                    const refreshResult = await (window as any).electron.debug.getPlaywrightTests();
-                                    if (refreshResult.success) {
-                                      setSavedTests(refreshResult.tests);
+                              <button
+                                onClick={async () => {
+                                  if (confirm(`Are you sure you want to delete "${test.name}"?`)) {
+                                    const result = await (window as any).electron.debug.deletePlaywrightTest(test.path);
+                                    if (result.success) {
+                                      // Refresh the test list
+                                      const refreshResult = await (window as any).electron.debug.getPlaywrightTests();
+                                      if (refreshResult.success) {
+                                        setSavedTests(refreshResult.tests);
+                                      }
+                                      addDebugLog(`🗑️ Deleted test: ${test.name}`);
+                                    } else {
+                                      alert(`Failed to delete test: ${result.error}`);
                                     }
-                                    addDebugLog(`🗑️ Deleted test: ${test.name}`);
-                                  } else {
-                                    alert(`Failed to delete test: ${result.error}`);
                                   }
-                                }
-                              }}
-                              className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-delete"
-                              title="Delete test"
-                            >
-                              🗑️
-                            </button>
+                                }}
+                                className="browser-recorder-btn browser-recorder-btn-sm browser-recorder-btn-delete"
+                                title="Delete test"
+                                disabled={isReplaying || isRecordingEnhanced}
+                              >
+                                🗑️
+                              </button>
                           </div>
                         </div>
                       </div>
@@ -1627,7 +1679,11 @@ const BrowserRecorderPage: React.FC = () => {
                     <button onClick={closeReplayModal} className="browser-recorder-btn browser-recorder-btn-sm btn-secondary">
                       Cancel
                     </button>
-                    <button onClick={confirmReplayWithDates} className="browser-recorder-btn browser-recorder-btn-sm btn-primary">
+                    <button
+                      onClick={confirmReplayWithDates}
+                      className="browser-recorder-btn browser-recorder-btn-sm btn-primary"
+                      disabled={isReplaying || isRecordingEnhanced}
+                    >
                       Run
                     </button>
                   </div>
