@@ -731,3 +731,20 @@
   background: #ecfdf5;
   color: #059669;
 }
+
+.egdesk-landing-lawyer-card:hover {
+  border-color: #343a40;
+}
+
+.egdesk-landing-lawyer-card:hover::before {
+  background: linear-gradient(90deg, #343a40, #212529);
+}
+
+.egdesk-landing-lawyer-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #343a40, #212529);
+}
+
+.egdesk-landing-lawyer-card:hover .egdesk-landing-feature-tag {
+  background: #f8f9fa;
+  color: #212529;
+}

@@ -1,0 +1,69 @@
+.lawyer-page {
+  padding: 24px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f9fa;
+}
+
+.lawyer-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.lawyer-header-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #343a40 0%, #212529 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+}
+
+.lawyer-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.lawyer-subtitle {
+  margin: 4px 0 0 0;
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.lawyer-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lawyer-empty-state {
+  text-align: center;
+  color: #adb5bd;
+}
+
+.lawyer-empty-state .empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.lawyer-empty-state h3 {
+  margin: 0 0 8px 0;
+  color: #495057;
+}
+
+.lawyer-empty-state p {
+  margin: 0;
+  font-size: 16px;
+}

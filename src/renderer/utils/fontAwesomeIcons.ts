@@ -152,6 +152,7 @@ export {
   faHammer,
   faToolbox,
   faDatabase,
+  faGavel,
 } from '@fortawesome/free-solid-svg-icons';
 
 // Additional utility icons
