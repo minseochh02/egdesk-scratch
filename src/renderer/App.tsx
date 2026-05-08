@@ -35,6 +35,7 @@ import {
   faBrain,
   faNetworkWired,
   faMicrochip,
+  faGavel,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -69,6 +70,7 @@ import DesktopRecorderPage from './components/DesktopRecorder/DesktopRecorderPag
 import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 import OpenClawPage from './components/OpenClaw/OpenClawPage';
+import LawyerPage from './components/Lawyer/LawyerPage';
 import openclawIcon from '../../assets/openclaw.svg';
 import ollamaIcon from '../../assets/ollama.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
@@ -309,7 +311,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.2</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.3</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2360,6 +2362,10 @@ function NavigationBar({
               <FontAwesomeIcon icon={faMicrochip} fixedWidth />
               <span>AI Center</span>
             </Link>
+            <Link to="/lawyer" className={`nav-dropdown-item ${location.pathname === '/lawyer' ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faGavel} fixedWidth />
+              <span>Lawyer</span>
+            </Link>
             <div
               className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
               onClick={() => navigate('/scheduler-status')}
@@ -3004,6 +3010,7 @@ function AppContent() {
             <Route path="/desktop-recorder" element={<DesktopRecorderPage />} />
             <Route path="/rookie" element={<RookiePage />} />
             <Route path="/openclaw" element={<OpenClawPage />} />
+            <Route path="/lawyer" element={<LawyerPage />} />
 
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

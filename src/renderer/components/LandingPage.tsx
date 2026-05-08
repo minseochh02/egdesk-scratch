@@ -349,6 +349,21 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
+            <Link to="/lawyer" className="egdesk-landing-action-card egdesk-landing-lawyer-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faGavel} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Lawyer</h3>
+              <p className="egdesk-landing-card-description">
+                Legal management and analysis powered by AI.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Legal AI</span>
+                <span className="egdesk-landing-feature-tag">Contract Analysis</span>
+                <span className="egdesk-landing-feature-tag">Compliance</span>
+              </div>
+            </Link>
+
             <Link to="/rookie" className="egdesk-landing-action-card egdesk-landing-rookie-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faRobot} />
