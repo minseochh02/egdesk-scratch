@@ -513,22 +513,44 @@ export async function getHometaxSyncHistory(limit: number = 50) {
 }
 
 /**
- * Query promissory notes (promissory_notes: 어음, issued/received)
+ * List per-(bank, product) bank-product tables — bank-side product data
+ * downloaded from bank portals that isn't core deposit/card transactions
+ * (loans, receivables, e-bills, etc.). Returns table slugs, displayName,
+ * column schemas, and row counts. ALWAYS call this first to discover
+ * what tables exist before calling queryBankProductTable.
  */
-export async function queryPromissoryNotes(options: {
-  bankId?: string;
-  accountId?: string;
-  status?: string;
-  noteType?: 'issued' | 'received';
-  maturityStart?: string;
-  maturityEnd?: string;
-  issueStart?: string;
-  issueEnd?: string;
-  searchText?: string;
+export async function listBankProductTables() {
+  return callFinanceHubTool('financehub_list_bank_product_tables', {});
+}
+
+/**
+ * Generic safe query against any per-(bank, product) table from
+ * listBankProductTables. Filters use the table's exact column names
+ * (snake_case). Returns rows with totalMatching, limit, offset.
+ *
+ * @example
+ *   queryBankProductTable({
+ *     tableSlug: 'ibk_loan_transactions',
+ *     filters: [
+ *       { column: 'account_number', op: '=', value: '306-063568-04-036' },
+ *       { column: 'transaction_amount', op: '>', value: 1000000 },
+ *     ],
+ *     orderBy: { column: 'transaction_date', direction: 'DESC' },
+ *     limit: 50,
+ *   });
+ */
+export async function queryBankProductTable(options: {
+  tableSlug: string;
+  filters?: Array<{
+    column: string;
+    op: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'like' | 'in';
+    value: string | number | Array<string | number>;
+  }>;
+  orderBy?: { column: string; direction?: 'ASC' | 'DESC' };
   limit?: number;
   offset?: number;
-} = {}) {
-  return callFinanceHubTool('financehub_query_promissory_notes', options);
+}) {
+  return callFinanceHubTool('financehub_query_bank_product_table', options);
 }
 
 // ==========================================

@@ -828,7 +828,6 @@ interface FinanceHubDbAPI {
   getAllBanks: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
-  getPromissoryNotes: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getIbkB2bReceivables: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getWooriB2bLoanExecutions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getIbkLoanTransactions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;

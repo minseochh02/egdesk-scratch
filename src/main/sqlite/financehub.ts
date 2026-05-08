@@ -9,6 +9,119 @@ import { createHash, randomUUID } from 'crypto';
 import { getTaxInvoices, getTaxExemptInvoices, getCashReceipts } from './hometax';
 
 // ============================================
+// Per-(bank, product) bank-product tables registry
+// ============================================
+// Single source of truth for the MCP server's `financehub_list_bank_product_tables`
+// and `financehub_query_bank_product_table` tools. Each entry represents a
+// downloaded-from-bank-portal data table that isn't core deposit/card transactions
+// (loans, receivables, e-bills, etc.). Adding a new (bank, product) table =
+// new entry here. The `columns` map is the whitelist for filterable / sortable
+// column names (prevents SQL injection via column names).
+
+interface BankProductTableSpec {
+  /** SQL table name */
+  slug: string;
+  /** Human-readable name */
+  displayName: string;
+  /** Bank id discriminator */
+  bankId: string;
+  /** Short product label */
+  productLabel: string;
+  /** Column-name → SQL type. Used as the column whitelist. */
+  columns: Record<string, string>;
+  /** Default ORDER BY clause when caller doesn't specify one. */
+  defaultOrderBy: string;
+}
+
+export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
+  ibk_b2b_receivables: {
+    slug: 'ibk_b2b_receivables',
+    displayName: 'IBK 외상매출채권',
+    bankId: 'ibk',
+    productLabel: '외상매출채권',
+    columns: {
+      id: 'TEXT',
+      note_number: 'TEXT',
+      serial_number: 'TEXT',
+      buyer_name: 'TEXT',
+      buyer_biz_no: 'TEXT',
+      kind: 'TEXT',
+      status: 'TEXT',
+      cancellation_requested: 'TEXT',
+      cash_equivalent: 'TEXT',
+      receivable_amount: 'INTEGER',
+      original_note_amount: 'INTEGER',
+      registered_date: 'TEXT',
+      maturity_date: 'TEXT',
+      payment_date: 'TEXT',
+      tax_issued_date: 'TEXT',
+      loan_available_date: 'TEXT',
+      loan_executed: 'TEXT',
+      loan_amount: 'INTEGER',
+      deposit_account_number: 'TEXT',
+      payment_branch: 'TEXT',
+      seizure_amount: 'INTEGER',
+      seizure_claimant: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'maturity_date ASC, created_at DESC',
+  },
+  woori_b2b_loan_executions: {
+    slug: 'woori_b2b_loan_executions',
+    displayName: 'Woori B2B대출(협력) 실행내역',
+    bankId: 'woori',
+    productLabel: 'B2B 대출 실행내역',
+    columns: {
+      id: 'TEXT',
+      transaction_number: 'TEXT',
+      receivable_number: 'TEXT',
+      vendor: 'TEXT',
+      received_date: 'TEXT',
+      deposit_date: 'TEXT',
+      receivable_maturity_date: 'TEXT',
+      loan_maturity_date: 'TEXT',
+      applied_amount: 'INTEGER',
+      interest_amount: 'INTEGER',
+      deposit_amount: 'INTEGER',
+      receivable_amount: 'INTEGER',
+      loan_balance: 'INTEGER',
+      loan_interest_rate: 'REAL',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'deposit_date DESC, created_at DESC',
+  },
+  ibk_loan_transactions: {
+    slug: 'ibk_loan_transactions',
+    displayName: 'IBK 대출거래내역',
+    bankId: 'ibk',
+    productLabel: '대출거래내역',
+    columns: {
+      id: 'TEXT',
+      account_number: 'TEXT',
+      transaction_date: 'TEXT',
+      transaction_type: 'TEXT',
+      currency: 'TEXT',
+      transaction_amount: 'INTEGER',
+      principal_amount: 'INTEGER',
+      interest_amount: 'INTEGER',
+      loan_balance: 'INTEGER',
+      interest_rate: 'REAL',
+      start_date: 'TEXT',
+      end_date: 'TEXT',
+      status: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'account_number ASC, transaction_date DESC',
+  },
+};
+
+// ============================================
 // Types (Bank-Agnostic)
 // ============================================
 
@@ -2506,307 +2619,6 @@ export class FinanceHubDbManager {
   }
 
   /**
-   * List promissory notes for the UI (joins bank display name and account number).
-   */
-  getPromissoryNotes(): Array<{
-    id: string;
-    accountId: string;
-    bankId: string;
-    bankName: string;
-    accountNumber: string;
-    noteNumber: string;
-    noteType: string;
-    issuerName: string;
-    issuerRegistrationNumber?: string;
-    payeeName: string;
-    payeeRegistrationNumber?: string;
-    amount: number;
-    currency: string;
-    issueDate: string;
-    maturityDate: string;
-    collectionDate?: string;
-    status: string;
-    processingBank?: string;
-    bankBranch?: string;
-    category?: string;
-    memo?: string;
-    isManual: boolean;
-    createdAt: string;
-    updatedAt: string;
-  }> {
-    try {
-      const exists = this.db
-        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='promissory_notes' LIMIT 1`)
-        .get();
-      if (!exists) {
-        return [];
-      }
-
-      const stmt = this.db.prepare(`
-        SELECT
-          pn.id,
-          pn.account_id,
-          pn.bank_id,
-          pn.note_number,
-          pn.note_type,
-          pn.issuer_name,
-          pn.issuer_registration_number,
-          pn.payee_name,
-          pn.payee_registration_number,
-          pn.amount,
-          pn.currency,
-          pn.issue_date,
-          pn.maturity_date,
-          pn.collection_date,
-          pn.status,
-          pn.processing_bank,
-          pn.bank_branch,
-          pn.category,
-          pn.memo,
-          pn.is_manual,
-          pn.created_at,
-          pn.updated_at,
-          b.name_ko AS bank_name_ko,
-          a.account_number AS account_number
-        FROM promissory_notes pn
-        LEFT JOIN banks b ON b.id = pn.bank_id
-        LEFT JOIN accounts a ON a.id = pn.account_id
-        ORDER BY pn.maturity_date ASC, pn.created_at DESC
-      `);
-      const rows = stmt.all() as any[];
-      return rows.map((row) => ({
-        id: row.id,
-        accountId: row.account_id,
-        bankId: row.bank_id,
-        bankName: row.bank_name_ko || row.bank_id,
-        accountNumber: row.account_number || '',
-        noteNumber: row.note_number,
-        noteType: row.note_type,
-        issuerName: row.issuer_name,
-        issuerRegistrationNumber: row.issuer_registration_number ?? undefined,
-        payeeName: row.payee_name,
-        payeeRegistrationNumber: row.payee_registration_number ?? undefined,
-        amount: row.amount,
-        currency: row.currency || 'KRW',
-        issueDate: row.issue_date,
-        maturityDate: row.maturity_date,
-        collectionDate: row.collection_date ?? undefined,
-        status: row.status,
-        processingBank: row.processing_bank ?? undefined,
-        bankBranch: row.bank_branch ?? undefined,
-        category: row.category ?? undefined,
-        memo: row.memo ?? undefined,
-        isManual: !!row.is_manual,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
-    } catch (e: any) {
-      console.error('[FinanceHubDb] getPromissoryNotes:', e?.message || e);
-      return [];
-    }
-  }
-
-  /**
-   * Query promissory notes (promissory_notes) with filters and pagination — read-only, for MCP/UI.
-   */
-  queryPromissoryNotes(filters: {
-    bankId?: string;
-    accountId?: string;
-    status?: string;
-    noteType?: 'issued' | 'received';
-    maturityStart?: string;
-    maturityEnd?: string;
-    issueStart?: string;
-    issueEnd?: string;
-    searchText?: string;
-    limit: number;
-    offset: number;
-  }): {
-    notes: Array<{
-      id: string;
-      accountId: string;
-      bankId: string;
-      bankName: string;
-      accountNumber: string;
-      noteNumber: string;
-      noteType: string;
-      issuerName: string;
-      issuerRegistrationNumber?: string;
-      payeeName: string;
-      payeeRegistrationNumber?: string;
-      amount: number;
-      currency: string;
-      issueDate: string;
-      maturityDate: string;
-      collectionDate?: string;
-      status: string;
-      processingBank?: string;
-      bankBranch?: string;
-      category?: string;
-      memo?: string;
-      isManual: boolean;
-      createdAt: string;
-      updatedAt: string;
-      endorsementInfo?: string;
-      discountInfo?: string;
-      metadata?: Record<string, unknown>;
-    }>;
-    total: number;
-    error?: string;
-  } {
-    try {
-      const exists = this.db
-        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='promissory_notes' LIMIT 1`)
-        .get();
-      if (!exists) {
-        return { notes: [], total: 0 };
-      }
-
-      let where = 'WHERE 1=1';
-      const params: unknown[] = [];
-
-      if (filters.bankId) {
-        where += ' AND pn.bank_id = ?';
-        params.push(filters.bankId);
-      }
-      if (filters.accountId) {
-        where += ' AND pn.account_id = ?';
-        params.push(filters.accountId);
-      }
-      if (filters.status) {
-        where += ' AND pn.status = ?';
-        params.push(filters.status);
-      }
-      if (filters.noteType) {
-        where += ' AND pn.note_type = ?';
-        params.push(filters.noteType);
-      }
-      if (filters.maturityStart) {
-        where += ' AND pn.maturity_date >= ?';
-        params.push(filters.maturityStart);
-      }
-      if (filters.maturityEnd) {
-        where += ' AND pn.maturity_date <= ?';
-        params.push(filters.maturityEnd);
-      }
-      if (filters.issueStart) {
-        where += ' AND pn.issue_date >= ?';
-        params.push(filters.issueStart);
-      }
-      if (filters.issueEnd) {
-        where += ' AND pn.issue_date <= ?';
-        params.push(filters.issueEnd);
-      }
-      if (filters.searchText && String(filters.searchText).trim()) {
-        const t = `%${String(filters.searchText).trim().replace(/%/g, '')}%`;
-        where +=
-          ' AND (pn.note_number LIKE ? OR pn.issuer_name LIKE ? OR pn.payee_name LIKE ? OR pn.memo LIKE ?)';
-        params.push(t, t, t, t);
-      }
-
-      const from = `
-        FROM promissory_notes pn
-        LEFT JOIN banks b ON b.id = pn.bank_id
-        LEFT JOIN accounts a ON a.id = pn.account_id
-        ${where}
-      `;
-
-      const countRow = this.db
-        .prepare(`SELECT COUNT(*) AS total ${from}`)
-        .get(...params) as { total: number };
-      const total = countRow?.total ?? 0;
-
-      const limit = Math.min(Math.max(filters.limit, 1), 1000);
-      const offset = Math.max(filters.offset, 0);
-
-      const stmt = this.db.prepare(`
-        SELECT
-          pn.id,
-          pn.account_id,
-          pn.bank_id,
-          pn.note_number,
-          pn.note_type,
-          pn.issuer_name,
-          pn.issuer_registration_number,
-          pn.payee_name,
-          pn.payee_registration_number,
-          pn.amount,
-          pn.currency,
-          pn.issue_date,
-          pn.maturity_date,
-          pn.collection_date,
-          pn.status,
-          pn.processing_bank,
-          pn.bank_branch,
-          pn.category,
-          pn.memo,
-          pn.is_manual,
-          pn.created_at,
-          pn.updated_at,
-          pn.endorsement_info,
-          pn.discount_info,
-          pn.metadata,
-          b.name_ko AS bank_name_ko,
-          a.account_number AS account_number
-        ${from}
-        ORDER BY pn.maturity_date ASC, pn.created_at DESC
-        LIMIT ? OFFSET ?
-      `);
-
-      const rows = stmt.all(...params, limit, offset) as any[];
-
-      const notes = rows.map((row) => {
-        let metadata: Record<string, unknown> | undefined;
-        if (row.metadata) {
-          try {
-            metadata = JSON.parse(row.metadata) as Record<string, unknown>;
-          } catch {
-            metadata = undefined;
-          }
-        }
-        return {
-          id: row.id,
-          accountId: row.account_id,
-          bankId: row.bank_id,
-          bankName: row.bank_name_ko || row.bank_id,
-          accountNumber: row.account_number || '',
-          noteNumber: row.note_number,
-          noteType: row.note_type,
-          issuerName: row.issuer_name,
-          issuerRegistrationNumber: row.issuer_registration_number ?? undefined,
-          payeeName: row.payee_name,
-          payeeRegistrationNumber: row.payee_registration_number ?? undefined,
-          amount: row.amount,
-          currency: row.currency || 'KRW',
-          issueDate: row.issue_date,
-          maturityDate: row.maturity_date,
-          collectionDate: row.collection_date ?? undefined,
-          status: row.status,
-          processingBank: row.processing_bank ?? undefined,
-          bankBranch: row.bank_branch ?? undefined,
-          category: row.category ?? undefined,
-          memo: row.memo ?? undefined,
-          isManual: !!row.is_manual,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          endorsementInfo: row.endorsement_info ?? undefined,
-          discountInfo: row.discount_info ?? undefined,
-          metadata,
-        };
-      });
-
-      return { notes, total };
-    } catch (e: any) {
-      console.error('[FinanceHubDb] queryPromissoryNotes:', e?.message || e);
-      return {
-        notes: [],
-        total: 0,
-        error: e instanceof Error ? e.message : 'Unknown error',
-      };
-    }
-  }
-
-  /**
    * Stable primary key for promissory_notes upserts (same bank + note number → same id).
    */
   private stablePromissoryNoteId(bankId: string, noteNumber: string): string {
@@ -3386,6 +3198,196 @@ export class FinanceHubDbManager {
         imported: 0,
         skipped: 0,
         error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
+  // Generic per-(bank, product) table tools — backs the MCP server's
+  // `financehub_list_bank_product_tables` and `financehub_query_bank_product_table`.
+  // Whitelist is in BANK_PRODUCT_TABLES at the top of this file.
+  // ============================================================================
+
+  /**
+   * List every registered per-(bank, product) table with its column schema and
+   * current row count. Tables that haven't been migrated yet show rowCount=0.
+   */
+  listBankProductTables(): Array<{
+    slug: string;
+    displayName: string;
+    bankId: string;
+    productLabel: string;
+    columns: Array<{ name: string; type: string }>;
+    rowCount: number;
+    migrated: boolean;
+  }> {
+    const out: Array<{
+      slug: string;
+      displayName: string;
+      bankId: string;
+      productLabel: string;
+      columns: Array<{ name: string; type: string }>;
+      rowCount: number;
+      migrated: boolean;
+    }> = [];
+    for (const meta of Object.values(BANK_PRODUCT_TABLES)) {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`)
+        .get(meta.slug);
+      let rowCount = 0;
+      if (exists) {
+        try {
+          const r = this.db.prepare(`SELECT COUNT(*) AS c FROM "${meta.slug}"`).get() as { c: number };
+          rowCount = r.c;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      out.push({
+        slug: meta.slug,
+        displayName: meta.displayName,
+        bankId: meta.bankId,
+        productLabel: meta.productLabel,
+        columns: Object.entries(meta.columns).map(([name, type]) => ({ name, type })),
+        rowCount,
+        migrated: !!exists,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Generic safe query against a registered per-(bank, product) table.
+   * SQL injection prevention:
+   *   - tableSlug must be in BANK_PRODUCT_TABLES (no arbitrary names)
+   *   - filter column names must be in the table's whitelist
+   *   - operator must be in ALLOWED_OPS
+   *   - filter values are passed as parameters, never concatenated
+   *   - orderBy column must also be in the whitelist
+   */
+  queryBankProductTable(args: {
+    tableSlug: string;
+    filters?: Array<{ column: string; op: string; value: unknown }>;
+    orderBy?: { column: string; direction?: 'ASC' | 'DESC' };
+    limit?: number;
+    offset?: number;
+  }): {
+    tableSlug: string;
+    total: number;
+    limit: number;
+    offset: number;
+    rows: Array<Record<string, unknown>>;
+    error?: string;
+  } {
+    const limit = Math.min(Math.max(Number(args.limit) || 100, 1), 1000);
+    const offset = Math.max(Number(args.offset) || 0, 0);
+
+    const meta = BANK_PRODUCT_TABLES[args.tableSlug];
+    if (!meta) {
+      const known = Object.keys(BANK_PRODUCT_TABLES).join(', ');
+      return {
+        tableSlug: args.tableSlug,
+        total: 0,
+        limit,
+        offset,
+        rows: [],
+        error: `Unknown tableSlug "${args.tableSlug}". Use financehub_list_bank_product_tables. Known: ${known}`,
+      };
+    }
+
+    const allowedCols = new Set(Object.keys(meta.columns));
+    const ALLOWED_OPS = new Set(['=', '!=', '>', '<', '>=', '<=', 'like', 'in']);
+
+    const exists = this.db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`)
+      .get(meta.slug);
+    if (!exists) {
+      return {
+        tableSlug: args.tableSlug,
+        total: 0,
+        limit,
+        offset,
+        rows: [],
+        error: `Table "${meta.slug}" does not exist (migration not yet applied).`,
+      };
+    }
+
+    let where = 'WHERE 1=1';
+    const params: unknown[] = [];
+
+    for (const f of args.filters || []) {
+      if (!f || typeof f.column !== 'string' || !f.op) continue;
+      if (!allowedCols.has(f.column)) {
+        return {
+          tableSlug: args.tableSlug,
+          total: 0,
+          limit,
+          offset,
+          rows: [],
+          error: `Unknown column "${f.column}" in table "${meta.slug}". Allowed: ${[...allowedCols].join(', ')}`,
+        };
+      }
+      const op = String(f.op).toLowerCase();
+      if (!ALLOWED_OPS.has(op)) {
+        return {
+          tableSlug: args.tableSlug,
+          total: 0,
+          limit,
+          offset,
+          rows: [],
+          error: `Unknown op "${f.op}". Allowed: ${[...ALLOWED_OPS].join(', ')}`,
+        };
+      }
+
+      if (op === 'in') {
+        const arr = Array.isArray(f.value) ? f.value : [f.value];
+        if (arr.length === 0) continue;
+        const placeholders = arr.map(() => '?').join(', ');
+        where += ` AND "${f.column}" IN (${placeholders})`;
+        params.push(...arr);
+      } else if (op === 'like') {
+        where += ` AND "${f.column}" LIKE ?`;
+        params.push(String(f.value ?? ''));
+      } else {
+        // =, !=, >, <, >=, <=
+        const sqlOp = op === '!=' ? '<>' : op;
+        where += ` AND "${f.column}" ${sqlOp} ?`;
+        params.push(f.value as never);
+      }
+    }
+
+    let orderClause = meta.defaultOrderBy;
+    if (args.orderBy && typeof args.orderBy.column === 'string') {
+      if (!allowedCols.has(args.orderBy.column)) {
+        return {
+          tableSlug: args.tableSlug,
+          total: 0,
+          limit,
+          offset,
+          rows: [],
+          error: `Unknown orderBy column "${args.orderBy.column}".`,
+        };
+      }
+      const dir = args.orderBy.direction === 'DESC' ? 'DESC' : 'ASC';
+      orderClause = `"${args.orderBy.column}" ${dir}`;
+    }
+
+    try {
+      const totalRow = this.db
+        .prepare(`SELECT COUNT(*) AS c FROM "${meta.slug}" ${where}`)
+        .get(...params) as { c: number };
+      const rows = this.db
+        .prepare(`SELECT * FROM "${meta.slug}" ${where} ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
+        .all(...params, limit, offset) as Array<Record<string, unknown>>;
+      return { tableSlug: args.tableSlug, total: totalRow.c, limit, offset, rows };
+    } catch (e: any) {
+      return {
+        tableSlug: args.tableSlug,
+        total: 0,
+        limit,
+        offset,
+        rows: [],
+        error: e?.message || String(e),
       };
     }
   }

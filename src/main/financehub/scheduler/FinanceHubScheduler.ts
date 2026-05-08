@@ -2331,7 +2331,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
       const sheetsService = getSheetsService();
       const sqliteManager = getSQLiteManager();
-      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+      const financeHubDb = sqliteManager.getFinanceHubManager();
       const store = getStore();
 
       // Handle tax invoices separately
@@ -2439,8 +2439,8 @@ export class FinanceHubScheduler extends EventEmitter {
         orderDir: 'desc'
       });
 
-      const banks = financeHubDb.prepare('SELECT * FROM banks').all();
-      const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
+      const banks = financeHubDb.getAllBanks();
+      const accounts = financeHubDb.getAllAccounts();
 
       // Build banks map for lookups
       const banksMap: any = {};
@@ -2520,7 +2520,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
       const sheetsService = getSheetsService();
       const sqliteManager = getSQLiteManager();
-      const financeHubDb = sqliteManager.getFinanceHubDatabase();
+      const financeHubDb = sqliteManager.getFinanceHubManager();
 
       // Determine which spreadsheet to use based on entity type
       const spreadsheetKey = entityType === 'card' ? 'card-spreadsheet' : 'bank-spreadsheet';
@@ -2535,8 +2535,8 @@ export class FinanceHubScheduler extends EventEmitter {
         orderDir: 'desc'
       });
 
-      const banks = financeHubDb.prepare('SELECT * FROM banks').all();
-      const accounts = financeHubDb.prepare('SELECT * FROM accounts').all();
+      const banks = financeHubDb.getAllBanks();
+      const accounts = financeHubDb.getAllAccounts();
 
       const banksMap: any = {};
       for (const bank of banks as any[]) {
