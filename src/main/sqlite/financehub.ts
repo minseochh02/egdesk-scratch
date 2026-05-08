@@ -1576,6 +1576,7 @@ export class FinanceHubDbManager {
     bankId?: string;
     startDate?: string;
     endDate?: string;
+    transactionType?: 'bank' | 'card';
   } = {}): {
     totalTransactions: number;
     totalDeposits: number;
@@ -1585,14 +1586,25 @@ export class FinanceHubDbManager {
     netChange: number;
   } {
     if (this.useSeparateTransactionTables()) {
-      // Determine if querying bank or card or both
-      const isCard = options.bankId?.includes('-card');
+      // Routing:
+      //   transactionType='card'  → card_transactions only
+      //   transactionType='bank'  → bank_transactions only
+      //   bankId='*-card'         → card_transactions only (legacy infer)
+      //   bankId='<bank>'         → bank_transactions only
+      //   neither set             → both tables (the dashboard "all" view)
+      const wantCard =
+        options.transactionType === 'card' ||
+        (options.transactionType !== 'bank' && !!options.bankId?.includes('-card'));
+      const wantBank =
+        options.transactionType === 'bank' ||
+        (options.transactionType !== 'card' && !!options.bankId && !options.bankId.includes('-card'));
+      const wantBoth = !options.transactionType && !options.bankId;
 
       let bankStats = { total: 0, deposits: 0, withdrawals: 0, depositCount: 0, withdrawalCount: 0 };
       let cardStats = { total: 0, deposits: 0, withdrawals: 0, depositCount: 0, withdrawalCount: 0 };
 
-      // Query bank transactions (if not filtering by card-only bankId)
-      if (!isCard || !options.bankId) {
+      // Query bank transactions
+      if (wantBank || wantBoth) {
         let query = `
           SELECT
             COUNT(*) as total_transactions,
@@ -1608,7 +1620,7 @@ export class FinanceHubDbManager {
           query += ` AND account_id = ?`;
           params.push(options.accountId);
         }
-        if (options.bankId && !isCard) {
+        if (wantBank && options.bankId) {
           query += ` AND bank_id = ?`;
           params.push(options.bankId);
         }
@@ -1631,8 +1643,8 @@ export class FinanceHubDbManager {
         };
       }
 
-      // Query card transactions (if not filtering by bank-only bankId)
-      if (isCard || !options.bankId) {
+      // Query card transactions
+      if (wantCard || wantBoth) {
         let query = `
           SELECT
             COUNT(*) as total_transactions,
@@ -1648,7 +1660,7 @@ export class FinanceHubDbManager {
           query += ` AND account_id = ?`;
           params.push(options.accountId);
         }
-        if (options.bankId && isCard) {
+        if (wantCard && options.bankId) {
           query += ` AND card_company_id = ?`;
           params.push(options.bankId);
         }
@@ -1729,6 +1741,7 @@ export class FinanceHubDbManager {
     bankId?: string;
     year?: number;
     months?: number;  // How many months to return
+    transactionType?: 'bank' | 'card';
   } = {}): Array<{
     yearMonth: string;
     bankId: string;
@@ -1739,11 +1752,19 @@ export class FinanceHubDbManager {
     netChange: number;
   }> {
     if (this.useSeparateTransactionTables()) {
-      const isCard = options.bankId?.includes('-card');
+      // Same routing as getTransactionStats — transactionType wins,
+      // bankId-suffix is the legacy fallback inference.
+      const wantCard =
+        options.transactionType === 'card' ||
+        (options.transactionType !== 'bank' && !!options.bankId?.includes('-card'));
+      const wantBank =
+        options.transactionType === 'bank' ||
+        (options.transactionType !== 'card' && !!options.bankId && !options.bankId.includes('-card'));
+      const wantBoth = !options.transactionType && !options.bankId;
       const results = new Map<string, any>(); // key: "yearMonth|bankId"
 
       // Query bank transactions
-      if (!isCard || !options.bankId) {
+      if (wantBank || wantBoth) {
         let query = `
           SELECT
             substr(transaction_date, 1, 7) as year_month,
@@ -1760,7 +1781,7 @@ export class FinanceHubDbManager {
           query += ` AND account_id = ?`;
           params.push(options.accountId);
         }
-        if (options.bankId && !isCard) {
+        if (wantBank && options.bankId) {
           query += ` AND bank_id = ?`;
           params.push(options.bankId);
         }
@@ -1787,7 +1808,7 @@ export class FinanceHubDbManager {
       }
 
       // Query card transactions
-      if (isCard || !options.bankId) {
+      if (wantCard || wantBoth) {
         let query = `
           SELECT
             substr(approval_date, 1, 7) as year_month,
@@ -1804,7 +1825,7 @@ export class FinanceHubDbManager {
           query += ` AND account_id = ?`;
           params.push(options.accountId);
         }
-        if (options.bankId && isCard) {
+        if (wantCard && options.bankId) {
           query += ` AND card_company_id = ?`;
           params.push(options.bankId);
         }
