@@ -25,6 +25,7 @@ import {
   faCodeBranch,
   faNetworkWired,
   faMicrochip,
+  faGavel,
 } from '../utils/fontAwesomeIcons';
 import openclawIcon from '../../../assets/openclaw.svg';
 import ollamaIcon from '../../../assets/ollama.svg';
