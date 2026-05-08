@@ -311,8 +311,10 @@ export function useTransactions(): UseTransactionsReturn {
         console.error('[useTransactions] Query failed:', result.error);
       }
 
-      // Also load stats with same filters
-      const statsOptions: Record<string, any> = {};
+      // Also load stats with same filters. transactionType='bank' for symmetry
+      // with the card page — keeps the bank-only "총 거래" from accidentally
+      // including card_transactions.
+      const statsOptions: Record<string, any> = { transactionType: 'bank' };
       if (bankFilters.bankId !== 'all') statsOptions.bankId = bankFilters.bankId;
       if (bankFilters.accountId !== 'all') statsOptions.accountId = bankFilters.accountId;
       if (bankFilters.startDate) statsOptions.startDate = formatDateForQuery(bankFilters.startDate);
@@ -399,8 +401,11 @@ export function useTransactions(): UseTransactionsReturn {
         console.error('[useTransactions] Query failed:', result.error);
       }
 
-      // Also load stats with same filters
-      const statsOptions: Record<string, any> = {};
+      // Also load stats with same filters. transactionType='card' so the stats
+      // include ONLY card_transactions — without this the server falls back to
+      // bank+card combined when bankId is 'all', producing wrong totals on the
+      // card-only page (e.g. "총 거래" showed bank+card sum).
+      const statsOptions: Record<string, any> = { transactionType: 'card' };
       if (cardFilters.bankId !== 'all') statsOptions.bankId = cardFilters.bankId;
       if (cardFilters.accountId !== 'all') statsOptions.accountId = cardFilters.accountId;
       if (cardFilters.startDate) statsOptions.startDate = formatDateForQuery(cardFilters.startDate);
