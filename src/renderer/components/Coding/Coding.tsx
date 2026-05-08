@@ -44,6 +44,7 @@ const Coding: React.FC = () => {
   const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(new Set());
   const [autoScroll, setAutoScroll] = useState<Record<string, boolean>>({});
   const terminalRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [killLoading, setKillLoading] = useState(false);
 
   // Modal state
   const [isModeModalOpen, setIsModeModalOpen] = useState(false);
@@ -289,6 +290,28 @@ const Coding: React.FC = () => {
       }
     } catch (error) {
       console.error('Error stopping server:', error);
+    }
+  };
+
+  const killPortProcess = async (port: number) => {
+    try {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) return;
+
+      setKillLoading(true);
+      console.log(`Attempting to kill process on port ${port}...`);
+      const result = await electron.ipcRenderer.invoke('dev-server:kill-port', port);
+
+      if (result.success) {
+        alert(`✅ Successfully killed process on port ${port}`);
+      } else {
+        alert(`❌ Failed to kill process: ${result.error}`);
+      }
+    } catch (err: any) {
+      console.error('Error killing port process:', err);
+      alert(`❌ Error: ${err.message}`);
+    } finally {
+      setKillLoading(false);
     }
   };
 
@@ -544,6 +567,47 @@ const Coding: React.FC = () => {
           ✅ Node.js {nodeVersion} and npm {npmVersion} detected
         </div>
       )}
+
+      <div style={{
+        backgroundColor: '#f8f9fa',
+        border: '1px solid #dee2e6',
+        borderRadius: '8px',
+        padding: '16px',
+        margin: '0 24px 24px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '20px' }}>🔧</span>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#495057' }}>
+              Port Utilities
+            </h3>
+            <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6c757d' }}>
+              If a project fails to start because port 3000 is in use, you can force kill it here.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => killPortProcess(3000)}
+          disabled={killLoading}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: killLoading ? 'not-allowed' : 'pointer',
+            fontSize: '13px',
+            fontWeight: '600',
+            opacity: killLoading ? 0.7 : 1,
+            transition: 'all 0.2s'
+          }}
+        >
+          {killLoading ? 'Killing...' : 'Kill Port 3000'}
+        </button>
+      </div>
 
       <div className="coding-cards-grid">
         {/* New Project Card */}

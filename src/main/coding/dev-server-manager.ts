@@ -6,6 +6,8 @@ import * as os from 'os';
 import * as chokidar from 'chokidar';
 import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
+import { getLocalServerManager } from '../mcp/server-creator/local-server-manager';
+import { startTunnel, getTunnelStatus } from '../mcp/server-creator/tunneling-manager';
 
 /**
  * Dynamically load setupNextApiPlugin from the user's project node_modules
@@ -1938,18 +1940,52 @@ export default nextConfig;
 
     console.log(`📦 Starting ${projectName} in ${effectiveMode.toUpperCase()} mode`);
 
+    // Ensure local MCP server is running (required for both dev and production)
+    // This allows projects to talk to EGDesk APIs via localhost:8080
+    try {
+      const mcpLocalServerManager = getLocalServerManager();
+      const mcpStatus = mcpLocalServerManager.getStatus();
+      if (!mcpStatus.isRunning) {
+        console.log('🚀 Starting local MCP server (port 8080)...');
+        await mcpLocalServerManager.startServer({ port: 8080, useHTTPS: false });
+      }
+    } catch (mcpError) {
+      console.error('⚠️ Failed to ensure local MCP server is running:', mcpError);
+      // Don't fail the whole operation, but warn the user
+    }
+
     // CHANGE: Only require tunnel for production mode
     const requiresTunnel = effectiveMode === 'production';
 
-    if (!this.tunnelId && requiresTunnel) {
-      // Check if tunnel is already registered in store as a fallback
+    if (requiresTunnel) {
+      // For production mode, we need both local MCP server AND tunneling
       const store = getStore();
       const mcpConfig = store.get('mcpConfiguration') as any;
-      if (mcpConfig?.tunnel?.registered && mcpConfig?.tunnel?.serverName) {
-        console.log(`🔧 Found registered tunnel in store: ${mcpConfig.tunnel.serverName}`);
-        this.tunnelId = mcpConfig.tunnel.serverName;
-      } else {
-        throw new Error('Tunnel required for production mode. Start tunnel in Settings or switch to dev mode.');
+      const tunnelName = this.tunnelId || mcpConfig?.tunnel?.serverName;
+
+      if (!tunnelName) {
+        throw new Error('Tunnel name required for production mode. Please register a tunnel name in Settings first.');
+      }
+
+      this.tunnelId = tunnelName;
+
+      // 1. Ensure tunnel is running
+      try {
+        const tunnelStatus = getTunnelStatus(tunnelName);
+        if (!tunnelStatus.connected) {
+          console.log(`🚀 Starting tunnel for production mode: ${tunnelName}...`);
+          const apiKey = mcpConfig?.tunnel?.apiKey;
+          const tunnelResult = await startTunnel(tunnelName, 'http://localhost:8080', apiKey);
+          
+          if (!tunnelResult.success && !tunnelResult.message?.includes('already running')) {
+            console.error('❌ Failed to start tunnel for production mode:', tunnelResult.error || tunnelResult.message);
+            // We still proceed, but the app might not be accessible externally
+          } else {
+            console.log('✅ Tunnel started successfully for production mode');
+          }
+        }
+      } catch (tunnelError) {
+        console.error('⚠️ Error ensuring tunnel for production mode:', tunnelError);
       }
     }
 
