@@ -23,7 +23,11 @@ import {
   faCode,
   faCloud,
   faCodeBranch,
+  faNetworkWired,
+  faMicrochip,
 } from '../utils/fontAwesomeIcons';
+import openclawIcon from '../../../assets/openclaw.svg';
+import ollamaIcon from '../../../assets/ollama.svg';
 import './LandingPage.css';
 
 const LandingPage: React.FC = () => {
@@ -229,7 +233,7 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faDesktop} />
               </div>
-              <h3 className="egdesk-landing-card-title">EGDesktop</h3>
+              <h3 className="egdesk-landing-card-title">Desktop Control</h3>
               <p className="egdesk-landing-card-description">
                 Control desktop environment and remote access settings.
               </p>
@@ -287,7 +291,7 @@ const LandingPage: React.FC = () => {
 
             <Link to="/openclaw" className="egdesk-landing-action-card egdesk-landing-openclaw-card">
               <div className="egdesk-landing-card-icon">
-                <FontAwesomeIcon icon={faCodeBranch} />
+                <img src={openclawIcon} alt="OpenClaw" style={{ width: '1.2em', height: '1.2em', filter: 'brightness(0) invert(1)' }} />
               </div>
               <h3 className="egdesk-landing-card-title">OpenClaw</h3>
               <p className="egdesk-landing-card-description">
@@ -297,6 +301,51 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">GitHub Signup</span>
                 <span className="egdesk-landing-feature-tag">Google Profile</span>
                 <span className="egdesk-landing-feature-tag">Token Management</span>
+              </div>
+            </Link>
+
+            <Link to="/ai-keys" className="egdesk-landing-action-card egdesk-landing-ollama-card">
+              <div className="egdesk-landing-card-icon">
+                <img src={ollamaIcon} alt="Ollama" style={{ width: '1.2em', height: '1.2em', filter: 'brightness(0) invert(1)' }} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Ollama</h3>
+              <p className="egdesk-landing-card-description">
+                Run powerful AI models locally on your machine with Ollama.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Local AI</span>
+                <span className="egdesk-landing-feature-tag">Gemma 2</span>
+                <span className="egdesk-landing-feature-tag">Privacy First</span>
+              </div>
+            </Link>
+
+            <Link to="/neuron" className="egdesk-landing-action-card egdesk-landing-neuron-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faNetworkWired} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Neuron</h3>
+              <p className="egdesk-landing-card-description">
+                Advanced neural network analysis and pattern recognition.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Neural Analysis</span>
+                <span className="egdesk-landing-feature-tag">Pattern Recognition</span>
+                <span className="egdesk-landing-feature-tag">AI Insights</span>
+              </div>
+            </Link>
+
+            <Link to="/ai-center" className="egdesk-landing-action-card egdesk-landing-aicenter-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faMicrochip} />
+              </div>
+              <h3 className="egdesk-landing-card-title">AI Center</h3>
+              <p className="egdesk-landing-card-description">
+                Centralized hub for managing all your AI workflows and agents.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Workflow Hub</span>
+                <span className="egdesk-landing-feature-tag">Agent Control</span>
+                <span className="egdesk-landing-feature-tag">Automation</span>
               </div>
             </Link>
 

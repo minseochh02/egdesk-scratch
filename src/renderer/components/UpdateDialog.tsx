@@ -164,7 +164,7 @@ export function UpdateDialog() {
               The app will restart automatically when the download is complete. Save your work now.
             </p>
             <div className="update-dialog-note">
-              <small>🔧 Auto-updates can be managed in EGDesktop settings</small>
+              <small>🔧 Auto-updates can be managed in Desktop Control settings</small>
             </div>
           </div>
           <div className="update-dialog-footer">
@@ -231,7 +231,7 @@ export function UpdateDialog() {
               Would you like to download and install it now?
             </p>
             <div className="update-dialog-note">
-              <small>💡 Enable auto-updates in EGDesktop settings to avoid this dialog</small>
+              <small>💡 Enable auto-updates in Desktop Control settings to avoid this dialog</small>
             </div>
           </div>
           <div className="update-dialog-footer">

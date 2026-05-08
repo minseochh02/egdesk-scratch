@@ -215,7 +215,7 @@ export class LocalServerManager {
   /**
    * Start the HTTP/HTTPS server
    */
-  private async startServer(options: HTTPServerOptions): Promise<{ success: boolean; error?: string; port?: number; protocol?: string }> {
+  public async startServer(options: HTTPServerOptions): Promise<{ success: boolean; error?: string; port?: number; protocol?: string }> {
     try {
       // Check if server is already running
       if (this.isRunning) {
@@ -345,7 +345,7 @@ export class LocalServerManager {
   /**
    * Get current server status
    */
-  private getStatus(): HTTPServerStatus {
+  public getStatus(): HTTPServerStatus {
     return {
       isRunning: this.isRunning,
       port: this.currentPort,

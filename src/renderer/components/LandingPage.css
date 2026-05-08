@@ -12,16 +12,18 @@
   min-height: 0;
   overflow-y: auto;
   padding: 68px 20px 20px;
+  width: 100%;
 }
 
 .egdesk-landing-container {
-  max-width: 1200px;
+  max-width: 1400px;
   width: 100%;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(10px);
   overflow: hidden;
+  margin: 0 auto;
 }
 
 /* Header Section */
@@ -660,4 +662,72 @@
 
 .egdesk-landing-desktop-recorder-card:hover::before {
   background: linear-gradient(90deg, #c31432, #240b36);
+}
+
+.egdesk-landing-openclaw-card:hover {
+  border-color: #FF4D4D;
+}
+
+.egdesk-landing-openclaw-card:hover::before {
+  background: linear-gradient(90deg, #FF4D4D, #991B1B);
+}
+
+.egdesk-landing-openclaw-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #FF4D4D, #991B1B);
+}
+
+.egdesk-landing-openclaw-card:hover .egdesk-landing-feature-tag {
+  background: #ffe6e6;
+  color: #FF4D4D;
+}
+
+.egdesk-landing-ollama-card:hover {
+  border-color: #2563eb;
+}
+
+.egdesk-landing-ollama-card:hover::before {
+  background: linear-gradient(90deg, #2563eb, #1e40af);
+}
+
+.egdesk-landing-ollama-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+}
+
+.egdesk-landing-ollama-card:hover .egdesk-landing-feature-tag {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.egdesk-landing-neuron-card:hover {
+  border-color: #9b7ee0;
+}
+
+.egdesk-landing-neuron-card:hover::before {
+  background: linear-gradient(90deg, #9b7ee0, #7c3aed);
+}
+
+.egdesk-landing-neuron-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #9b7ee0, #7c3aed);
+}
+
+.egdesk-landing-neuron-card:hover .egdesk-landing-feature-tag {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.egdesk-landing-aicenter-card:hover {
+  border-color: #3aaa72;
+}
+
+.egdesk-landing-aicenter-card:hover::before {
+  background: linear-gradient(90deg, #3aaa72, #059669);
+}
+
+.egdesk-landing-aicenter-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #3aaa72, #059669);
+}
+
+.egdesk-landing-aicenter-card:hover .egdesk-landing-feature-tag {
+  background: #ecfdf5;
+  color: #059669;
 }

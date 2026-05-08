@@ -105,7 +105,7 @@ const EGDesktopControl: React.FC = () => {
             <FontAwesomeIcon icon={faDesktop} />
           </div>
           <div className="egdesktop-header-content">
-            <h2 className="egdesktop-control-title">EGDesktop Control Panel</h2>
+            <h2 className="egdesktop-control-title">Desktop Control Panel</h2>
             <p className="egdesktop-control-subtitle">Desktop environment settings and management</p>
           </div>
         </div>
@@ -121,8 +121,8 @@ const EGDesktopControl: React.FC = () => {
               <h3 className="egdesktop-section-title">Desktop Activation</h3>
               <p className="egdesktop-section-description">
                 {isEnabled
-                  ? 'EGDesktop is currently running'
-                  : 'EGDesktop is currently disabled'}
+                  ? 'Desktop Control is currently running'
+                  : 'Desktop Control is currently disabled'}
               </p>
             </div>
           </div>
@@ -247,10 +247,6 @@ const EGDesktopControl: React.FC = () => {
             <span className={`egdesktop-status-value ${isEnabled ? 'active' : 'inactive'}`}>
               {isEnabled ? 'Active' : 'Inactive'}
             </span>
-          </div>
-          <div className="egdesktop-status-item">
-            <span className="egdesktop-status-label">Version:</span>
-            <span className="egdesktop-status-value">1.0.0</span>
           </div>
         </div>
       </div>
