@@ -33,6 +33,8 @@ import {
   faDatabase,
   faCloud,
   faBrain,
+  faNetworkWired,
+  faMicrochip,
 } from './utils/fontAwesomeIcons';
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
@@ -68,7 +70,9 @@ import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 import OpenClawPage from './components/OpenClaw/OpenClawPage';
 import openclawIcon from '../../assets/openclaw.svg';
+import ollamaIcon from '../../assets/ollama.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
+import { GOOGLE_OAUTH_SCOPES_STRING } from './constants/googleScopes';
 
 /** Ollama tag: Gemma 3 ~4B (e.g. gemma3:4b) */
 const GEMMA_MODEL_ID = 'gemma3:4b';
@@ -305,7 +309,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.1</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.2</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2331,6 +2335,13 @@ function NavigationBar({
               <span>OpenClaw</span>
             </Link>
             <Link
+              to="/ai-keys"
+              className={`nav-dropdown-item ${location.pathname === '/ai-keys' ? 'active' : ''}`}
+            >
+              <img src={ollamaIcon} alt="Ollama" style={{ width: '1em', height: '1em' }} />
+              <span>Ollama</span>
+            </Link>
+            <Link
               to="/user-data"
               className={`nav-dropdown-item ${location.pathname.startsWith('/user-data') ? 'active' : ''}`}
             >
@@ -2342,11 +2353,11 @@ function NavigationBar({
               <span>Finance Hub</span>
             </Link>
             <Link to="/neuron" className={`nav-dropdown-item ${location.pathname.startsWith('/neuron') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faBrain} fixedWidth />
+              <FontAwesomeIcon icon={faNetworkWired} fixedWidth />
               <span>Neuron</span>
             </Link>
             <Link to="/ai-center" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-center') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faBrain} fixedWidth />
+              <FontAwesomeIcon icon={faMicrochip} fixedWidth />
               <span>AI Center</span>
             </Link>
             <div
@@ -2380,7 +2391,7 @@ function NavigationBar({
             </Link>
             <Link to="/egdesktop" className={`nav-dropdown-item ${location.pathname.startsWith('/egdesktop') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faDesktop} fixedWidth />
-              <span>Desktop</span>
+              <span>Desktop Control</span>
             </Link>
             <Link to="/ai-keys" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-keys') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faRobot} fixedWidth />
@@ -2663,8 +2674,8 @@ function AppContent() {
       const cleanup2 = window.electron.ipcRenderer.on('auth:state-changed', handleAuthStateChanged);
       console.log('[App] Listeners registered successfully');
       return () => {
-        cleanup1();
-        cleanup2();
+        if (cleanup1) cleanup1();
+        if (cleanup2) cleanup2();
       };
     } else {
       console.warn('[App] window.electron.ipcRenderer.on not available');
@@ -2676,9 +2687,8 @@ function AppContent() {
     setSigningInGoogle(true);
 
     try {
-      // Import the scopes - these are specifically for Google Workspace APIs (Sheets, Drive)
-      const { GOOGLE_OAUTH_SCOPES_STRING } = await import('./constants/googleScopes');
-      const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING);
+      // Use the imported scopes - these are specifically for Google Workspace APIs (Sheets, Drive)
+      const result = await window.electron.auth.signInWithGoogle(GOOGLE_OAUTH_SCOPES_STRING) as any;
 
       console.log('[App] Google Workspace OAuth result:', result);
 
