@@ -201,4 +201,6 @@ export {
   faPaperPlane,
   faLightbulb as faBrain,
   faLaptopCode,
+  faMicrochip,
+  faNetworkWired,
 } from '@fortawesome/free-solid-svg-icons';
