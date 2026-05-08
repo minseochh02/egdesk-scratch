@@ -416,53 +416,61 @@ export class FinanceHubMCPService implements IMCPService {
         }
       },
       {
-        name: 'financehub_query_promissory_notes',
+        name: 'financehub_list_bank_product_tables',
         description:
-          'Query promissory notes (어음, promissory_notes table): issued/received notes with amounts, maturity, status, bank/account context',
+          'List per-(bank, product) tables — bank-side product data downloaded from bank portals that isn\'t core deposit/card transactions (loans, receivables, e-bills, etc.). Examples: 외상매출채권, 대출거래내역, B2B 대출 실행내역. Returns each table\'s slug, displayName, bankId, productLabel, column schema, and current row count. ALWAYS call this first to discover available tables and their columns before calling financehub_query_bank_product_table.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      },
+      {
+        name: 'financehub_query_bank_product_table',
+        description:
+          'Generic safe query against any per-(bank, product) table from financehub_list_bank_product_tables. Filters use the table\'s exact column names (snake_case). Returns rows with totalMatching, limit, offset.',
         inputSchema: {
           type: 'object',
           properties: {
-            bankId: {
-              type: 'string',
-              description: 'Filter by bank id (e.g. ibk, shinhan)'
-            },
-            accountId: {
-              type: 'string',
-              description: 'Filter by FinanceHub account id'
-            },
-            status: {
+            tableSlug: {
               type: 'string',
               description:
-                'Filter by status: active, collected, dishonored, cancelled, endorsed, discounted'
+                'Required. Table slug from financehub_list_bank_product_tables (e.g. "ibk_b2b_receivables", "ibk_loan_transactions", "woori_b2b_loan_executions").'
             },
-            noteType: {
-              type: 'string',
-              enum: ['issued', 'received'],
-              description: 'Issued vs received note'
+            filters: {
+              type: 'array',
+              description:
+                'Optional WHERE conditions, AND-ed together. Each: { column, op, value }. Column must be in the table\'s schema; op is one of =, !=, >, <, >=, <=, like, in. For "in", value is an array. For "like", use SQL wildcards (%) in value.',
+              items: {
+                type: 'object',
+                properties: {
+                  column: { type: 'string', description: 'Column name from the table schema (snake_case)' },
+                  op: {
+                    type: 'string',
+                    enum: ['=', '!=', '>', '<', '>=', '<=', 'like', 'in'],
+                    description: 'Comparison operator'
+                  },
+                  value: {
+                    description:
+                      'Filter value. For "in": array of strings/numbers. For "like": string with % wildcards. Otherwise: string or number.'
+                  }
+                },
+                required: ['column', 'op', 'value']
+              }
             },
-            maturityStart: {
-              type: 'string',
-              description: 'Minimum maturity_date (YYYY-MM-DD)'
-            },
-            maturityEnd: {
-              type: 'string',
-              description: 'Maximum maturity_date (YYYY-MM-DD)'
-            },
-            issueStart: {
-              type: 'string',
-              description: 'Minimum issue_date (YYYY-MM-DD)'
-            },
-            issueEnd: {
-              type: 'string',
-              description: 'Maximum issue_date (YYYY-MM-DD)'
-            },
-            searchText: {
-              type: 'string',
-              description: 'Search in note number, issuer/payee names, memo (substring match)'
+            orderBy: {
+              type: 'object',
+              description:
+                'Optional sort. Defaults to the table\'s natural order (e.g. maturity_date ASC for receivables, transaction_date DESC for loan transactions).',
+              properties: {
+                column: { type: 'string', description: 'Column to sort by (must be in schema)' },
+                direction: { type: 'string', enum: ['ASC', 'DESC'], default: 'ASC' }
+              },
+              required: ['column']
             },
             limit: {
               type: 'number',
-              description: 'Maximum rows (max 1000)',
+              description: 'Maximum rows (1-1000)',
               default: 100
             },
             offset: {
@@ -471,7 +479,7 @@ export class FinanceHubMCPService implements IMCPService {
               default: 0
             }
           },
-          required: []
+          required: ['tableSlug']
         }
       }
     ];
@@ -887,47 +895,36 @@ export class FinanceHubMCPService implements IMCPService {
           break;
         }
 
-        case 'financehub_query_promissory_notes': {
-          const {
-            bankId,
-            accountId,
-            status,
-            noteType,
-            maturityStart,
-            maturityEnd,
-            issueStart,
-            issueEnd,
-            searchText,
-            limit = 100,
-            offset = 0
-          } = args;
+        case 'financehub_list_bank_product_tables': {
+          const tables = this.manager.listBankProductTables();
+          result = {
+            totalTables: tables.length,
+            tables
+          };
+          break;
+        }
 
-          const enforcedLimit = Math.min(Math.max(Number(limit) || 100, 1), 1000);
-          const enforcedOffset = Math.max(Number(offset) || 0, 0);
-
-          const q = this.manager.queryPromissoryNotes({
-            bankId,
-            accountId,
-            status,
-            noteType,
-            maturityStart,
-            maturityEnd,
-            issueStart,
-            issueEnd,
-            searchText,
-            limit: enforcedLimit,
-            offset: enforcedOffset
+        case 'financehub_query_bank_product_table': {
+          const { tableSlug, filters, orderBy, limit, offset } = args;
+          if (!tableSlug || typeof tableSlug !== 'string') {
+            throw new Error('tableSlug is required (string). Use financehub_list_bank_product_tables to discover.');
+          }
+          const q = this.manager.queryBankProductTable({
+            tableSlug,
+            filters,
+            orderBy,
+            limit,
+            offset
           });
-
           if (q.error) {
             throw new Error(q.error);
           }
-
           result = {
+            tableSlug: q.tableSlug,
             totalMatching: q.total,
-            limit: enforcedLimit,
-            offset: enforcedOffset,
-            notes: q.notes
+            limit: q.limit,
+            offset: q.offset,
+            rows: q.rows
           };
           break;
         }

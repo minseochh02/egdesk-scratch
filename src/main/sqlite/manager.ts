@@ -790,15 +790,6 @@ export class SQLiteManager {
       }
     });
 
-    ipcMain.handle('sqlite-financehub-get-promissory-notes', async () => {
-      try {
-        const notes = this.getFinanceHubManager().getPromissoryNotes();
-        return { success: true, data: notes };
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
-      }
-    });
-
     ipcMain.handle('sqlite-financehub-get-ibk-b2b-receivables', async () => {
       try {
         const rows = this.getFinanceHubManager().getIbkB2bReceivables();

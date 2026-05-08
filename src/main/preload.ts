@@ -2449,7 +2449,6 @@ const electronHandler = {
     getAllBanks: () => ipcRenderer.invoke('sqlite-financehub-get-all-banks'),
     getAllAccounts: () => ipcRenderer.invoke('sqlite-financehub-get-all-accounts'),
     getAccountsByBank: (bankId: string) => ipcRenderer.invoke('sqlite-financehub-get-accounts-by-bank', bankId),
-    getPromissoryNotes: () => ipcRenderer.invoke('sqlite-financehub-get-promissory-notes'),
     getIbkB2bReceivables: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-b2b-receivables'),
     getWooriB2bLoanExecutions: () => ipcRenderer.invoke('sqlite-financehub-get-woori-b2b-loan-executions'),
     getIbkLoanTransactions: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-loan-transactions'),
