@@ -8,6 +8,18 @@ import os from 'os';
 
 const IS_WIN = process.platform === 'win32';
 
+/** Derive a unique Telegram bot username from a Google email local part.
+ *  e.g. john.doe@gmail.com → egdesk_johndoe_bot */
+function deriveBotUsername(email: string): string {
+  const localPart = email.split('@')[0] ?? '';
+  const sanitized = localPart.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const prefix = 'egdesk_';
+  const suffix = '_bot';
+  const maxMiddle = 32 - prefix.length - suffix.length; // 21 chars
+  const middle = sanitized.slice(0, maxMiddle) || 'user';
+  return `${prefix}${middle}${suffix}`;
+}
+
 /** `which` on Unix, `where` on Windows */
 const WHICH = IS_WIN ? 'where' : 'which';
 
@@ -71,7 +83,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         : {};
 
       const resolvedToken = botToken?.trim() || savedProfile.telegramBotToken || '';
-      const botUsername: string = savedProfile.telegramBotUsername || 'egdesk_openclaw_bot';
+      const botUsername: string = savedProfile.telegramBotUsername || deriveBotUsername(savedProfile.googleEmail ?? '');
 
       if (!resolvedToken) {
         return { success: false, error: 'No bot token found — run Telegram setup first.' };
@@ -260,10 +272,13 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
             try {
               await page.goto(`https://web.telegram.org/k/#@${botUsername}`, {
-                waitUntil: 'domcontentloaded',
+                waitUntil: 'load',
                 timeout: 30_000,
               });
-              await page.waitForTimeout(4000);
+
+              // Wait for the chats page to confirm we are logged in (single unique ID — no strict mode issues)
+              const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+              if (!loggedIn) throw new Error('Telegram session not found — please run Telegram setup first.');
 
               // Click the START button if present (first time opening the bot)
               const startSelectors = [
@@ -407,7 +422,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     const savedProfile = fs.existsSync(metaPath)
       ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
       : {};
-    const botUsername: string = savedProfile.telegramBotUsername || 'egdesk_openclaw_bot';
+    const botUsername: string = savedProfile.telegramBotUsername || deriveBotUsername(savedProfile.googleEmail ?? '');
     log(`Bot username: @${botUsername}`);
 
     try {
@@ -547,11 +562,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
         try {
           await page.goto(`https://web.telegram.org/k/#@${botUsername}`, {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'load',
             timeout: 30_000,
           });
-          log('Telegram Web loaded — waiting 4s…');
-          await page.waitForTimeout(4000);
+          const loggedIn2 = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+          if (!loggedIn2) throw new Error('Telegram session not found — please run Telegram setup first.');
 
           // Click START button if present
           let clickedStart = false;

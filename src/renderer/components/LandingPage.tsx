@@ -305,7 +305,11 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/ai-keys" className="egdesk-landing-action-card egdesk-landing-ollama-card">
+            <div
+              className="egdesk-landing-action-card egdesk-landing-ollama-card"
+              style={{ cursor: 'pointer' }}
+              onClick={() => window.electron.ollama.start()}
+            >
               <div className="egdesk-landing-card-icon">
                 <img src={ollamaIcon} alt="Ollama" style={{ width: '1.2em', height: '1.2em', filter: 'brightness(0) invert(1)' }} />
               </div>
@@ -318,7 +322,7 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Gemma 2</span>
                 <span className="egdesk-landing-feature-tag">Privacy First</span>
               </div>
-            </Link>
+            </div>
 
             <Link to="/neuron" className="egdesk-landing-action-card egdesk-landing-neuron-card">
               <div className="egdesk-landing-card-icon">

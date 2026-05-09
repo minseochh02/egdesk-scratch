@@ -198,7 +198,7 @@ export class AutonomousGeminiClient implements AIClientService {
     message: string,
     options: {
       tools?: ToolDefinition[];
-      toolContext?: 'filesystem' | 'apps-script' | 'all';
+      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;
@@ -337,7 +337,7 @@ export class AutonomousGeminiClient implements AIClientService {
     message: string,
     options: {
       tools?: ToolDefinition[];
-      toolContext?: 'filesystem' | 'apps-script' | 'all';
+      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;

@@ -28,6 +28,7 @@ import { FinanceHubMCPService } from '../financehub/financehub-mcp-service';
 import { InternalKnowledgeMCPService } from '../internal-knowledge/internal-knowledge-mcp-service';
 import { BrowserRecordingMCPService } from '../browser-recording/browser-recording-mcp-service';
 import { AICenterMCPService } from '../ai-center/ai-center-mcp-service';
+import { KoreanLawMCPService } from '../korean-law/korean-law-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 import { getSQLiteManager } from '../../sqlite/manager';
@@ -116,9 +117,14 @@ export class LocalServerManager {
   private useHTTPS = false;
   private store = getStore();
   private apiKey: string | null = null;
+  private kakaoCallbackApiKey: string | null = null;
 
   public setApiKey(key: string): void {
     this.apiKey = key || null;
+  }
+
+  public setKakaoCallbackApiKey(key: string): void {
+    this.kakaoCallbackApiKey = key || null;
   }
   
   // Services
@@ -133,6 +139,7 @@ export class LocalServerManager {
   private internalKnowledgeMCPService: InternalKnowledgeMCPService | null = null;
   private browserRecordingMCPService: BrowserRecordingMCPService | null = null;
   private aiCenterMCPService: AICenterMCPService | null = null;
+  private koreanLawMCPService: KoreanLawMCPService | null = null;
   
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
@@ -243,6 +250,15 @@ export class LocalServerManager {
         const reqPath = req.url?.split('?')[0] || '/';
         if (this.apiKey && reqPath.startsWith('/user-data/')) {
           if (req.headers['x-api-key'] !== this.apiKey) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid or missing X-Api-Key' }));
+            return;
+          }
+        }
+
+        // Dedicated auth for Kakao callback endpoint
+        if (this.kakaoCallbackApiKey && (reqPath === '/kakao/skill' || reqPath === '/webhook/start')) {
+          if (req.headers['x-api-key'] !== this.kakaoCallbackApiKey) {
             res.writeHead(401);
             res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid or missing X-Api-Key' }));
             return;
@@ -482,6 +498,12 @@ export class LocalServerManager {
       return;
     }
 
+    // Korean Law MCP Server endpoints (REST API)
+    if (url.startsWith('/korean-law')) {
+      await this.handleKoreanLawEndpoint(req, res, url);
+      return;
+    }
+
     // Business Identity & Company Research MCP Server endpoints (REST API)
     // Provides access to: internal knowledge documents, business identity snapshots, company research
     if (url.startsWith('/internal-knowledge')) {
@@ -555,6 +577,8 @@ export class LocalServerManager {
         '/internal-knowledge/tools/call - Call a Business Identity & Company Research tool',
         '/browser-recording/tools - List Browser Recording tools',
         '/browser-recording/tools/call - Call a Browser Recording tool',
+        '/korean-law/tools - List Korean Law tools',
+        '/korean-law/tools/call - Call a Korean Law tool',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
@@ -675,6 +699,16 @@ export class LocalServerManager {
       this.financeHubMCPService = new FinanceHubMCPService(database);
     }
     return this.financeHubMCPService;
+  }
+
+  /**
+   * Get or create Korean Law MCP Service
+   */
+  private getKoreanLawMCPService(): KoreanLawMCPService {
+    if (!this.koreanLawMCPService) {
+      this.koreanLawMCPService = new KoreanLawMCPService();
+    }
+    return this.koreanLawMCPService;
   }
 
   /**
@@ -1587,6 +1621,77 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle Korean Law MCP endpoint
+   */
+  private async handleKoreanLawEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    if (!this.isMCPServerEnabled('korean-law')) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Korean Law MCP server is not enabled. Enable it first.',
+        hint: 'Use: ipcRenderer.invoke("mcp-server-enable", "korean-law")'
+      }));
+      return;
+    }
+
+    if (url === '/korean-law/tools' && req.method === 'GET') {
+      this.handleKoreanLawToolsList(res);
+      return;
+    }
+
+    if (url === '/korean-law/tools/call' && req.method === 'POST') {
+      await this.handleKoreanLawToolCall(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({
+      success: false,
+      error: 'Korean Law MCP endpoint not found'
+    }));
+  }
+
+  /**
+   * Handle Korean Law tools list
+   */
+  private handleKoreanLawToolsList(res: http.ServerResponse): void {
+    const service = this.getKoreanLawMCPService();
+    const tools = service.listTools();
+    res.writeHead(200);
+    res.end(JSON.stringify(tools, null, 2));
+  }
+
+  /**
+   * Handle Korean Law tool call
+   */
+  private async handleKoreanLawToolCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.parseRequestBody(req);
+      const { tool, arguments: args } = body;
+
+      if (!tool) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, error: 'Missing "tool" parameter' }));
+        return;
+      }
+
+      console.log(`⚖️ Calling Korean Law tool: ${tool}`);
+      const service = this.getKoreanLawMCPService();
+      const result = await service.executeTool(tool, args || {});
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, result }, null, 2));
+    } catch (error) {
+      console.error('Error calling Korean Law tool:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
+  /**
    * Handle Business Identity & Company Research MCP endpoint
    * Provides access to internal knowledge, business identity snapshots, and company research
    */
@@ -2446,6 +2551,11 @@ export class LocalServerManager {
         name: 'browser-recording',
         enabled: false, // Opt-in: launches Chrome and runs recorded browser automation
         description: 'Browser Recording MCP Server - List and replay saved EGDesk browser recorder tests with optional dates'
+      },
+      {
+        name: 'korean-law',
+        enabled: true, // Enabled by default
+        description: 'Korean Law MCP Server - Search laws, precedents, administrative rules via 법제처 API'
       }
     ];
   }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faGavel,
@@ -9,10 +9,19 @@ import {
   faBalanceScale,
   faBuildingColumns,
   faFileLines,
+  faRobot,
+  faPaperPlane,
+  faTrash,
 } from '@fortawesome/free-solid-svg-icons';
+import { AIService } from '../../services/ai-service';
+import { aiKeysStore } from '../AIKeysManager/store/aiKeysStore';
+import type { AIStreamEvent } from '../../../main/types/ai-types';
+import { AIEventType } from '../../../main/types/ai-types';
 import './LawyerPage.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type PageMode = 'search' | 'chat';
 
 type SearchTarget = 'law' | 'prec' | 'admrul' | 'ordin';
 
@@ -24,6 +33,42 @@ interface SearchTargetOption {
 }
 
 type SearchResult = Record<string, any>;
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  isStreaming?: boolean;
+}
+
+const LAW_SYSTEM_PROMPT = `당신은 대한민국 법률 전문가 AI 어시스턴트입니다. 사용자의 법률 질문에 답변할 때 반드시 korean_law_search, korean_law_get_text, korean_law_get_decision 도구를 활용하여 실제 법령과 판례를 검색하고 인용하세요.
+
+# 도구 사용 전략
+
+## 법령 검색 (target: "law")
+- 법령명 또는 핵심 키워드로 검색 → korean_law_get_text로 관련 조문 전문 확인
+- 예: "근로기준법", "손해배상", "민법 불법행위"
+
+## 판례 검색 (target: "prec") — 중요한 API 한계
+**이 API는 판결 본문이 아니라 사건명(evtNm)만 검색합니다.**
+- 사건명은 "손해배상(기)", "부당해고구제재심판정취소" 같은 법적 청구 유형으로 구성됨
+- 실생활 키워드("인수인계", "퇴사", "야근")는 사건명에 등장하지 않으므로 0건이 나올 수 있음
+- **올바른 판례 검색 전략 (반드시 아래 순서로 시도):**
+  1. 법적 청구 유형으로 검색: "손해배상(기)", "채무불이행", "부당해고" 등
+  2. 단일 법률 용어로 검색: "불법행위", "신의칙", "해고" 등
+  3. 관련 법령명으로 검색: "근로기준법", "민법" 등
+  4. 위 시도 후에도 0건이면 → 이 API의 한계임을 명시하고, 로앤비·대법원 종합법률정보에서 전문 검색 권고
+
+## 검색 실패 시 처리 원칙
+- **절대로 단 한 번의 검색으로 "판례가 없다"고 결론 내리지 말 것**
+- 최소 3가지 다른 키워드/방식으로 재시도할 것
+- 0건 결과 후에는 반드시 더 넓은 법적 개념으로 재검색
+- 최종적으로 관련 판례를 찾지 못한 경우, 이 API가 판결 본문 전문 검색을 지원하지 않는다는 사실을 명시하고 다른 DB 이용을 권고
+
+# 답변 형식
+- 관련 법령은 조문 번호와 출처(법령명, 시행일) 명시
+- 판례는 반드시 사건번호 + 법원명 + 선고일 형식으로 인용: 예) 대법원 2020. 5. 14. 선고 2016다239024 판결
+- 일반인이 이해할 수 있는 쉬운 언어로 설명
+- 법적 불확실성이 있는 경우 솔직하게 명시하고 전문가 상담 권고`;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -102,6 +147,9 @@ function extractText(data: any): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const LawyerPage: React.FC = () => {
+  const [pageMode, setPageMode] = useState<PageMode>('search');
+
+  // ── Search state ────────────────────────────────────────────────────────────
   const [activeTarget, setActiveTarget] = useState<SearchTarget>('law');
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -116,6 +164,92 @@ const LawyerPage: React.FC = () => {
   const [textError, setTextError] = useState('');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Chat state ──────────────────────────────────────────────────────────────
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const handleChatSend = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || isChatLoading) return;
+
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: text }]);
+    setIsChatLoading(true);
+
+    // Add streaming assistant placeholder
+    setChatMessages(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
+
+    try {
+      // Auto-configure AI if not yet configured
+      const isConfigured = await AIService.isConfigured();
+      if (!isConfigured) {
+        const googleKey = aiKeysStore.getState().keys.find(
+          k => k.providerId === 'google' && k.isActive
+        );
+        const apiKey = (googleKey?.fields as any)?.apiKey || '';
+        if (!apiKey) {
+          throw new Error('Google AI 키가 설정되지 않았습니다. 설정에서 Gemini API 키를 추가하세요.');
+        }
+        await AIService.configure({ apiKey, model: 'gemini-2.5-flash' });
+      }
+
+      const { conversationId } = await AIService.startAutonomousConversation(
+        text,
+        {
+          toolContext: 'korean-law',
+          maxTurns: 10,
+          context: { systemPrompt: LAW_SYSTEM_PROMPT },
+        },
+        (event: AIStreamEvent) => {
+          if (event.type === AIEventType.Content) {
+            const chunk = (event as any).content ?? '';
+            setChatMessages(prev => {
+              const msgs = [...prev];
+              const last = msgs[msgs.length - 1];
+              if (last?.role === 'assistant') {
+                msgs[msgs.length - 1] = { ...last, content: last.content + chunk };
+              }
+              return msgs;
+            });
+          } else if (event.type === AIEventType.Finished || event.type === AIEventType.Error) {
+            const errMsg = event.type === AIEventType.Error ? (event as any).error?.message : null;
+            setChatMessages(prev => {
+              const msgs = [...prev];
+              const last = msgs[msgs.length - 1];
+              if (last?.role === 'assistant') {
+                msgs[msgs.length - 1] = {
+                  ...last,
+                  content: last.content || (errMsg ? `오류: ${errMsg}` : '(응답 없음)'),
+                  isStreaming: false,
+                };
+              }
+              return msgs;
+            });
+            setIsChatLoading(false);
+            AIService.unregisterStreamEventListener(conversationId);
+          }
+        }
+      );
+    } catch (e: any) {
+      setChatMessages(prev => {
+        const msgs = [...prev];
+        const last = msgs[msgs.length - 1];
+        if (last?.role === 'assistant') {
+          msgs[msgs.length - 1] = { ...last, content: `오류: ${e.message}`, isStreaming: false };
+        }
+        return msgs;
+      });
+      setIsChatLoading(false);
+    }
+  }, [chatInput, isChatLoading]);
 
   const handleSearch = useCallback(async (overridePage = 1) => {
     if (!query.trim()) { setSearchError('검색어를 입력하세요.'); return; }
@@ -193,11 +327,82 @@ const LawyerPage: React.FC = () => {
           <FontAwesomeIcon icon={faGavel} />
         </div>
         <div className="lawyer-header-content">
-          <h2 className="lawyer-title">법률 검색</h2>
+          <h2 className="lawyer-title">{pageMode === 'chat' ? 'AI 법률 상담' : '법률 검색'}</h2>
           <p className="lawyer-subtitle">법제처 Open API — 법령·판례·행정규칙 통합 검색</p>
+        </div>
+        {/* Mode toggle */}
+        <div className="lawyer-mode-toggle">
+          <button
+            className={`lawyer-mode-btn ${pageMode === 'search' ? 'is-active' : ''}`}
+            onClick={() => setPageMode('search')}
+          >
+            <FontAwesomeIcon icon={faSearch} />
+            <span>검색</span>
+          </button>
+          <button
+            className={`lawyer-mode-btn ${pageMode === 'chat' ? 'is-active' : ''}`}
+            onClick={() => setPageMode('chat')}
+          >
+            <FontAwesomeIcon icon={faRobot} />
+            <span>AI 상담</span>
+          </button>
         </div>
       </div>
 
+      {/* ── Chat Mode ──────────────────────────────────────────────────── */}
+      {pageMode === 'chat' && (
+        <div className="law-chat">
+          <div className="law-chat-messages">
+            {chatMessages.length === 0 && (
+              <div className="law-chat-empty">
+                <FontAwesomeIcon icon={faRobot} className="law-chat-empty-icon" />
+                <p>법률 질문을 입력하면 AI가 관련 법령과 판례를 검색하여 답변드립니다.</p>
+                <p className="law-chat-hint">예: "근로기준법상 연차휴가 일수는?", "교통사고 합의금 분쟁 판례"</p>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`law-chat-msg law-chat-msg--${msg.role}`}>
+                <div className="law-chat-bubble">
+                  {msg.content || (msg.isStreaming ? <FontAwesomeIcon icon={faSpinner} spin /> : '')}
+                </div>
+              </div>
+            ))}
+            <div ref={chatBottomRef} />
+          </div>
+          <div className="law-chat-input-row">
+            <button
+              className="law-chat-clear-btn"
+              onClick={() => setChatMessages([])}
+              title="대화 초기화"
+              disabled={isChatLoading}
+            >
+              <FontAwesomeIcon icon={faTrash} />
+            </button>
+            <input
+              ref={chatInputRef}
+              className="law-chat-input"
+              type="text"
+              placeholder="법률 질문을 입력하세요…"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) handleChatSend(); }}
+              disabled={isChatLoading}
+            />
+            <button
+              className="law-chat-send-btn"
+              onClick={handleChatSend}
+              disabled={isChatLoading || !chatInput.trim()}
+            >
+              {isChatLoading
+                ? <FontAwesomeIcon icon={faSpinner} spin />
+                : <FontAwesomeIcon icon={faPaperPlane} />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Search Mode ────────────────────────────────────────────────── */}
+      {pageMode === 'search' && <>
       {/* ── Target Tabs ────────────────────────────────────────────────── */}
       <div className="lawyer-tabs">
         {SEARCH_TARGETS.map(t => (
@@ -335,6 +540,7 @@ const LawyerPage: React.FC = () => {
           </div>
         )}
       </div>
+      </>}
     </div>
   );
 };

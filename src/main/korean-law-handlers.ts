@@ -19,7 +19,7 @@ function getOcKey(): string {
   }
 }
 
-async function lawFetch(endpoint: string, params: Record<string, string>): Promise<any> {
+export async function lawFetch(endpoint: string, params: Record<string, string>): Promise<any> {
   const url = new URL(`${LAW_BASE}/${endpoint}`);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);

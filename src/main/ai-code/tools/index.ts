@@ -65,3 +65,5 @@ export { CompanyResearchListAllTool } from './companyresearch-list-all';
 export { CompanyResearchGetByIdTool } from './companyresearch-get-by-id';
 export { CompanyResearchGetByDomainTool } from './companyresearch-get-by-domain';
 export { CompanyResearchSearchTool } from './companyresearch-search';
+export { KoreanLawSearchTool } from './korean-law-search';
+export { KoreanLawGetTextTool, KoreanLawGetDecisionTool } from './korean-law-get-text';

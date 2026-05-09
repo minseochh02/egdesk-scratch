@@ -54,7 +54,10 @@ import {
   CompanyResearchListAllTool,
   CompanyResearchGetByIdTool,
   CompanyResearchGetByDomainTool,
-  CompanyResearchSearchTool
+  CompanyResearchSearchTool,
+  KoreanLawSearchTool,
+  KoreanLawGetTextTool,
+  KoreanLawGetDecisionTool
 } from './tools';
 
 
@@ -764,6 +767,65 @@ export class ToolRegistry {
           required: ['query']
         };
 
+      case 'korean_law_search':
+        return {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: `검색어. 검색 대상(target)에 따라 전략이 다름:
+- law/admrul/ordin: 법령명 또는 키워드 (예: "근로기준법", "손해배상", "환경부")
+- prec(판례): 사건명(evtNm)으로만 매칭 — 판결 본문 전문 검색이 아님.
+  판결 내용의 사실 키워드("인수인계", "퇴사")는 사건명에 없으므로 0건이 나옴.
+  반드시 법적 청구 유형으로 검색: "손해배상(기)", "채무불이행", "부당해고", "불법행위" 등.
+  0건이면 더 단순한 법률 개념어로 재시도할 것. 단 한 번 시도로 "판례 없음" 결론 금지.`
+            },
+            target: {
+              type: 'string',
+              enum: ['law', 'prec', 'admrul', 'ordin'],
+              description: '검색 대상: law=법령(기본), prec=판례, admrul=행정규칙, ordin=자치법규'
+            },
+            display: {
+              type: 'number',
+              description: '반환할 결과 수 (기본 20, 최대 100)'
+            },
+            page: {
+              type: 'number',
+              description: '페이지 번호 (기본 1)'
+            }
+          },
+          required: ['query']
+        };
+
+      case 'korean_law_get_text':
+        return {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: '법령의 MST 또는 법령ID (korean_law_search 결과에서 획득)'
+            },
+            target: {
+              type: 'string',
+              enum: ['law', 'admrul', 'ordin'],
+              description: '대상 유형: law=법령(기본), admrul=행정규칙, ordin=자치법규'
+            }
+          },
+          required: ['id']
+        };
+
+      case 'korean_law_get_decision':
+        return {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: '판례의 판례정보일련번호 또는 ID (korean_law_search 결과에서 획득)'
+            }
+          },
+          required: ['id']
+        };
+
       default:
         return {
           type: 'object',
@@ -954,6 +1016,11 @@ export class ToolRegistry {
     this.registerTool(new CompanyResearchGetByIdTool());
     this.registerTool(new CompanyResearchGetByDomainTool());
     this.registerTool(new CompanyResearchSearchTool());
+
+    // Korean Law Tools (법제처 Open API)
+    this.registerTool(new KoreanLawSearchTool());
+    this.registerTool(new KoreanLawGetTextTool());
+    this.registerTool(new KoreanLawGetDecisionTool());
   }
 }
 
@@ -1010,9 +1077,20 @@ export function getUserDataTools(): ToolExecutor[] {
 }
 
 /**
+ * Get Korean Law tools for legal assistant context
+ */
+export function getKoreanLawTools(): ToolExecutor[] {
+  return [
+    new KoreanLawSearchTool(),
+    new KoreanLawGetTextTool(),
+    new KoreanLawGetDecisionTool(),
+  ];
+}
+
+/**
  * Get tool names for a specific context
  */
-export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'user-data' | 'all'): string[] {
+export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'user-data' | 'korean-law' | 'all'): string[] {
   switch (context) {
     case 'filesystem':
       return getFilesystemTools().map(t => t.name);
@@ -1020,6 +1098,8 @@ export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | '
       return getAppsScriptTools().map(t => t.name);
     case 'user-data':
       return getUserDataTools().map(t => t.name);
+    case 'korean-law':
+      return getKoreanLawTools().map(t => t.name);
     case 'all':
     default:
       return Array.from(toolRegistry['tools'].keys());
