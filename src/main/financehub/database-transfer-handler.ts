@@ -83,6 +83,10 @@ const ALL_TABLES = [
   'hometax_sync_operations',
   'financehub_scheduler_executions',
   'saved_credentials',
+  // Banking product tables (stable hash IDs — no account FK remapping needed)
+  'ibk_b2b_receivables',
+  'woori_b2b_loan_executions',
+  'ibk_loan_transactions',
 ];
 
 // Tables to exclude by default (credentials)

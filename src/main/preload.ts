@@ -90,7 +90,10 @@ export type Channels =
   | 'update-wait-settings'
   | 'delete-action'
   | 'play-to-action'
-  | 'auth:token-invalid';
+  | 'auth:token-invalid'
+  | 'auth:state-changed'
+  | 'telegram:status'
+  | 'github:status';
 
 /**
  * File system item information
@@ -2217,9 +2220,9 @@ const electronHandler = {
     },
     // GitHub account creation via saved Google profile
     github: {
-      createAccount: (profileName: string, githubUsername: string) =>
+      createAccount: (profileName: string, githubUsername?: string) =>
         ipcRenderer.invoke('github:create-account', { profileName, githubUsername }),
-      createToken: (profileName: string, githubUsername: string) =>
+      createToken: (profileName: string, githubUsername?: string) =>
         ipcRenderer.invoke('github:create-token', { profileName, githubUsername }),
     },
     // Telegram setup via saved Google profile

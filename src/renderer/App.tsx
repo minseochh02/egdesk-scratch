@@ -311,7 +311,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.3</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.5</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -620,6 +620,26 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [googleProfileLoading, setGoogleProfileLoading] = useState(false);
   const [googleProfileStatus, setGoogleProfileStatus] = useState<Record<string, { authenticated?: boolean; checking?: boolean }>>({});
 
+  // GitHub automation state
+  const [githubProfileName, setGithubProfileName] = useState('openclaw-default');
+  const [githubRunning, setGithubRunning] = useState(false);
+  const [githubLog, setGithubLog] = useState('');
+
+  // Telegram automation state
+  const [telegramProfileName, setTelegramProfileName] = useState('openclaw-default');
+  const [telegramPhone, setTelegramPhone] = useState('');
+  const [telegramRunning, setTelegramRunning] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<{ stage: string; message: string; action?: string } | null>(null);
+  const telegramStatusRef = React.useRef<{ stage: string; message: string; action?: string } | null>(null);
+
+  // KakaoTalk automation state
+  const [kakaoProfileName, setKakaoProfileName] = useState('openclaw-default');
+  const [kakaoChannelName, setKakaoChannelName] = useState('EGDesk OpenClaw');
+  const [kakaoSearchId, setKakaoSearchId] = useState('egdesk_test');
+  const [kakaoBotName, setKakaoBotName] = useState('EGClaw Bot');
+  const [kakaoSkillUrl, setKakaoSkillUrl] = useState('');
+  const [kakaoRunning, setKakaoRunning] = useState(false);
+
 // Define addDebugLog function at the component level
   const addDebugLog = (message: string) => {
     setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
@@ -638,8 +658,16 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
     if (isOpen) loadGoogleProfiles();
   }, [isOpen]);
 
-
-
+  // Listen for mid-flow Telegram status events — must be inside DebugModal to access setTelegramStatus
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer?.on) return;
+    const cleanup = window.electron.ipcRenderer.on('telegram:status', (data: { stage: string; message: string; action?: string }) => {
+      console.log('[DebugModal] telegram:status received:', data);
+      telegramStatusRef.current = data;
+      setTelegramStatus(data);
+    });
+    return () => { if (cleanup) cleanup(); };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -2099,6 +2127,385 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             )}
           </div>
 
+          {/* GitHub Automation Section */}
+          <div>
+            <h3 style={{ color: '#58a6ff', marginBottom: '10px' }}>🐙 GitHub Account Automation</h3>
+            <p style={{ color: '#888', fontSize: '12px', margin: '0 0 12px 0' }}>
+              Creates a GitHub account and generates a personal access token using the saved Chrome profile.
+            </p>
+            <div style={{ marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Profile name (e.g. openclaw-default)"
+                value={githubProfileName}
+                onChange={(e) => setGithubProfileName(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff', width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            {githubLog && (
+              <div style={{ marginBottom: '10px', padding: '8px 12px', backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', color: '#aaa', fontSize: '12px', fontFamily: 'monospace' }}>
+                {githubLog}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                disabled={githubRunning}
+                onClick={async () => {
+                  if (!githubProfileName.trim()) { alert('Enter a profile name'); return; }
+                  setGithubRunning(true);
+                  setGithubLog('Creating GitHub account…');
+                  try {
+                    const result = await (window as any).electron.debug.github.createAccount(githubProfileName.trim());
+                    if (result?.success) {
+                      setGithubLog(`✅ Account created`);
+                      addDebugLog(`✅ GitHub account created (profile: ${githubProfileName.trim()})`);
+                    } else {
+                      setGithubLog(`❌ Failed: ${result?.error || 'Unknown error'}`);
+                      addDebugLog(`❌ GitHub create failed: ${result?.error}`);
+                    }
+                  } catch (e: any) {
+                    setGithubLog(`❌ Error: ${e?.message || e}`);
+                  } finally {
+                    setGithubRunning(false);
+                  }
+                }}
+                style={{ padding: '8px 16px', backgroundColor: githubRunning ? '#1a1a2a' : '#161b22', color: githubRunning ? '#666' : '#58a6ff', border: '1px solid #30363d', borderRadius: '4px', cursor: githubRunning ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+              >
+                {githubRunning ? '⏳ Running…' : 'Create Account'}
+              </button>
+              <button
+                disabled={githubRunning}
+                onClick={async () => {
+                  if (!githubProfileName.trim()) { alert('Enter a profile name'); return; }
+                  setGithubRunning(true);
+                  setGithubLog('Generating GitHub token…');
+                  try {
+                    const result = await (window as any).electron.debug.github.createToken(githubProfileName.trim());
+                    if (result?.success) {
+                      setGithubLog(`✅ Token: ${result.token || '(saved to profile)'}`);
+                      addDebugLog(`✅ GitHub token created (profile: ${githubProfileName.trim()})`);
+                    } else {
+                      setGithubLog(`❌ Failed: ${result?.error || 'Unknown error'}`);
+                      addDebugLog(`❌ GitHub token failed: ${result?.error}`);
+                    }
+                  } catch (e: any) {
+                    setGithubLog(`❌ Error: ${e?.message || e}`);
+                  } finally {
+                    setGithubRunning(false);
+                  }
+                }}
+                style={{ padding: '8px 16px', backgroundColor: githubRunning ? '#1a1a2a' : '#161b22', color: githubRunning ? '#666' : '#3fb950', border: '1px solid #30363d', borderRadius: '4px', cursor: githubRunning ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+              >
+                {githubRunning ? '⏳ Running…' : 'Create Token'}
+              </button>
+            </div>
+          </div>
+
+          {/* Telegram Automation Section */}
+          <div>
+            <h3 style={{ color: '#29b6f6', marginBottom: '10px' }}>✈️ Telegram Channel Automation</h3>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px', margin: '0 0 12px 0' }}>
+              Opens Telegram Web, logs in with the given phone number, then creates a bot via BotFather.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Profile name (e.g. openclaw-default)"
+                  value={telegramProfileName}
+                  onChange={(e) => setTelegramProfileName(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Phone number (e.g. +821012345678)"
+                  value={telegramPhone}
+                  onChange={(e) => setTelegramPhone(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+            </div>
+            {/* Telegram status guide — shown above button while running */}
+            {telegramRunning && void console.log('[TG-JSX] render running=true stage=', telegramStatus?.stage)}
+            {telegramRunning && telegramStatus?.stage === 'awaiting-code' && (
+              <div style={{
+                marginBottom: '12px', borderRadius: '8px', overflow: 'hidden',
+                border: '2px solid #fbbf24',
+                animation: 'tg-pulse 1.4s ease-in-out infinite',
+              }}>
+                <style>{`
+                  @keyframes tg-pulse {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.5); }
+                    50% { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+                  }
+                `}</style>
+                <div style={{ background: '#7c4a00', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '28px', lineHeight: 1 }}>📲</span>
+                  <div>
+                    <div style={{ color: '#fde68a', fontWeight: 'bold', fontSize: '15px' }}>Check Your Phone</div>
+                    <div style={{ color: '#fcd34d', fontSize: '12px', marginTop: '2px' }}>{telegramStatus.message}</div>
+                  </div>
+                </div>
+                <div style={{ background: '#3a2200', padding: '10px 16px', color: '#fde68a', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                  <span>👉</span>
+                  <span>{telegramStatus.action ?? 'Open Telegram on your phone and enter the verification code in the browser.'}</span>
+                </div>
+              </div>
+            )}
+            {telegramRunning && telegramStatus?.stage !== 'awaiting-code' && (() => {
+              const stageConfig: Record<string, { icon: string; label: string; color: string; bg: string; border: string }> = {
+                'navigating':        { icon: '🌐', label: 'Opening Telegram Web…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'checking-login':    { icon: '🔍', label: 'Checking login status…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'already-logged-in': { icon: '✅', label: 'Already logged in',               color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+                'phone-login':       { icon: '📱', label: 'Entering phone number…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'submitting-phone':  { icon: '➡️', label: 'Submitting phone number…',         color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'logged-in':         { icon: '✅', label: 'Logged in!',                       color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+                'opening-botfather': { icon: '🤖', label: 'Opening BotFather…',              color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'newbot':            { icon: '⌨️', label: 'Sending /newbot command…',         color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'bot-name':          { icon: '⌨️', label: 'Entering bot display name…',       color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'bot-username':      { icon: '⌨️', label: 'Entering bot username…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'extracting-token':  { icon: '🔑', label: 'Extracting bot token…',            color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'saving':            { icon: '💾', label: 'Saving to profile…',               color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+                'awaiting-close':    { icon: '🏁', label: 'Done! You can close the browser.', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              };
+              const cfg = stageConfig[telegramStatus?.stage ?? ''] ?? { icon: '⏳', label: 'Running…', color: '#aaa', bg: '#1a1a1a', border: '#444' };
+              return (
+                <div style={{
+                  marginBottom: '12px', borderRadius: '6px', overflow: 'hidden',
+                  border: `1px solid ${cfg.border}`, backgroundColor: cfg.bg,
+                  padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+                }}>
+                  <span style={{ fontSize: '18px', lineHeight: 1 }}>{cfg.icon}</span>
+                  <div>
+                    <div style={{ color: cfg.color, fontWeight: 'bold', fontSize: '13px' }}>{cfg.label}</div>
+                    {telegramStatus?.message && (
+                      <div style={{ color: '#888', fontSize: '11px', marginTop: '2px' }}>{telegramStatus.message}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+            <button
+              disabled={telegramRunning}
+              onClick={async () => {
+                if (!telegramPhone.trim()) { alert('Enter a phone number'); return; }
+                setTelegramRunning(true);
+                addDebugLog(`✈️ Starting Telegram setup for ${telegramPhone}…`);
+                try {
+                  const result = await (window as any).electron.debug.telegram.setup(
+                    telegramProfileName.trim() || 'openclaw-default',
+                    telegramPhone.trim()
+                  );
+                  if (result?.success) {
+                    addDebugLog('✅ Telegram + BotFather setup complete!');
+                    if (result.tokens?.length) addDebugLog(`🤖 Bot tokens: ${result.tokens.join(', ')}`);
+                    else if (result.token) addDebugLog(`🤖 Bot token: ${result.token}`);
+                  } else {
+                    addDebugLog(`❌ Telegram setup failed: ${result?.error || 'Unknown error'}`);
+                  }
+                } catch (e: any) {
+                  addDebugLog(`❌ Telegram error: ${e?.message || e}`);
+                } finally {
+                  setTelegramRunning(false);
+                  setTimeout(() => {
+                    telegramStatusRef.current = null;
+                    setTelegramStatus(null);
+                  }, 3000);
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: telegramRunning ? '#1a3a4a' : '#0288d1',
+                color: telegramRunning ? '#666' : '#fff',
+                border: 'none', borderRadius: '4px',
+                cursor: telegramRunning ? 'not-allowed' : 'pointer',
+                fontWeight: 'bold', opacity: telegramRunning ? 0.7 : 1,
+              }}
+            >
+              {telegramRunning ? '⏳ Running Telegram Setup…' : 'Run Telegram Setup'}
+            </button>
+          </div>
+
+          {/* KakaoTalk Automation Section */}
+          <div>
+            <h3 style={{ color: '#fde047', marginBottom: '10px' }}>💬 KakaoTalk Channel Automation</h3>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px', margin: '0 0 12px 0' }}>
+              Creates a KakaoTalk channel (Step A) then creates and deploys a chatbot linked to it (Step B).
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Profile name (e.g. openclaw-default)"
+                  value={kakaoProfileName}
+                  onChange={(e) => setKakaoProfileName(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Channel name (e.g. EGDesk OpenClaw)"
+                  value={kakaoChannelName}
+                  onChange={(e) => setKakaoChannelName(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Search ID (e.g. egdesk_test)"
+                  value={kakaoSearchId}
+                  onChange={(e) => setKakaoSearchId(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Bot name (e.g. EGClaw Bot)"
+                  value={kakaoBotName}
+                  onChange={(e) => setKakaoBotName(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="Skill URL (e.g. https://tunnel.example.com) — used for /kakao/skill endpoint"
+                value={kakaoSkillUrl}
+                onChange={(e) => setKakaoSkillUrl(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                disabled={kakaoRunning}
+                onClick={async () => {
+                  if (!kakaoChannelName.trim() || !kakaoSearchId.trim()) {
+                    alert('Enter channel name and search ID');
+                    return;
+                  }
+                  setKakaoRunning(true);
+                  addDebugLog(`💬 Creating KakaoTalk channel "@${kakaoSearchId}"…`);
+                  try {
+                    const result = await (window as any).electron.debug.kakao.createChannel(
+                      kakaoProfileName.trim() || 'openclaw-default',
+                      kakaoChannelName.trim(),
+                      kakaoSearchId.trim()
+                    );
+                    if (result?.success) {
+                      addDebugLog(`✅ KakaoTalk channel created: @${result.searchId || kakaoSearchId}`);
+                    } else {
+                      addDebugLog(`❌ Channel creation failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    addDebugLog(`❌ KakaoTalk channel error: ${e?.message || e}`);
+                  } finally {
+                    setKakaoRunning(false);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: kakaoRunning ? '#3a3a1a' : '#b45309',
+                  color: kakaoRunning ? '#666' : '#fff',
+                  border: 'none', borderRadius: '4px',
+                  cursor: kakaoRunning ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold', opacity: kakaoRunning ? 0.7 : 1,
+                }}
+              >
+                {kakaoRunning ? '⏳ Running…' : 'Step A: Create Channel'}
+              </button>
+              <button
+                disabled={kakaoRunning}
+                onClick={async () => {
+                  if (!kakaoBotName.trim() || !kakaoSearchId.trim()) {
+                    alert('Enter bot name and search ID');
+                    return;
+                  }
+                  setKakaoRunning(true);
+                  addDebugLog(`💬 Creating KakaoTalk bot "${kakaoBotName}" for @${kakaoSearchId}…`);
+                  try {
+                    const result = await (window as any).electron.debug.kakao.createBot(
+                      kakaoProfileName.trim() || 'openclaw-default',
+                      kakaoBotName.trim(),
+                      `@${kakaoSearchId.trim()}`,
+                      kakaoSkillUrl.trim()
+                    );
+                    if (result?.success) {
+                      addDebugLog(`✅ KakaoTalk bot created and deployed: ${result.botName || kakaoBotName}`);
+                    } else {
+                      addDebugLog(`❌ Bot creation failed: ${result?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    addDebugLog(`❌ KakaoTalk bot error: ${e?.message || e}`);
+                  } finally {
+                    setKakaoRunning(false);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: kakaoRunning ? '#3a3a1a' : '#a16207',
+                  color: kakaoRunning ? '#666' : '#fff',
+                  border: 'none', borderRadius: '4px',
+                  cursor: kakaoRunning ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold', opacity: kakaoRunning ? 0.7 : 1,
+                }}
+              >
+                {kakaoRunning ? '⏳ Running…' : 'Step B: Create Bot'}
+              </button>
+              <button
+                disabled={kakaoRunning}
+                onClick={async () => {
+                  if (!kakaoChannelName.trim() || !kakaoSearchId.trim() || !kakaoBotName.trim()) {
+                    alert('Enter channel name, search ID, and bot name');
+                    return;
+                  }
+                  setKakaoRunning(true);
+                  addDebugLog(`💬 Running full KakaoTalk setup (channel + bot)…`);
+                  try {
+                    // Step A
+                    addDebugLog(`  → Creating channel "@${kakaoSearchId}"…`);
+                    const chResult = await (window as any).electron.debug.kakao.createChannel(
+                      kakaoProfileName.trim() || 'openclaw-default',
+                      kakaoChannelName.trim(),
+                      kakaoSearchId.trim()
+                    );
+                    if (chResult?.success) {
+                      addDebugLog(`  ✅ Channel created: @${kakaoSearchId}`);
+                      // Step B
+                      addDebugLog(`  → Creating bot "${kakaoBotName}"…`);
+                      const botResult = await (window as any).electron.debug.kakao.createBot(
+                        kakaoProfileName.trim() || 'openclaw-default',
+                        kakaoBotName.trim(),
+                        `@${kakaoSearchId.trim()}`,
+                        kakaoSkillUrl.trim()
+                      );
+                      if (botResult?.success) {
+                        addDebugLog(`  ✅ Bot created and deployed: ${kakaoBotName}`);
+                        addDebugLog('✅ Full KakaoTalk setup complete!');
+                      } else {
+                        addDebugLog(`  ❌ Bot creation failed: ${botResult?.error || 'Unknown error'}`);
+                      }
+                    } else {
+                      addDebugLog(`  ❌ Channel creation failed: ${chResult?.error || 'Unknown error'}`);
+                    }
+                  } catch (e: any) {
+                    addDebugLog(`❌ KakaoTalk setup error: ${e?.message || e}`);
+                  } finally {
+                    setKakaoRunning(false);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: kakaoRunning ? '#2a2a3a' : '#1a3a5c',
+                  color: kakaoRunning ? '#666' : '#fde047',
+                  border: '1px solid #fde04733',
+                  borderRadius: '4px',
+                  cursor: kakaoRunning ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold', opacity: kakaoRunning ? 0.7 : 1,
+                }}
+              >
+                {kakaoRunning ? '⏳ Running…' : 'Run Full Setup (A + B)'}
+              </button>
+            </div>
+          </div>
+
           {/* Debug Console Section */}
           {debugLogs.length > 0 && (
             <div>
@@ -2687,6 +3094,7 @@ function AppContent() {
       console.warn('[App] window.electron.ipcRenderer.on not available');
     }
   }, []);
+
 
   // Handle Google OAuth sign-in for Workspace access
   const handleGoogleSignIn = async () => {

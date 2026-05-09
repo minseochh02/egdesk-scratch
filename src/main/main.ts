@@ -5056,6 +5056,21 @@ const createWindow = async () => {
     const mcpLocalServerManager = getLocalServerManager();
     mcpLocalServerManager.registerIPCHandlers();
 
+    // Generate or restore the dedicated Kakao callback API key (fixed — survives tunnel reconnects)
+    {
+      const mcpConfig = store.get('mcpConfiguration') as any;
+      const existingKakaoKey = mcpConfig?.kakaoCallbackApiKey as string | undefined;
+      const kakaoCallbackApiKey = existingKakaoKey || randomUUID();
+      if (!existingKakaoKey) {
+        mcpConfig.kakaoCallbackApiKey = kakaoCallbackApiKey;
+        store.set('mcpConfiguration', mcpConfig);
+        console.log('🔑 Generated new Kakao callback API key');
+      } else {
+        console.log('🔑 Restored Kakao callback API key');
+      }
+      mcpLocalServerManager.setKakaoCallbackApiKey(kakaoCallbackApiKey);
+    }
+
     // Register Ollama handlers
     registerOllamaHandlers();
 

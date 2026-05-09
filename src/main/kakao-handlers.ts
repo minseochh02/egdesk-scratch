@@ -273,7 +273,7 @@ async function createKakaoBot(
 
   const skillName = 'openclawresponse';
   const fullSkillUrl = skillUrl ? `${skillUrl}/kakao/skill` : '';
-  const apiKey: string = (getStore().get('mcpConfiguration') as any)?.tunnel?.apiKey ?? '';
+  const apiKey: string = (getStore().get('mcpConfiguration') as any)?.kakaoCallbackApiKey ?? '';
 
   try {
     // 1. Navigate to chatbot admin

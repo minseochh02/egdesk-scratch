@@ -1,5 +1,5 @@
 // IPC handlers for Chrome browser automation and Lighthouse reports
-import { ipcMain, app, screen, BrowserWindow, dialog } from 'electron';
+import { ipcMain, app, screen, BrowserWindow, dialog, Notification } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -4392,7 +4392,7 @@ test('recorded test', async ({ page }) => {
    *   5. Run /newbot flow with fixed name "EGDesk OpenClaw" / username "egdesk_openclaw_bot"
    *   6. Extract and save the bot token
    */
-  ipcMain.handle('telegram:setup', async (_event, { profileName, phoneNumber }: { profileName: string; phoneNumber: string }) => {
+  ipcMain.handle('telegram:setup', async (event, { profileName, phoneNumber }: { profileName: string; phoneNumber: string }) => {
     try {
       const profileDir = path.join(getGoogleProfilesDir(), profileName);
       if (!fs.existsSync(profileDir)) {
@@ -4452,15 +4452,161 @@ test('recorded test', async ({ page }) => {
 
       let botToken: string | null = null;
 
+      const senderWebContents = event.sender;
+      const tgStatus = (stage: string, message: string, action?: string) => {
+        console.log(`[Telegram:${stage}] ${message}`);
+        // Send to the invoking window; fall back to all windows if sender is gone
+        try {
+          if (!senderWebContents.isDestroyed()) {
+            senderWebContents.send('telegram:status', { stage, message, action });
+          } else {
+            BrowserWindow.getAllWindows().forEach(w => w.webContents.send('telegram:status', { stage, message, action }));
+          }
+        } catch {
+          BrowserWindow.getAllWindows().forEach(w => w.webContents.send('telegram:status', { stage, message, action }));
+        }
+        if (stage === 'awaiting-code') {
+          new Notification({
+            title: '📲 Telegram — Check Your Phone',
+            body: action ?? message,
+            urgency: 'critical',
+          }).show();
+        }
+      };
+
       try {
         // ── Phase A: Telegram login ──
-        await page.goto('https://web.telegram.org/k/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-        await page.waitForTimeout(3000);
+        tgStatus('navigating', 'Opening Telegram Web…');
+        // Use 'load' so Telegram's JS has time to initialize before we inspect the DOM
+        await page.goto('https://web.telegram.org/k/', { waitUntil: 'load', timeout: 30_000 });
 
-        // Check if already logged in
-        const alreadyLoggedIn = await page.locator('.chats-container, .chatlist-chat, #column-center').isVisible({ timeout: 5000 }).catch(() => false);
+        // Priority-ordered page state detection (race all three simultaneously, 15s timeout)
+        tgStatus('checking-login', 'Checking login status…');
+        const detectPageState = () => new Promise<'logged-in' | 'awaiting-code' | 'needs-phone'>((resolve) => {
+          const timer = setTimeout(() => resolve('needs-phone'), 15_000);
+          const done = (state: 'logged-in' | 'awaiting-code' | 'needs-phone') => { clearTimeout(timer); resolve(state); };
+          // 1. Already on chats page — #page-chats is a unique ID, safe for strict mode
+          page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 })
+            .then(() => done('logged-in')).catch(() => {});
+          // 2. Code verification screen is showing
+          page.locator('p.subtitle.sent-type, ._wrap_87tyg_1, [autocomplete="one-time-code"]').waitFor({ state: 'visible', timeout: 15_000 })
+            .then(() => done('awaiting-code')).catch(() => {});
+          // 3. Phone number input is showing (fallthrough — needs-phone via timeout)
+        });
 
-        if (!alreadyLoggedIn && phoneNumber) {
+        const initialState = await detectPageState();
+
+        const alreadyLoggedIn = initialState === 'logged-in';
+        const alreadyAwaitingCode = initialState === 'awaiting-code';
+
+        if (alreadyLoggedIn) {
+          tgStatus('already-logged-in', 'Already logged in, skipping phone login.');
+        } else if (alreadyAwaitingCode) {
+          let phoneOnScreen = phoneNumber;
+          try {
+            phoneOnScreen = (await page.locator('h4.phone').textContent({ timeout: 2000 }))?.trim() ?? phoneNumber;
+          } catch { /* ignore */ }
+          tgStatus('awaiting-code', `Code was already sent to ${phoneOnScreen}`, 'Enter the verification code in the browser window to continue.');
+        }
+
+        // Polls for login success; if "Code expired" appears, clicks the pencil icon,
+        // re-enters the phone number, and waits for a fresh code (repeats up to 5 times).
+        const waitForLoginWithExpireRetry = async (maxWaitMs = 300_000, codeScreenVisible = false) => {
+          const deadline = Date.now() + maxWaitMs;
+          let attempt = 0;
+          // Only watch for code screen disappearing if we actually saw it appear
+          let codeSubmitted = !codeScreenVisible;
+          while (Date.now() < deadline) {
+            // Success? Use the unique #page-chats ID to avoid strict mode violations
+            const loggedIn = await page.locator('#page-chats').isVisible({ timeout: 1000 }).catch(() => false);
+            if (loggedIn) {
+              tgStatus('logged-in', 'Logged in! Loading chats…');
+              return;
+            }
+
+            // Detect code screen disappearing — user submitted the code, Telegram is processing
+            if (!codeSubmitted) {
+              const codeScreenStillVisible = await page.locator('._wrap_87tyg_1, .input-wrapper ._input_87tyg_11, p.subtitle.sent-type').first().isVisible({ timeout: 500 }).catch(() => false);
+              if (!codeScreenStillVisible) {
+                codeSubmitted = true;
+                tgStatus('verifying-code', 'Code submitted — waiting for Telegram to verify…');
+              }
+            }
+
+            // Code expired?
+            const errorText = await page.locator('.error-label').textContent({ timeout: 500 }).catch(() => '');
+            if (errorText && /expired/i.test(errorText)) {
+              attempt++;
+              if (attempt > 5) throw new Error('Verification code expired 5 times — giving up.');
+              tgStatus('code-expired', `Code expired (attempt ${attempt}) — retrying…`, 'Clicking the edit icon to re-enter your phone number.');
+
+              // Click the pencil / edit icon next to the phone number
+              try {
+                await page.locator('.phone-edit').click({ timeout: 5000 });
+              } catch {
+                await page.locator('.phone-edit span.tgico').click({ timeout: 5000 });
+              }
+              await page.waitForTimeout(1500);
+
+              // Re-fill country code
+              try {
+                await page.locator('.input-field-input').nth(1).click({ timeout: 5000 });
+                await page.waitForTimeout(800);
+                await page.keyboard.type(countryCodeDigits);
+                await page.waitForTimeout(800);
+                try {
+                  await page.locator(`[data-country-code="${countryCodeDigits}"]`).first().click({ timeout: 3000 });
+                } catch {
+                  await page.locator('.country-list .country-list-element, .countries-search-list li').first().click({ timeout: 3000 });
+                }
+                await page.waitForTimeout(800);
+              } catch { /* country selection failed — proceed */ }
+
+              // Re-fill local number
+              try {
+                const phoneInput = page.locator('[data-left-pattern]').first();
+                await phoneInput.waitFor({ timeout: 5000 });
+                await phoneInput.click({ timeout: 3000 });
+                await page.waitForTimeout(300);
+                await page.keyboard.type(localNumber, { delay: 50 });
+              } catch {
+                try {
+                  await page.locator('.input-field-input').nth(2).click({ timeout: 3000 });
+                  await page.waitForTimeout(300);
+                  await page.keyboard.type(localNumber, { delay: 50 });
+                } catch { /* ignore */ }
+              }
+              await page.waitForTimeout(800);
+
+              // Submit phone number
+              tgStatus('submitting-phone', `Re-submitting phone number (attempt ${attempt})…`);
+              try {
+                await page.keyboard.press('Enter');
+              } catch {
+                try {
+                  await page.locator('.input-field-phone ~ button, button.btn-circle, .sign-in__btn').first().click({ timeout: 5000 });
+                } catch { /* ignore */ }
+              }
+              await page.waitForTimeout(2000);
+
+              // Wait for the code-entry screen to reappear, then notify UI
+              const codeScreenBack = await page.locator('._wrap_87tyg_1, p.subtitle.sent-type').first().isVisible({ timeout: 10_000 }).catch(() => false);
+              if (codeScreenBack) {
+                let phoneOnScreen = phoneNumber;
+                try { phoneOnScreen = (await page.locator('h4.phone').textContent({ timeout: 2000 }))?.trim() ?? phoneNumber; } catch { /* ignore */ }
+                tgStatus('awaiting-code', `New code sent to ${phoneOnScreen} (attempt ${attempt})`, 'Open Telegram on your phone and enter the new verification code.');
+                codeSubmitted = false; // reset so we detect the next submission
+              }
+              continue;
+            }
+
+            await page.waitForTimeout(1000);
+          }
+          throw new Error('Timed out waiting for Telegram login.');
+        };
+
+        if (!alreadyLoggedIn && !alreadyAwaitingCode && phoneNumber) {
+          tgStatus('phone-login', 'Clicking "LOG IN BY PHONE NUMBER"…');
           // Click "LOG IN BY PHONE NUMBER" to switch from QR code view to phone input
           try {
             // Try multiple ways to find the phone login button
@@ -4489,6 +4635,7 @@ test('recorded test', async ({ page }) => {
             // Button not present — already on phone input view or selector changed
           }
 
+          tgStatus('phone-login', `Entering phone number ${phoneNumber}…`);
           // Click country code field to open dropdown
           try {
             await page.locator('.input-field-input').nth(1).click({ timeout: 5000 });
@@ -4526,20 +4673,49 @@ test('recorded test', async ({ page }) => {
           }
           await page.waitForTimeout(1000);
 
-          // Click Next
+          tgStatus('submitting-phone', 'Submitting phone number…');
+          // Click Next (press Enter — most reliable way to submit the phone number form)
           try {
-            await page.locator('.c-ripple').nth(1).click({ timeout: 5000 });
+            await page.keyboard.press('Enter');
           } catch {
-            await page.locator('xpath=/html/body/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/button/div').click({ timeout: 5000 });
+            // Fallback: try the arrow/submit button by its specific button role next to the phone input
+            try {
+              await page.locator('.input-field-phone ~ button, button.btn-circle, .sign-in__btn').first().click({ timeout: 5000 });
+            } catch {
+              await page.locator('xpath=/html/body/div[2]/div/div[3]/div[1]/div/div[1]/div[2]/button').click({ timeout: 5000 });
+            }
           }
 
-          // Wait for user to enter SMS verification code (up to 2 minutes)
-          await page.waitForSelector('.chats-container, .chatlist-chat, #column-center, .chat-input', { timeout: 120_000 });
+          // After pressing Enter, race: logged-in vs code-screen vs timeout (20s)
+          tgStatus('awaiting-code-screen', 'Waiting for Telegram to respond…');
+          const postSubmitState = await detectPageState();
+
+          if (postSubmitState === 'logged-in') {
+            tgStatus('logged-in', 'Session restored — already logged in, skipping code step.');
+          } else if (postSubmitState === 'awaiting-code') {
+            let phoneOnScreen = phoneNumber;
+            try {
+              phoneOnScreen = (await page.locator('h4.phone').textContent({ timeout: 2000 }))?.trim() ?? phoneNumber;
+            } catch { /* ignore */ }
+            tgStatus('awaiting-code', `Verification code sent to ${phoneOnScreen}`, 'Open Telegram on your phone and enter the code shown in the browser.');
+            await waitForLoginWithExpireRetry(300_000, true);
+          } else {
+            // Unknown state — still wait for login in case the user can see the browser
+            tgStatus('awaiting-code', `Waiting for code entry on ${phoneNumber}`, 'Open Telegram on your phone and enter the code in the browser window.');
+            await waitForLoginWithExpireRetry(300_000, false);
+          }
         }
 
+        // If resuming mid-flow (code screen was already open on load), also wait for login to complete
+        if (alreadyAwaitingCode) {
+          await waitForLoginWithExpireRetry(300_000, true);
+        }
+
+        tgStatus('logged-in', 'Logged in successfully!');
         await page.waitForTimeout(2000);
 
         // ── Phase B: Navigate to BotFather ──
+        tgStatus('opening-botfather', 'Navigating to BotFather…');
         await page.goto('https://t.me/BotFather', { waitUntil: 'domcontentloaded', timeout: 30_000 });
         await page.waitForTimeout(3000);
 
@@ -4559,6 +4735,7 @@ test('recorded test', async ({ page }) => {
         await page.waitForTimeout(3000);
 
         // Click OPEN IN WEB
+        tgStatus('opening-botfather', 'Opening BotFather in Telegram Web…');
         try {
           const openBtn = page.getByRole('span', { name: 'OPEN IN WEB' });
           await openBtn.waitFor({ timeout: 8000 });
@@ -4578,24 +4755,48 @@ test('recorded test', async ({ page }) => {
         await page.waitForTimeout(2000);
 
         // ── Phase C: /newbot flow ──
-        // Click the message input (contenteditable div)
+
+        // Derive a unique bot username from the user's Google email local part
+        // e.g. john.doe@gmail.com → egdesk_johndoe_bot
+        // Rules: letters/digits/underscores only, 5-32 chars total, must end in _bot
+        const deriveBotUsername = (): string => {
+          const metaForEmail = fs.existsSync(path.join(profileDir, 'profile.json'))
+            ? JSON.parse(fs.readFileSync(path.join(profileDir, 'profile.json'), 'utf-8'))
+            : {};
+          const email: string = metaForEmail.googleEmail ?? '';
+          const localPart = email.split('@')[0] ?? '';
+          // Strip everything except letters and digits
+          const sanitized = localPart.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const prefix = 'egdesk_';
+          const suffix = '_bot';
+          // Max middle section: 32 - prefix.length - suffix.length = 32 - 7 - 4 = 21 chars
+          const maxMiddle = 32 - prefix.length - suffix.length;
+          const middle = sanitized.slice(0, maxMiddle) || 'user';
+          return `${prefix}${middle}${suffix}`;
+        };
+        const botDisplayName = 'EGDesk OpenClaw';
+        const botUsernameToType = deriveBotUsername();
+
+        tgStatus('newbot', 'Sending /newbot command to BotFather…');
         await page.locator('.input-message-input').first().click({ timeout: 8000 });
         await page.waitForTimeout(500);
         await page.keyboard.type('/newbot');
         await page.keyboard.press('Enter');
         await page.waitForTimeout(4000); // Wait for BotFather to ask for bot name
 
-        // Type bot display name
+        tgStatus('bot-name', `Entering bot display name: ${botDisplayName}…`);
         await page.locator('.input-message-input').first().click({ timeout: 5000 });
-        await page.keyboard.type('EGDesk OpenClaw');
+        await page.keyboard.type(botDisplayName);
         await page.keyboard.press('Enter');
         await page.waitForTimeout(4000); // Wait for BotFather to ask for username
 
-        // Type bot username
+        tgStatus('bot-username', `Entering bot username: ${botUsernameToType}…`);
         await page.locator('.input-message-input').first().click({ timeout: 5000 });
-        await page.keyboard.type('egdesk_openclaw_bot');
+        await page.keyboard.type(botUsernameToType);
         await page.keyboard.press('Enter');
         await page.waitForTimeout(6000); // Wait for BotFather to return token
+
+        tgStatus('extracting-token', 'Extracting bot token from BotFather response…');
 
         // Extract all bot tokens from BotFather's chat — tokens are always in <code class="monospace-text">
         const allBotTokens: string[] = [];
@@ -4627,7 +4828,7 @@ test('recorded test', async ({ page }) => {
         botToken = allBotTokens[allBotTokens.length - 1] ?? null; // most recent token
 
         // Extract bot username from BotFather's success message (looks like "t.me/username")
-        let botUsername = 'egdesk_openclaw_bot'; // fallback to what we typed
+        let botUsername = botUsernameToType; // fallback to what we typed
         try {
           const allMsgTexts = await page.locator('.message').allTextContents();
           for (const text of allMsgTexts) {
@@ -4636,6 +4837,7 @@ test('recorded test', async ({ page }) => {
           }
         } catch { /* non-fatal */ }
 
+        tgStatus('saving', `Saving bot token to profile "${profileName}"…`);
         // Save to profile.json
         const metaPath = path.join(profileDir, 'profile.json');
         const existing = fs.existsSync(metaPath)
@@ -4649,6 +4851,7 @@ test('recorded test', async ({ page }) => {
           telegramSetupAt: new Date().toISOString(),
         }, null, 2));
 
+        tgStatus('awaiting-close', botToken ? `Done! Token saved: ${botToken.slice(0, 16)}…` : 'Done! You can close the browser.', 'Close the browser window when you\'re finished.');
         // Wait for user to close the browser
         await new Promise<void>((resolve) => {
           context.once('close', resolve);
@@ -4773,14 +4976,22 @@ test('recorded test', async ({ page }) => {
    *   4. Fill in the desired GitHub username
    *   5. Click "Create account"
    */
-  ipcMain.handle('github:create-account', async (_event, { profileName, githubUsername }: { profileName: string; githubUsername: string }) => {
+  ipcMain.handle('github:create-account', async (event, { profileName, githubUsername }: { profileName: string; githubUsername?: string }) => {
     try {
       const profileDir = path.join(getGoogleProfilesDir(), profileName);
       if (!fs.existsSync(profileDir)) {
         return { success: false, error: `Profile "${profileName}" not found. Launch & Login first.` };
       }
       if (!githubUsername || !githubUsername.trim()) {
-        return { success: false, error: 'GitHub username is required.' };
+        const meta = fs.existsSync(path.join(profileDir, 'profile.json'))
+          ? JSON.parse(fs.readFileSync(path.join(profileDir, 'profile.json'), 'utf-8'))
+          : {};
+        const email: string = meta.googleEmail ?? '';
+        const local = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        githubUsername = local ? `egdesk-${local}` : '';
+      }
+      if (!githubUsername) {
+        return { success: false, error: 'Could not derive GitHub username — no email saved in profile.' };
       }
 
       const { chromium: chromiumExtra } = await import('playwright-extra');
@@ -4803,39 +5014,71 @@ test('recorded test', async ({ page }) => {
       const pages = context.pages();
       const page = pages.length > 0 ? pages[0] : await context.newPage();
 
+      const senderWC = event.sender;
+      const ghStatus = (stage: string, message: string) => {
+        console.log(`[GitHub:${stage}] ${message}`);
+        try {
+          if (!senderWC.isDestroyed()) senderWC.send('github:status', { stage, message });
+          else BrowserWindow.getAllWindows().forEach(w => w.webContents.send('github:status', { stage, message }));
+        } catch {
+          BrowserWindow.getAllWindows().forEach(w => w.webContents.send('github:status', { stage, message }));
+        }
+      };
+
+      // Races logged-in state vs login page vs timeout
+      const detectLoginState = () => new Promise<'logged-in' | 'needs-login'>((resolve) => {
+        const timer = setTimeout(() => resolve('needs-login'), 15_000);
+        const done = (state: 'logged-in' | 'needs-login') => { clearTimeout(timer); resolve(state); };
+        // Avatar is only present when authenticated
+        page.locator('img[data-testid="github-avatar"]').waitFor({ state: 'visible', timeout: 15_000 })
+          .then(() => done('logged-in')).catch(() => {});
+        // Login form input means not authenticated
+        page.locator('#login_field, input[name="login"]').first().waitFor({ state: 'visible', timeout: 15_000 })
+          .then(() => done('needs-login')).catch(() => {});
+      });
+
       try {
         // Step 1: Navigate to GitHub login
-        await page.goto('https://github.com/login', { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(3000);
+        ghStatus('navigating', 'Opening GitHub…');
+        await page.goto('https://github.com/login', { waitUntil: 'load', timeout: 30_000 });
+
+        ghStatus('checking-login', 'Checking login status…');
+        const loginState = await detectLoginState();
+
+        if (loginState === 'logged-in') {
+          ghStatus('already-logged-in', 'Already logged in to GitHub.');
+        }
 
         // Step 2: Click "Continue with Google".
-        // If all selectors fail it means GitHub already redirected us (already logged in) — treat as existing account.
+        // Skip if already logged in — treat as existing account.
         let continueWithGoogleClicked = false;
-        try {
+        if (loginState === 'needs-login') {
+          ghStatus('google-login', 'Clicking "Continue with Google"…');
           try {
-            const locator = page.getByRole('span', { name: 'Continue with Google' });
-            await locator.hover({ force: true });
-            await locator.click({ timeout: 8000 });
-            continueWithGoogleClicked = true;
-          } catch {
             try {
-              await page.locator('.Button-content:nth-match(2)').click({ timeout: 5000 });
+              const locator = page.getByRole('span', { name: 'Continue with Google' });
+              await locator.hover({ force: true });
+              await locator.click({ timeout: 8000 });
               continueWithGoogleClicked = true;
             } catch {
-              await page.locator('xpath=/html/body/div[1]/div[4]/main/div/div[2]/webauthn-status/form[2]/button/span').click({ timeout: 5000 });
-              continueWithGoogleClicked = true;
+              try {
+                await page.locator('.Button-content:nth-match(2)').click({ timeout: 5000 });
+                continueWithGoogleClicked = true;
+              } catch {
+                await page.locator('xpath=/html/body/div[1]/div[4]/main/div/div[2]/webauthn-status/form[2]/button/span').click({ timeout: 5000 });
+                continueWithGoogleClicked = true;
+              }
             }
+          } catch {
+            // All "Continue with Google" selectors timed out — GitHub already has a session.
+            continueWithGoogleClicked = false;
           }
-        } catch {
-          // All "Continue with Google" selectors timed out — GitHub already has a session,
-          // which means this Google account is already linked to a GitHub account.
-          continueWithGoogleClicked = false;
+          await page.waitForTimeout(3000);
         }
-        await page.waitForTimeout(3000);
 
-        // Step 3: Google account selection — the profile should already be logged in,
-        // so Playwright picks the first listed account automatically.
+        // Step 3: Google account selection
         if (continueWithGoogleClicked) {
+          ghStatus('selecting-account', 'Selecting Google account…');
           try {
             const accountLocator = page.locator('.LbOduc').first();
             await accountLocator.hover({ force: true });
@@ -4847,23 +5090,24 @@ test('recorded test', async ({ page }) => {
         }
 
         // Step 4: Check if this Google account already has a GitHub account linked.
-        // If [id="login"] is visible, it's a new signup. If not (or if step 2 was skipped),
-        // the user is already logged in — detect the existing username.
         let finalUsername = githubUsername.trim();
-        let isExistingAccount = !continueWithGoogleClicked;
+        let isExistingAccount = loginState === 'logged-in' || !continueWithGoogleClicked;
 
-        await page.waitForTimeout(2000);
+        if (!isExistingAccount) {
+          await page.waitForTimeout(2000);
+        }
         const loginVisible = !isExistingAccount &&
           await page.locator('[id="login"]').isVisible({ timeout: 4000 }).catch(() => false);
 
         if (loginVisible) {
           // New account: fill username and click Create account
+          ghStatus('creating-account', `Creating GitHub account as @${finalUsername}…`);
           await page.locator('[id="login"]').click({ timeout: 8000 });
           await page.waitForTimeout(1000);
           await page.fill('[id="login"]', finalUsername);
           await page.waitForTimeout(3000);
 
-          // Step 5: Click "Create account"
+          ghStatus('submitting', 'Submitting account creation form…');
           try {
             const createBtn = page.getByRole('span', { name: 'Create account' });
             await createBtn.hover({ force: true });
@@ -4875,15 +5119,17 @@ test('recorded test', async ({ page }) => {
               await page.locator('xpath=/html/body/div[1]/div[5]/div/main/div/div[2]/div[2]/div/div[2]/div/signup-form/form/div[2]/button/span/span').click({ timeout: 5000 });
             }
           }
+          ghStatus('waiting-user', 'Complete any CAPTCHA or email verification in the browser…');
         } else {
-          // Existing account: Google email is already linked to a GitHub account
-          // (either "Continue with Google" was never shown, or [id="login"] wasn't found).
+          // Existing account: detect the actual username from the profile page
           isExistingAccount = true;
+          ghStatus('existing-account', 'GitHub account already linked — detecting username…');
           try {
-            await page.goto('https://github.com', { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await page.waitForTimeout(2000);
+            await page.goto('https://github.com', { waitUntil: 'load', timeout: 15_000 });
+            // Wait for avatar confirming we're logged in
+            await page.locator('img[data-testid="github-avatar"]').waitFor({ state: 'visible', timeout: 10_000 });
             // Open avatar menu
-            await page.locator('.prc-Avatar-Avatar-0xaUi').first().click({ timeout: 5000 });
+            await page.locator('img[data-testid="github-avatar"]').first().click({ timeout: 5000 });
             await page.waitForTimeout(1500);
             // Click Profile
             await page.getByRole('span', { name: 'Profile' }).click({ timeout: 5000 }).catch(() =>
@@ -4896,6 +5142,7 @@ test('recorded test', async ({ page }) => {
           } catch {
             // Keep generated username as fallback
           }
+          ghStatus('logged-in', `Detected GitHub account: @${finalUsername}`);
         }
 
         // Save metadata — record the resolved username
@@ -4912,8 +5159,10 @@ test('recorded test', async ({ page }) => {
           githubAccounts,
           lastGithubCreatedAt: new Date().toISOString(),
         }, null, 2));
+        ghStatus('saving', `Saved @${finalUsername} to profile.`);
 
         // Wait for the user to complete any remaining steps (e.g. CAPTCHA, email verify)
+        ghStatus('awaiting-close', 'Waiting for browser to close…');
         await new Promise<void>((resolve) => {
           context.once('close', resolve);
         });
@@ -4939,11 +5188,22 @@ test('recorded test', async ({ page }) => {
    * fills name "egdesk-openclaw", sets 30-day expiry, checks repo/workflow/
    * write:packages/delete:packages scopes, and returns the token value.
    */
-  ipcMain.handle('github:create-token', async (_event, { profileName, githubUsername }: { profileName: string; githubUsername: string }) => {
+  ipcMain.handle('github:create-token', async (event, { profileName, githubUsername }: { profileName: string; githubUsername?: string }) => {
     try {
       const profileDir = path.join(getGoogleProfilesDir(), profileName);
       if (!fs.existsSync(profileDir)) {
         return { success: false, error: `Profile "${profileName}" not found.` };
+      }
+      if (!githubUsername || !githubUsername.trim()) {
+        const meta = fs.existsSync(path.join(profileDir, 'profile.json'))
+          ? JSON.parse(fs.readFileSync(path.join(profileDir, 'profile.json'), 'utf-8'))
+          : {};
+        const email: string = meta.googleEmail ?? '';
+        const local = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        githubUsername = local ? `egdesk-${local}` : '';
+      }
+      if (!githubUsername) {
+        return { success: false, error: 'Could not derive GitHub username — no email saved in profile.' };
       }
 
       const { chromium: chromiumExtra } = await import('playwright-extra');
@@ -4966,17 +5226,92 @@ test('recorded test', async ({ page }) => {
       const pages = context.pages();
       const page = pages.length > 0 ? pages[0] : await context.newPage();
 
+      const senderWC2 = event.sender;
+      const ghStatus2 = (stage: string, message: string) => {
+        console.log(`[GitHub:${stage}] ${message}`);
+        try {
+          if (!senderWC2.isDestroyed()) senderWC2.send('github:status', { stage, message });
+          else BrowserWindow.getAllWindows().forEach(w => w.webContents.send('github:status', { stage, message }));
+        } catch {
+          BrowserWindow.getAllWindows().forEach(w => w.webContents.send('github:status', { stage, message }));
+        }
+      };
+
       try {
         // Step 1: Go to classic tokens list page directly — no menu navigation needed.
-        await page.goto('https://github.com/settings/tokens', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-        await page.waitForTimeout(2000);
+        ghStatus2('navigating', 'Opening GitHub token settings…');
+        await page.goto('https://github.com/settings/tokens', { waitUntil: 'load', timeout: 30_000 });
 
-        if (page.url().includes('/login')) {
+        // Use avatar detection instead of URL check — more reliable than URL sniffing
+        ghStatus2('checking-login', 'Checking login status…');
+        const isLoggedIn = await page.locator('img[data-testid="github-avatar"]')
+          .waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+        if (!isLoggedIn) {
           await context.close();
           return { success: false, error: 'Not logged in to GitHub. Please create an account first.' };
         }
+        ghStatus2('logged-in', 'Logged in — checking token list…');
 
-        // Step 2: Open "Generate new token" dropdown and pick "Tokens (classic)" / "For general use"
+        // Step 2: Detect whether any tokens exist on the page
+        const detectTokenListState = () => new Promise<'has-tokens' | 'no-tokens'>((resolve) => {
+          const timer = setTimeout(() => resolve('no-tokens'), 10_000);
+          const done = (state: 'has-tokens' | 'no-tokens') => { clearTimeout(timer); resolve(state); };
+          // Token rows are <div id="access-token-NNNN">
+          page.locator('[id^="access-token-"]').first().waitFor({ state: 'visible', timeout: 10_000 })
+            .then(() => done('has-tokens')).catch(() => {});
+          // Empty state blankslate
+          page.locator('div.blankslate').waitFor({ state: 'visible', timeout: 10_000 })
+            .then(() => done('no-tokens')).catch(() => {});
+        });
+
+        ghStatus2('checking-tokens', 'Scanning existing tokens…');
+        const tokenListState = await detectTokenListState();
+
+        if (tokenListState === 'has-tokens') {
+          // Check if our own token (egdesk-openclaw) already exists
+          const existingRow = page.locator('[id^="access-token-"]').filter({ hasText: 'egdesk-openclaw' });
+          const ours = await existingRow.count();
+
+          if (ours > 0) {
+            // Token exists on GitHub — check if we have it saved locally
+            const metaPath = path.join(profileDir, 'profile.json');
+            const savedMeta = fs.existsSync(metaPath)
+              ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+              : {};
+            const savedToken: string | undefined = savedMeta.githubTokens?.[githubUsername];
+
+            if (savedToken) {
+              ghStatus2('token-exists', 'Token "egdesk-openclaw" already exists and is saved — done!');
+              await context.close();
+              return { success: true, token: savedToken, githubUsername, alreadyExisted: true };
+            }
+
+            // Token exists on GitHub but not saved locally — delete it so we can regenerate
+            ghStatus2('deleting-old', 'Old token found but not saved locally — deleting to regenerate…');
+            try {
+              // Click the delete button inside the existing token row
+              await existingRow.getByRole('button', { name: /delete/i }).click({ timeout: 8_000 });
+              await page.waitForTimeout(1000);
+              // Confirm the dialog
+              await page.getByRole('button', { name: /I understand, delete this token/i }).click({ timeout: 8_000 });
+              await page.waitForTimeout(2000);
+            } catch {
+              // Some profiles show a simple submit form instead of a modal
+              try {
+                await existingRow.locator('form[action*="settings/personal-access-tokens"]').locator('button').click({ timeout: 5_000 });
+                await page.waitForTimeout(2000);
+              } catch {
+                // Continue anyway — worst case GitHub will show an error we'll catch later
+              }
+            }
+          } else {
+            ghStatus2('other-tokens', 'Other tokens found but no "egdesk-openclaw" — will create…');
+          }
+        } else {
+          ghStatus2('no-tokens', 'No tokens yet — creating first token…');
+        }
+
+        // Step 3: Open "Generate new token" dropdown and pick "Tokens (classic)" / "For general use"
         try {
           await page.getByRole('summary', { name: /Generate new token/i }).click({ timeout: 8000 });
         } catch {
@@ -4997,15 +5332,98 @@ test('recorded test', async ({ page }) => {
         }
         await page.waitForTimeout(2000);
 
-        // Verify we landed on the token creation form
+        // Verify we landed on the token creation form — may have been intercepted by sudo
         const onForm = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
         if (!onForm) {
           // Last resort: navigate directly
-          await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+          await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'load', timeout: 15_000 });
           await page.waitForTimeout(2000);
         }
 
-        // Fill token name
+        // GitHub sudo ("Confirm access") check — triggered for new accounts on sensitive pages.
+        // Detect by h1 text or the sudo-credential-options custom element.
+        const sudoVisible = await page.locator('sudo-credential-options, h1').filter({ hasText: /Confirm access/i })
+          .first().isVisible({ timeout: 3_000 }).catch(() => false);
+
+        if (sudoVisible) {
+          ghStatus2('sudo-required', 'GitHub needs to verify your identity — sending verification email…');
+          try {
+            // Click "Verify via email" to trigger the code email
+            await page.locator('#sudo-send-email').click({ timeout: 8_000 });
+            await page.waitForTimeout(2000);
+          } catch {
+            // Button might already be gone (already in code-entry state) — that's fine
+          }
+
+          // Confirm the code input appeared before we go look for the email
+          await page.locator('input[name="sudo_email_otp"]').waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+
+          // Open Gmail in a new tab inside the same profile context (already logged in to Google)
+          ghStatus2('sudo-checking-gmail', 'Opening Gmail to find the verification code…');
+          let sudoCode = '';
+          const gmailPage = await context.newPage();
+          try {
+            // Search directly for the GitHub verification email
+            await gmailPage.goto('https://mail.google.com/mail/#search/from%3Agithub.com+subject%3A%22verification%22', {
+              waitUntil: 'load',
+              timeout: 30_000,
+            });
+            await gmailPage.waitForTimeout(3000);
+
+            // Wait for email rows to load — target the row containing a GitHub sender span
+            // Gmail marks sender with span.zF (unread) or span.yP (read) with email="noreply@github.com"
+            const githubRow = gmailPage.locator('tr.zA:has(span[email="noreply@github.com"])').first();
+            const rowVisible = await githubRow.isVisible({ timeout: 20_000 }).catch(() => false);
+            if (rowVisible) {
+              await githubRow.click();
+              await gmailPage.waitForTimeout(3000);
+
+              // Extract 8-digit code from the email body
+              // Gmail renders body in .a3s.aiL (plain text) or .ii.gt (rich)
+              const bodyText = await gmailPage.locator('.a3s.aiL').first().innerText({ timeout: 10_000 }).catch(() => '');
+              const match = bodyText.match(/\b(\d{8})\b/);
+              if (match) {
+                sudoCode = match[1];
+                ghStatus2('sudo-code-found', `Verification code found — submitting…`);
+              }
+            }
+          } catch {
+            // Gmail read failed — fall through to manual wait
+          } finally {
+            await gmailPage.close().catch(() => {});
+          }
+
+          if (sudoCode) {
+            // Fill and submit the code on the GitHub sudo page
+            await page.locator('input[name="sudo_email_otp"]').fill(sudoCode, { timeout: 5_000 }).catch(() => {});
+            await page.waitForTimeout(500);
+            await page.locator('button[type="submit"]').click({ timeout: 5_000 }).catch(() => {});
+            try {
+              await page.waitForURL(url => !url.includes('/sessions/sudo'), { timeout: 15_000 });
+              ghStatus2('sudo-verified', 'Identity verified — continuing…');
+              await page.waitForTimeout(2000);
+            } catch {
+              ghStatus2('sudo-failed', 'Could not verify — code may have expired. Please complete verification manually in the browser.');
+              await page.waitForURL(url => !url.includes('/sessions/sudo'), { timeout: 120_000 }).catch(() => {});
+            }
+          } else {
+            // Couldn't extract code — tell user to do it manually
+            ghStatus2('sudo-awaiting-code', 'Could not read code from Gmail — please enter the 8-digit code in the GitHub window manually');
+            await page.waitForURL(url => !url.includes('/sessions/sudo'), { timeout: 300_000 }).catch(() => {});
+            ghStatus2('sudo-verified', 'Identity verified — continuing…');
+            await page.waitForTimeout(2000);
+          }
+        }
+
+        // After potential sudo redirect, confirm we're on the token form
+        const onFormAfterSudo = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
+        if (!onFormAfterSudo) {
+          // Navigate directly as last resort
+          await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'load', timeout: 15_000 });
+          await page.waitForTimeout(2000);
+        }
+
+        ghStatus2('filling-form', 'Filling token name and scopes…');
         await page.locator('[id="oauth_access_description"]').click({ timeout: 8000 });
         await page.waitForTimeout(500);
         await page.fill('[id="oauth_access_description"]', 'egdesk-openclaw');
@@ -5046,7 +5464,7 @@ test('recorded test', async ({ page }) => {
         }
         await page.waitForTimeout(1000);
 
-        // Click "Generate token"
+        ghStatus2('generating', 'Submitting token generation…');
         try {
           await page.getByRole('button', { name: 'Generate token' }).click({ timeout: 8000 });
         } catch {
@@ -5057,7 +5475,7 @@ test('recorded test', async ({ page }) => {
           }
         }
 
-        // Wait for the token to appear
+        ghStatus2('extracting-token', 'Waiting for token to appear…');
         await page.waitForSelector('[id="new-oauth-token"]', { timeout: 15_000 });
         await page.waitForTimeout(1000);
 

@@ -37,6 +37,26 @@ const OpenClawPage: React.FC = () => {
   const [openclawStatus, setOpenclawStatus] = useState('');
   const [openclawPairingCode, setOpenclawPairingCode] = useState('');
   const [error, setError] = useState('');
+  const [telegramStatus, setTelegramStatus] = useState<{ stage: string; message: string; action?: string } | null>(null);
+  const [githubStatus, setGithubStatus] = useState<{ stage: string; message: string } | null>(null);
+
+  // Listen for Telegram status events from the backend during setup
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer?.on) return;
+    const cleanup = window.electron.ipcRenderer.on('telegram:status', (data: { stage: string; message: string; action?: string }) => {
+      setTelegramStatus(data);
+    });
+    return () => { if (cleanup) cleanup(); };
+  }, []);
+
+  // Listen for GitHub status events (account creation + token generation)
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer?.on) return;
+    const cleanup = window.electron.ipcRenderer.on('github:status', (data: { stage: string; message: string }) => {
+      setGithubStatus(data);
+    });
+    return () => { if (cleanup) cleanup(); };
+  }, []);
 
   const addLog = (msg: string) =>
     setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
@@ -120,6 +140,7 @@ const OpenClawPage: React.FC = () => {
     } catch (e: any) {
       addLog(`⚠️ Token error: ${e?.message || e}`);
     }
+    setGithubStatus(null);
     // Always proceed to Telegram setup (non-fatal)
     await runTelegramSetup();
   };
@@ -253,6 +274,7 @@ const OpenClawPage: React.FC = () => {
     } catch (e: any) {
       addLog(`⚠️ Telegram error: ${e?.message || e}`);
     }
+    setTelegramStatus(null);
     await runOpenclawSetup(tokenForOpenClaw);
   };
 
@@ -537,14 +559,85 @@ const OpenClawPage: React.FC = () => {
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>🔑</div>
           <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px' }}>Generating Token</h2>
           {githubUsername && (
-            <p style={{ color: '#888', fontSize: '13px', marginBottom: '24px' }}>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
               GitHub: <span style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{githubUsername}</span>
             </p>
           )}
-          <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6 }}>
-            Opening GitHub Developer Settings to generate a personal access token.
-            This may take a moment — please don't close the browser.
-          </p>
+
+          {/* Pulsing email banner when Gmail is being read for sudo code */}
+          {githubStatus?.stage === 'sudo-awaiting-code' && (
+            <div style={{
+              marginBottom: '16px', borderRadius: '8px', overflow: 'hidden',
+              border: '2px solid #fbbf24',
+              animation: 'gh-pulse 1.4s ease-in-out infinite',
+              textAlign: 'left',
+            }}>
+              <style>{`
+                @keyframes gh-pulse {
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.5); }
+                  50% { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+                }
+              `}</style>
+              <div style={{ background: '#7c4a00', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px', lineHeight: 1 }}>📧</span>
+                <div>
+                  <div style={{ color: '#fde68a', fontWeight: 'bold', fontSize: '15px' }}>Check Your Email</div>
+                  <div style={{ color: '#fcd34d', fontSize: '12px', marginTop: '2px' }}>{githubStatus.message}</div>
+                </div>
+              </div>
+              <div style={{ background: '#3a2200', padding: '10px 16px', color: '#fde68a', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <span>👉</span>
+                <span>Enter the 8-digit GitHub verification code in the browser window.</span>
+              </div>
+            </div>
+          )}
+
+          {/* Stage indicator for all other github:status states */}
+          {githubStatus && githubStatus.stage !== 'sudo-awaiting-code' && (() => {
+            const stageConfig: Record<string, { icon: string; label: string; color: string; bg: string; border: string }> = {
+              'navigating':           { icon: '🌐', label: 'Opening GitHub…',                    color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'checking-login':       { icon: '🔍', label: 'Checking login…',                    color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'logged-in':            { icon: '✅', label: 'Logged in',                          color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'checking-tokens':      { icon: '🔍', label: 'Scanning existing tokens…',          color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'token-exists':         { icon: '✅', label: 'Token already exists',               color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'no-tokens':            { icon: '➕', label: 'No tokens yet — creating…',          color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'other-tokens':         { icon: '➕', label: 'Creating token…',                    color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'deleting-old':         { icon: '🗑️', label: 'Removing old token…',               color: '#f59e0b', bg: '#2a1a00', border: '#f59e0b' },
+              'sudo-required':        { icon: '🔒', label: 'GitHub identity check required…',    color: '#f59e0b', bg: '#2a1a00', border: '#f59e0b' },
+              'sudo-checking-gmail':  { icon: '📧', label: 'Reading verification code from Gmail…', color: '#60a5fa', bg: '#0a1a2a', border: '#60a5fa' },
+              'sudo-code-found':      { icon: '✅', label: 'Code found — verifying…',            color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'sudo-verified':        { icon: '✅', label: 'Identity verified!',                  color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'sudo-failed':          { icon: '⚠️', label: 'Verification failed',                color: '#f87171', bg: '#2a0a0a', border: '#f87171' },
+              'filling-form':         { icon: '⌨️', label: 'Filling token form…',               color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'generating':           { icon: '⏳', label: 'Submitting…',                        color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'extracting-token':     { icon: '🔑', label: 'Extracting token…',                  color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+            };
+            const cfg = stageConfig[githubStatus.stage] ?? { icon: '⏳', label: 'Running…', color: '#aaa', bg: '#1a1a1a', border: '#444' };
+            return (
+              <div style={{
+                marginBottom: '16px', borderRadius: '6px', overflow: 'hidden',
+                border: `1px solid ${cfg.border}`, backgroundColor: cfg.bg,
+                padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+                textAlign: 'left',
+              }}>
+                <span style={{ fontSize: '18px', lineHeight: 1 }}>{cfg.icon}</span>
+                <div>
+                  <div style={{ color: cfg.color, fontWeight: 'bold', fontSize: '13px' }}>{cfg.label}</div>
+                  {githubStatus.message && (
+                    <div style={{ color: '#888', fontSize: '11px', marginTop: '2px' }}>{githubStatus.message}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {!githubStatus && (
+            <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6 }}>
+              Opening GitHub Developer Settings to generate a personal access token.
+              This may take a moment — please don't close the browser.
+            </p>
+          )}
+
           <Console logs={logs} />
           <button
             onClick={handleReset}
@@ -620,14 +713,84 @@ const OpenClawPage: React.FC = () => {
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>✈️</div>
           <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px' }}>Setting Up Telegram</h2>
           {googlePhone && (
-            <p style={{ color: '#888', fontSize: '13px', marginBottom: '24px' }}>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
               Phone: <span style={{ color: '#fff', fontFamily: 'monospace' }}>{googlePhone}</span>
             </p>
           )}
-          <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6 }}>
-            Enter the verification code sent to your phone, then the browser will
-            automatically open BotFather and create your bot.
-          </p>
+
+          {/* Awaiting-code banner — pulsing yellow when user needs to enter code */}
+          {telegramStatus?.stage === 'awaiting-code' && (
+            <div style={{
+              marginBottom: '16px', borderRadius: '8px', overflow: 'hidden',
+              border: '2px solid #fbbf24',
+              animation: 'tg-pulse 1.4s ease-in-out infinite',
+              textAlign: 'left',
+            }}>
+              <style>{`
+                @keyframes tg-pulse {
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.5); }
+                  50% { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+                }
+              `}</style>
+              <div style={{ background: '#7c4a00', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px', lineHeight: 1 }}>📲</span>
+                <div>
+                  <div style={{ color: '#fde68a', fontWeight: 'bold', fontSize: '15px' }}>Check Your Phone</div>
+                  <div style={{ color: '#fcd34d', fontSize: '12px', marginTop: '2px' }}>{telegramStatus.message}</div>
+                </div>
+              </div>
+              <div style={{ background: '#3a2200', padding: '10px 16px', color: '#fde68a', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <span>👉</span>
+                <span>{telegramStatus.action ?? 'Open Telegram on your phone and enter the verification code in the browser window.'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Stage indicator for all other states */}
+          {telegramStatus && telegramStatus.stage !== 'awaiting-code' && (() => {
+            const stageConfig: Record<string, { icon: string; label: string; color: string; bg: string; border: string }> = {
+              'navigating':        { icon: '🌐', label: 'Opening Telegram Web…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'checking-login':    { icon: '🔍', label: 'Checking login status…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'already-logged-in': { icon: '✅', label: 'Already logged in',               color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'phone-login':       { icon: '📱', label: 'Entering phone number…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'submitting-phone':  { icon: '➡️', label: 'Submitting phone number…',         color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'verifying-code':    { icon: '⏳', label: 'Verifying code…',                 color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'logged-in':         { icon: '✅', label: 'Logged in!',                       color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'opening-botfather': { icon: '🤖', label: 'Opening BotFather…',              color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'newbot':            { icon: '⌨️', label: 'Sending /newbot command…',         color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'bot-name':          { icon: '⌨️', label: 'Entering bot display name…',       color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'bot-username':      { icon: '⌨️', label: 'Entering bot username…',           color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'extracting-token':  { icon: '🔑', label: 'Extracting bot token…',            color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'saving':            { icon: '💾', label: 'Saving to profile…',               color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'code-expired':      { icon: '⚠️', label: 'Code expired — retrying…',        color: '#f59e0b', bg: '#2a1a00', border: '#f59e0b' },
+              'awaiting-close':    { icon: '🏁', label: 'Done! You can close the browser.', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+            };
+            const cfg = stageConfig[telegramStatus.stage] ?? { icon: '⏳', label: 'Running…', color: '#aaa', bg: '#1a1a1a', border: '#444' };
+            return (
+              <div style={{
+                marginBottom: '16px', borderRadius: '6px', overflow: 'hidden',
+                border: `1px solid ${cfg.border}`, backgroundColor: cfg.bg,
+                padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+                textAlign: 'left',
+              }}>
+                <span style={{ fontSize: '18px', lineHeight: 1 }}>{cfg.icon}</span>
+                <div>
+                  <div style={{ color: cfg.color, fontWeight: 'bold', fontSize: '13px' }}>{cfg.label}</div>
+                  {telegramStatus.message && (
+                    <div style={{ color: '#888', fontSize: '11px', marginTop: '2px' }}>{telegramStatus.message}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {!telegramStatus && (
+            <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
+              The browser will open Telegram. Enter the verification code sent to your phone,
+              then BotFather will automatically create your bot.
+            </p>
+          )}
+
           <Console logs={logs} />
           <button
             onClick={handleReset}
