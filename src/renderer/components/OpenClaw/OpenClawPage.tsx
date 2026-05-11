@@ -574,6 +574,37 @@ const OpenClawPage: React.FC = () => {
     setIsRunningKakao(false);
   };
 
+  const [isRetryingSetup, setIsRetryingSetup] = useState(false);
+
+  const retryOpenclawSetup = async () => {
+    setIsRetryingSetup(true);
+    setLogs([]);
+    addLog('Re-running OpenClaw setup (config + gateway + pairing)…');
+    try {
+      // Pass empty string — handler reads saved token from profile.json automatically
+      const result = await (window as any).electron.debug.openclaw.setup(PROFILE_NAME, '');
+      if (result?.success) {
+        addLog(result.alreadyInstalled ? '✅ OpenClaw already on PATH.' : '✅ OpenClaw installed.');
+        addLog(`✅ Config written to ${result.configPath ?? '~/.openclaw/openclaw.json'}`);
+        if (result.pairingCode) {
+          addLog(`✅ Telegram paired (code: ${result.pairingCode})`);
+          setOpenclawPairingCode(result.pairingCode);
+        } else if (result.pairingError) {
+          addLog(`⚠️ Pairing: ${result.pairingError}`);
+        }
+        if (result.status) addLog(`Status: ${result.status}`);
+        setOpenclawInstalled(true);
+        setOpenclawStatus(result.status ?? '');
+      } else {
+        addLog(`⚠️ Setup failed: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      addLog(`⚠️ Setup error: ${e?.message || e}`);
+    }
+    await refreshStatus();
+    setIsRetryingSetup(false);
+  };
+
   const runPairing = async () => {
     setIsPairing(true);
     setLogs([]);
@@ -1333,6 +1364,25 @@ const OpenClawPage: React.FC = () => {
               🔑 Generate Token
             </button>
           )}
+
+          <button
+            onClick={retryOpenclawSetup}
+            disabled={isRetryingSetup}
+            style={{
+              padding: '10px 24px',
+              backgroundColor: isRetryingSetup ? '#1a2a3a' : '#0d2137',
+              color: isRetryingSetup ? '#666' : '#93c5fd',
+              border: '1px solid #1e3a5f',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: isRetryingSetup ? 'not-allowed' : 'pointer',
+              marginBottom: '10px',
+              marginRight: '8px',
+            }}
+          >
+            {isRetryingSetup ? '⏳ Setting up…' : '⚙️ Retry OpenClaw Setup'}
+          </button>
 
           <button
             onClick={runPairing}

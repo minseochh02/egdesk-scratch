@@ -243,6 +243,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           log(`🔑 Wrote EGDESK_API_KEY to ${envPath}`);
         }
 
+        // ── 2a. Write base config — only schema-safe keys first ──
+        // doctor --fix strips unknown keys, so we write only telegram+gateway here,
+        // then add kakao/plugins/mcp AFTER doctor so they survive.
         const updated: any = {
           ...existing,
           gateway: {
@@ -255,79 +258,80 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               ...(existing.channels?.telegram ?? {}),
               botToken: resolvedToken,
             },
-            kakao: {
-              enabled: true,
-              webhookPath: '/kakao/skill',
-              useCallback: true,
-              callbackTimeoutMs: 50000,
-              dmPolicy: 'open',
-              ...(existing.channels?.kakao ?? {}),
-            },
-          },
-          plugins: {
-            ...(existing.plugins ?? {}),
-            entries: {
-              ...(existing.plugins?.entries ?? {}),
-              kakao: { enabled: true },
-            },
           },
         };
         // Strip keys that openclaw's strict schema rejects
         delete updated.models;
-        delete updated.mcpServers;
+        delete updated.mcp;     // wrong key (we use mcpServers with stdio format now)
+        delete updated.plugins; // not a valid schema key — Kakao is registered as a plugin via CLI
 
         fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
-        // Also update last-good so the gateway doesn't restore an old config (with a stale token)
-        // on startup and clobber what we just wrote.
+        log(`Base config written to ${configPath} — telegram.botToken: ${resolvedToken ? '(set)' : '(missing)'}`);
         const lastGoodPath = path.join(configDir, 'openclaw.json.last-good');
-        fs.writeFileSync(lastGoodPath, JSON.stringify(updated, null, 2));
-        const writtenConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        log(`Config written to ${configPath} — telegram.botToken in file: ${writtenConfig?.channels?.telegram?.botToken || '(missing)'}`);
 
         // Run doctor --fix to strip any remaining unrecognized keys from previous runs
         try {
-          await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
-          log('openclaw doctor --fix: config validated.');
+          const { stdout: doctorOut, stderr: doctorErr } = await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
+          log(`openclaw doctor --fix: ${(doctorOut || doctorErr || 'ok').trim().slice(0, 200)}`);
         } catch (e: any) {
           log(`openclaw doctor --fix (non-fatal): ${(e?.stdout || e?.stderr || e?.message || '').trim().slice(0, 200)}`);
         }
 
-        // Register EGDesk local MCP server — correct key is "mcp" (not "mcpServers")
+        // ── 2b. Register EGDesk MCP server via mcpServers (stdio bridge) ──
+        // openclaw only supports stdio-based MCP. Our server is HTTP, so we use
+        // mcp-remote to bridge: openclaw spawns mcp-remote which proxies to localhost:8080.
+        // We write mcpServers AFTER doctor so doctor doesn't strip it.
         try {
+          // Ensure mcp-remote is installed globally so openclaw can spawn it
+          try {
+            await execAsync(`${WHICH} mcp-remote`, { env: cleanEnv, timeout: 5_000 });
+            log('mcp-remote already on PATH');
+          } catch {
+            log('Installing mcp-remote globally…');
+            await execAsync('npm install -g mcp-remote', {
+              env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024,
+            });
+            log('mcp-remote installed');
+          }
+
           const freshCfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          freshCfg.mcp = {
-            ...(freshCfg.mcp ?? {}),
-            egdesk: {
-              url: 'http://localhost:8080/mcp',
-              ...(egdeskApiKey ? { headers: { 'X-Api-Key': egdeskApiKey } } : {}),
-            },
+
+          // mcpServers uses stdio transport — mcp-remote bridges HTTP → stdio
+          const mcpArgs = ['http://localhost:8080/mcp'];
+          if (egdeskApiKey) mcpArgs.push('--header', `X-Api-Key:${egdeskApiKey}`);
+          freshCfg.mcpServers = {
+            ...(freshCfg.mcpServers ?? {}),
+            egdesk: { command: 'mcp-remote', args: mcpArgs },
           };
+
           fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
-          log('Registered EGDesk MCP server under mcp.egdesk.');
+          fs.writeFileSync(lastGoodPath, JSON.stringify(freshCfg, null, 2));
+          log(`mcpServers.egdesk registered (mcp-remote → http://localhost:8080/mcp)`);
         } catch (e: any) {
           log(`MCP registration (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
 
-        // ── 3. Install kakao plugin ──
+        // ── 3. Install Kakao plugin via openclaw plugins install ──
+        // Kakao is a plugin, not a channel config key. Install the bundled plugin package.
         try {
-          // Resolve the bundled plugin path: process.resourcesPath in production,
-          // <appRoot>/resources/ in development.
-          const pluginPath = app
-            ? path.join(
-                process.resourcesPath ?? path.join(app.getAppPath(), '..', 'resources'),
-                'openclaw-kakao-plugin'
-              )
-            : path.join(__dirname, '../../../../resources/openclaw-kakao-plugin');
+          const { app: electronApp } = require('electron');
+          const resourcesBase = process.resourcesPath
+            || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null)
+            || path.join(__dirname, '../../../../resources');
+          const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
 
           if (fs.existsSync(pluginPath)) {
-            await execAsync(`openclaw plugins install "${pluginPath}"`, {
-              env: cleanEnv,
-              timeout: 60_000,
-              maxBuffer: 5 * 1024 * 1024,
-            });
+            log(`Installing Kakao plugin from ${pluginPath}…`);
+            const { stdout: pOut, stderr: pErr } = await execAsync(
+              `openclaw plugins install "${pluginPath}"`,
+              { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 }
+            );
+            log(`Kakao plugin install: ${(pOut || pErr || 'ok').trim().slice(0, 200)}`);
+          } else {
+            log(`Kakao plugin not found at ${pluginPath} — skipping install`);
           }
-        } catch {
-          // non-fatal — plugin may already be installed
+        } catch (e: any) {
+          log(`Kakao plugin install (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
 
         // ── 3b. Run onboard daemon ──
