@@ -4215,84 +4215,115 @@ test('recorded test', async ({ page }) => {
       const { chromium: chromiumExtra } = await import('playwright-extra');
       const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
       chromiumExtra.use(StealthPlugin());
-      const context = await chromiumExtra.launchPersistentContext(profileDir, {
-        headless: false,
-        channel: 'chrome',
-        viewport: null,
-        args: [
-          '--no-default-browser-check',
-          '--disable-blink-features=AutomationControlled',
-          '--no-first-run',
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-      });
-
-      const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-
-      glStatus('opening', 'Opening Google sign-in page…');
-      // Navigate to accounts.google.com so user can sign IN or sign UP for a new account
-      await page.goto('https://accounts.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
 
       let detectedEmail = '';
 
-      // Check if already logged in (redirected directly to myaccount.google.com with profile meta)
-      const currentUrl = page.url();
-      let immediateEmail: string | null = null;
-      if (currentUrl.includes('myaccount.google.com')) {
-        immediateEmail = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
-      }
+      // ── 1. Try silent headless detection first ──
+      glStatus('checking', 'Checking for existing Google session…');
+      try {
+        const headlessCtx = await chromiumExtra.launchPersistentContext(profileDir, {
+          headless: true,
+          channel: 'chrome',
+          viewport: { width: 1280, height: 800 },
+          args: ['--disable-blink-features=AutomationControlled'],
+          ignoreDefaultArgs: ['--enable-automation'],
+        });
+        try {
+          const checkPage = headlessCtx.pages().length > 0 ? headlessCtx.pages()[0] : await headlessCtx.newPage();
+          await checkPage.goto('https://accounts.google.com/SignOutOptions', { waitUntil: 'domcontentloaded', timeout: 20_000 });
+          await checkPage.waitForTimeout(1500);
+          let email: string | null = null;
+          email = await checkPage.getAttribute('[data-email]', 'data-email').catch(() => null);
+          if (!email) email = await checkPage.locator('[data-identifier]').first().getAttribute('data-identifier').catch(() => null);
+          if (!email) {
+            const texts = await checkPage.locator('div, span').allTextContents();
+            const found = texts.find(t => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t.trim()));
+            if (found) email = found.trim();
+          }
+          if (email) detectedEmail = email;
+        } finally {
+          await headlessCtx.close().catch(() => {});
+        }
+      } catch { /* headless check failed — fall through to headful */ }
 
-      if (immediateEmail) {
-        detectedEmail = immediateEmail;
+      if (detectedEmail) {
         glStatus('already-logged-in', `Already logged in as ${detectedEmail}`);
-        // Keep browser open so user can confirm or switch accounts
-        await page.waitForTimeout(2000);
-        await context.close().catch(() => {});
       } else {
+        // ── 2. No session found — open headful browser for user to sign in ──
         glStatus('waiting-for-login', 'Sign in or create a Google account in the browser window…');
 
-        await new Promise<void>((resolve) => {
-          let done = false;
+        const headfulCtx = await chromiumExtra.launchPersistentContext(profileDir, {
+          headless: false,
+          channel: 'chrome',
+          viewport: null,
+          args: [
+            '--no-default-browser-check',
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        });
 
-          const finish = async (email: string) => {
-            if (done) return;
-            done = true;
+        const page = headfulCtx.pages().length > 0 ? headfulCtx.pages()[0] : await headfulCtx.newPage();
+        await page.goto('https://accounts.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+
+        // Auto-accept the "Switch Chrome profile?" dialog that appears after Google sign-in.
+        // Chrome renders this as a new page/popup — catch it and click the confirm button.
+        const tryAcceptProfileSwitch = async (p: import('playwright-core').Page) => {
+          try {
+            await p.waitForLoadState('domcontentloaded').catch(() => {});
+            // The confirm button is labelled "Switch profile", "Continue", or "Yes" depending on Chrome version
+            const confirmBtn = p.locator('button').filter({ hasText: /switch profile|continue|yes/i }).first();
+            const visible = await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false);
+            if (visible) {
+              await confirmBtn.click().catch(() => {});
+            }
+          } catch { /* dialog may not have appeared */ }
+        };
+
+        headfulCtx.on('page', (newPage) => tryAcceptProfileSwitch(newPage));
+
+        await new Promise<void>((resolve) => {
+          let emailDetected = false;
+
+          const onEmailFound = (email: string) => {
+            if (emailDetected) return;
+            emailDetected = true;
             detectedEmail = email;
             clearInterval(poll);
-            glStatus('logged-in', `Logged in as ${email} — you can close the browser.`);
-            await page.waitForTimeout(1500);
-            await context.close().catch(() => {});
-            resolve();
+            // Notify user but keep browser open — they close it when ready
+            glStatus('logged-in', `Logged in as ${email} — continue browsing and close the window when done.`);
           };
 
-          // Fallback: user manually closes the browser
-          context.once('close', () => {
-            if (!done) { done = true; clearInterval(poll); resolve(); }
+          // Always resolve when user closes the browser
+          headfulCtx.once('close', () => {
+            clearInterval(poll);
+            resolve();
           });
 
           // Attach framenavigated listener to a page so any navigation to myaccount is detected
           const attachListener = (p: import('playwright-core').Page) => {
             p.on('framenavigated', async (frame) => {
-              if (done || frame !== p.mainFrame()) return;
+              if (emailDetected || frame !== p.mainFrame()) return;
               if (!frame.url().includes('myaccount.google.com')) return;
               await p.waitForLoadState('domcontentloaded').catch(() => {});
               const email = await p.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
-              if (email) await finish(email);
+              if (email) onEmailFound(email);
             });
           };
 
           // Attach to the initial page and any new tabs the user or Google opens
           attachListener(page);
-          context.on('page', (newPage) => attachListener(newPage));
+          headfulCtx.on('page', (newPage) => attachListener(newPage));
 
           // Periodic fallback: check all open tabs
           const poll = setInterval(async () => {
-            if (done) { clearInterval(poll); return; }
+            if (emailDetected) { clearInterval(poll); return; }
             try {
-              for (const p of context.pages()) {
+              for (const p of headfulCtx.pages()) {
                 if (p.url().includes('myaccount.google.com')) {
                   const email = await p.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
-                  if (email) { await finish(email); break; }
+                  if (email) { onEmailFound(email); break; }
                 }
               }
             } catch { /* non-fatal */ }
@@ -4418,11 +4449,18 @@ test('recorded test', async ({ page }) => {
         });
         await page.waitForTimeout(3000);
 
+        // Helper: extract just the first phone number from a block of text
+        const firstPhone = (raw: string | null): string | null => {
+          if (!raw) return null;
+          const first = raw.split(/[\n,;]+/).map(s => s.trim()).find(s => /[\d]/.test(s) && s.replace(/\D/g, '').length >= 7);
+          return first ?? null;
+        };
+
         // Try common selectors near the Phone section
-        phone = await page.locator('[data-type="phone"] .IjBjue').first().innerText({ timeout: 5000 }).catch(() => null);
+        phone = firstPhone(await page.locator('[data-type="phone"] .IjBjue').first().innerText({ timeout: 5000 }).catch(() => null));
 
         if (!phone) {
-          phone = await page.locator('a[href*="phone"] .IjBjue').first().innerText({ timeout: 3000 }).catch(() => null);
+          phone = firstPhone(await page.locator('a[href*="phone"] .IjBjue').first().innerText({ timeout: 3000 }).catch(() => null));
         }
 
         if (!phone) {
@@ -4499,7 +4537,11 @@ test('recorded test', async ({ page }) => {
         return { countryCode: '+1', localNumber: digits };
       }
 
-      const { countryCode, localNumber } = parsePhone(phoneNumber || '');
+      const parsed = parsePhone(phoneNumber || '');
+      const countryCode = parsed.countryCode;
+      // Strip leading 0 from local number — Telegram expects the national number without trunk prefix
+      // e.g. Korean 010-xxxx → after +82 country code, enter 10xxxxxxxx not 010xxxxxxxx
+      const localNumber = parsed.localNumber.replace(/^0+/, '');
       const countryCodeDigits = countryCode.replace('+', '');
 
       const { chromium: chromiumExtra } = await import('playwright-extra');
@@ -4640,6 +4682,9 @@ test('recorded test', async ({ page }) => {
                 await phoneInput.waitFor({ timeout: 5000 });
                 await phoneInput.click({ timeout: 3000 });
                 await page.waitForTimeout(300);
+                await page.keyboard.press('Control+a');
+                await page.keyboard.press('Backspace');
+                await page.waitForTimeout(100);
                 await page.keyboard.type(localNumber, { delay: 50 });
               } catch {
                 try {
@@ -4732,6 +4777,10 @@ test('recorded test', async ({ page }) => {
             await phoneInput.waitFor({ timeout: 5000 });
             await phoneInput.click({ timeout: 3000 });
             await page.waitForTimeout(300);
+            // Clear any residual characters (e.g. leaked from country code search) before typing
+            await page.keyboard.press('Control+a');
+            await page.keyboard.press('Backspace');
+            await page.waitForTimeout(100);
             await page.keyboard.type(localNumber, { delay: 50 });
           } catch {
             // Fallback: third input-field-input div (0=hidden, 1=country code, 2=phone)
