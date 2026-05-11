@@ -415,15 +415,23 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
               log(`Navigating to ${tgUrl}`);
               await page.goto(tgUrl, {
-                waitUntil: 'load',
+                waitUntil: 'domcontentloaded',
                 timeout: 30_000,
               });
-              log('Page loaded');
+              log(`Page loaded. Current URL: ${page.url()}`);
 
               // Wait for the chats page to confirm we are logged in (single unique ID — no strict mode issues)
               const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
               log(`loggedIn=${loggedIn}`);
-              if (!loggedIn) throw new Error('Telegram session not found — please run Telegram setup first.');
+              if (!loggedIn) {
+                log('⚠️ Telegram session not found or page stuck — checking URL…');
+                if (page.url().includes('about:blank')) {
+                  log('🔄 URL is about:blank — attempting secondary navigation…');
+                  await page.goto(tgUrl, { waitUntil: 'load', timeout: 20_000 });
+                }
+                const retryLogin = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+                if (!retryLogin) throw new Error('Telegram session not found — please run Telegram setup first.');
+              }
 
               // Wait for the bot chat to fully render after navigation
               await page.waitForTimeout(3000);
@@ -458,17 +466,17 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               await page.keyboard.press('Escape');
               await page.waitForTimeout(300);
 
-              // Snapshot message count so we only read NEW bot replies
+              // Snapshot message count BEFORE pressing Enter so we don't miss the bot's reply
               let msgCountBefore = 0;
               try { msgCountBefore = await page.locator('.message').count(); } catch { /* ignore */ }
 
               await page.keyboard.press('Enter');
-              log('/start sent — polling chat for bot response (up to 30s)…');
+              log('/start sent — polling chat for bot response (up to 15s)…');
 
-              // Poll every 2s for up to 30s — stop as soon as the bot replies with the pairing code
+              // Poll every 2s for up to 15s — stop as soon as the bot replies with the pairing code
               const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
               let waited = 0;
-              while (waited < 30000) {
+              while (waited < 15000) {
                 await page.waitForTimeout(2000);
                 waited += 2000;
                 try {
@@ -486,7 +494,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
                   }
                 } catch { /* non-fatal */ }
               }
-              if (!pairingCode) log('Bot did not reply within 30s — will fall back to CLI polling.');
+              if (!pairingCode) log('Bot did not reply within 15s — will fall back to CLI polling.');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
               log(`Inner error: ${pairingError}`);
@@ -509,8 +517,8 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             log(`Using pairing code extracted from chat: ${pairingCode}`);
           } else {
             // Poll `openclaw pairing list telegram` — the request may take a moment to register
-            for (let attempt = 0; attempt < 8 && !pairingCode; attempt++) {
-              log(`Polling pairing list (attempt ${attempt + 1}/8)…`);
+            for (let attempt = 0; attempt < 4 && !pairingCode; attempt++) {
+              log(`Polling pairing list (attempt ${attempt + 1}/4)…`);
               const rawOut: string = await new Promise(resolve => {
                 const { exec } = require('child_process');
                 exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
@@ -526,9 +534,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               if (match) {
                 pairingCode = match[1];
                 log(`Pairing code found: ${pairingCode}`);
-              } else if (attempt < 7) {
-                log('No code yet — waiting 5s…');
-                await new Promise(r => setTimeout(r, 5000));
+              } else if (attempt < 3) {
+                log('No code yet — waiting 3s…');
+                await new Promise(r => setTimeout(r, 3000));
               }
             }
           }
@@ -740,6 +748,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         pairingError = `Profile dir not found: ${profileDir}`;
         log(`⚠️ ${pairingError}`);
       } else {
+        // Give Chrome time to fully release the profile lock from any preceding
+        // browser sessions before opening the same profile dir again.
+        log('Waiting 4s for Chrome profile lock to release…');
+        await new Promise(r => setTimeout(r, 4000));
+
         log(`Opening Telegram Web → @${botUsername}`);
         const { chromium: chromiumExtra } = await import('playwright-extra');
         const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
@@ -757,46 +770,70 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         const page = pages.length > 0 ? pages[0] : await context.newPage();
 
         try {
-          await page.goto(`https://web.telegram.org/k/#@${botUsername}`, {
-            waitUntil: 'load',
+          const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
+          log(`Navigating to ${tgUrl}`);
+          await page.goto(tgUrl, {
+            waitUntil: 'domcontentloaded',
             timeout: 30_000,
           });
+          log(`Page loaded. Current URL: ${page.url()}`);
+
           const loggedIn2 = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
-          if (!loggedIn2) throw new Error('Telegram session not found — please run Telegram setup first.');
+          if (!loggedIn2) {
+            log('⚠️ Telegram session not found or page stuck — checking URL…');
+            if (page.url().includes('about:blank')) {
+              log('🔄 URL is about:blank — attempting secondary navigation…');
+              await page.goto(tgUrl, { waitUntil: 'load', timeout: 20_000 });
+            }
+            const retryLogin = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+            if (!retryLogin) throw new Error('Telegram session not found — please run Telegram setup first.');
+          }
+
+          // Wait for the bot chat to fully render
+          await page.waitForTimeout(3000);
 
           // Click START button if present
           let clickedStart = false;
-          for (const sel of ['button.btn-primary:has-text("Start")', 'button:has-text("Start")', '.bot-start-btn']) {
+          const startSelectors = [
+            'button.chat-input-control-button:has-text("START")',
+            'button.btn-primary:has-text("Start")',
+            'button:has-text("Start")',
+            '.bot-start-btn'
+          ];
+
+          for (const sel of startSelectors) {
             try {
               const btn = page.locator(sel).first();
-              if (await btn.isVisible({ timeout: 1500 })) {
-                await btn.click();
-                log(`Clicked START button (selector: ${sel})`);
+              if (await btn.isVisible({ timeout: 2000 })) {
+                log(`START button found (${sel}) — clicking…`);
+                await btn.click({ force: true, timeout: 5000 });
                 clickedStart = true;
                 await page.waitForTimeout(2000);
                 break;
               }
             } catch { /* try next */ }
           }
-          if (!clickedStart) log('START button not found — chat may already be active.');
+          if (!clickedStart) log('No START button visible — bot chat already open');
 
           await page.waitForSelector('.input-message-input', { timeout: 20_000 });
           log('Input box ready — typing /start…');
-          await page.locator('.input-message-input').first().click({ timeout: 5000 });
+          // Use force:true to bypass the ripple overlay that intercepts pointer events
+          await page.locator('.input-message-input').first().click({ force: true, timeout: 5000 });
           await page.waitForTimeout(500);
           await page.keyboard.type('/start');
           await page.waitForTimeout(600);
-          // Dismiss any autocomplete popup (Telegram Web replaces /start with /status otherwise)
+          // Dismiss any autocomplete popup
           await page.keyboard.press('Escape');
           await page.waitForTimeout(300);
-          await page.keyboard.press('Enter');
-          log('/start sent — waiting up to 30s for bot to respond…');
 
-          // Snapshot message count before /start so we only read NEW bot replies
+          // Snapshot message count BEFORE pressing Enter so we don't miss the bot's reply
           let msgCountBefore = 0;
           try {
             msgCountBefore = await page.locator('.message').count();
           } catch { /* ignore */ }
+
+          await page.keyboard.press('Enter');
+          log('/start sent — waiting up to 30s for bot to respond…');
 
           // Poll every 2s for up to 30s — break as soon as bot replies with "Pairing code"
           let waited = 0;
