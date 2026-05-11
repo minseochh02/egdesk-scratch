@@ -4429,9 +4429,10 @@ test('recorded test', async ({ page }) => {
 
       try {
         await page.goto('https://myaccount.google.com/personal-info', {
-          waitUntil: 'domcontentloaded', timeout: 20_000,
+          waitUntil: 'networkidle', timeout: 30_000,
         });
-        await page.waitForTimeout(3000);
+        // Extra wait for dynamic content to render after network idle
+        await page.waitForTimeout(4000);
 
         // Helper: extract just the first phone number from a block of text
         const firstPhone = (raw: string | null): string | null => {
@@ -4447,19 +4448,43 @@ test('recorded test', async ({ page }) => {
           return null;
         };
 
-        // Primary: grab the first .qqVS5 inside the phone anchor — each .qqVS5 is one number
-        phone = firstPhone(await page.locator('a[href*="phone"] .qqVS5').first().innerText({ timeout: 5000 }).catch(() => null));
+        // Walk all text nodes in the DOM — finds phone numbers regardless of obfuscated class names.
+        // Scoped to the phone anchor so we don't accidentally pick up unrelated numbers on the page.
+        const phoneAnchor = page.locator('a[href*="phone"]').first();
+        // Use count() instead of isVisible() — anchor may exist in DOM but not be "visible" (e.g. overflow-hidden)
+        const anchorCount = await phoneAnchor.count();
 
-        if (!phone) {
-          // Fallback: any .qqVS5 on the page (first match)
-          phone = firstPhone(await page.locator('.qqVS5').first().innerText({ timeout: 3000 }).catch(() => null));
+        if (anchorCount > 0) {
+          const candidates = await phoneAnchor.evaluate((el) => {
+            const results: string[] = [];
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            let node: Text | null;
+            while ((node = walker.nextNode() as Text | null)) {
+              const text = (node.textContent ?? '').trim();
+              if (text.replace(/\D/g, '').length >= 7) results.push(text);
+            }
+            return results;
+          });
+          phone = firstPhone(candidates[0] ?? null);
         }
 
         if (!phone) {
-          // Last resort: scan individual leaf text nodes for a phone-like value
-          const texts = await page.locator('div, span').allTextContents();
-          const found = texts.find(t => /^\+?[\d][0-9 -(). ]{5,}\d$/.test(t.trim()) && t.trim().replace(/\D/g, '').length >= 7);
-          if (found) phone = found.trim();
+          // Fallback: walk the entire page body for any phone-shaped text node
+          // No ^ / $ anchors so partial matches inside a text node are found too
+          const allPhones = await page.evaluate(() => {
+            const results: string[] = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node: Text | null;
+            while ((node = walker.nextNode() as Text | null)) {
+              const text = (node.textContent ?? '').trim();
+              const m = text.match(/\+?[\d][\d()\-. ]{5,}\d/);
+              if (m && m[0].replace(/\D/g, '').length >= 7) {
+                results.push(m[0].trim());
+              }
+            }
+            return results;
+          });
+          phone = allPhones[0] ?? null;
         }
 
         if (phone) {
