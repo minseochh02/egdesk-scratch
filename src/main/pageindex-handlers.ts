@@ -46,7 +46,9 @@ export function registerPageIndexHandlers(): void {
   // Get structure (tree) of a document
   ipcMain.handle('pageindex:get-structure', async (_event, { docId }: { docId: string }) => {
     const service = getPageIndexService();
-    return JSON.parse(service.getDocumentStructure(docId));
+    const parsed = JSON.parse(service.getDocumentStructure(docId));
+    // getDocumentStructure returns a plain array; wrap it so the renderer can use result.nodes
+    return { nodes: Array.isArray(parsed) ? parsed : (parsed.nodes || []) };
   });
 
   // Get raw page content
