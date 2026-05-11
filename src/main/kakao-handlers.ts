@@ -554,8 +554,8 @@ async function createKakaoBot(
     await page.fill('#tfReply', 'EGClaw가 생각중입니다...');
     await page.waitForTimeout(500);
 
-    const confirmBtn = page.locator('reply-url-component button, .layer_reply button').filter({ hasText: '확인' }).first();
-    await confirmBtn.click({ force: true });
+    const callbackConfirmBtn = page.locator('reply-url-component button, .layer_reply button').filter({ hasText: '확인' }).first();
+    await callbackConfirmBtn.click({ force: true });
     await page.locator('mat-dialog-container reply-url-component, .layer_reply').first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
     console.log('[kakao:createBot] Callback enabled.');
     await page.waitForTimeout(1000);
