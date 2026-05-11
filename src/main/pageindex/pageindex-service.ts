@@ -73,9 +73,10 @@ function readJSON<T>(filePath: string): T | null {
 // ── PDF per-page text extraction ──────────────────────────────────────────────
 
 async function extractPagesText(filePath: string): Promise<string[]> {
-  // Lazy require to avoid issues if pdf-parse is not bundled in renderer
+  // Use the internal lib file directly to avoid pdf-parse/index.js running its
+  // test suite at require-time (which tries to open ./test/data/05-versions-space.pdf).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const pdfParse = require('pdf-parse');
+  const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
   const pageTexts: string[] = [];
 

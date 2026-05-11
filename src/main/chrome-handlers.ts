@@ -4678,12 +4678,11 @@ test('recorded test', async ({ page }) => {
 
               // Re-fill local number (only type the missing suffix in case field has partial content)
               try {
-                const phoneInput = page.locator('[data-left-pattern]').first();
-                await phoneInput.waitFor({ timeout: 5000 });
-                await fillRemainingPhone(phoneInput);
+                await page.locator('[data-left-pattern]').first().waitFor({ timeout: 5000 });
+                await fillRemainingPhone('[data-left-pattern]');
               } catch {
                 try {
-                  await fillRemainingPhone(page.locator('.input-field-input').nth(2));
+                  await fillRemainingPhone('.input-field-input:nth-child(3)');
                 } catch { /* ignore */ }
               }
               await page.waitForTimeout(800);
@@ -4766,27 +4765,49 @@ test('recorded test', async ({ page }) => {
           // The phone number field is a contenteditable div (not an <input>), so we must use keyboard.type()
           // We read what's already in the field and only type the missing suffix —
           // e.g. if "+82 1" is already shown, we only type "01234567" not the full "101234567"
-          const fillRemainingPhone = async (inputLocator: import('playwright-core').Locator) => {
+          const readPhoneFieldContent = async (cssSelector: string): Promise<string> => {
+            // Playwright's locator.innerText() can return "" on Telegram's contenteditable.
+            // Reading directly via page.evaluate() is more reliable.
+            return page.evaluate((sel) => {
+              const el = document.querySelector(sel);
+              return el ? ((el as HTMLElement).innerText ?? '').replace(/\D/g, '') : '';
+            }, cssSelector).catch(() => '');
+          };
+
+          const fillRemainingPhone = async (cssSelector: string) => {
+            const inputLocator = page.locator(cssSelector).first();
             await inputLocator.click({ timeout: 3000 });
-            // Wait long enough for Telegram to insert any auto-filled prefix after focus
-            await page.waitForTimeout(600);
-            // innerText() reads what is visually rendered in the contenteditable, unlike textContent()
-            const existing = (await inputLocator.innerText().catch(() => '') ?? '').replace(/\D/g, '');
+            // Poll up to 2s for Telegram to auto-insert its prefix (e.g. "1" for +82)
+            let existing = '';
+            for (let i = 0; i < 20; i++) {
+              await page.waitForTimeout(100);
+              existing = await readPhoneFieldContent(cssSelector);
+              console.log(`[fillPhone] poll ${i}: selector="${cssSelector}" existing="${existing}"`);
+              if (existing.length > 0) break;
+            }
             const target = localNumber.replace(/\D/g, '');
-            const toType = target.startsWith(existing) && existing.length > 0
-              ? target.slice(existing.length)
-              : target;
+            // existing may include country code digits (e.g. "82" from "+82 ") followed by
+            // whatever Telegram auto-filled (e.g. "1"). Find the longest suffix of existing
+            // that is also a prefix of target — that's what Telegram already typed.
+            let alreadyTyped = 0;
+            for (let len = Math.min(existing.length, target.length); len >= 1; len--) {
+              if (target.startsWith(existing.slice(-len))) {
+                alreadyTyped = len;
+                break;
+              }
+            }
+            const toType = target.slice(alreadyTyped);
+            console.log(`[fillPhone] existing="${existing}" target="${target}" alreadyTyped=${alreadyTyped} toType="${toType}"`);
             if (toType) await page.keyboard.type(toType, { delay: 50 });
           };
 
           try {
-            const phoneInput = page.locator('[data-left-pattern]').first();
-            await phoneInput.waitFor({ timeout: 5000 });
-            await fillRemainingPhone(phoneInput);
+            await page.locator('[data-left-pattern]').first().waitFor({ timeout: 5000 });
+            await fillRemainingPhone('[data-left-pattern]');
           } catch {
             // Fallback: third input-field-input div (0=hidden, 1=country code, 2=phone)
             try {
-              await fillRemainingPhone(page.locator('.input-field-input').nth(2));
+              await fillRemainingPhone('.input-field-input:nth-child(3)');
             } catch {
               // Could not fill phone — user may need to enter manually
             }
