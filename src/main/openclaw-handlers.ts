@@ -286,16 +286,18 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         }
 
         // ── 2b. Update last-good with the doctor-validated config ──
-        // This version of openclaw rejects both "mcp" and "mcpServers" keys — skip MCP config.
-        // The EGDesk local server is still used for Kakao webhooks via the tunnel.
+        // The correct key is mcp.servers (not mcpServers). Write it AFTER doctor so it survives.
         try {
           const freshCfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          // Strip any leftover MCP keys from previous setup attempts
-          delete freshCfg.mcp;
+          // Strip the wrong key from any previous setup attempts
           delete freshCfg.mcpServers;
+          // Register the EGDesk local MCP server under the correct openclaw schema path
+          freshCfg.mcp = freshCfg.mcp ?? {};
+          freshCfg.mcp.servers = freshCfg.mcp.servers ?? {};
+          freshCfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080' };
           fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
           fs.writeFileSync(lastGoodPath, JSON.stringify(freshCfg, null, 2));
-          log('Config finalized (no MCP keys — not supported by this openclaw version)');
+          log('Config finalized with mcp.servers.egdesk → http://localhost:8080');
         } catch (e: any) {
           log(`Config finalize (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
