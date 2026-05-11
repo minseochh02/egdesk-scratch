@@ -4436,8 +4436,11 @@ test('recorded test', async ({ page }) => {
         // Helper: extract just the first phone number from a block of text
         const firstPhone = (raw: string | null): string | null => {
           if (!raw) return null;
-          const first = raw.split(/[\n,;]+/).map(s => s.trim()).find(s => /[\d]/.test(s) && s.replace(/\D/g, '').length >= 7);
-          return first ?? null;
+          // Match the first phone-like pattern: optional +, then digits/spaces/dashes/parens, at least 7 digits total
+          const match = raw.match(/\+?[\d][\d\s\-(). ]{5,}\d/);
+          if (!match) return null;
+          const candidate = match[0].trim();
+          return candidate.replace(/\D/g, '').length >= 7 ? candidate : null;
         };
 
         // Try common selectors near the Phone section
@@ -4660,21 +4663,14 @@ test('recorded test', async ({ page }) => {
                 await page.waitForTimeout(800);
               } catch { /* country selection failed — proceed */ }
 
-              // Re-fill local number
+              // Re-fill local number (only type the missing suffix in case field has partial content)
               try {
                 const phoneInput = page.locator('[data-left-pattern]').first();
                 await phoneInput.waitFor({ timeout: 5000 });
-                await phoneInput.click({ timeout: 3000 });
-                await page.waitForTimeout(300);
-                await page.keyboard.press('Control+a');
-                await page.keyboard.press('Backspace');
-                await page.waitForTimeout(100);
-                await page.keyboard.type(localNumber, { delay: 50 });
+                await fillRemainingPhone(phoneInput);
               } catch {
                 try {
-                  await page.locator('.input-field-input').nth(2).click({ timeout: 3000 });
-                  await page.waitForTimeout(300);
-                  await page.keyboard.type(localNumber, { delay: 50 });
+                  await fillRemainingPhone(page.locator('.input-field-input').nth(2));
                 } catch { /* ignore */ }
               }
               await page.waitForTimeout(800);
@@ -4755,23 +4751,27 @@ test('recorded test', async ({ page }) => {
 
           // Fill local phone number
           // The phone number field is a contenteditable div (not an <input>), so we must use keyboard.type()
+          // We read what's already in the field and only type the missing suffix —
+          // e.g. if "+82 1" is already shown, we only type "01234567" not the full "101234567"
+          const fillRemainingPhone = async (inputLocator: import('playwright-core').Locator) => {
+            await inputLocator.click({ timeout: 3000 });
+            await page.waitForTimeout(300);
+            const existing = (await inputLocator.textContent().catch(() => '') ?? '').replace(/\D/g, '');
+            const target = localNumber.replace(/\D/g, '');
+            const toType = target.startsWith(existing) && existing.length > 0
+              ? target.slice(existing.length)
+              : target;
+            if (toType) await page.keyboard.type(toType, { delay: 50 });
+          };
+
           try {
-            // Target by data-left-pattern attribute which is unique to the phone number input
             const phoneInput = page.locator('[data-left-pattern]').first();
             await phoneInput.waitFor({ timeout: 5000 });
-            await phoneInput.click({ timeout: 3000 });
-            await page.waitForTimeout(300);
-            // Clear any residual characters (e.g. leaked from country code search) before typing
-            await page.keyboard.press('Control+a');
-            await page.keyboard.press('Backspace');
-            await page.waitForTimeout(100);
-            await page.keyboard.type(localNumber, { delay: 50 });
+            await fillRemainingPhone(phoneInput);
           } catch {
             // Fallback: third input-field-input div (0=hidden, 1=country code, 2=phone)
             try {
-              await page.locator('.input-field-input').nth(2).click({ timeout: 3000 });
-              await page.waitForTimeout(300);
-              await page.keyboard.type(localNumber, { delay: 50 });
+              await fillRemainingPhone(page.locator('.input-field-input').nth(2));
             } catch {
               // Could not fill phone — user may need to enter manually
             }
