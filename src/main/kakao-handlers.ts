@@ -28,6 +28,29 @@ function getProfileDir(getGoogleProfilesDir: () => string, profileName: string):
   return path.join(getGoogleProfilesDir(), profileName);
 }
 
+// ── Popup dismissal helper ────────────────────────────────────────────────────
+
+/**
+ * Dismiss any Kakao Business overlay popup (.wrap_layer / .open_layer).
+ * Clicks the close button (.btn_close) on every visible layer.
+ * Safe to call at any point — does nothing if no popup is present.
+ */
+async function dismissKakaoPopups(page: any): Promise<void> {
+  try {
+    // There may be multiple stacked layers; close them all
+    const closeBtns = page.locator('.wrap_layer .btn_close, .open_layer .btn_close');
+    const count = await closeBtns.count();
+    for (let i = 0; i < count; i++) {
+      const btn = closeBtns.nth(i);
+      if (await btn.isVisible().catch(() => false)) {
+        console.log('[kakao] Closing popup layer...');
+        await btn.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+    }
+  } catch { /* non-fatal */ }
+}
+
 // ── kakao:createChannel ──────────────────────────────────────────────────────
 
 async function createKakaoChannel(
@@ -50,6 +73,7 @@ async function createKakaoChannel(
     console.log('[kakao:createChannel] Waiting for login (scan QR if needed)...');
     await page.waitForURL((url: URL) => !url.href.includes('accounts.kakao.com'), { timeout: 300000 });
     console.log('[kakao:createChannel] Login confirmed.');
+    await dismissKakaoPopups(page);
 
     // 2. Navigate to Profiles & click "새 채널 만들기" — retry up to 3×
     let wizardFrame: any = null;
@@ -59,6 +83,7 @@ async function createKakaoChannel(
       await page.goto('https://business.kakao.com/profiles');
       await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(2000);
+      await dismissKakaoPopups(page);
 
       console.log(`[kakao:createChannel] Clicking "새 채널 만들기" (attempt ${attempt})...`);
       const createBtn = page.locator('button').filter({ hasText: '새 채널 만들기' }).first();
@@ -313,12 +338,14 @@ async function createKakaoBot(
       await page.waitForURL((url: URL) => !url.href.includes('accounts.kakao.com'), { timeout: 300000 });
       console.log('[kakao:createBot] Login detected.');
       await page.waitForTimeout(1000);
+      await dismissKakaoPopups(page);
     }
 
     // Wait for chatbot admin to fully load
     await page.waitForSelector('.layer_head, .btn_g:has-text("채널 챗봇 만들기"), bot-list-welcome-dialog', { timeout: 60000 });
     console.log('[kakao:createBot] Page loaded.');
     await page.waitForTimeout(500);
+    await dismissKakaoPopups(page);
 
     // 2. Close welcome popup if present
     const welcomeDialog = page.locator('bot-list-welcome-dialog');
@@ -488,8 +515,9 @@ async function createKakaoBot(
         await page.waitForTimeout(30000);
         await page.reload();
         await page.waitForLoadState('domcontentloaded');
+        await dismissKakaoPopups(page);
 
-        // Close popup after reload if present
+        // Close welcome popup after reload if present
         const dlg = page.locator('bot-list-welcome-dialog');
         if (await dlg.count() > 0) {
           await dlg.locator('span.ico_bot').filter({ hasText: '닫기' }).first().click({ force: true }).catch(() => {});
@@ -503,15 +531,32 @@ async function createKakaoBot(
 
     // 8. Configure callback
     console.log('[kakao:createBot] Configuring callback...');
-    const callbackLayer = page.locator('.layer_reply');
-    await callbackLayer.waitFor({ state: 'visible', timeout: 10000 });
-
-    await page.locator('xpath=/html/body/div[2]/div[2]/div/mat-dialog-container/div/div/reply-url-component/div/div[2]/div/div[1]/button').click({ force: true });
+    await dismissKakaoPopups(page);
     await page.waitForTimeout(500);
+
+    // The callback settings dialog may be inside a mat-dialog-container or .layer_reply
+    const callbackLayer = page.locator('mat-dialog-container reply-url-component, .layer_reply');
+    await callbackLayer.first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForTimeout(500);
+
+    // Enable callback toggle — button.btn_switch is the known toggle in reply-url-component
+    const toggle = page.locator('reply-url-component button.btn_switch').first();
+    if (await toggle.count() > 0) {
+      console.log('[kakao:createBot] Clicking callback toggle (button.btn_switch)');
+      await toggle.click({ force: true });
+    } else {
+      // Fallback: first button inside the component
+      console.log('[kakao:createBot] btn_switch not found, falling back to first button');
+      await page.locator('reply-url-component button').first().click({ force: true }).catch(() => {});
+    }
+    await page.waitForTimeout(500);
+
     await page.fill('#tfReply', 'EGClaw가 생각중입니다...');
     await page.waitForTimeout(500);
-    await callbackLayer.locator('button').filter({ hasText: '확인' }).click({ force: true });
-    await callbackLayer.waitFor({ state: 'hidden', timeout: 10000 });
+
+    const confirmBtn = page.locator('reply-url-component button, .layer_reply button').filter({ hasText: '확인' }).first();
+    await confirmBtn.click({ force: true });
+    await page.locator('mat-dialog-container reply-url-component, .layer_reply').first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
     console.log('[kakao:createBot] Callback enabled.');
     await page.waitForTimeout(1000);
 
