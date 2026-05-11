@@ -271,21 +271,10 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               kakao: { enabled: true },
             },
           },
-          // Register EGDesk local MCP server so OpenClaw can use it as a tool provider
-          mcpServers: {
-            ...(existing.mcpServers ?? {}),
-            egdesk: {
-              baseUrl: 'http://localhost:8080/mcp',
-              ...(egdeskApiKey ? { headers: { 'X-Api-Key': '${EGDESK_API_KEY}' } } : {}),
-            },
-          },
         };
-        // Strip the invalid models block that our earlier code wrote — openclaw's strict
-        // schema rejects it (defaultProvider is unrecognized; providers.google requires
-        // baseUrl string and models array). Google auth is handled by
-        // auth.profiles.google:default (api_key mode) + GEMINI_API_KEY env var, and
-        // model selection is in agents.defaults.model.primary.
+        // Strip keys that openclaw's strict schema rejects
         delete updated.models;
+        delete updated.mcpServers;
 
         fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
         // Also update last-good so the gateway doesn't restore an old config (with a stale token)
@@ -294,6 +283,30 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         fs.writeFileSync(lastGoodPath, JSON.stringify(updated, null, 2));
         const writtenConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
         log(`Config written to ${configPath} — telegram.botToken in file: ${writtenConfig?.channels?.telegram?.botToken || '(missing)'}`);
+
+        // Run doctor --fix to strip any remaining unrecognized keys from previous runs
+        try {
+          await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
+          log('openclaw doctor --fix: config validated.');
+        } catch (e: any) {
+          log(`openclaw doctor --fix (non-fatal): ${(e?.stdout || e?.stderr || e?.message || '').trim().slice(0, 200)}`);
+        }
+
+        // Register EGDesk local MCP server — correct key is "mcp" (not "mcpServers")
+        try {
+          const freshCfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          freshCfg.mcp = {
+            ...(freshCfg.mcp ?? {}),
+            egdesk: {
+              url: 'http://localhost:8080/mcp',
+              ...(egdeskApiKey ? { headers: { 'X-Api-Key': egdeskApiKey } } : {}),
+            },
+          };
+          fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
+          log('Registered EGDesk MCP server under mcp.egdesk.');
+        } catch (e: any) {
+          log(`MCP registration (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
+        }
 
         // ── 3. Install kakao plugin ──
         try {
