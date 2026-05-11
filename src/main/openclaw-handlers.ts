@@ -477,19 +477,18 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               await page.keyboard.press('Escape');
               await page.waitForTimeout(300);
 
-              // Snapshot message count BEFORE pressing Enter so we don't miss the bot's reply
+              // Snapshot message count BEFORE pressing Enter so we only read new bot replies
               let msgCountBefore = 0;
               try { msgCountBefore = await page.locator('.message').count(); } catch { /* ignore */ }
 
               await page.keyboard.press('Enter');
-              log('/start sent — polling chat for bot response (up to 30s)…');
+              log('/start sent — polling chat every 10s for up to 30s…');
 
-              // Poll every 2s for up to 30s — stop as soon as the bot replies with the pairing code
               const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
               let waited = 0;
-              while (waited < 30000) {
-                await page.waitForTimeout(2000);
-                waited += 2000;
+              while (waited < 30000 && !pairingCode) {
+                await page.waitForTimeout(10000);
+                waited += 10000;
                 try {
                   const texts = await page.locator('.message').allTextContents();
                   const newContent = texts.slice(msgCountBefore).join('\n');
@@ -497,15 +496,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
                   if (m) {
                     pairingCode = m[1];
                     log(`Pairing code found in chat after ${waited / 1000}s: ${pairingCode}`);
-                    break;
-                  }
-                  if (newContent.includes('Pairing code') || newContent.includes('approve')) {
-                    log(`Bot replied after ${waited / 1000}s — extracting code…`);
-                    break;
+                  } else {
+                    log(`Waiting for bot reply… (${waited / 1000}s elapsed, ${texts.length - msgCountBefore} new messages)`);
                   }
                 } catch { /* non-fatal */ }
               }
-              if (!pairingCode) log('Bot did not reply within 30s — will fall back to CLI polling.');
+              if (!pairingCode) log('No pairing code found in chat after 30s — will try CLI fallback.');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
               log(`Inner error: ${pairingError}`);
