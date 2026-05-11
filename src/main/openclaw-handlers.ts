@@ -304,9 +304,15 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         // Kakao is a plugin, not a channel config key. Install the bundled plugin package.
         try {
           const { app: electronApp } = require('electron');
-          const resourcesBase = process.resourcesPath
-            || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null)
-            || path.join(__dirname, '../../../../resources');
+          // In production: resources/ is next to the app bundle (process.resourcesPath)
+          // In development: __dirname is dist/main/, so go up 3 levels to project root + resources/
+          const devResourcesPath = path.join(__dirname, '..', '..', '..', 'resources');
+          const prodResourcesPath = process.resourcesPath
+            || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
+          // Prefer dev path if it contains the plugin (avoids pointing at electron's own resources dir)
+          const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin'))
+            ? devResourcesPath
+            : (prodResourcesPath || devResourcesPath);
           const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
 
           if (fs.existsSync(pluginPath)) {
