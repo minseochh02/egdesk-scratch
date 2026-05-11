@@ -383,11 +383,27 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         let pairingCode = '';
         let pairingError = '';
         try {
+          // Check for an existing pending pairing code first — openclaw won't generate a new one
+          // if a valid code is already pending (codes last ~1 hour).
+          const existingCode: string = await new Promise(resolve => {
+            const { exec } = require('child_process');
+            exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
+              (_err: any, stdout: string) => resolve(stdout || '')
+            );
+          });
+          const existingMatch = existingCode.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
+                                existingCode.match(/\b([A-Z0-9]{8})\b/);
+          if (existingMatch) {
+            pairingCode = existingMatch[1];
+            log(`Existing pending pairing code found: ${pairingCode} — skipping browser /start`);
+          }
+
           const setupProfileDir = path.join(getGoogleProfilesDir(), profileName);
           log(`Profile dir: ${setupProfileDir} (exists=${fs.existsSync(setupProfileDir)})`);
-          if (!fs.existsSync(setupProfileDir)) {
+          if (!pairingCode && !fs.existsSync(setupProfileDir)) {
             pairingError = `Profile dir not found: ${setupProfileDir}`;
-          } else {
+          } else if (!pairingCode) {
+            // No existing code — open browser and send /start to trigger a new pairing request
             // Check gateway status before opening Chrome — confirm Telegram is connected
             await new Promise(resolve => {
               const { exec } = require('child_process');
@@ -477,30 +493,28 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               await page.keyboard.press('Escape');
               await page.waitForTimeout(300);
 
-              // Snapshot message count BEFORE pressing Enter so we only read new bot replies
-              let msgCountBefore = 0;
-              try { msgCountBefore = await page.locator('.message').count(); } catch { /* ignore */ }
-
               await page.keyboard.press('Enter');
-              log('/start sent — polling chat every 10s for up to 30s…');
+              log('/start sent — waiting 30s for bot to respond before reading chat…');
 
-              const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
-              let waited = 0;
-              while (waited < 30000 && !pairingCode) {
-                await page.waitForTimeout(10000);
-                waited += 10000;
-                try {
-                  const texts = await page.locator('.message').allTextContents();
-                  const newContent = texts.slice(msgCountBefore).join('\n');
-                  const m = newContent.match(codeRe);
-                  if (m) {
-                    pairingCode = m[1];
-                    log(`Pairing code found in chat after ${waited / 1000}s: ${pairingCode}`);
-                  } else {
-                    log(`Waiting for bot reply… (${waited / 1000}s elapsed, ${texts.length - msgCountBefore} new messages)`);
-                  }
-                } catch { /* non-fatal */ }
-              }
+              // Wait the full 30s — the bot needs time to receive /start and decide whether
+              // to issue a new code or resend the existing one. No point reading early.
+              await page.waitForTimeout(30000);
+
+              // Don't filter by msgCountBefore — if the bot already sent a code within the last hour
+              // it won't issue a new one. The existing code is already in the chat history.
+              const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/g;
+              try {
+                const texts = await page.locator('.message').allTextContents();
+                // Search last 20 messages — use the LAST match (most recent code)
+                const recent = texts.slice(-20).join('\n');
+                const matches = [...recent.matchAll(codeRe)];
+                if (matches.length > 0) {
+                  pairingCode = matches[matches.length - 1][1];
+                  log(`Pairing code found in chat history: ${pairingCode}`);
+                } else {
+                  log(`No pairing code found in chat — ${texts.length} total messages. Will try CLI fallback.`);
+                }
+              } catch { /* non-fatal */ }
               if (!pairingCode) log('No pairing code found in chat after 30s — will try CLI fallback.');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
@@ -509,7 +523,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               await context.close().catch(() => {});
               log('Chrome context closed');
             }
-          }
+          } // end else if (!pairingCode)
         } catch (outerErr) {
           pairingError = outerErr instanceof Error ? outerErr.message : String(outerErr);
           log(`Outer error: ${pairingError}`);
