@@ -4229,22 +4229,28 @@ test('recorded test', async ({ page }) => {
 
       const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-      glStatus('opening', 'Opening Google account page…');
-      await page.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+      glStatus('opening', 'Opening Google sign-in page…');
+      // Navigate to accounts.google.com so user can sign IN or sign UP for a new account
+      await page.goto('https://accounts.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
 
       let detectedEmail = '';
 
-      // Check if already logged in (page stayed on myaccount.google.com)
-      const immediateEmail = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+      // Check if already logged in (redirected directly to myaccount.google.com with profile meta)
+      const currentUrl = page.url();
+      let immediateEmail: string | null = null;
+      if (currentUrl.includes('myaccount.google.com')) {
+        immediateEmail = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+      }
 
       if (immediateEmail) {
         detectedEmail = immediateEmail;
-        glStatus('logged-in', `Already logged in as ${detectedEmail} — closing browser…`);
+        glStatus('already-logged-in', `Already logged in as ${detectedEmail}`);
+        // Keep browser open so user can confirm or switch accounts
+        await page.waitForTimeout(2000);
         await context.close().catch(() => {});
       } else {
-        glStatus('waiting-for-login', 'Log in with your Google account in the browser window…');
+        glStatus('waiting-for-login', 'Sign in or create a Google account in the browser window…');
 
-        // Detect login by watching navigation events + periodic fallback check
         await new Promise<void>((resolve) => {
           let done = false;
 
@@ -4253,7 +4259,8 @@ test('recorded test', async ({ page }) => {
             done = true;
             detectedEmail = email;
             clearInterval(poll);
-            glStatus('logged-in', `Logged in as ${email} — closing browser…`);
+            glStatus('logged-in', `Logged in as ${email} — you can close the browser.`);
+            await page.waitForTimeout(1500);
             await context.close().catch(() => {});
             resolve();
           };
@@ -4272,13 +4279,17 @@ test('recorded test', async ({ page }) => {
             if (email) await finish(email);
           });
 
-          // Periodic fallback: open a background tab to check silently every 5s
+          // Periodic fallback: poll myaccount.google.com in a background tab every 5s
           const poll = setInterval(async () => {
             if (done) { clearInterval(poll); return; }
             try {
               const checkPage = await context.newPage();
               await checkPage.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded', timeout: 8_000 });
-              const email = await checkPage.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+              const url = checkPage.url();
+              let email: string | null = null;
+              if (url.includes('myaccount.google.com')) {
+                email = await checkPage.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+              }
               await checkPage.close().catch(() => {});
               if (email) await finish(email);
             } catch { /* browser closing or navigating */ }
@@ -4286,7 +4297,7 @@ test('recorded test', async ({ page }) => {
         });
       }
 
-      // Save metadata
+      // Save metadata (only if we detected an email)
       const metaPath = path.join(profileDir, 'profile.json');
       const existing = fs.existsSync(metaPath)
         ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
@@ -4300,7 +4311,11 @@ test('recorded test', async ({ page }) => {
         lastUsedAt: new Date().toISOString(),
       }, null, 2));
 
-      return { success: true, profileDir };
+      if (!detectedEmail) {
+        return { success: false, error: 'Login not completed — please sign in or create a Google account and try again.' };
+      }
+
+      return { success: true, profileDir, detectedEmail };
     } catch (error) {
       console.error('[Google Profile] launch error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
