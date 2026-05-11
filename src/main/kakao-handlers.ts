@@ -34,7 +34,7 @@ async function createKakaoChannel(
   profileDir: string,
   channelName: string,
   searchId: string
-): Promise<{ success: true; searchId: string } | { success: false; error: string }> {
+): Promise<{ success: true; searchId: string; channelUrl: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
 
@@ -43,7 +43,7 @@ async function createKakaoChannel(
     console.log('[kakao:createChannel] Navigating to Kakao login...');
     await page.goto('https://accounts.kakao.com/login/?continue=https%3A%2F%2Fbusiness.kakao.com%2Fdashboard%2F#login');
     try {
-      await page.getByRole('button', { name: 'QR코드 로그인' }).click({ timeout: 5000 });
+      await page.getByRole('button', { name: /QR코드 로그인|Log in with QR code/i }).click({ timeout: 5000 });
     } catch {
       await page.click('.btn_g:nth-match(2)').catch(() => {});
     }
@@ -131,8 +131,15 @@ async function createKakaoChannel(
         }
       }
 
+      // Re-find wizard iframe each iteration — the iframe navigates internally between steps
+      // which detaches the saved reference. Search by URL pattern to get the current frame.
+      const currentWizardFrame = page.frames().find((f: any) => f.url().includes('/wizard/export')) ?? null;
+      if (currentWizardFrame) {
+        wizardFrame = currentWizardFrame;
+      }
+
       // Wizard frame actions
-      const isWizardAttached = page.frames().includes(wizardFrame);
+      const isWizardAttached = wizardFrame !== null && page.frames().includes(wizardFrame);
       let hasNext = false;
       let nextButton: any = null;
 
@@ -254,7 +261,20 @@ async function createKakaoChannel(
       }
     }
 
-    return { success: true, searchId };
+    // Extract channel URL from 채널 정보 section
+    let channelUrl = '';
+    try {
+      const channelUrlDl = page.locator('dl.list_comm').filter({
+        has: page.locator('dt', { hasText: '채널 URL' }),
+      });
+      const rawUrl = await channelUrlDl.locator('dd span.txt_list').textContent({ timeout: 5000 });
+      channelUrl = rawUrl?.trim() ?? '';
+      console.log(`[kakao:createChannel] Channel URL: ${channelUrl}`);
+    } catch (e: any) {
+      console.warn('[kakao:createChannel] Could not extract channel URL:', e.message);
+    }
+
+    return { success: true, searchId, channelUrl };
   } finally {
     await context.close().catch(() => {});
   }
@@ -286,7 +306,7 @@ async function createKakaoBot(
     if (page.url().includes('accounts.kakao.com')) {
       console.log('[kakao:createBot] Not logged in. Showing QR code...');
       try {
-        await page.getByRole('button', { name: 'Log in with QR code' }).click({ timeout: 5000 });
+        await page.getByRole('button', { name: /QR코드 로그인|Log in with QR code/i }).click({ timeout: 5000 });
       } catch {
         await page.click('.btn_g:nth-match(2)').catch(() => {});
       }
@@ -422,7 +442,7 @@ async function createKakaoBot(
     await page.waitForTimeout(500);
     await page.fill('[id^="tfInpKey_"]', 'X-Api-Key');
     await page.waitForTimeout(500);
-    await page.locator('bee-input').filter({ hasText: '' }).locator('input').last().fill(apiKey);
+    await page.locator('xpath=/html/body/app-page/div[2]/div/bot-page/div/div/main/skill-page/div/div/div/skill-info/div/div[3]/div[1]/div[2]/div[2]/div[1]/div[2]/bee-input/div/input').fill(apiKey);
     await page.waitForTimeout(500);
 
     const skillSaveBtn = page.getByRole('button', { name: '저장' });
@@ -486,7 +506,7 @@ async function createKakaoBot(
     const callbackLayer = page.locator('.layer_reply');
     await callbackLayer.waitFor({ state: 'visible', timeout: 10000 });
 
-    await callbackLayer.locator('button.btn_switch').click({ force: true });
+    await page.locator('xpath=/html/body/div[2]/div[2]/div/mat-dialog-container/div/div/reply-url-component/div/div[2]/div/div[1]/button').click({ force: true });
     await page.waitForTimeout(500);
     await page.fill('#tfReply', 'EGClaw가 생각중입니다...');
     await page.waitForTimeout(500);

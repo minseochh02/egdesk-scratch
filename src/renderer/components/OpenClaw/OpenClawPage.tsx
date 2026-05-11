@@ -32,6 +32,7 @@ const OpenClawPage: React.FC = () => {
   const [telegramSetup, setTelegramSetup] = useState(false);
   const [kakaoSetup, setKakaoSetup] = useState(false);
   const [kakaoSearchId, setKakaoSearchId] = useState('');
+  const [kakaoChannelUrl, setKakaoChannelUrl] = useState('');
   const [kakaoBotName, setKakaoBotName] = useState('');
   const [openclawInstalled, setOpenclawInstalled] = useState(false);
   const [openclawStatus, setOpenclawStatus] = useState('');
@@ -39,6 +40,7 @@ const OpenClawPage: React.FC = () => {
   const [error, setError] = useState('');
   const [telegramStatus, setTelegramStatus] = useState<{ stage: string; message: string; action?: string } | null>(null);
   const [githubStatus, setGithubStatus] = useState<{ stage: string; message: string } | null>(null);
+  const [googleStatus, setGoogleStatus] = useState<{ stage: string; message: string } | null>(null);
 
   // Listen for Telegram status events from the backend during setup
   useEffect(() => {
@@ -54,6 +56,15 @@ const OpenClawPage: React.FC = () => {
     if (!window.electron?.ipcRenderer?.on) return;
     const cleanup = window.electron.ipcRenderer.on('github:status', (data: { stage: string; message: string }) => {
       setGithubStatus(data);
+    });
+    return () => { if (cleanup) cleanup(); };
+  }, []);
+
+  // Listen for Google login status events
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer?.on) return;
+    const cleanup = window.electron.ipcRenderer.on('google:status', (data: { stage: string; message: string }) => {
+      setGoogleStatus(data);
     });
     return () => { if (cleanup) cleanup(); };
   }, []);
@@ -171,7 +182,7 @@ const OpenClawPage: React.FC = () => {
     } catch (e: any) {
       addLog(`⚠️ OpenClaw error: ${e?.message || e}`);
     }
-    await runKakaoSetup();
+    setStep('done');
   };
 
   const runKakaoSetup = async () => {
@@ -183,8 +194,22 @@ const OpenClawPage: React.FC = () => {
     const searchId = `egdesk_${rand}`;
     const botName = `EGClaw Bot ${rand}`;
 
-    // Get tunnel URL — prefer already-populated tunnelUrl state, fall back to live lookup
+    // Get tunnel URL — prefer already-populated tunnelUrl state
     let skillUrl = tunnelUrl;
+    let kakaoApiKey = '';
+    let storedServerName = '';
+
+    // Try stored tunnel config (survives restarts, valid even when tunnel is offline)
+    try {
+      const tunnelConfig = await (window as any).electron.invoke('get-mcp-tunnel-config');
+      if (!skillUrl && tunnelConfig?.tunnel?.publicUrl) {
+        skillUrl = tunnelConfig.tunnel.publicUrl;
+      }
+      kakaoApiKey = tunnelConfig?.kakaoCallbackApiKey || '';
+      storedServerName = tunnelConfig?.tunnel?.serverName || '';
+    } catch { /* non-fatal */ }
+
+    // Fall back to live active-tunnel lookup
     if (!skillUrl) {
       try {
         const listResult = await (window as any).electron.tunnel.list();
@@ -198,8 +223,53 @@ const OpenClawPage: React.FC = () => {
         }
       } catch { /* non-fatal */ }
     }
-    if (skillUrl) addLog(`Using tunnel URL: ${skillUrl}`);
-    else addLog('⚠️ No tunnel URL found — skill URL will be empty. Connect the MCP tunnel first.');
+
+    // Auto-setup: start local MCP server + tunnel if still no URL
+    if (!skillUrl) {
+      addLog('No tunnel URL found — auto-starting MCP tunnel...');
+      try {
+        // Ensure local MCP server is running on port 8080
+        const serverStatus = await (window as any).electron.invoke('https-server-status');
+        if (!serverStatus?.isRunning) {
+          addLog('Starting local MCP server on port 8080...');
+          await (window as any).electron.invoke('https-server-start', { port: 8080, useHTTPS: false });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Use stored server name on reconnect; generate a new one on first-time setup.
+        // Never generate a new name if one already exists — that would orphan the existing Kakao channel.
+        const generatedName = googleEmail
+          ? cleanGmailToUsername(googleEmail)
+          : `egdesk-${Math.random().toString(16).slice(2, 10)}`;
+        const serverName = storedServerName || generatedName;
+        if (serverName) {
+          const isFirstTime = !storedServerName;
+          addLog(isFirstTime ? `Creating new tunnel "${serverName}"...` : `Reconnecting tunnel "${serverName}"...`);
+          const tunnelResult = await (window as any).electron.invoke('mcp-tunnel-start', serverName, 'http://localhost:8080');
+
+          if (tunnelResult?.publicUrl) {
+            skillUrl = tunnelResult.publicUrl;
+            addLog(`Tunnel started: ${skillUrl}`);
+          } else if (tunnelResult?.message?.includes('already running')) {
+            const freshConfig = await (window as any).electron.invoke('get-mcp-tunnel-config');
+            skillUrl = freshConfig?.tunnel?.publicUrl || '';
+            if (skillUrl) addLog(`Tunnel already running: ${skillUrl}`);
+          } else {
+            addLog(`⚠️ Tunnel start failed: ${tunnelResult?.error || tunnelResult?.message || 'unknown'}`);
+          }
+        }
+      } catch (e: any) {
+        addLog(`⚠️ Tunnel auto-setup error: ${e?.message || e}`);
+      }
+    }
+
+    // Hard gate — if still no tunnel URL or API key, skip Kakao entirely
+    if (!skillUrl || !kakaoApiKey) {
+      addLog('⚠️ Skipping KakaoTalk setup — tunnel could not be established and Kakao channel IDs are a finite resource.');
+      return;
+    }
+
+    addLog(`Using tunnel URL: ${skillUrl}`);
 
     // Step A: Create Channel
     addLog(`Creating KakaoTalk channel "@${searchId}"...`);
@@ -211,6 +281,10 @@ const OpenClawPage: React.FC = () => {
       if (channelResult?.success) {
         addLog(`✅ KakaoTalk channel created: @${searchId}`);
         setKakaoSearchId(searchId);
+        if (channelResult.channelUrl) {
+          setKakaoChannelUrl(channelResult.channelUrl);
+          addLog(`채널 URL: ${channelResult.channelUrl}`);
+        }
         channelOk = true;
       } else {
         addLog(`⚠️ KakaoTalk channel creation failed: ${channelResult?.error || 'Unknown error'}`);
@@ -238,7 +312,8 @@ const OpenClawPage: React.FC = () => {
       }
     }
 
-    setStep('done');
+    // Don't call setStep('done') here — let the caller decide what comes next
+    // (main flow continues to OpenClaw; retry flow sets done itself via retryKakaoSetup)
   };
 
   const runTelegramSetup = async () => {
@@ -275,6 +350,8 @@ const OpenClawPage: React.FC = () => {
       addLog(`⚠️ Telegram error: ${e?.message || e}`);
     }
     setTelegramStatus(null);
+    // Kakao first, then OpenClaw
+    await runKakaoSetup();
     await runOpenclawSetup(tokenForOpenClaw);
   };
 
@@ -286,6 +363,7 @@ const OpenClawPage: React.FC = () => {
 
     try {
       const result = await (window as any).electron.debug.googleProfile.launch(PROFILE_NAME);
+      setGoogleStatus(null);
       if (!result?.success) {
         setError(result?.error || 'Failed to launch Chrome.');
         setStep('welcome');
@@ -361,6 +439,8 @@ const OpenClawPage: React.FC = () => {
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [gatewayStatusText, setGatewayStatusText] = useState('');
   const [isTogglingGateway, setIsTogglingGateway] = useState(false);
+  const [localServerRunning, setLocalServerRunning] = useState(false);
+  const [tunnelRunning, setTunnelRunning] = useState(false);
 
   const refreshStatus = async () => {
     try {
@@ -368,6 +448,20 @@ const OpenClawPage: React.FC = () => {
       setGatewayRunning(result?.running ?? false);
       setTelegramConnected(result?.connected ?? false);
       setGatewayStatusText(result?.statusOutput ?? '');
+    } catch { /* non-fatal */ }
+    try {
+      const serverStatus = await (window as any).electron.invoke('https-server-status');
+      setLocalServerRunning(serverStatus?.isRunning ?? false);
+    } catch { /* non-fatal */ }
+    try {
+      const listResult = await (window as any).electron.tunnel.list();
+      const names: string[] = listResult?.tunnels ?? listResult ?? [];
+      let anyConnected = false;
+      for (const name of names) {
+        const info = await (window as any).electron.tunnel.info(name);
+        if (info?.isConnected) { anyConnected = true; break; }
+      }
+      setTunnelRunning(anyConnected);
     } catch { /* non-fatal */ }
   };
 
@@ -381,11 +475,64 @@ const OpenClawPage: React.FC = () => {
 
   const handleStartGateway = async () => {
     setIsTogglingGateway(true);
-    addLog('Starting OpenClaw gateway…');
     try {
+      // 1. Start local MCP server
+      addLog('Starting local MCP server…');
+      try {
+        const serverStatus = await (window as any).electron.invoke('https-server-status');
+        if (!serverStatus?.isRunning) {
+          await (window as any).electron.invoke('https-server-start', { port: 8080, useHTTPS: false });
+          await new Promise(r => setTimeout(r, 1000));
+          addLog('✅ Local MCP server started on port 8080.');
+        } else {
+          addLog('✅ Local MCP server already running.');
+        }
+        setLocalServerRunning(true);
+      } catch (e: any) {
+        addLog(`⚠️ Local server error: ${e?.message || e}`);
+      }
+
+      // 2. Start tunnel
+      addLog('Starting tunnel…');
+      try {
+        const tunnelConfig = await (window as any).electron.invoke('get-mcp-tunnel-config');
+        const storedServerName = tunnelConfig?.tunnel?.serverName || '';
+        if (storedServerName) {
+          let alreadyConnected = false;
+          try {
+            const info = await (window as any).electron.tunnel.info(storedServerName);
+            alreadyConnected = !!info?.isConnected;
+          } catch {}
+
+          if (alreadyConnected) {
+            addLog(`✅ Tunnel "${storedServerName}" already connected.`);
+            if (!tunnelUrl) await refreshTunnelUrl();
+            setTunnelRunning(true);
+          } else {
+            const tunnelResult = await (window as any).electron.invoke('mcp-tunnel-start', storedServerName, 'http://localhost:8080');
+            if (tunnelResult?.publicUrl) {
+              setTunnelUrl(tunnelResult.publicUrl);
+              setTunnelRunning(true);
+              addLog(`✅ Tunnel started: ${tunnelResult.publicUrl}`);
+            } else if (tunnelResult?.message?.includes('already running')) {
+              await refreshTunnelUrl();
+              setTunnelRunning(true);
+              addLog('✅ Tunnel already running.');
+            } else {
+              addLog(`⚠️ Tunnel: ${tunnelResult?.error || tunnelResult?.message || 'unknown'}`);
+            }
+          }
+        } else {
+          addLog('⚠️ No tunnel name configured — skipping tunnel start.');
+        }
+      } catch (e: any) {
+        addLog(`⚠️ Tunnel error: ${e?.message || e}`);
+      }
+
+      // 3. Start OpenClaw gateway
+      addLog('Starting OpenClaw gateway…');
       await (window as any).electron.debug.openclaw.start();
       addLog('✅ Gateway started.');
-      // Optimistically mark running; then poll until status confirms or gives up
       setGatewayRunning(true);
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 2000));
@@ -419,6 +566,7 @@ const OpenClawPage: React.FC = () => {
     setIsRunningKakao(true);
     setLogs([]);
     await runKakaoSetup();
+    setStep('done'); // standalone retry — go to done after kakao finishes
     setIsRunningKakao(false);
   };
 
@@ -468,6 +616,7 @@ const OpenClawPage: React.FC = () => {
     setTelegramSetup(false);
     setKakaoSetup(false);
     setKakaoSearchId('');
+    setKakaoChannelUrl('');
     setKakaoBotName('');
     setOpenclawInstalled(false);
     setOpenclawStatus('');
@@ -477,13 +626,16 @@ const OpenClawPage: React.FC = () => {
     setTelegramConnected(false);
     setGatewayStatusText('');
     setIsTogglingGateway(false);
+    setLocalServerRunning(false);
+    setTunnelRunning(false);
     setTunnelUrl('');
     setError('');
   };
 
   return (
     <div style={{
-      minHeight: '100%',
+      height: '100%',
+      overflowY: 'auto',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -529,11 +681,62 @@ const OpenClawPage: React.FC = () => {
         <div style={{ textAlign: 'center', maxWidth: '480px' }}>
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>🌐</div>
           <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px' }}>Log in with Google</h2>
-          <p style={{ color: '#888', fontSize: '14px', marginBottom: '32px', lineHeight: 1.6 }}>
-            Chrome is open. Sign in with your Google account, then{' '}
-            <strong style={{ color: '#ccc' }}>close the window</strong> when done.
-          </p>
-          <div style={{ color: '#888', fontSize: '13px' }}>⏳ Waiting for Chrome to close…</div>
+
+          {/* Pulsing banner while waiting for the user to log in */}
+          {googleStatus?.stage === 'waiting-for-login' && (
+            <div style={{
+              marginBottom: '16px', borderRadius: '8px', overflow: 'hidden',
+              border: '2px solid #4ade80',
+              animation: 'gl-pulse 1.4s ease-in-out infinite',
+              textAlign: 'left',
+            }}>
+              <style>{`
+                @keyframes gl-pulse {
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.45); }
+                  50% { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+                }
+              `}</style>
+              <div style={{ background: '#052e16', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px', lineHeight: 1 }}>🔑</span>
+                <div>
+                  <div style={{ color: '#86efac', fontWeight: 'bold', fontSize: '15px' }}>Sign in with Google</div>
+                  <div style={{ color: '#4ade80', fontSize: '12px', marginTop: '2px' }}>{googleStatus.message}</div>
+                </div>
+              </div>
+              <div style={{ background: '#021d0e', padding: '10px 16px', color: '#86efac', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <span>👉</span>
+                <span>Complete login in the browser window — it will close automatically.</span>
+              </div>
+            </div>
+          )}
+
+          {/* Stage indicator for opening / logged-in states */}
+          {googleStatus && googleStatus.stage !== 'waiting-for-login' && (() => {
+            const cfg: Record<string, { icon: string; color: string; bg: string; border: string }> = {
+              'opening':     { icon: '🌐', color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'logged-in':   { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'already-logged-in': { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+            };
+            const c = cfg[googleStatus.stage] ?? { icon: '⏳', color: '#aaa', bg: '#1a1a1a', border: '#444' };
+            return (
+              <div style={{
+                marginBottom: '16px', borderRadius: '6px',
+                border: `1px solid ${c.border}`, backgroundColor: c.bg,
+                padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+                textAlign: 'left',
+              }}>
+                <span style={{ fontSize: '18px', lineHeight: 1 }}>{c.icon}</span>
+                <div style={{ color: c.color, fontSize: '13px' }}>{googleStatus.message}</div>
+              </div>
+            );
+          })()}
+
+          {!googleStatus && (
+            <p style={{ color: '#888', fontSize: '14px', marginBottom: '32px', lineHeight: 1.6 }}>
+              Chrome is opening — sign in with your Google account and the window will close automatically.
+            </p>
+          )}
+
           <Console logs={logs} />
           <button
             onClick={handleReset}
@@ -940,6 +1143,20 @@ const OpenClawPage: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {kakaoChannelUrl && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '6px',
+                  }}>
+                    <div style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>🔗 채널 URL</div>
+                    <div style={{ color: '#60a5fa', fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {kakaoChannelUrl}
+                    </div>
+                  </div>
+                )}
                 {kakaoBotName && (
                   <div style={{
                     marginTop: '8px',
@@ -1015,15 +1232,18 @@ const OpenClawPage: React.FC = () => {
                 <span style={{ fontSize: '20px' }}>🦀</span>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: '14px' }}>OpenClaw Gateway</div>
-                  <div style={{ fontSize: '12px', marginTop: '2px' }}>
-                    <span style={{
-                      color: gatewayRunning ? '#4ade80' : '#666',
-                      marginRight: '10px',
-                    }}>
-                      {gatewayRunning ? '● Running' : '○ Stopped'}
+                  <div style={{ fontSize: '12px', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ color: localServerRunning ? '#4ade80' : '#666' }}>
+                      {localServerRunning ? '● Server' : '○ Server'}
+                    </span>
+                    <span style={{ color: tunnelRunning ? '#4ade80' : '#666' }}>
+                      {tunnelRunning ? '● Tunnel' : '○ Tunnel'}
+                    </span>
+                    <span style={{ color: gatewayRunning ? '#4ade80' : '#666' }}>
+                      {gatewayRunning ? '● Gateway' : '○ Gateway'}
                     </span>
                     <span style={{ color: telegramConnected ? '#4ade80' : '#666' }}>
-                      {telegramConnected ? '✓ Telegram connected' : '✗ Telegram not connected'}
+                      {telegramConnected ? '✓ Telegram' : '✗ Telegram'}
                     </span>
                   </div>
                 </div>

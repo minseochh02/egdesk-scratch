@@ -89,6 +89,52 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         return { success: false, error: 'No bot token found — run Telegram setup first.' };
       }
 
+      const log = (msg: string) => console.log(`[openclaw:setup] ${msg}`);
+
+      // ── 0. Ensure local MCP server + tunnel are running ──
+      try {
+        const { getLocalServerManager } = require('./mcp/server-creator/local-server-manager');
+        const { getStore } = require('./storage');
+        const { startTunnel } = require('./mcp/server-creator/tunneling-manager');
+        const { randomUUID } = require('crypto');
+
+        const localServer = getLocalServerManager();
+        if (!localServer.getStatus().isRunning) {
+          log('Starting local MCP server on port 8080...');
+          await localServer.startServer({ port: 8080, useHTTPS: false });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        const store = getStore();
+        const mcpConfig = (store?.get('mcpConfiguration') as any) ?? {};
+        const serverName = mcpConfig?.tunnel?.serverName;
+        const alreadyConnected = mcpConfig?.tunnel?.registered && mcpConfig?.tunnel?.publicUrl;
+
+        if (serverName && !alreadyConnected) {
+          log(`Starting tunnel "${serverName}"...`);
+          const existingApiKey = mcpConfig?.tunnel?.apiKey || randomUUID();
+          const tunnelResult = await startTunnel(serverName, 'http://localhost:8080', existingApiKey);
+          if (tunnelResult?.success && tunnelResult?.publicUrl) {
+            mcpConfig.tunnel = {
+              ...(mcpConfig.tunnel ?? {}),
+              registered: true,
+              publicUrl: tunnelResult.publicUrl,
+              apiKey: existingApiKey,
+              lastConnectedAt: new Date().toISOString(),
+            };
+            store.set('mcpConfiguration', mcpConfig);
+            localServer.setApiKey(existingApiKey);
+            log(`Tunnel started: ${tunnelResult.publicUrl}`);
+          } else {
+            log(`⚠️ Tunnel start returned: ${tunnelResult?.message || tunnelResult?.error || 'unknown'}`);
+          }
+        } else if (!serverName) {
+          log('⚠️ No tunnel serverName in store — skipping tunnel start (will have no API key in MCP config)');
+        }
+      } catch (e: any) {
+        log(`⚠️ Server/tunnel auto-start error: ${e?.message || e}`);
+      }
+
       // Build a clean env without NODE_OPTIONS (Electron dev sets --require ts-node/register
       // which breaks npm's preinstall scripts in spawned processes)
       const cleanEnv = makeCleanEnv(homeDir);
@@ -113,21 +159,26 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       } catch { /* non-fatal */ }
 
       try {
+        log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
+
         // ── 1. Install openclaw if not on PATH ──
         let alreadyInstalled = false;
         try {
-          await execAsync(`${WHICH} openclaw`, { env: cleanEnv, timeout: 5_000 });
+          const { stdout: whichOut } = await execAsync(`${WHICH} openclaw`, { env: cleanEnv, timeout: 5_000 });
+          log(`openclaw binary: ${whichOut.trim()}`);
           alreadyInstalled = true;
         } catch {
-          // not on PATH — install via npm
+          log('openclaw not on PATH — installing via npm…');
         }
 
         if (!alreadyInstalled) {
+          log('Running: npm install -g openclaw@latest');
           await execAsync('npm install -g openclaw@latest', {
             env: cleanEnv,
             timeout: 120_000,
             maxBuffer: 10 * 1024 * 1024,
           });
+          log('npm install complete');
         }
 
         // ── 2. Write ~/.openclaw/openclaw.json with bot token ──
@@ -139,7 +190,24 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           ? JSON.parse(fs.readFileSync(configPath, 'utf-8'))
           : {};
 
-        const geminiApiKey = cleanEnv.GEMINI_API_KEY || '';
+        // Read the tunnel API key from store so OpenClaw can authenticate against protected routes
+        let egdeskApiKey = '';
+        try {
+          const { getStore } = require('./storage');
+          const mcpConfig = (getStore()?.get('mcpConfiguration') as any) ?? {};
+          egdeskApiKey = mcpConfig?.tunnel?.apiKey ?? '';
+        } catch { /* non-fatal */ }
+
+        // Write .env file so openclaw can reference the key via ${EGDESK_API_KEY}
+        if (egdeskApiKey) {
+          const envPath = path.join(configDir, '.env');
+          const envLines = fs.existsSync(envPath)
+            ? fs.readFileSync(envPath, 'utf-8').split('\n').filter(l => !l.startsWith('EGDESK_API_KEY='))
+            : [];
+          envLines.push(`EGDESK_API_KEY=${egdeskApiKey}`);
+          fs.writeFileSync(envPath, envLines.join('\n') + '\n');
+          log(`🔑 Wrote EGDESK_API_KEY to ${envPath}`);
+        }
 
         const updated: any = {
           ...existing,
@@ -154,9 +222,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               botToken: resolvedToken,
             },
             kakao: {
-              ...(existing.channels?.kakao ?? {}),
               enabled: true,
               webhookPath: '/kakao/skill',
+              useCallback: true,
+              callbackTimeoutMs: 50000,
+              dmPolicy: 'open',
+              ...(existing.channels?.kakao ?? {}),
             },
           },
           plugins: {
@@ -164,36 +235,31 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             entries: {
               ...(existing.plugins?.entries ?? {}),
               kakao: { enabled: true },
-              bonjour: { enabled: false },
+            },
+          },
+          // Register EGDesk local MCP server so OpenClaw can use it as a tool provider
+          mcpServers: {
+            ...(existing.mcpServers ?? {}),
+            egdesk: {
+              baseUrl: 'http://localhost:8080/mcp',
+              ...(egdeskApiKey ? { headers: { 'X-Api-Key': '${EGDESK_API_KEY}' } } : {}),
             },
           },
         };
-
-        // Write Google/Gemini API key into config if available
-        if (geminiApiKey) {
-          const existingProviders = { ...(existing.models?.providers ?? {}) };
-          delete existingProviders.openai; // remove openai to prevent "missing key" errors
-          updated.models = {
-            ...(existing.models ?? {}),
-            defaultProvider: 'google',
-            providers: {
-              ...existingProviders,
-              google: { ...(existingProviders.google ?? {}), apiKey: geminiApiKey },
-            },
-          };
-          updated.agents = {
-            ...(existing.agents ?? {}),
-            defaults: {
-              ...(existing.agents?.defaults ?? {}),
-              model: {
-                ...(existing.agents?.defaults?.model ?? {}),
-                primary: existing.agents?.defaults?.model?.primary || 'google/gemini-2.0-flash',
-              },
-            },
-          };
-        }
+        // Strip the invalid models block that our earlier code wrote — openclaw's strict
+        // schema rejects it (defaultProvider is unrecognized; providers.google requires
+        // baseUrl string and models array). Google auth is handled by
+        // auth.profiles.google:default (api_key mode) + GEMINI_API_KEY env var, and
+        // model selection is in agents.defaults.model.primary.
+        delete updated.models;
 
         fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
+        // Also update last-good so the gateway doesn't restore an old config (with a stale token)
+        // on startup and clobber what we just wrote.
+        const lastGoodPath = path.join(configDir, 'openclaw.json.last-good');
+        fs.writeFileSync(lastGoodPath, JSON.stringify(updated, null, 2));
+        const writtenConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        log(`Config written to ${configPath} — telegram.botToken in file: ${writtenConfig?.channels?.telegram?.botToken || '(missing)'}`);
 
         // ── 3. Install kakao plugin ──
         try {
@@ -217,29 +283,37 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           // non-fatal — plugin may already be installed
         }
 
-        // ── 5. Run onboard daemon ──
+        // ── 3b. Run onboard daemon ──
+        log('Running: openclaw onboard --install-daemon');
         try {
-          await execAsync('openclaw onboard --install-daemon', {
+          const { stdout: onboardOut, stderr: onboardErr } = await execAsync('openclaw onboard --install-daemon', {
             env: cleanEnv,
             timeout: 60_000,
             maxBuffer: 5 * 1024 * 1024,
           });
-        } catch {
-          // non-fatal — daemon may already exist
+          log(`onboard stdout: ${onboardOut.trim() || '(empty)'}`);
+          if (onboardErr?.trim()) log(`onboard stderr: ${onboardErr.trim()}`);
+        } catch (e: any) {
+          log(`onboard failed (non-fatal): ${e?.message || e}`);
         }
 
-        // ── 6. Start openclaw gateway (needed before the bot can receive messages) ──
-        // Spawn it detached so it keeps running after this handler returns.
+        // ── 4. Kill any existing gateway, then start a fresh one so it picks up the new config ──
         const { spawn } = await import('child_process');
+        log('Killing any existing gateway…');
+        await killGateway().catch(() => {});
+        await new Promise(r => setTimeout(r, 1500)); // let the port/lock release
+
+        log('Spawning: openclaw gateway');
         try {
           const gatewayProc = spawn('openclaw', ['gateway'], IS_WIN
             ? { env: cleanEnv, detached: false, stdio: 'ignore' as const, shell: true }
             : { env: cleanEnv, detached: true,  stdio: 'ignore' as const });
           gatewayProc.unref();
-          // Give the gateway a moment to start polling Telegram
-          await new Promise(r => setTimeout(r, 5000));
-        } catch {
-          // non-fatal — gateway may already be running as a daemon
+          log('Gateway spawned — waiting 8s for it to connect to Telegram…');
+          await new Promise(r => setTimeout(r, 8000));
+          log('Gateway wait complete');
+        } catch (e: any) {
+          log(`Gateway spawn failed (non-fatal): ${e?.message || e}`);
         }
 
         // ── 5. Open bot in Telegram Web, send a message to trigger pairing request ──
@@ -247,9 +321,27 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         let pairingError = '';
         try {
           const setupProfileDir = path.join(getGoogleProfilesDir(), profileName);
+          log(`Profile dir: ${setupProfileDir} (exists=${fs.existsSync(setupProfileDir)})`);
           if (!fs.existsSync(setupProfileDir)) {
             pairingError = `Profile dir not found: ${setupProfileDir}`;
           } else {
+            // Check gateway status before opening Chrome — confirm Telegram is connected
+            await new Promise(resolve => {
+              const { exec } = require('child_process');
+              exec('openclaw channels status', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
+                (_err: any, stdout: string, stderr: string) => {
+                  log(`pre-pairing status: ${(stdout + stderr).replace(/\n/g, ' ').trim()}`);
+                  resolve(undefined);
+                }
+              );
+            });
+
+            // Give Chrome time to fully release the profile lock from the preceding
+            // telegram:setup browser session before opening the same profile dir again.
+            log('Waiting 4s for Chrome profile lock to release…');
+            await new Promise(r => setTimeout(r, 4000));
+            log('Opening Chrome to send /start to bot…');
+
             const { chromium: chromiumExtra } = await import('playwright-extra');
             const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
             chromiumExtra.use(StealthPlugin());
@@ -266,98 +358,122 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               ],
               ignoreDefaultArgs: ['--enable-automation'],
             });
+            log('Chrome context opened');
 
             const pages = context.pages();
             const page = pages.length > 0 ? pages[0] : await context.newPage();
 
             try {
-              await page.goto(`https://web.telegram.org/k/#@${botUsername}`, {
+              const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
+              log(`Navigating to ${tgUrl}`);
+              await page.goto(tgUrl, {
                 waitUntil: 'load',
                 timeout: 30_000,
               });
+              log('Page loaded');
 
               // Wait for the chats page to confirm we are logged in (single unique ID — no strict mode issues)
               const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+              log(`loggedIn=${loggedIn}`);
               if (!loggedIn) throw new Error('Telegram session not found — please run Telegram setup first.');
 
-              // Click the START button if present (first time opening the bot)
-              const startSelectors = [
-                '.bot-start-btn',
-                'button.btn-primary:has-text("Start")',
-                'button.btn-primary:has-text("START")',
-                '.start-bot-btn',
-                'button:has-text("Start")',
-              ];
-              for (const sel of startSelectors) {
-                try {
-                  const btn = page.locator(sel).first();
-                  if (await btn.isVisible({ timeout: 1500 })) {
-                    await btn.click();
-                    await page.waitForTimeout(2000);
-                    break;
-                  }
-                } catch { /* keep trying */ }
+              // Wait for the bot chat to fully render after navigation
+              await page.waitForTimeout(3000);
+
+              // Click the START button if present (first time opening the bot).
+              // The button is: <button class="chat-input-control-button …"><div class="c-ripple"></div><span class="i18n">START</span></button>
+              // Use force:true because the c-ripple div inside intercepts pointer events.
+              const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
+              let startClicked = false;
+              try {
+                if (await startBtn.isVisible({ timeout: 5000 })) {
+                  log('START button found — clicking…');
+                  await startBtn.click({ force: true, timeout: 5000 });
+                  await page.waitForTimeout(2000);
+                  startClicked = true;
+                }
+              } catch (e: any) {
+                log(`START button click failed: ${e?.message?.split('\n')[0]}`);
               }
+              if (!startClicked) log('No START button visible — bot chat already open');
 
               // Send /start — this registers the user with the gateway and triggers a pairing request
+              log('Waiting for message input…');
               await page.waitForSelector('.input-message-input', { timeout: 20_000 });
-              await page.locator('.input-message-input').first().click({ timeout: 5000 });
+              // Use force:true to bypass the ripple overlay that intercepts pointer events
+              await page.locator('.input-message-input').first().click({ force: true, timeout: 5000 });
               await page.waitForTimeout(500);
+              log('Typing /start…');
               await page.keyboard.type('/start');
               await page.waitForTimeout(600);
               // Dismiss autocomplete popup before pressing Enter (otherwise Telegram substitutes /status)
               await page.keyboard.press('Escape');
               await page.waitForTimeout(300);
               await page.keyboard.press('Enter');
+              log('/start sent — waiting 8s for gateway to receive it…');
 
               // Give the gateway time to receive the message and queue the pairing request
               await page.waitForTimeout(8000);
+              log('Done waiting');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
+              log(`Inner error: ${pairingError}`);
             } finally {
               await context.close().catch(() => {});
+              log('Chrome context closed');
             }
           }
         } catch (outerErr) {
           pairingError = outerErr instanceof Error ? outerErr.message : String(outerErr);
+          log(`Outer error: ${pairingError}`);
         }
+
+        log(`pairingError="${pairingError}"`);
 
         // ── 6. Fetch pairing code via CLI, then approve ──
         if (!pairingError) {
           // Poll `openclaw pairing list telegram` a few times — the request may take a moment
           for (let attempt = 0; attempt < 5 && !pairingCode; attempt++) {
-            try {
-              const { stdout } = await execAsync('openclaw pairing list telegram', {
-                env: cleanEnv,
-                timeout: 10_000,
-                maxBuffer: 1024 * 1024,
-              });
-              // Output lines look like: "KRHGV7EP  telegram  <user-id>  <timestamp>"
-              const match = stdout.match(/\b([A-Z0-9]{6,12})\b/);
-              if (match) {
-                pairingCode = match[1];
-              } else if (attempt < 4) {
-                await new Promise(r => setTimeout(r, 3000));
-              }
-            } catch {
-              if (attempt < 4) await new Promise(r => setTimeout(r, 3000));
+            log(`Polling pairing list (attempt ${attempt + 1}/5)…`);
+            // execAsync throws on non-zero exit — use exec directly so we always get stdout/stderr
+            const rawOut: string = await new Promise(resolve => {
+              const { exec } = require('child_process');
+              exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
+                (err: any, stdout: string, stderr: string) => {
+                  log(`pairing list exit=${err?.code ?? 0} stdout="${stdout.trim()}" stderr="${stderr.trim()}"`);
+                  resolve(stdout || '');
+                }
+              );
+            });
+            // Output lines look like: "KRHGV7EP  telegram  <user-id>  <timestamp>"
+            const match = rawOut.match(/\b([A-Z0-9]{6,12})\b/);
+            if (match) {
+              pairingCode = match[1];
+              log(`Pairing code found: ${pairingCode}`);
+            } else if (attempt < 4) {
+              log('No code yet — waiting 3s…');
+              await new Promise(r => setTimeout(r, 3000));
             }
           }
 
           if (pairingCode) {
+            log(`Approving pairing code: ${pairingCode}`);
             try {
               await execAsync(`openclaw pairing approve telegram ${pairingCode}`, {
                 env: cleanEnv,
                 timeout: 30_000,
                 maxBuffer: 1024 * 1024,
               });
-            } catch {
-              // non-fatal
+            } catch (approveErr: any) {
+              log(`pairing approve error: ${approveErr?.message || approveErr}`);
             }
           } else {
             pairingError = 'No pending pairing request found after /start.';
+            log(pairingError);
           }
         }
+
+        log(`Final: pairingCode="${pairingCode}" pairingError="${pairingError}"`);
 
         // ── 8. Verify channels status ──
         let statusOutput = '';
@@ -368,8 +484,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             maxBuffer: 1024 * 1024,
           });
           statusOutput = stdout.trim();
-        } catch {
-          // non-fatal
+          log(`channels status: ${statusOutput}`);
+        } catch (e: any) {
+          log(`channels status failed: ${e?.message || e}`);
         }
 
         return { success: true, alreadyInstalled, pairingCode, pairingError, status: statusOutput, configPath };
