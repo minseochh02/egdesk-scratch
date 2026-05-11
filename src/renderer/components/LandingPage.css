@@ -748,3 +748,20 @@
   background: #f8f9fa;
   color: #212529;
 }
+
+.egdesk-landing-pageindex-card:hover {
+  border-color: #a78bfa;
+}
+
+.egdesk-landing-pageindex-card:hover::before {
+  background: linear-gradient(90deg, #a78bfa, #7c3aed);
+}
+
+.egdesk-landing-pageindex-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+}
+
+.egdesk-landing-pageindex-card:hover .egdesk-landing-feature-tag {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
