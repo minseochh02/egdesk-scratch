@@ -35,6 +35,11 @@ function makeCleanEnv(homeDir: string): NodeJS.ProcessEnv {
     // npm global CLI tools + Node.js runtime on Windows
     const appData = env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
     const extraWin = [
+      // Windows system dirs first — where.exe, cmd.exe, etc. live here
+      'C:\\Windows\\System32',
+      'C:\\Windows',
+      'C:\\Windows\\System32\\Wbem',
+      // npm global CLI tools + Node.js runtime
       path.join(appData, 'npm'),                           // npm install -g destination (default)
       'C:\\Program Files\\nodejs',                          // Node.js + npm installed by the installer
       'C:\\Program Files (x86)\\nodejs',                   // 32-bit Node.js installer
@@ -196,10 +201,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
 
         // ── 1. Install openclaw if not on PATH ──
+        // Use `openclaw --version` rather than `where/which` because `where.exe` itself
+        // lives in C:\Windows\System32 and may not be in our custom PATH.
         let alreadyInstalled = false;
         try {
-          const { stdout: whichOut } = await execAsync(`${WHICH} openclaw`, { env: cleanEnv, timeout: 5_000 });
-          log(`openclaw binary: ${whichOut.trim()}`);
+          const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
+          log(`openclaw already installed: ${verOut.trim()}`);
           alreadyInstalled = true;
         } catch {
           log('openclaw not on PATH — installing via npm…');
@@ -262,7 +269,8 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         };
         // Strip keys that openclaw's strict schema rejects
         delete updated.models;
-        delete updated.mcp;     // wrong key (we use mcpServers with stdio format now)
+        delete updated.mcp;
+        delete updated.mcpServers;
         delete updated.plugins; // not a valid schema key — Kakao is registered as a plugin via CLI
 
         fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
@@ -277,38 +285,19 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           log(`openclaw doctor --fix (non-fatal): ${(e?.stdout || e?.stderr || e?.message || '').trim().slice(0, 200)}`);
         }
 
-        // ── 2b. Register EGDesk MCP server via mcpServers (stdio bridge) ──
-        // openclaw only supports stdio-based MCP. Our server is HTTP, so we use
-        // mcp-remote to bridge: openclaw spawns mcp-remote which proxies to localhost:8080.
-        // We write mcpServers AFTER doctor so doctor doesn't strip it.
+        // ── 2b. Update last-good with the doctor-validated config ──
+        // This version of openclaw rejects both "mcp" and "mcpServers" keys — skip MCP config.
+        // The EGDesk local server is still used for Kakao webhooks via the tunnel.
         try {
-          // Ensure mcp-remote is installed globally so openclaw can spawn it
-          try {
-            await execAsync(`${WHICH} mcp-remote`, { env: cleanEnv, timeout: 5_000 });
-            log('mcp-remote already on PATH');
-          } catch {
-            log('Installing mcp-remote globally…');
-            await execAsync('npm install -g mcp-remote', {
-              env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024,
-            });
-            log('mcp-remote installed');
-          }
-
           const freshCfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-          // mcpServers uses stdio transport — mcp-remote bridges HTTP → stdio
-          const mcpArgs = ['http://localhost:8080/mcp'];
-          if (egdeskApiKey) mcpArgs.push('--header', `X-Api-Key:${egdeskApiKey}`);
-          freshCfg.mcpServers = {
-            ...(freshCfg.mcpServers ?? {}),
-            egdesk: { command: 'mcp-remote', args: mcpArgs },
-          };
-
+          // Strip any leftover MCP keys from previous setup attempts
+          delete freshCfg.mcp;
+          delete freshCfg.mcpServers;
           fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
           fs.writeFileSync(lastGoodPath, JSON.stringify(freshCfg, null, 2));
-          log(`mcpServers.egdesk registered (mcp-remote → http://localhost:8080/mcp)`);
+          log('Config finalized (no MCP keys — not supported by this openclaw version)');
         } catch (e: any) {
-          log(`MCP registration (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
+          log(`Config finalize (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
 
         // ── 3. Install Kakao plugin via openclaw plugins install ──
@@ -596,17 +585,10 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     try {
       // ── 0. Verify openclaw is on PATH ──
       try {
-        const { stdout: whichOut } = await execAsync(`${WHICH} openclaw`, { env: cleanEnv, timeout: 5000 });
-        log(`openclaw binary: ${whichOut.trim()}`);
-      } catch {
-        log('⚠️ openclaw not found on PATH — install may have failed');
-      }
-
-      try {
-        const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 5000 });
+        const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
         log(`openclaw version: ${verOut.trim()}`);
       } catch (e: any) {
-        log(`openclaw --version failed: ${e?.message || e}`);
+        log(`⚠️ openclaw not found on PATH — ${e?.message || e}`);
       }
 
       // ── 1. Run openclaw onboard to configure Gemini as the provider ──
