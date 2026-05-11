@@ -71,6 +71,7 @@ import SchedulerStatus from './components/SchedulerStatus/SchedulerStatus';
 import RookiePage from './components/Rookie/RookiePage';
 import OpenClawPage from './components/OpenClaw/OpenClawPage';
 import LawyerPage from './components/Lawyer/LawyerPage';
+import PageIndexPage from './components/PageIndex/PageIndexPage';
 import openclawIcon from '../../assets/openclaw.svg';
 import ollamaIcon from '../../assets/ollama.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
@@ -311,7 +312,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.13</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.14</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2648,6 +2649,7 @@ function NavigationBar({
     '/user-data',
     '/neuron',
     '/ai-center',
+    '/pageindex',
   ].some(path => location.pathname.startsWith(path));
 
   const isSystemActive = [
@@ -2772,6 +2774,10 @@ function NavigationBar({
             <Link to="/lawyer" className={`nav-dropdown-item ${location.pathname === '/lawyer' ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faGavel} fixedWidth />
               <span>Lawyer</span>
+            </Link>
+            <Link to="/pageindex" className={`nav-dropdown-item ${location.pathname.startsWith('/pageindex') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faBrain} fixedWidth />
+              <span>PageIndex</span>
             </Link>
             <div
               className={`nav-dropdown-item ${location.pathname.startsWith('/scheduler-status') ? 'active' : ''}`}
@@ -3419,6 +3425,7 @@ function AppContent() {
             <Route path="/rookie" element={<RookiePage />} />
             <Route path="/openclaw" element={<OpenClawPage />} />
             <Route path="/lawyer" element={<LawyerPage />} />
+            <Route path="/pageindex" element={<PageIndexPage />} />
 
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

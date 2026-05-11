@@ -29,6 +29,7 @@ import { InternalKnowledgeMCPService } from '../internal-knowledge/internal-know
 import { BrowserRecordingMCPService } from '../browser-recording/browser-recording-mcp-service';
 import { AICenterMCPService } from '../ai-center/ai-center-mcp-service';
 import { KoreanLawMCPService } from '../korean-law/korean-law-mcp-service';
+import { PageIndexMCPService } from '../pageindex/pageindex-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 import { getSQLiteManager } from '../../sqlite/manager';
@@ -140,7 +141,8 @@ export class LocalServerManager {
   private browserRecordingMCPService: BrowserRecordingMCPService | null = null;
   private aiCenterMCPService: AICenterMCPService | null = null;
   private koreanLawMCPService: KoreanLawMCPService | null = null;
-  
+  private pageIndexMCPService: PageIndexMCPService | null = null;
+
   // SSE Handlers
   private gmailSSEHandler: SSEMCPHandler | null = null;
   private filesystemSSEHandler: SSEMCPHandler | null = null;
@@ -508,6 +510,12 @@ export class LocalServerManager {
       return;
     }
 
+    // PageIndex MCP Server endpoints (REST API)
+    if (url.startsWith('/pageindex')) {
+      await this.handlePageIndexEndpoint(req, res, url);
+      return;
+    }
+
     // Business Identity & Company Research MCP Server endpoints (REST API)
     // Provides access to: internal knowledge documents, business identity snapshots, company research
     if (url.startsWith('/internal-knowledge')) {
@@ -589,6 +597,8 @@ export class LocalServerManager {
         '/browser-recording/tools/call - Call a Browser Recording tool',
         '/korean-law/tools - List Korean Law tools',
         '/korean-law/tools/call - Call a Korean Law tool',
+        '/pageindex/tools - List PageIndex tools',
+        '/pageindex/tools/call - Call a PageIndex tool',
         'POST /kakao/skill - KakaoTalk skill webhook endpoint',
         'POST /webhook/start - Webhook start endpoint',
         '/test-gmail - Test endpoint (dev only)'
@@ -721,6 +731,16 @@ export class LocalServerManager {
       this.koreanLawMCPService = new KoreanLawMCPService();
     }
     return this.koreanLawMCPService;
+  }
+
+  /**
+   * Get or create PageIndex MCP Service
+   */
+  private getPageIndexMCPService(): PageIndexMCPService {
+    if (!this.pageIndexMCPService) {
+      this.pageIndexMCPService = new PageIndexMCPService();
+    }
+    return this.pageIndexMCPService;
   }
 
   /**
@@ -1704,6 +1724,49 @@ export class LocalServerManager {
   }
 
   /**
+   * Handle PageIndex MCP endpoint
+   */
+  private async handlePageIndexEndpoint(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    if (url === '/pageindex/tools' && req.method === 'GET') {
+      const service = this.getPageIndexMCPService();
+      res.writeHead(200);
+      res.end(JSON.stringify(service.listTools(), null, 2));
+      return;
+    }
+
+    if (url === '/pageindex/tools/call' && req.method === 'POST') {
+      try {
+        const body = await this.parseRequestBody(req);
+        const { tool, arguments: args } = body;
+
+        if (!tool) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing "tool" parameter' }));
+          return;
+        }
+
+        console.log(`📄 Calling PageIndex tool: ${tool}`);
+        const service = this.getPageIndexMCPService();
+        const result = await service.executeTool(tool, args || {});
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, result }, null, 2));
+      } catch (error) {
+        console.error('Error calling PageIndex tool:', error);
+        res.writeHead(500);
+        res.end(JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }));
+      }
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({ success: false, error: 'PageIndex endpoint not found' }));
+  }
+
+  /**
    * Handle Business Identity & Company Research MCP endpoint
    * Provides access to internal knowledge, business identity snapshots, and company research
    */
@@ -2568,6 +2631,11 @@ export class LocalServerManager {
         name: 'korean-law',
         enabled: true, // Enabled by default
         description: 'Korean Law MCP Server - Search laws, precedents, administrative rules via 법제처 API'
+      },
+      {
+        name: 'pageindex',
+        enabled: true, // Enabled by default
+        description: 'PageIndex MCP Server - Vectorless RAG: index PDFs into hierarchical trees and retrieve by page range'
       }
     ];
   }

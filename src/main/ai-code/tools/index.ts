@@ -67,3 +67,8 @@ export { CompanyResearchGetByDomainTool } from './companyresearch-get-by-domain'
 export { CompanyResearchSearchTool } from './companyresearch-search';
 export { KoreanLawSearchTool } from './korean-law-search';
 export { KoreanLawGetTextTool, KoreanLawGetDecisionTool } from './korean-law-get-text';
+export { PageIndexIndexDocumentTool } from './pageindex-index-document';
+export { PageIndexListDocumentsTool } from './pageindex-list-documents';
+export { PageIndexGetDocumentTool } from './pageindex-get-document';
+export { PageIndexGetStructureTool } from './pageindex-get-structure';
+export { PageIndexGetPagesTool } from './pageindex-get-pages';

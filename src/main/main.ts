@@ -127,6 +127,7 @@ import { registerAppsScriptToolHandlers } from './ai-code/tool-executor';
 import { fetchWebsiteContent } from './web/content-fetcher';
 import { crawlHomepageForBusinessIdentity } from './web/homepage-crawler';
 import { registerKoreanLawHandlers } from './korean-law-handlers';
+import { registerPageIndexHandlers } from './pageindex-handlers';
 import { crawlMultiplePagesForBusinessIdentity } from './web/multi-page-crawler';
 import { generateBusinessIdentity, generateSnsPlan } from './web/ai-search';
 import { AuthContext } from './sns/instagram/login';
@@ -4036,6 +4037,9 @@ const createWindow = async () => {
 
     // Register Korean Law (법제처) search handlers
     registerKoreanLawHandlers();
+
+    // Register PageIndex handlers (vectorless PDF RAG)
+    registerPageIndexHandlers();
 
     // Register Rookie AI Excel Analysis handler (from buffer)
     ipcMain.handle('rookie:analyze-excel-from-buffer', async (_event, { buffer, fileName, forceRegenerate = false, availableSourceFiles = [] }) => {

@@ -4441,8 +4441,8 @@ test('recorded test', async ({ page }) => {
           for (const line of raw.split(/\n/)) {
             const trimmed = line.trim();
             if (!trimmed) continue;
-            // Match phone pattern using literal space only (no \s) so it can't span lines
-            const match = trimmed.match(/\+?[\d][\d -(). ]{5,}\d/);
+            // Match phone pattern — \- is escaped so hyphen is literal, not a range indicator
+            const match = trimmed.match(/\+?[\d][\d ()\-. ]{5,}\d/);
             if (match && match[0].replace(/\D/g, '').length >= 7) return match[0].trim();
           }
           return null;
@@ -4451,10 +4451,11 @@ test('recorded test', async ({ page }) => {
         // Walk all text nodes in the DOM — finds phone numbers regardless of obfuscated class names.
         // Scoped to the phone anchor so we don't accidentally pick up unrelated numbers on the page.
         const phoneAnchor = page.locator('a[href*="phone"]').first();
-        // Use count() instead of isVisible() — anchor may exist in DOM but not be "visible" (e.g. overflow-hidden)
+        // Use count() instead of isVisible() — anchor may exist but not be in viewport
         const anchorCount = await phoneAnchor.count();
 
         if (anchorCount > 0) {
+          // Walk all text nodes inside the phone anchor, return those with >= 7 digits
           const candidates = await phoneAnchor.evaluate((el) => {
             const results: string[] = [];
             const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -4465,26 +4466,8 @@ test('recorded test', async ({ page }) => {
             }
             return results;
           });
+          // candidates[0] is the first phone-shaped text node in the anchor
           phone = firstPhone(candidates[0] ?? null);
-        }
-
-        if (!phone) {
-          // Fallback: walk the entire page body for any phone-shaped text node
-          // No ^ / $ anchors so partial matches inside a text node are found too
-          const allPhones = await page.evaluate(() => {
-            const results: string[] = [];
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-            let node: Text | null;
-            while ((node = walker.nextNode() as Text | null)) {
-              const text = (node.textContent ?? '').trim();
-              const m = text.match(/\+?[\d][\d()\-. ]{5,}\d/);
-              if (m && m[0].replace(/\D/g, '').length >= 7) {
-                results.push(m[0].trim());
-              }
-            }
-            return results;
-          });
-          phone = allPhones[0] ?? null;
         }
 
         if (phone) {

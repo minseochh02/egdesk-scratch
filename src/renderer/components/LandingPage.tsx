@@ -26,6 +26,7 @@ import {
   faNetworkWired,
   faMicrochip,
   faGavel,
+  faBrain,
 } from '../utils/fontAwesomeIcons';
 import openclawIcon from '../../../assets/openclaw.svg';
 import ollamaIcon from '../../../assets/ollama.svg';
@@ -366,6 +367,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Legal AI</span>
                 <span className="egdesk-landing-feature-tag">Contract Analysis</span>
                 <span className="egdesk-landing-feature-tag">Compliance</span>
+              </div>
+            </Link>
+
+            <Link to="/pageindex" className="egdesk-landing-action-card egdesk-landing-pageindex-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faBrain} />
+              </div>
+              <h3 className="egdesk-landing-card-title">PageIndex</h3>
+              <p className="egdesk-landing-card-description">
+                Index PDFs into hierarchical trees for AI-powered smart retrieval.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">PDF Indexing</span>
+                <span className="egdesk-landing-feature-tag">AI Structure</span>
+                <span className="egdesk-landing-feature-tag">Smart Retrieval</span>
               </div>
             </Link>
 

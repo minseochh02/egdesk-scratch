@@ -1,0 +1,433 @@
+/* PageIndex Page Styles */
+
+.pi-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary, #0f1117);
+  color: var(--text-primary, #e2e8f0);
+  font-family: var(--font-main, 'Inter', sans-serif);
+  overflow: hidden;
+}
+
+/* ─── Header ─────────────────────────────────────────────── */
+
+.pi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color, #2d3748);
+  flex-shrink: 0;
+}
+
+.pi-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.pi-header-icon {
+  font-size: 1.75rem;
+  color: #a78bfa;
+}
+
+.pi-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.pi-subtitle {
+  margin: 0.125rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #718096);
+}
+
+.pi-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────── */
+
+.pi-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.pi-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pi-btn-primary {
+  background: #7c3aed;
+  color: #fff;
+}
+
+.pi-btn-primary:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.pi-btn-secondary {
+  background: var(--bg-secondary, #1e2533);
+  color: var(--text-primary, #e2e8f0);
+  border: 1px solid var(--border-color, #2d3748);
+}
+
+.pi-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover, #2d3748);
+}
+
+.pi-btn-danger {
+  background: transparent;
+  color: #fc8181;
+  border: 1px solid #fc8181;
+  padding: 0.4rem 0.6rem;
+}
+
+.pi-btn-danger:hover {
+  background: rgba(252, 129, 129, 0.1);
+}
+
+/* ─── Index Form ──────────────────────────────────────────── */
+
+.pi-index-form {
+  background: var(--bg-secondary, #1e2533);
+  border-bottom: 1px solid var(--border-color, #2d3748);
+  padding: 1rem 1.5rem;
+  flex-shrink: 0;
+}
+
+.pi-form-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.pi-form-row {
+  margin-bottom: 0.5rem;
+}
+
+.pi-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-primary, #0f1117);
+  border: 1px solid var(--border-color, #2d3748);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e8f0);
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.pi-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+}
+
+.pi-file-pick {
+  width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pi-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.pi-indexing-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #718096);
+  font-style: italic;
+}
+
+/* ─── Error ───────────────────────────────────────────────── */
+
+.pi-error {
+  padding: 0.75rem 1.5rem;
+  background: rgba(252, 129, 129, 0.1);
+  border-bottom: 1px solid rgba(252, 129, 129, 0.3);
+  color: #fc8181;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+/* ─── Main Content ────────────────────────────────────────── */
+
+.pi-content {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+.pi-doc-list {
+  border-right: 1px solid var(--border-color, #2d3748);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.pi-structure-panel {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Section Header ──────────────────────────────────────── */
+
+.pi-section-header {
+  padding: 0.875rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--border-color, #2d3748);
+  flex-shrink: 0;
+}
+
+.pi-section-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary, #718096);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pi-count {
+  background: var(--bg-secondary, #1e2533);
+  border-radius: 10px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #718096);
+}
+
+/* ─── Loading & Empty ─────────────────────────────────────── */
+
+.pi-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 2rem 1rem;
+  color: var(--text-secondary, #718096);
+  font-size: 0.875rem;
+  justify-content: center;
+}
+
+.pi-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+  color: var(--text-secondary, #718096);
+  text-align: center;
+  gap: 0.5rem;
+}
+
+.pi-empty-icon {
+  font-size: 2rem;
+  opacity: 0.4;
+  margin-bottom: 0.5rem;
+}
+
+.pi-empty p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.pi-empty-hint {
+  font-size: 0.8rem !important;
+  color: var(--text-tertiary, #4a5568) !important;
+}
+
+/* ─── Document Card ───────────────────────────────────────── */
+
+.pi-doc-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color, #2d3748);
+  transition: background 0.15s;
+  cursor: default;
+}
+
+.pi-doc-card:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.03));
+}
+
+.pi-doc-card-selected {
+  background: rgba(124, 58, 237, 0.08);
+  border-left: 3px solid #7c3aed;
+}
+
+.pi-doc-card-icon {
+  color: #a78bfa;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.pi-doc-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pi-doc-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pi-doc-card-description {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #718096);
+  margin-top: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pi-doc-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary, #4a5568);
+  margin-top: 0.3rem;
+}
+
+.pi-dot {
+  opacity: 0.5;
+}
+
+.pi-doc-card-actions {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* ─── Structure View ──────────────────────────────────────── */
+
+.pi-structure-view {
+  padding: 1rem 1.25rem;
+  flex: 1;
+}
+
+.pi-structure-doc-info {
+  margin-bottom: 1rem;
+  padding-bottom: 0.875rem;
+  border-bottom: 1px solid var(--border-color, #2d3748);
+}
+
+.pi-structure-doc-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.pi-structure-doc-desc {
+  margin: 0 0 0.375rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #718096);
+}
+
+.pi-structure-doc-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-tertiary, #4a5568);
+}
+
+/* ─── Tree ────────────────────────────────────────────────── */
+
+.pi-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.pi-tree-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.pi-tree-node-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.375rem;
+  border-radius: 5px;
+  transition: background 0.1s;
+}
+
+.pi-tree-node-clickable {
+  cursor: pointer;
+}
+
+.pi-tree-node-clickable:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+}
+
+.pi-tree-node-toggle {
+  width: 1rem;
+  color: #a78bfa;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.pi-tree-node-leaf {
+  color: var(--text-tertiary, #4a5568);
+}
+
+.pi-tree-node-title {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.pi-tree-node-pages {
+  font-size: 0.75rem;
+  color: var(--text-tertiary, #4a5568);
+  flex-shrink: 0;
+}
+
+.pi-tree-node-summary {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #718096);
+  line-height: 1.5;
+  padding: 0.25rem 0 0.25rem 1.5rem;
+  font-style: italic;
+}
+
+.pi-tree-node-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  border-left: 1px solid var(--border-color, #2d3748);
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+}
