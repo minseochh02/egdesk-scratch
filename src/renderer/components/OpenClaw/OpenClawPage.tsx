@@ -533,7 +533,9 @@ const OpenClawPage: React.FC = () => {
       addLog('Starting OpenClaw gateway…');
       const startResult = await (window as any).electron.debug.openclaw.start();
       if (startResult?.success === false) {
-        addLog(`⚠️ Gateway start failed: ${startResult.error || 'unknown error'}`);
+        const err = startResult.error || 'unknown error';
+        addLog(`❌ Gateway start failed: ${err}`);
+        setError(`Gateway start failed: ${err}`);
       } else {
         addLog('✅ Gateway started.');
         setGatewayRunning(true);
@@ -777,7 +779,7 @@ const OpenClawPage: React.FC = () => {
             </p>
           )}
 
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
           <button
             onClick={handleReset}
             style={{
@@ -881,7 +883,7 @@ const OpenClawPage: React.FC = () => {
             </p>
           )}
 
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
           <button
             onClick={handleReset}
             style={{
@@ -919,7 +921,7 @@ const OpenClawPage: React.FC = () => {
             Signing up on GitHub using your Google account.
             Complete any CAPTCHA or email verification in the browser, then close it.
           </p>
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
           <button
             onClick={handleReset}
             style={{
@@ -946,7 +948,7 @@ const OpenClawPage: React.FC = () => {
           <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
             Downloading and configuring OpenClaw with your Telegram bot token…
           </p>
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
         </div>
       )}
 
@@ -1034,7 +1036,7 @@ const OpenClawPage: React.FC = () => {
             </p>
           )}
 
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
           <button
             onClick={handleReset}
             style={{
@@ -1062,7 +1064,7 @@ const OpenClawPage: React.FC = () => {
             Creating a KakaoTalk channel and chatbot. The browser will open automatically —
             this may take several minutes while waiting for callback approval.
           </p>
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
         </div>
       )}
 
@@ -1439,7 +1441,7 @@ const OpenClawPage: React.FC = () => {
             🔄 Reset & Start Over
           </button>
 
-          <Console logs={logs} />
+          <Console logs={logs} onClear={() => setLogs([])} />
         </div>
       )}
 
@@ -1447,24 +1449,72 @@ const OpenClawPage: React.FC = () => {
   );
 };
 
-const Console: React.FC<{ logs: string[] }> = ({ logs }) => {
+const Console: React.FC<{ logs: string[]; onClear?: () => void }> = ({ logs, onClear }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs]);
+
   if (logs.length === 0) return null;
   return (
-    <div style={{ marginTop: '28px', textAlign: 'left' }}>
-      <div style={{
-        backgroundColor: '#111',
-        border: '1px solid #333',
-        borderRadius: '6px',
-        padding: '10px',
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#ccc',
-        maxHeight: '160px',
-        overflowY: 'auto',
-      }}>
-        {logs.map((log, i) => (
-          <div key={i} style={{ marginBottom: '3px' }}>{log}</div>
-        ))}
+    <div style={{ marginTop: '28px', textAlign: 'left', width: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <div style={{ fontSize: '11px', color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          System Logs
+        </div>
+        {onClear && (
+          <button
+            onClick={onClear}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#444',
+              fontSize: '10px',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: '0 4px'
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <div
+        ref={scrollRef}
+        style={{
+          backgroundColor: '#0a0a0a',
+          border: '1px solid #222',
+          borderRadius: '6px',
+          padding: '12px',
+          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+          fontSize: '11px',
+          lineHeight: '1.5',
+          color: '#aaa',
+          maxHeight: '300px',
+          overflowY: 'auto',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)',
+        }}
+      >
+        {logs.map((log, i) => {
+          const isError = log.includes('❌') || log.includes('⚠️') || log.includes('Error:') || log.includes('[CLI Error]');
+          const isSuccess = log.includes('✅');
+          return (
+            <div
+              key={i}
+              style={{
+                marginBottom: '4px',
+                color: isError ? '#f87171' : isSuccess ? '#4ade80' : '#aaa',
+                borderLeft: isError ? '2px solid #ef4444' : isSuccess ? '2px solid #22c55e' : 'none',
+                paddingLeft: isError || isSuccess ? '8px' : '0',
+              }}
+            >
+              {log}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

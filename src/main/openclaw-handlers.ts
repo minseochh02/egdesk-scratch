@@ -84,6 +84,7 @@ async function killGateway(): Promise<void> {
     ? [
         'taskkill /F /IM openclaw.exe /T',
         'taskkill /F /FI "COMMANDLINE eq *openclaw*gateway*" /T',
+        'taskkill /F /FI "WINDOWTITLE eq OpenClaw Gateway*" /T',
       ]
     : [
         'pkill -f "openclaw gateway"',
@@ -93,11 +94,12 @@ async function killGateway(): Promise<void> {
 
   for (const cmd of cmds) {
     try {
+      // Don't return early — try all kill methods to be sure
       await execAsync(cmd, { timeout: 5_000 });
-      await new Promise(r => setTimeout(r, 1500));
-      return;
-    } catch { /* not found — try next */ }
+    } catch { /* ignore errors if process not found */ }
   }
+  // Wait a bit for OS to release ports
+  await new Promise(r => setTimeout(r, 2000));
 }
 
 export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): void {
@@ -194,25 +196,38 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           cleanEnv.GEMINI_API_KEY = googleKey.fields.apiKey;
           cleanEnv.GOOGLE_API_KEY = googleKey.fields.apiKey;
           cleanEnv.GOOGLE_GENERATIVE_AI_API_KEY = googleKey.fields.apiKey;
+        } else {
+          return { success: false, error: 'No Gemini API key found. Please add a Google API key in Settings > AI Keys first.' };
         }
       } catch { /* non-fatal */ }
 
       try {
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
 
-        // ── 1. Install openclaw if not on PATH ──
-        // Use `openclaw --version` rather than `where/which` because `where.exe` itself
-        // lives in C:\Windows\System32 and may not be in our custom PATH.
+        // ── 1. Install openclaw if not on PATH or corrupted ──
+        // Use `openclaw --version` to detect both missing and corrupted installs.
         let alreadyInstalled = false;
         try {
           const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
           log(`openclaw already installed: ${verOut.trim()}`);
           alreadyInstalled = true;
-        } catch {
-          log('openclaw not on PATH — installing via npm…');
+        } catch (verErr: any) {
+          log(`openclaw check failed (${(verErr?.message || '').split('\n')[0].slice(0, 120)}) — reinstalling…`);
         }
 
         if (!alreadyInstalled) {
+          // Uninstall first to clear any corrupted state, then reinstall clean.
+          log('Running: npm uninstall -g openclaw');
+          try {
+            await execAsync('npm uninstall -g openclaw', {
+              env: cleanEnv,
+              timeout: 30_000,
+              maxBuffer: 5 * 1024 * 1024,
+            });
+            log('npm uninstall complete');
+          } catch (unErr: any) {
+            log(`npm uninstall (non-fatal): ${(unErr?.message || '').slice(0, 100)}`);
+          }
           log('Running: npm install -g openclaw@latest');
           await execAsync('npm install -g openclaw@latest', {
             env: cleanEnv,
@@ -384,10 +399,6 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               );
             });
 
-            // Give Chrome time to fully release the profile lock from the preceding
-            // telegram:setup browser session before opening the same profile dir again.
-            log('Waiting 4s for Chrome profile lock to release…');
-            await new Promise(r => setTimeout(r, 4000));
             log('Opening Chrome to send /start to bot…');
 
             const { chromium: chromiumExtra } = await import('playwright-extra');
@@ -471,12 +482,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               try { msgCountBefore = await page.locator('.message').count(); } catch { /* ignore */ }
 
               await page.keyboard.press('Enter');
-              log('/start sent — polling chat for bot response (up to 15s)…');
+              log('/start sent — polling chat for bot response (up to 30s)…');
 
-              // Poll every 2s for up to 15s — stop as soon as the bot replies with the pairing code
+              // Poll every 2s for up to 30s — stop as soon as the bot replies with the pairing code
               const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
               let waited = 0;
-              while (waited < 15000) {
+              while (waited < 30000) {
                 await page.waitForTimeout(2000);
                 waited += 2000;
                 try {
@@ -494,7 +505,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
                   }
                 } catch { /* non-fatal */ }
               }
-              if (!pairingCode) log('Bot did not reply within 15s — will fall back to CLI polling.');
+              if (!pairingCode) log('Bot did not reply within 30s — will fall back to CLI polling.');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
               log(`Inner error: ${pairingError}`);
@@ -612,6 +623,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         cleanEnv.GEMINI_API_KEY = googleKey.fields.apiKey;
         cleanEnv.GOOGLE_API_KEY = googleKey.fields.apiKey;
         cleanEnv.GOOGLE_GENERATIVE_AI_API_KEY = googleKey.fields.apiKey;
+      } else {
+        log('❌ No Gemini API key found in EGDesk store.');
+        return { success: false, error: 'No Gemini API key found. Please add a Google API key in Settings > AI Keys first.', logs };
       }
     } catch { /* non-fatal */ }
 
@@ -628,12 +642,24 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     log(`Bot username: @${botUsername}`);
 
     try {
-      // ── 0. Verify openclaw is on PATH ──
+      // ── 0. Verify openclaw is on PATH & runnable ──
+      let needsInstall = false;
       try {
         const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
         log(`openclaw version: ${verOut.trim()}`);
       } catch (e: any) {
-        log(`⚠️ openclaw not found on PATH — ${e?.message || e}`);
+        log(`openclaw check failed: ${e?.message || e} — will attempt reinstall`);
+        needsInstall = true;
+      }
+
+      if (needsInstall) {
+        log('openclaw not working — installing via npm…');
+        await execAsync('npm install -g openclaw@latest', {
+          env: cleanEnv,
+          timeout: 120_000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        log('npm install complete');
       }
 
       // ── 1. Run openclaw onboard to configure Gemini as the provider ──
@@ -748,11 +774,6 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         pairingError = `Profile dir not found: ${profileDir}`;
         log(`⚠️ ${pairingError}`);
       } else {
-        // Give Chrome time to fully release the profile lock from any preceding
-        // browser sessions before opening the same profile dir again.
-        log('Waiting 4s for Chrome profile lock to release…');
-        await new Promise(r => setTimeout(r, 4000));
-
         log(`Opening Telegram Web → @${botUsername}`);
         const { chromium: chromiumExtra } = await import('playwright-extra');
         const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
@@ -765,6 +786,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           args: ['--window-size=907,867', '--no-default-browser-check', '--disable-blink-features=AutomationControlled', '--no-first-run'],
           ignoreDefaultArgs: ['--enable-automation'],
         });
+        log('Chrome context opened');
 
         const pages = context.pages();
         const page = pages.length > 0 ? pages[0] : await context.newPage();
@@ -773,45 +795,30 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
           log(`Navigating to ${tgUrl}`);
           await page.goto(tgUrl, {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'load',
             timeout: 30_000,
           });
-          log(`Page loaded. Current URL: ${page.url()}`);
+          log('Page loaded');
 
           const loggedIn2 = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
-          if (!loggedIn2) {
-            log('⚠️ Telegram session not found or page stuck — checking URL…');
-            if (page.url().includes('about:blank')) {
-              log('🔄 URL is about:blank — attempting secondary navigation…');
-              await page.goto(tgUrl, { waitUntil: 'load', timeout: 20_000 });
-            }
-            const retryLogin = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
-            if (!retryLogin) throw new Error('Telegram session not found — please run Telegram setup first.');
-          }
+          if (!loggedIn2) throw new Error('Telegram session not found — please run Telegram setup first.');
 
-          // Wait for the bot chat to fully render
+          // Wait for the bot chat to fully render after navigation
           await page.waitForTimeout(3000);
 
           // Click START button if present
           let clickedStart = false;
-          const startSelectors = [
-            'button.chat-input-control-button:has-text("START")',
-            'button.btn-primary:has-text("Start")',
-            'button:has-text("Start")',
-            '.bot-start-btn'
-          ];
-
-          for (const sel of startSelectors) {
-            try {
-              const btn = page.locator(sel).first();
-              if (await btn.isVisible({ timeout: 2000 })) {
-                log(`START button found (${sel}) — clicking…`);
-                await btn.click({ force: true, timeout: 5000 });
-                clickedStart = true;
-                await page.waitForTimeout(2000);
-                break;
-              }
-            } catch { /* try next */ }
+          // Use the exact same selectors and logic as openclaw:setup
+          const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
+          try {
+            if (await startBtn.isVisible({ timeout: 5000 })) {
+              log('START button found — clicking…');
+              await startBtn.click({ force: true, timeout: 5000 });
+              await page.waitForTimeout(2000);
+              clickedStart = true;
+            }
+          } catch (e: any) {
+            log(`START button click failed: ${e?.message?.split('\n')[0]}`);
           }
           if (!clickedStart) log('No START button visible — bot chat already open');
 
@@ -987,14 +994,18 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     let statusError = '';
 
     try {
-      const { stdout } = await execAsync('openclaw channels status', {
+      const { stdout, stderr } = await execAsync('openclaw channels status', {
         env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024,
       });
-      statusOutput = stdout.trim();
+      statusOutput = (stdout || '').trim();
+      const errOut = (stderr || '').trim();
+      if (errOut) statusOutput += `\n[stderr] ${errOut}`;
+      
       connected = statusOutput.includes('connected');
     } catch (e: any) {
-      // Surface the real error so the UI can show "command not found" instead of silent ○/✗
-      statusError = (e?.stderr || e?.message || String(e)).trim().slice(0, 200);
+      // Surface the real error so the UI can show "command not found" or Node errors
+      const rawErr = (e?.stderr || e?.stdout || e?.message || String(e)).trim();
+      statusError = rawErr.slice(0, 500);
     }
 
     // Derive running from status output — if the gateway is reachable it's running
@@ -1003,7 +1014,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     return {
       running,
       connected,
-      statusOutput: statusError ? `[status error] ${statusError}\n${statusOutput}`.trim() : statusOutput,
+      statusOutput: statusError ? `[CLI Error] ${statusError}\n${statusOutput}`.trim() : statusOutput,
     };
   });
 
@@ -1011,6 +1022,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   // OpenClaw — start gateway
   // ---------------------------------------------------------------------------
   ipcMain.handle('openclaw:start', async () => {
+    const { exec, spawn } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
     const homeDir = os.homedir();
     const cleanEnv = makeCleanEnv(homeDir);
 
@@ -1029,20 +1043,70 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         cleanEnv.GEMINI_API_KEY = googleKey.fields.apiKey;
         cleanEnv.GOOGLE_API_KEY = googleKey.fields.apiKey;
         cleanEnv.GOOGLE_GENERATIVE_AI_API_KEY = googleKey.fields.apiKey;
+      } else {
+        return {
+          success: false,
+          error: 'No Gemini API key found. Please add a Google API key in Settings > AI Keys first.'
+        };
       }
     } catch { /* non-fatal */ }
 
-    const { spawn } = await import('child_process');
-    // On Windows, npm global CLI wrappers are .cmd files and need shell: true
-    const spawnOpts = IS_WIN
-      ? { env: cleanEnv, detached: false, stdio: 'ignore' as const, shell: true }
-      : { env: cleanEnv, detached: true,  stdio: 'ignore' as const };
     try {
+      // 1. Kill any existing gateway first
+      await killGateway().catch(() => {});
+      await new Promise(r => setTimeout(r, 1000));
+
+      // 1b. Check if config exists
+      const configPath = path.join(homeDir, '.openclaw', 'openclaw.json');
+      if (!fs.existsSync(configPath)) {
+        return {
+          success: false,
+          error: `OpenClaw configuration not found at ${configPath}. Please run the setup flow first.`
+        };
+      }
+
+      // 2. Verify openclaw is runnable
+      try {
+        await execAsync('openclaw --version', { env: cleanEnv, timeout: 5000 });
+      } catch (e: any) {
+        const errStr = (e?.stderr || e?.stdout || e?.message || String(e)).trim();
+        return {
+          success: false,
+          error: `OpenClaw CLI is not working correctly. Try "Retry OpenClaw Setup" first.\n\nDetails: ${errStr.slice(0, 300)}`
+        };
+      }
+
+      // 3. Spawn and capture initial output for debugging
+      const spawnOpts = IS_WIN
+        ? { env: cleanEnv, detached: false, stdio: ['ignore', 'pipe', 'pipe'] as const, shell: true }
+        : { env: cleanEnv, detached: true,  stdio: ['ignore', 'pipe', 'pipe'] as const };
+
       const proc = spawn('openclaw', ['gateway'], spawnOpts);
-      proc.unref();
-      // Give the gateway a moment to start before the caller queries status
-      await new Promise(r => setTimeout(r, 3000));
-      return { success: true };
+      
+      let output = '';
+      proc.stdout?.on('data', (d) => { output += d.toString(); });
+      proc.stderr?.on('data', (d) => { output += d.toString(); });
+
+      // Wait a few seconds to see if it crashes immediately
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          proc.unref();
+          resolve({ success: true });
+        }, 4000);
+
+        proc.on('error', (err) => {
+          clearTimeout(timeout);
+          resolve({ success: false, error: `Spawn error: ${err.message}\n\nOutput: ${output}` });
+        });
+
+        proc.on('exit', (code) => {
+          clearTimeout(timeout);
+          resolve({
+            success: false,
+            error: `Gateway exited immediately with code ${code}.\n\nOutput: ${output.slice(0, 500)}`
+          });
+        });
+      });
     } catch (e: any) {
       return { success: false, error: e instanceof Error ? e.message : String(e) };
     }
