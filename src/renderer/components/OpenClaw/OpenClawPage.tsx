@@ -531,9 +531,13 @@ const OpenClawPage: React.FC = () => {
 
       // 3. Start OpenClaw gateway
       addLog('Starting OpenClaw gateway…');
-      await (window as any).electron.debug.openclaw.start();
-      addLog('✅ Gateway started.');
-      setGatewayRunning(true);
+      const startResult = await (window as any).electron.debug.openclaw.start();
+      if (startResult?.success === false) {
+        addLog(`⚠️ Gateway start failed: ${startResult.error || 'unknown error'}`);
+      } else {
+        addLog('✅ Gateway started.');
+        setGatewayRunning(true);
+      }
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 2000));
         const s = await (window as any).electron.debug.openclaw.status();

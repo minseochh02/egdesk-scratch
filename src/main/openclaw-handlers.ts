@@ -23,11 +23,45 @@ function deriveBotUsername(email: string): string {
 /** `which` on Unix, `where` on Windows */
 const WHICH = IS_WIN ? 'where' : 'which';
 
-/** Build a base clean env, removing Electron-injected NODE_OPTIONS and setting the right home var. */
+/** Build a base clean env, removing Electron-injected NODE_OPTIONS and setting the right home var.
+ *  Also extends PATH with common npm global bin directories — in production Electron .app bundles
+ *  the inherited PATH is stripped and doesn't include /usr/local/bin or ~/.npm-global/bin. */
 function makeCleanEnv(homeDir: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: homeDir };
   if (IS_WIN) env.USERPROFILE = homeDir;
   delete env.NODE_OPTIONS;
+
+  if (IS_WIN) {
+    // npm global CLI tools + Node.js runtime on Windows
+    const appData = env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
+    const extraWin = [
+      path.join(appData, 'npm'),                           // npm install -g destination (default)
+      'C:\\Program Files\\nodejs',                          // Node.js + npm installed by the installer
+      'C:\\Program Files (x86)\\nodejs',                   // 32-bit Node.js installer
+      path.join(homeDir, 'AppData', 'Roaming', 'npm'),     // explicit in case APPDATA is wrong
+      path.join(homeDir, '.volta', 'bin'),                  // Volta version manager
+      ...(env.NVM_HOME ? [env.NVM_HOME] : []),              // nvm-windows active version dir
+      ...(env.NVM_SYMLINK ? [env.NVM_SYMLINK] : []),        // nvm-windows symlink dir
+    ];
+    const cur = (env.PATH || '').split(';');
+    for (const p of extraWin) if (p && !cur.includes(p)) cur.push(p);
+    env.PATH = cur.join(';');
+  } else {
+    // Common global npm / Homebrew bin directories on macOS/Linux
+    const extraUnix = [
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
+      `${homeDir}/.npm-global/bin`,
+      `${homeDir}/.local/bin`,
+      '/usr/bin',
+      '/bin',
+    ];
+    const cur = (env.PATH || '').split(':');
+    for (const p of extraUnix) if (!cur.includes(p)) cur.push(p);
+    env.PATH = cur.join(':');
+  }
+
   return env;
 }
 
@@ -868,6 +902,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
     let connected = false;
     let statusOutput = '';
+    let statusError = '';
 
     try {
       const { stdout } = await execAsync('openclaw channels status', {
@@ -875,12 +910,19 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       });
       statusOutput = stdout.trim();
       connected = statusOutput.includes('connected');
-    } catch { /* non-fatal */ }
+    } catch (e: any) {
+      // Surface the real error so the UI can show "command not found" instead of silent ○/✗
+      statusError = (e?.stderr || e?.message || String(e)).trim().slice(0, 200);
+    }
 
     // Derive running from status output — if the gateway is reachable it's running
     const running = statusOutput.includes('Gateway reachable') || statusOutput.includes('running');
 
-    return { running, connected, statusOutput };
+    return {
+      running,
+      connected,
+      statusOutput: statusError ? `[status error] ${statusError}\n${statusOutput}`.trim() : statusOutput,
+    };
   });
 
   // ---------------------------------------------------------------------------
