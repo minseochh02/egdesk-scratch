@@ -648,26 +648,35 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           if (code !== null) gatewayOutput.push(`[exited with code ${code}]`);
         });
 
-        await new Promise(r => setTimeout(r, 8000));
+        // Poll until gateway reports reachable (up to 45s) instead of a fixed sleep
+        let gatewayReachable = false;
+        for (let i = 0; i < 15; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          if (gatewayStartError) break; // spawn itself failed — no point waiting
+          try {
+            const { stdout: probe } = await execAsync('openclaw channels status', {
+              env: cleanEnv, timeout: 8_000, maxBuffer: 1024 * 1024,
+            });
+            const probeOut = probe.trim();
+            log(`Gateway probe ${i + 1}/15: ${probeOut.slice(0, 120)}`);
+            if (probeOut.includes('Gateway reachable') || probeOut.includes('running')) {
+              gatewayReachable = true;
+              break;
+            }
+          } catch { /* not ready yet */ }
+        }
+
         gatewayProc.unref();
 
         if (gatewayStartError) {
           log(`⚠️ Gateway spawn error: ${gatewayStartError}`);
         } else if (gatewayOutput.some(o => o.includes('exited with code'))) {
           log(`⚠️ Gateway crashed: ${gatewayOutput.join(' ').trim()}`);
-        } else {
+        } else if (!gatewayReachable) {
           const out = gatewayOutput.join('').trim();
-          log(out ? `Gateway output: ${out.slice(0, 300)}` : 'Gateway spawned.');
-        }
-
-        // Confirm it's now reachable
-        try {
-          const { stdout: statusProbe } = await execAsync('openclaw channels status', {
-            env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024,
-          });
-          log(`Status after start: ${statusProbe.trim().slice(0, 200)}`);
-        } catch (e: any) {
-          log(`Status probe failed: ${e?.message || e}`);
+          log(`⚠️ Gateway did not become reachable within 45s. Output: ${out.slice(0, 300) || '(none)'}`);
+        } else {
+          log('Gateway is reachable — proceeding to Telegram pairing.');
         }
       }
 

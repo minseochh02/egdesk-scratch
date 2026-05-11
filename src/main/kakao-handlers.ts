@@ -427,7 +427,16 @@ async function createKakaoBot(
 
     // 5. Apply for callback
     console.log('[kakao:createBot] Applying for callback...');
-    const aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
+    let aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
+    const aiTabVisible = await aiChatbotLink.isVisible().catch(() => false);
+    if (!aiTabVisible) {
+      console.log('[kakao:createBot] AI 챗봇 관리 tab not visible — reloading page and retrying...');
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(2000);
+      await dismissKakaoPopups(page);
+      aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
+    }
     await aiChatbotLink.waitFor({ state: 'visible', timeout: 30000 });
     await aiChatbotLink.click({ force: true });
     await page.waitForTimeout(3000);
