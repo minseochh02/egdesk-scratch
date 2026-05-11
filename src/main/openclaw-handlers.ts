@@ -306,7 +306,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           const { app: electronApp } = require('electron');
           // In production: resources/ is next to the app bundle (process.resourcesPath)
           // In development: __dirname is dist/main/, so go up 3 levels to project root + resources/
-          const devResourcesPath = path.join(__dirname, '..', '..', '..', 'resources');
+          const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
           const prodResourcesPath = process.resourcesPath
             || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
           // Prefer dev path if it contains the plugin (avoids pointing at electron's own resources dir)
