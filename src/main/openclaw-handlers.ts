@@ -457,12 +457,36 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               // Dismiss autocomplete popup before pressing Enter (otherwise Telegram substitutes /status)
               await page.keyboard.press('Escape');
               await page.waitForTimeout(300);
-              await page.keyboard.press('Enter');
-              log('/start sent — waiting 8s for gateway to receive it…');
 
-              // Give the gateway time to receive the message and queue the pairing request
-              await page.waitForTimeout(8000);
-              log('Done waiting');
+              // Snapshot message count so we only read NEW bot replies
+              let msgCountBefore = 0;
+              try { msgCountBefore = await page.locator('.message').count(); } catch { /* ignore */ }
+
+              await page.keyboard.press('Enter');
+              log('/start sent — polling chat for bot response (up to 30s)…');
+
+              // Poll every 2s for up to 30s — stop as soon as the bot replies with the pairing code
+              const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
+              let waited = 0;
+              while (waited < 30000) {
+                await page.waitForTimeout(2000);
+                waited += 2000;
+                try {
+                  const texts = await page.locator('.message').allTextContents();
+                  const newContent = texts.slice(msgCountBefore).join('\n');
+                  const m = newContent.match(codeRe);
+                  if (m) {
+                    pairingCode = m[1];
+                    log(`Pairing code found in chat after ${waited / 1000}s: ${pairingCode}`);
+                    break;
+                  }
+                  if (newContent.includes('Pairing code') || newContent.includes('approve')) {
+                    log(`Bot replied after ${waited / 1000}s — extracting code…`);
+                    break;
+                  }
+                } catch { /* non-fatal */ }
+              }
+              if (!pairingCode) log('Bot did not reply within 30s — will fall back to CLI polling.');
             } catch (innerErr) {
               pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
               log(`Inner error: ${pairingError}`);
@@ -478,29 +502,34 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
         log(`pairingError="${pairingError}"`);
 
-        // ── 6. Fetch pairing code via CLI, then approve ──
+        // ── 6. Fetch pairing code via CLI fallback (if not already extracted from chat), then approve ──
         if (!pairingError) {
-          // Poll `openclaw pairing list telegram` a few times — the request may take a moment
-          for (let attempt = 0; attempt < 5 && !pairingCode; attempt++) {
-            log(`Polling pairing list (attempt ${attempt + 1}/5)…`);
-            // execAsync throws on non-zero exit — use exec directly so we always get stdout/stderr
-            const rawOut: string = await new Promise(resolve => {
-              const { exec } = require('child_process');
-              exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
-                (err: any, stdout: string, stderr: string) => {
-                  log(`pairing list exit=${err?.code ?? 0} stdout="${stdout.trim()}" stderr="${stderr.trim()}"`);
-                  resolve(stdout || '');
-                }
-              );
-            });
-            // Output lines look like: "KRHGV7EP  telegram  <user-id>  <timestamp>"
-            const match = rawOut.match(/\b([A-Z0-9]{6,12})\b/);
-            if (match) {
-              pairingCode = match[1];
-              log(`Pairing code found: ${pairingCode}`);
-            } else if (attempt < 4) {
-              log('No code yet — waiting 3s…');
-              await new Promise(r => setTimeout(r, 3000));
+          // If we already extracted the code from the Telegram chat, skip CLI polling
+          if (pairingCode) {
+            log(`Using pairing code extracted from chat: ${pairingCode}`);
+          } else {
+            // Poll `openclaw pairing list telegram` — the request may take a moment to register
+            for (let attempt = 0; attempt < 8 && !pairingCode; attempt++) {
+              log(`Polling pairing list (attempt ${attempt + 1}/8)…`);
+              const rawOut: string = await new Promise(resolve => {
+                const { exec } = require('child_process');
+                exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
+                  (err: any, stdout: string, stderr: string) => {
+                    log(`pairing list exit=${err?.code ?? 0} stdout="${stdout.trim()}" stderr="${stderr.trim()}"`);
+                    resolve(stdout || '');
+                  }
+                );
+              });
+              // Match the exact command format openclaw outputs (8 uppercase alphanumeric chars)
+              const match = rawOut.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
+                            rawOut.match(/\b([A-Z0-9]{8})\b/);
+              if (match) {
+                pairingCode = match[1];
+                log(`Pairing code found: ${pairingCode}`);
+              } else if (attempt < 7) {
+                log('No code yet — waiting 5s…');
+                await new Promise(r => setTimeout(r, 5000));
+              }
             }
           }
 
