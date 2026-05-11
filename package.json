@@ -324,6 +324,10 @@
       "./scripts/**",
       "./resources/npm/**",
       {
+        "from": "resources/openclaw-kakao-plugin",
+        "to": "openclaw-kakao-plugin"
+      },
+      {
         "from": ".env.production",
         "to": ".env"
       }
