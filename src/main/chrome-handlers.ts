@@ -4270,30 +4270,33 @@ test('recorded test', async ({ page }) => {
             if (!done) { done = true; clearInterval(poll); resolve(); }
           });
 
-          // Event-driven: fires whenever main frame navigates
-          page.on('framenavigated', async (frame) => {
-            if (done || frame !== page.mainFrame()) return;
-            if (!frame.url().includes('myaccount.google.com')) return;
-            await page.waitForLoadState('domcontentloaded').catch(() => {});
-            const email = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
-            if (email) await finish(email);
-          });
+          // Attach framenavigated listener to a page so any navigation to myaccount is detected
+          const attachListener = (p: import('playwright-core').Page) => {
+            p.on('framenavigated', async (frame) => {
+              if (done || frame !== p.mainFrame()) return;
+              if (!frame.url().includes('myaccount.google.com')) return;
+              await p.waitForLoadState('domcontentloaded').catch(() => {});
+              const email = await p.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+              if (email) await finish(email);
+            });
+          };
 
-          // Periodic fallback: poll myaccount.google.com in a background tab every 5s
+          // Attach to the initial page and any new tabs the user or Google opens
+          attachListener(page);
+          context.on('page', (newPage) => attachListener(newPage));
+
+          // Periodic fallback: check all open tabs
           const poll = setInterval(async () => {
             if (done) { clearInterval(poll); return; }
             try {
-              const checkPage = await context.newPage();
-              await checkPage.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded', timeout: 8_000 });
-              const url = checkPage.url();
-              let email: string | null = null;
-              if (url.includes('myaccount.google.com')) {
-                email = await checkPage.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+              for (const p of context.pages()) {
+                if (p.url().includes('myaccount.google.com')) {
+                  const email = await p.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+                  if (email) { await finish(email); break; }
+                }
               }
-              await checkPage.close().catch(() => {});
-              if (email) await finish(email);
-            } catch { /* browser closing or navigating */ }
-          }, 5_000);
+            } catch { /* non-fatal */ }
+          }, 2_000);
         });
       }
 
