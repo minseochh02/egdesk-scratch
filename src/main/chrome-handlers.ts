@@ -4436,24 +4436,29 @@ test('recorded test', async ({ page }) => {
         // Helper: extract just the first phone number from a block of text
         const firstPhone = (raw: string | null): string | null => {
           if (!raw) return null;
-          // Match the first phone-like pattern: optional +, then digits/spaces/dashes/parens, at least 7 digits total
-          const match = raw.match(/\+?[\d][\d\s\-(). ]{5,}\d/);
-          if (!match) return null;
-          const candidate = match[0].trim();
-          return candidate.replace(/\D/g, '').length >= 7 ? candidate : null;
+          // Process line by line so two numbers on separate lines are never merged
+          for (const line of raw.split(/\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            // Match phone pattern using literal space only (no \s) so it can't span lines
+            const match = trimmed.match(/\+?[\d][\d -(). ]{5,}\d/);
+            if (match && match[0].replace(/\D/g, '').length >= 7) return match[0].trim();
+          }
+          return null;
         };
 
-        // Try common selectors near the Phone section
-        phone = firstPhone(await page.locator('[data-type="phone"] .IjBjue').first().innerText({ timeout: 5000 }).catch(() => null));
+        // Primary: grab the first .qqVS5 inside the phone anchor — each .qqVS5 is one number
+        phone = firstPhone(await page.locator('a[href*="phone"] .qqVS5').first().innerText({ timeout: 5000 }).catch(() => null));
 
         if (!phone) {
-          phone = firstPhone(await page.locator('a[href*="phone"] .IjBjue').first().innerText({ timeout: 3000 }).catch(() => null));
+          // Fallback: any .qqVS5 on the page (first match)
+          phone = firstPhone(await page.locator('.qqVS5').first().innerText({ timeout: 3000 }).catch(() => null));
         }
 
         if (!phone) {
-          // Fallback: scan all visible text for an international phone number pattern
-          const texts = await page.locator('div, span, li').allTextContents();
-          const found = texts.find(t => /^\+?[\d\s\-().]{7,}$/.test(t.trim()) && t.trim().replace(/\D/g, '').length >= 7);
+          // Last resort: scan individual leaf text nodes for a phone-like value
+          const texts = await page.locator('div, span').allTextContents();
+          const found = texts.find(t => /^\+?[\d][0-9 -(). ]{5,}\d$/.test(t.trim()) && t.trim().replace(/\D/g, '').length >= 7);
           if (found) phone = found.trim();
         }
 
@@ -4755,8 +4760,10 @@ test('recorded test', async ({ page }) => {
           // e.g. if "+82 1" is already shown, we only type "01234567" not the full "101234567"
           const fillRemainingPhone = async (inputLocator: import('playwright-core').Locator) => {
             await inputLocator.click({ timeout: 3000 });
-            await page.waitForTimeout(300);
-            const existing = (await inputLocator.textContent().catch(() => '') ?? '').replace(/\D/g, '');
+            // Wait long enough for Telegram to insert any auto-filled prefix after focus
+            await page.waitForTimeout(600);
+            // innerText() reads what is visually rendered in the contenteditable, unlike textContent()
+            const existing = (await inputLocator.innerText().catch(() => '') ?? '').replace(/\D/g, '');
             const target = localNumber.replace(/\D/g, '');
             const toType = target.startsWith(existing) && existing.length > 0
               ? target.slice(existing.length)
