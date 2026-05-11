@@ -4200,7 +4200,11 @@ test('recorded test', async ({ page }) => {
    * Launch a persistent Chrome context for Google login. The profile is kept on
    * disk so subsequent sessions reuse the authenticated state.
    */
-  ipcMain.handle('google-profile:launch', async (_event, { profileName }: { profileName: string }) => {
+  ipcMain.handle('google-profile:launch', async (event, { profileName }: { profileName: string }) => {
+    const glStatus = (stage: string, message: string) => {
+      try { event.sender.send('google:status', { stage, message }); } catch {}
+    };
+
     try {
       const profilesDir = getGoogleProfilesDir();
       if (!fs.existsSync(profilesDir)) fs.mkdirSync(profilesDir, { recursive: true });
@@ -4224,13 +4228,63 @@ test('recorded test', async ({ page }) => {
       });
 
       const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-      await page.goto('https://accounts.google.com');
 
-      // Wait until the user closes the Chrome window themselves.
-      // This gives unlimited time to complete the full Google login flow.
-      await new Promise<void>((resolve) => {
-        context.once('close', resolve);
-      });
+      glStatus('opening', 'Opening Google account page…');
+      await page.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+
+      let detectedEmail = '';
+
+      // Check if already logged in (page stayed on myaccount.google.com)
+      const immediateEmail = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+
+      if (immediateEmail) {
+        detectedEmail = immediateEmail;
+        glStatus('logged-in', `Already logged in as ${detectedEmail} — closing browser…`);
+        await context.close().catch(() => {});
+      } else {
+        glStatus('waiting-for-login', 'Log in with your Google account in the browser window…');
+
+        // Detect login by watching navigation events + periodic fallback check
+        await new Promise<void>((resolve) => {
+          let done = false;
+
+          const finish = async (email: string) => {
+            if (done) return;
+            done = true;
+            detectedEmail = email;
+            clearInterval(poll);
+            glStatus('logged-in', `Logged in as ${email} — closing browser…`);
+            await context.close().catch(() => {});
+            resolve();
+          };
+
+          // Fallback: user manually closes the browser
+          context.once('close', () => {
+            if (!done) { done = true; clearInterval(poll); resolve(); }
+          });
+
+          // Event-driven: fires whenever main frame navigates
+          page.on('framenavigated', async (frame) => {
+            if (done || frame !== page.mainFrame()) return;
+            if (!frame.url().includes('myaccount.google.com')) return;
+            await page.waitForLoadState('domcontentloaded').catch(() => {});
+            const email = await page.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+            if (email) await finish(email);
+          });
+
+          // Periodic fallback: open a background tab to check silently every 5s
+          const poll = setInterval(async () => {
+            if (done) { clearInterval(poll); return; }
+            try {
+              const checkPage = await context.newPage();
+              await checkPage.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded', timeout: 8_000 });
+              const email = await checkPage.locator('meta[name="og-profile-acct"]').getAttribute('content').catch(() => null);
+              await checkPage.close().catch(() => {});
+              if (email) await finish(email);
+            } catch { /* browser closing or navigating */ }
+          }, 5_000);
+        });
+      }
 
       // Save metadata
       const metaPath = path.join(profileDir, 'profile.json');
@@ -4241,11 +4295,11 @@ test('recorded test', async ({ page }) => {
         ...existing,
         profileName,
         profileDir,
+        ...(detectedEmail && { googleEmail: detectedEmail }),
         createdAt: existing.createdAt ?? new Date().toISOString(),
         lastUsedAt: new Date().toISOString(),
       }, null, 2));
 
-      // context is already closed by the user — no need to call context.close()
       return { success: true, profileDir };
     } catch (error) {
       console.error('[Google Profile] launch error:', error);
@@ -4851,12 +4905,8 @@ test('recorded test', async ({ page }) => {
           telegramSetupAt: new Date().toISOString(),
         }, null, 2));
 
-        tgStatus('awaiting-close', botToken ? `Done! Token saved: ${botToken.slice(0, 16)}…` : 'Done! You can close the browser.', 'Close the browser window when you\'re finished.');
-        // Wait for user to close the browser
-        await new Promise<void>((resolve) => {
-          context.once('close', resolve);
-        });
-
+        tgStatus('done', botToken ? `Done! Token saved: ${botToken.slice(0, 16)}…` : 'Done!');
+        await context.close().catch(() => {});
         return { success: true, token: botToken, tokens: allBotTokens, botUsername };
       } catch (automationError) {
         await context.close().catch(() => {});
@@ -5161,12 +5211,7 @@ test('recorded test', async ({ page }) => {
         }, null, 2));
         ghStatus('saving', `Saved @${finalUsername} to profile.`);
 
-        // Wait for the user to complete any remaining steps (e.g. CAPTCHA, email verify)
-        ghStatus('awaiting-close', 'Waiting for browser to close…');
-        await new Promise<void>((resolve) => {
-          context.once('close', resolve);
-        });
-
+        await context.close().catch(() => {});
         return { success: true, githubUsername: finalUsername, isExistingAccount };
       } catch (automationError) {
         await context.close().catch(() => {});

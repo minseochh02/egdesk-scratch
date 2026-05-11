@@ -1,6 +1,19 @@
 {
   "id": "kakao",
   "channels": ["kakao"],
+  "channelConfigs": {
+    "kakao": {
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "name": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

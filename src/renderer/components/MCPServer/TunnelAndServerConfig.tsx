@@ -556,7 +556,7 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
 
               {/* Tunnel Controls */}
               <div style={{ marginBottom: '16px' }}>
-                {!activeTunnelConfig.publicUrl ? (
+                {!activeTunnelConfig.registered ? (
                   <button
                     onClick={handleStartTunnel}
                     disabled={!httpServerStatus.isRunning || isTunnelStarting}

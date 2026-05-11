@@ -93,7 +93,8 @@ export type Channels =
   | 'auth:token-invalid'
   | 'auth:state-changed'
   | 'telegram:status'
-  | 'github:status';
+  | 'github:status'
+  | 'google:status';
 
 /**
  * File system item information

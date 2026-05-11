@@ -3257,43 +3257,40 @@ const createWindow = async () => {
           console.log(`🛑 Stopping tunnel: ${serverName}`);
           const result = stopTunnel(serverName);
           
-          // Clear the stored tunnel configuration (success or failure)
+          // Mark tunnel as disconnected but KEEP serverName, publicUrl, and apiKey so reconnect works
+          // and so openclaw:setup / runKakaoSetup can still read the last known URL
           try {
             const mcpConfig = store.get('mcpConfiguration');
+            const existing = mcpConfig.tunnel ?? {};
             mcpConfig.tunnel = {
+              ...existing,
               registered: false,
-              registrationId: '',
-              serverName: '',
-              publicUrl: '',
-              registeredAt: '',
               lastConnectedAt: '',
             };
             store.set('mcpConfiguration', mcpConfig);
-            console.log(`💾 Cleared stored tunnel configuration`);
+            console.log(`💾 Marked tunnel as stopped (serverName: ${existing.serverName || 'none'}, publicUrl preserved: ${existing.publicUrl || 'none'})`);
           } catch (clearError) {
-            console.error('⚠️ Failed to clear tunnel config:', clearError);
-            // Don't fail the whole operation if clear fails
+            console.error('⚠️ Failed to update tunnel config:', clearError);
+            // Don't fail the whole operation if save fails
           }
-          
+
           return result;
         } catch (error: any) {
           console.error('❌ Failed to stop tunnel:', error);
-          
-          // Still try to clear stored config even on error
+
+          // Still mark as disconnected, keep serverName/publicUrl/apiKey for future reconnect
           try {
             const mcpConfig = store.get('mcpConfiguration');
+            const existing = mcpConfig.tunnel ?? {};
             mcpConfig.tunnel = {
+              ...existing,
               registered: false,
-              registrationId: '',
-              serverName: '',
-              publicUrl: '',
-              registeredAt: '',
               lastConnectedAt: '',
             };
             store.set('mcpConfiguration', mcpConfig);
-            console.log(`💾 Cleared stored tunnel configuration (after error)`);
+            console.log(`💾 Marked tunnel as stopped (after error, serverName: ${existing.serverName || 'none'}, publicUrl preserved: ${existing.publicUrl || 'none'})`);
           } catch (clearError) {
-            console.error('⚠️ Failed to clear tunnel config:', clearError);
+            console.error('⚠️ Failed to update tunnel config:', clearError);
           }
           
           return {
@@ -3545,9 +3542,20 @@ const createWindow = async () => {
       // Get MCP tunnel configuration
       ipcMain.handle('get-mcp-tunnel-config', async () => {
         try {
-          const mcpConfig = store.get('mcpConfiguration');
+          const mcpConfig = (store.get('mcpConfiguration') as any) ?? {};
+          // Ensure kakaoCallbackApiKey is always present — generate if missing
+          let kakaoCallbackApiKey = mcpConfig.kakaoCallbackApiKey as string | undefined;
+          if (!kakaoCallbackApiKey) {
+            kakaoCallbackApiKey = randomUUID();
+            mcpConfig.kakaoCallbackApiKey = kakaoCallbackApiKey;
+            store.set('mcpConfiguration', mcpConfig);
+            console.log('🔑 [get-mcp-tunnel-config] Generated missing Kakao callback API key');
+            // Push to local server manager so it validates incoming Kakao requests
+            getLocalServerManager().setKakaoCallbackApiKey(kakaoCallbackApiKey);
+          }
           return {
             success: true,
+            kakaoCallbackApiKey,
             tunnel: mcpConfig.tunnel || {
               registered: false,
               registrationId: '',
@@ -3562,6 +3570,7 @@ const createWindow = async () => {
           return {
             success: false,
             error: error.message || 'Unknown error',
+            kakaoCallbackApiKey: '',
             tunnel: {
               registered: false,
               registrationId: '',
@@ -5057,9 +5066,9 @@ const createWindow = async () => {
     mcpLocalServerManager.registerIPCHandlers();
 
     // Generate or restore the dedicated Kakao callback API key (fixed — survives tunnel reconnects)
-    {
-      const mcpConfig = store.get('mcpConfiguration') as any;
-      const existingKakaoKey = mcpConfig?.kakaoCallbackApiKey as string | undefined;
+    try {
+      const mcpConfig = (store.get('mcpConfiguration') as any) ?? {};
+      const existingKakaoKey = mcpConfig.kakaoCallbackApiKey as string | undefined;
       const kakaoCallbackApiKey = existingKakaoKey || randomUUID();
       if (!existingKakaoKey) {
         mcpConfig.kakaoCallbackApiKey = kakaoCallbackApiKey;
@@ -5069,6 +5078,21 @@ const createWindow = async () => {
         console.log('🔑 Restored Kakao callback API key');
       }
       mcpLocalServerManager.setKakaoCallbackApiKey(kakaoCallbackApiKey);
+    } catch (e) {
+      console.error('⚠️ Failed to initialize Kakao callback API key:', e);
+    }
+
+    // Restore tunnel API key into local server manager on startup
+    // Without this, /user-data/ and /financehub routes are unprotected until tunnel reconnects
+    try {
+      const mcpConfig = (store.get('mcpConfiguration') as any) ?? {};
+      const tunnelApiKey = mcpConfig?.tunnel?.apiKey as string | undefined;
+      if (tunnelApiKey) {
+        mcpLocalServerManager.setApiKey(tunnelApiKey);
+        console.log('🔑 Restored tunnel API key to local server manager');
+      }
+    } catch (e) {
+      console.error('⚠️ Failed to restore tunnel API key:', e);
     }
 
     // Register Ollama handlers
@@ -5381,16 +5405,16 @@ app.on('before-quit', async () => {
   try {
     stopAllTunnels();
     const mcpConfig = store.get('mcpConfiguration');
+    const existingTunnel = mcpConfig.tunnel ?? {};
     mcpConfig.tunnel = {
+      ...existingTunnel,
       registered: false,
       registrationId: '',
-      serverName: '',
-      publicUrl: '',
       registeredAt: '',
       lastConnectedAt: '',
     };
     store.set('mcpConfiguration', mcpConfig);
-    console.log('💾 Cleared tunnel configuration on app quit');
+    console.log('💾 Marked tunnel as disconnected on app quit (serverName and publicUrl preserved)');
   } catch (error) {
     console.error('⚠️ Failed to cleanup tunnels on quit:', error);
   }

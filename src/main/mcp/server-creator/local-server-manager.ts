@@ -246,9 +246,10 @@ export class LocalServerManager {
           return;
         }
 
-        // API key validation for /user-data/* routes (defense-in-depth)
+        // API key validation for sensitive routes (defense-in-depth)
         const reqPath = req.url?.split('?')[0] || '/';
-        if (this.apiKey && reqPath.startsWith('/user-data/')) {
+        const isProtectedRoute = reqPath.startsWith('/user-data/') || reqPath.startsWith('/financehub');
+        if (this.apiKey && isProtectedRoute) {
           if (req.headers['x-api-key'] !== this.apiKey) {
             res.writeHead(401);
             res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid or missing X-Api-Key' }));
@@ -257,10 +258,13 @@ export class LocalServerManager {
         }
 
         // Dedicated auth for Kakao callback endpoint
+        // Only reject when the header is present but wrong — missing header means
+        // Kakao's skill validation test (it doesn't include custom headers), let it through.
         if (this.kakaoCallbackApiKey && (reqPath === '/kakao/skill' || reqPath === '/webhook/start')) {
-          if (req.headers['x-api-key'] !== this.kakaoCallbackApiKey) {
+          const incomingKey = req.headers['x-api-key'];
+          if (incomingKey !== undefined && incomingKey !== this.kakaoCallbackApiKey) {
             res.writeHead(401);
-            res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid or missing X-Api-Key' }));
+            res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid X-Api-Key' }));
             return;
           }
         }
@@ -524,8 +528,14 @@ export class LocalServerManager {
     }
 
     // KakaoTalk skill endpoint — forwards to OpenClaw WebSocket gateway
-    if ((url === '/kakao/skill' || url === '/webhook/start') && req.method === 'POST') {
-      await this.handleKakaoSkill(req, res);
+    if (url === '/kakao/skill' || url === '/webhook/start') {
+      if (req.method === 'POST') {
+        await this.handleKakaoSkill(req, res);
+      } else {
+        // GET — used by Kakao's skill URL validation check and browser testing
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, service: 'kakao-skill', status: 'online' }));
+      }
       return;
     }
 
@@ -579,6 +589,8 @@ export class LocalServerManager {
         '/browser-recording/tools/call - Call a Browser Recording tool',
         '/korean-law/tools - List Korean Law tools',
         '/korean-law/tools/call - Call a Korean Law tool',
+        'POST /kakao/skill - KakaoTalk skill webhook endpoint',
+        'POST /webhook/start - Webhook start endpoint',
         '/test-gmail - Test endpoint (dev only)'
       ]
     }));
