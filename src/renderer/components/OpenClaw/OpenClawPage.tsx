@@ -603,7 +603,12 @@ const OpenClawPage: React.FC = () => {
     setIsPairing(false);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
+    // Clear the Chrome profile so the next run starts with a clean browser session
+    try {
+      await (window as any).electron.debug.googleProfile.delete(PROFILE_NAME);
+    } catch { /* non-fatal — profile may not exist yet */ }
+
     setStep('welcome');
     setGoogleEmail('');
     setGooglePhone('');

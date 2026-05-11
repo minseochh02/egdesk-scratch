@@ -4267,22 +4267,6 @@ test('recorded test', async ({ page }) => {
         const page = headfulCtx.pages().length > 0 ? headfulCtx.pages()[0] : await headfulCtx.newPage();
         await page.goto('https://accounts.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
 
-        // Auto-accept the "Switch Chrome profile?" dialog that appears after Google sign-in.
-        // Chrome renders this as a new page/popup — catch it and click the confirm button.
-        const tryAcceptProfileSwitch = async (p: import('playwright-core').Page) => {
-          try {
-            await p.waitForLoadState('domcontentloaded').catch(() => {});
-            // The confirm button is labelled "Switch profile", "Continue", or "Yes" depending on Chrome version
-            const confirmBtn = p.locator('button').filter({ hasText: /switch profile|continue|yes/i }).first();
-            const visible = await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false);
-            if (visible) {
-              await confirmBtn.click().catch(() => {});
-            }
-          } catch { /* dialog may not have appeared */ }
-        };
-
-        headfulCtx.on('page', (newPage) => tryAcceptProfileSwitch(newPage));
-
         await new Promise<void>((resolve) => {
           let emailDetected = false;
 
