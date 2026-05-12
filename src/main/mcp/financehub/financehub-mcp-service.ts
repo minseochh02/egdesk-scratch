@@ -41,7 +41,7 @@ export class FinanceHubMCPService implements IMCPService {
     return [
       {
         name: 'financehub_list_banks',
-        description: 'List all registered banks/cards with metadata (name, color, icon, etc.)',
+        description: 'List all registered banks/cards with metadata. Returns: { totalBanks: number, banks: [{ id: string, name: string, nameKo: string, color: string, icon: string, supportsAutomation: boolean }] }',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -50,7 +50,7 @@ export class FinanceHubMCPService implements IMCPService {
       },
       {
         name: 'financehub_list_accounts',
-        description: 'List bank accounts with balances, optionally filtered by bank or active status',
+        description: 'List bank accounts with balances, optionally filtered by bank or active status. Returns: { totalAccounts: number, accounts: [{ id: string, bankId: string, accountNumber: string, accountName: string, customerName: string, balance: number, availableBalance: number, currency: string, accountType: string, openDate: string|null, isActive: boolean, lastSyncedAt: string|null, createdAt: string, updatedAt: string }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -284,7 +284,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_list_hometax_connections',
         description:
-          'List Hometax business connections (business number, name, status, invoice counts, spreadsheet URLs)',
+          'List Hometax business connections. Returns: { totalConnections: number, connections: [{ id, business_number, business_name, representative_name, business_type, connection_status, last_connected_at, sales_count, purchase_count, cash_receipt_count, sales_spreadsheet_url, purchase_spreadsheet_url, cash_receipt_spreadsheet_url, tax_exempt_sales_spreadsheet_url, tax_exempt_purchase_spreadsheet_url, created_at, updated_at }] }',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -294,7 +294,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_query_tax_invoices',
         description:
-          'Query tax invoices (tax_invoices table: sales/purchase electronic tax invoices synced from Hometax)',
+          'Query tax invoices (세금계산서) synced from Hometax. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자상호, 공급자대표자명, 공급받는자사업자등록번호, 공급받는자상호, 공급받는자대표자명, 합계금액, 공급가액, 세액, 전자세금계산서종류, 발급유형, 영수청구구분, 품목명, 품목공급가액, 품목세액, created_at }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -332,7 +332,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_query_tax_exempt_invoices',
         description:
-          'Query tax-exempt invoices (tax_exempt_invoices table: 면세 계산서 등 synced from Hometax)',
+          'Query tax-exempt invoices (면세 계산서) synced from Hometax. Same column structure as financehub_query_tax_invoices. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자상호, 공급자대표자명, 공급받는자사업자등록번호, 공급받는자상호, 공급받는자대표자명, 합계금액, 공급가액, 세액, 전자세금계산서종류, 발급유형, 영수청구구분, 품목명, 품목공급가액, 품목세액, created_at }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -369,7 +369,7 @@ export class FinanceHubMCPService implements IMCPService {
       },
       {
         name: 'financehub_query_cash_receipts',
-        description: 'Query cash receipt rows (cash_receipts table) synced from Hometax',
+        description: 'Query cash receipts (현금영수증 매출내역) synced from Hometax. Returns: { totalMatching: number, limit: number, offset: number, receipts: [{ id, business_number, 발행구분, 매출일시, 공급가액, 부가세, 봉사료, 총금액, 승인번호, 신분확인뒷4자리, 거래구분, 용도구분, 비고, excel_file_path, created_at }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -402,7 +402,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_get_hometax_sync_history',
         description:
-          'Get Hometax sync history (hometax_sync_operations: Excel import runs). Not the same as financehub_get_sync_history (banks/cards).',
+          'Get Hometax sync history (Excel import runs). Not the same as financehub_get_sync_history (banks/cards). Returns: { totalReturned: number, syncOperations: [{ id, business_number, status, start_date, end_date, sales_count, sales_new, sales_duplicate, purchase_count, purchase_new, purchase_duplicate, sales_excel_path, purchase_excel_path, sales_spreadsheet_url, purchase_spreadsheet_url, error_message, started_at, completed_at, duration }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -418,7 +418,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_list_bank_product_tables',
         description:
-          'List per-(bank, product) tables — bank-side product data downloaded from bank portals that isn\'t core deposit/card transactions (loans, receivables, e-bills, etc.). Examples: 외상매출채권, 대출거래내역, B2B 대출 실행내역. Returns each table\'s slug, displayName, bankId, productLabel, column schema, and current row count. ALWAYS call this first to discover available tables and their columns before calling financehub_query_bank_product_table.',
+          'List per-(bank, product) tables — bank-side product data downloaded from bank portals that isn\'t core deposit/card transactions (loans, receivables, e-bills, etc.). Examples: 외상매출채권, 대출거래내역, B2B 대출 실행내역. ALWAYS call this first to discover available tables and their columns before calling financehub_query_bank_product_table. Returns: { totalTables: number, tables: [{ slug: string, displayName: string, bankId: string, productLabel: string, columns: [{ name: string, type: string }], rowCount: number, migrated: boolean }] }',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -428,7 +428,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_query_bank_product_table',
         description:
-          'Generic safe query against any per-(bank, product) table from financehub_list_bank_product_tables. Filters use the table\'s exact column names (snake_case). Returns rows with totalMatching, limit, offset.',
+          'Generic safe query against any per-(bank, product) table from financehub_list_bank_product_tables. Filters use the table\'s exact column names (snake_case). Returns: { tableSlug: string, totalMatching: number, limit: number, offset: number, rows: object[] }',
         inputSchema: {
           type: 'object',
           properties: {
