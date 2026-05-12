@@ -370,13 +370,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             cfg.agents = cfg.agents ?? {};
             cfg.agents.defaults = cfg.agents.defaults ?? {};
             cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
-            if (!cfg.agents.defaults.model.primary) {
-              cfg.agents.defaults.model.primary = 'google/gemini-2.5-flash';
-              fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-              log('Set agents.defaults.model.primary → google/gemini-2.5-flash');
-            } else {
-              log(`agents.defaults.model.primary already set: ${cfg.agents.defaults.model.primary}`);
-            }
+            cfg.agents.defaults.model.primary = 'google/gemini-2.5-flash';
+            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+            log('Set agents.defaults.model.primary → google/gemini-2.5-flash');
           } catch (e: any) {
             log(`Could not write model config (non-fatal): ${e?.message}`);
           }
