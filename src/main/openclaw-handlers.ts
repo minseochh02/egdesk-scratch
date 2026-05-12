@@ -280,6 +280,14 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               ...(existing.channels?.telegram ?? {}),
               botToken: resolvedToken,
             },
+            kakao: {
+              enabled: true,
+              webhookPath: '/kakao/skill',
+              useCallback: true,
+              callbackTimeoutMs: 180000,
+              dmPolicy: 'open',
+              ...(existing.channels?.kakao ?? {}),
+            },
           },
         };
         // Strip keys that openclaw's strict schema rejects
@@ -373,8 +381,8 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             cfg.agents = cfg.agents ?? {};
             cfg.agents.defaults = cfg.agents.defaults ?? {};
             cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
-            cfg.agents.defaults.model.primary = 'google/gemini-2.5-flash';
-            log('Set agents.defaults.model.primary → google/gemini-2.5-flash');
+            cfg.agents.defaults.model.primary = cfg.agents.defaults.model.primary || 'google/gemini-3.1-pro-preview';
+            log(`Set agents.defaults.model.primary → ${cfg.agents.defaults.model.primary}`);
 
             // Restore telegram bot token (wiped by onboard overwrite)
             if (resolvedToken) {
