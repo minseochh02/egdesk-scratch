@@ -783,8 +783,31 @@ export class BrowserRecorder {
       }
     });
     
-    // Navigate to URL
-    await this.page.goto(url);
+    // Navigate to URL.
+    // Use 'domcontentloaded' rather than 'load' so that redirect chains that
+    // cause Chrome to swap the page (e.g. cloud.google.com → console.cloud.google.com)
+    // don't throw "Target page, context or browser has been closed".
+    // If the page is still closed for another reason we re-throw.
+    try {
+      await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    } catch (gotoErr: any) {
+      const msg: string = gotoErr?.message ?? '';
+      if (msg.includes('Target page, context or browser has been closed')) {
+        // The original page was replaced by a redirect – check if any page
+        // is still alive in this context before giving up.
+        const surviving = this.context?.pages() ?? [];
+        if (surviving.length > 0) {
+          console.warn('⚠️ goto closed original page (redirect?), switching to surviving page:', surviving[0].url());
+          this.page = surviving[0];
+          // Wait for it to settle
+          await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+        } else {
+          throw gotoErr; // Context is truly gone
+        }
+      } else {
+        throw gotoErr;
+      }
+    }
     this.actions.push({
       type: 'navigate',
       url: url,
@@ -864,6 +887,92 @@ export class BrowserRecorder {
 
     // Inject into main frame
     await this.page.evaluate(() => {
+      // Trusted-Types-safe innerHTML replacement.
+      //
+      // Some pages (e.g. cloud.google.com) enforce `require-trusted-types-for 'script'`
+      // which blocks BOTH `el.innerHTML = string` AND `DOMParser.parseFromString(string, "text/html")`.
+      // However, the XML/SVG parsers are NOT TrustedHTML sinks, so we use them as fallbacks.
+      //
+      // Strategy:
+      //   1. Try text/html (fast, full fidelity) — throws on Trusted-Types-restricted pages.
+      //   2. For SVG content: use image/svg+xml (not a TrustedHTML sink).
+      //   3. For HTML content: serialize as XHTML and parse via application/xml.
+      //      Requires normalizing HTML quirks (void elements, boolean attributes).
+      //   4. textContent fallback — strips tags but always safe.
+      const setHTML = (el: Element, html: string): void => {
+        // ── Attempt 1: standard text/html parse ──────────────────────────────
+        try {
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          el.replaceChildren(...Array.from(doc.body.childNodes));
+          return;
+        } catch (_) { /* Trusted Types blocked it — try XML paths */ }
+
+        // ── Helpers for XML normalization ────────────────────────────────────
+        // Converts just-enough HTML to well-formed XML so the XML parser accepts it.
+        const toXML = (s: string): string => s
+          // Self-close void elements (must come before boolean-attr fix)
+          .replace(
+            /<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)(\s[^>]*?)?\s*(?<!\/)>/gi,
+            '<$1$2/>'
+          )
+          // Boolean attributes must have values in XML  e.g. checked → checked="checked"
+          .replace(
+            /(\s)(checked|disabled|readonly|selected|required|autofocus|multiple|open)(?=[\s/>])/gi,
+            '$1$2="$2"'
+          );
+
+        const adoptAll = (src: Element, dest: Element) => {
+          dest.replaceChildren();
+          while (src.firstChild) dest.appendChild(document.adoptNode(src.firstChild));
+        };
+
+        try {
+          const trimmed = html.trim();
+
+          if (trimmed.startsWith('<svg')) {
+            // ── Attempt 2a: SVG content ─────────────────────────────────────
+            // image/svg+xml is NOT a TrustedHTML sink.
+            const svgEnd = trimmed.lastIndexOf('</svg>') + 6;
+            const svgStr = trimmed.slice(0, svgEnd);
+            const rest   = trimmed.slice(svgEnd).trim();
+
+            const svgDoc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+            if (!svgDoc.querySelector('parsererror')) {
+              el.replaceChildren(document.adoptNode(svgDoc.documentElement));
+
+              if (rest) {
+                // Sibling nodes after </svg> (usually a <span>label</span>)
+                const xDoc = new DOMParser().parseFromString(
+                  `<r xmlns="http://www.w3.org/1999/xhtml">${toXML(rest)}</r>`,
+                  'application/xml'
+                );
+                if (!xDoc.querySelector('parsererror')) {
+                  const r = xDoc.documentElement;
+                  while (r.firstChild) el.appendChild(document.adoptNode(r.firstChild));
+                } else {
+                  el.appendChild(document.createTextNode(rest.replace(/<[^>]+>/g, '')));
+                }
+              }
+              return;
+            }
+          }
+
+          // ── Attempt 2b: General HTML as XHTML ───────────────────────────
+          // application/xml is NOT a TrustedHTML sink.
+          const xDoc = new DOMParser().parseFromString(
+            `<r xmlns="http://www.w3.org/1999/xhtml">${toXML(html)}</r>`,
+            'application/xml'
+          );
+          if (!xDoc.querySelector('parsererror')) {
+            adoptAll(xDoc.documentElement, el);
+            return;
+          }
+        } catch (_) { /* XML parse also failed */ }
+
+        // ── Attempt 3: textContent fallback ──────────────────────────────────
+        el.textContent = html.replace(/<[^>]+>/g, '');
+      };
+
       // Define helper functions first (before any usage)
       // Clean function to remove non-serializable properties before sending to Playwright
       const cleanForPlaywright = (obj: any): any => {
@@ -956,45 +1065,45 @@ export class BrowserRecorder {
 
       // Create highlight toggle button
       const highlightBtn = document.createElement('button');
-      highlightBtn.innerHTML = `
+      setHTML(highlightBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
         <span>Highlight</span>
-      `;
+      `);
       highlightBtn.style.cssText = btnStyle;
       
       // Create coordinate mode button
       const coordBtn = document.createElement('button');
       coordBtn.setAttribute('data-coord-mode', 'true');
-      coordBtn.innerHTML = `
+      setHTML(coordBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23"></line>
           <line x1="1" y1="12" x2="23" y2="12"></line>
           <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
         </svg>
         <span>Coords</span>
-      `;
+      `);
       coordBtn.style.cssText = btnStyle;
 
       // Create wait for element button
       const waitBtn = document.createElement('button');
       waitBtn.setAttribute('data-wait-mode', 'true');
-      waitBtn.innerHTML = `
+      setHTML(waitBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
         </svg>
         <span>Wait</span>
-      `;
+      `);
       waitBtn.style.cssText = btnStyle.replace('#333', '#2196F3').replace('#444', '#1976D2');
 
       // Create mark date button
       const markDateBtn = document.createElement('button');
       markDateBtn.setAttribute('data-date-marking-mode', 'false');
-      markDateBtn.innerHTML = `
+      setHTML(markDateBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -1002,13 +1111,13 @@ export class BrowserRecorder {
           <line x1="3" y1="10" x2="21" y2="10"></line>
         </svg>
         <span>Date</span>
-      `;
+      `);
       markDateBtn.style.cssText = btnStyle.replace('#333', '#9C27B0').replace('#444', '#7B1FA2');
 
       // Create capture table button
       const captureTableBtn = document.createElement('button');
       captureTableBtn.setAttribute('data-capture-table', 'true');
-      captureTableBtn.innerHTML = `
+      setHTML(captureTableBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="3" y1="9" x2="21" y2="9"></line>
@@ -1017,59 +1126,59 @@ export class BrowserRecorder {
           <line x1="15" y1="3" x2="15" y2="21"></line>
         </svg>
         <span>Table</span>
-      `;
+      `);
       captureTableBtn.style.cssText = btnStyle.replace('#333', '#FF9800').replace('#444', '#F57C00');
 
       // Capture labeled fields (region pick — not limited to <form>)
       const captureLabeledFieldsBtn = document.createElement('button');
       captureLabeledFieldsBtn.setAttribute('data-capture-labeled-fields', 'true');
-      captureLabeledFieldsBtn.innerHTML = `
+      setHTML(captureLabeledFieldsBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 7h16M4 12h10M4 17h14"></path>
           <rect x="14" y="10" width="6" height="4" rx="1"></rect>
         </svg>
         <span>Fields</span>
-      `;
+      `);
       captureLabeledFieldsBtn.style.cssText = btnStyle.replace('#333', '#4CAF50').replace('#444', '#388E3C');
 
       // Create click until gone button
       const clickUntilGoneBtn = document.createElement('button');
       clickUntilGoneBtn.setAttribute('data-click-until-gone', 'false');
-      clickUntilGoneBtn.innerHTML = `
+      setHTML(clickUntilGoneBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 10h1m4 0h1m-5 4h4"></path>
           <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
           <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
         </svg>
         <span>Loop</span>
-      `;
+      `);
       clickUntilGoneBtn.style.cssText = btnStyle.replace('#333', '#00BCD4').replace('#444', '#0097A7');
 
       // Create stop recording button
       const stopBtn = document.createElement('button');
-      stopBtn.innerHTML = `
+      setHTML(stopBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="6" width="12" height="12" fill="currentColor"></rect>
         </svg>
         <span>Stop</span>
-      `;
+      `);
       stopBtn.style.cssText = btnStyle.replace('#333', '#ff4444').replace('#444', '#cc0000') + 'font-weight: 600;';
 
       // Create Gemini button
       const geminiBtn = document.createElement('button');
-      geminiBtn.innerHTML = `
+      setHTML(geminiBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
         </svg>
         <span>AI</span>
-      `;
+      `);
       geminiBtn.style.cssText = btnStyle + 'position: relative; z-index: 10; pointer-events: all;';
       geminiBtn.disabled = true;
       geminiBtn.style.opacity = '0.5';
       
       // Recording indicator
       const recordingIndicator = document.createElement('div');
-      recordingIndicator.innerHTML = `
+      setHTML(recordingIndicator, `
         <span style="
           display: inline-block;
           width: 6px;
@@ -1080,7 +1189,7 @@ export class BrowserRecorder {
           animation: pulse 1.5s infinite;
         "></span>
         REC
-      `;
+      `);
       recordingIndicator.style.cssText = `
         color: #fff;
         display: flex;
@@ -1300,13 +1409,13 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          coordNotification.innerHTML = `
+          setHTML(coordNotification, `
             <strong>📍 Coordinate Mode Active</strong><br>
             Clicks will be recorded as X,Y coordinates
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
               Moves away when cursor approaches
             </div>
-          `;
+          `);
 
           try {
             if (document.body) {
@@ -1422,12 +1531,12 @@ export class BrowserRecorder {
         // Hide the controller to indicate stopping
         controller.style.opacity = '0.5';
         stopBtn.disabled = true;
-        stopBtn.innerHTML = `
+        setHTML(stopBtn, `
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
           </svg>
           <span>Stopping...</span>
-        `;
+        `);
         
         // Show notification
         const stopNotification = document.createElement('div');
@@ -1446,13 +1555,13 @@ export class BrowserRecorder {
           transition: opacity 0.3s ease, transform 0.3s ease;
           pointer-events: none;
         `;
-        stopNotification.innerHTML = `
+        setHTML(stopNotification, `
           <strong>⏹️ Recording Stopped</strong><br>
           Generating test code...
           <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
             Moves away when cursor approaches
           </div>
-        `;
+        `);
 
         try {
           if (document.body) {
@@ -1508,13 +1617,13 @@ export class BrowserRecorder {
         waitBtn.classList.toggle('active', waitMode);
         
         if (waitMode) {
-          waitBtn.innerHTML = `
+          setHTML(waitBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
             </svg>
             <span>Select</span>
-          `;
+          `);
           waitBtn.style.background = '#4CAF50';
           waitBtn.style.borderColor = '#45a049';
           
@@ -1537,13 +1646,13 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          waitInstructions.innerHTML = `
+          setHTML(waitInstructions, `
             <strong>🎯 Wait Mode Active</strong><br>
             Click on an element to wait for it to load
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
               Moves away when cursor approaches
             </div>
-          `;
+          `);
 
           try {
             if (document.body) {
@@ -1591,13 +1700,13 @@ export class BrowserRecorder {
           // Change cursor to indicate wait mode
           document.body.style.cursor = 'crosshair';
         } else {
-          waitBtn.innerHTML = `
+          setHTML(waitBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
             </svg>
             <span>Wait</span>
-          `;
+          `);
           waitBtn.style.background = '#2196F3';
           waitBtn.style.borderColor = '#1976D2';
 
@@ -1662,7 +1771,7 @@ export class BrowserRecorder {
             cursor: move;
             user-select: none;
           `;
-          dateMarkingInstructions.innerHTML = `
+          setHTML(dateMarkingInstructions, `
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
               <strong>📅 Date Marking Mode Active</strong>
               <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
@@ -1683,7 +1792,7 @@ export class BrowserRecorder {
                 ❌ Cancel
               </button>
             </div>
-          `;
+          `);
 
           try {
             if (document.body) {
@@ -1812,7 +1921,7 @@ export class BrowserRecorder {
         const instruction = step === 'year' ? 'years' : step === 'month' ? 'months (1-12 or names)' : 'days (1-31)';
         const skipBtnId = `skip-${step}-btn`;
 
-        dateMarkingInstructions.innerHTML = `
+        setHTML(dateMarkingInstructions, `
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
             <strong>📅 Date Marking Mode Active</strong>
             <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
@@ -1833,7 +1942,7 @@ export class BrowserRecorder {
               ❌ Cancel
             </button>
           </div>
-        `;
+        `);
 
         // Add event listeners for the new buttons
         setTimeout(() => {
@@ -2330,8 +2439,7 @@ export class BrowserRecorder {
             max-width: 300px;
             pointer-events: none;
           `;
-          inst.innerHTML =
-            '<strong>📋 Fields mode</strong><br/>Click a <strong>section, card, or form</strong> that contains inputs. We record label text + selectors for each field.';
+          setHTML(inst, '<strong>📋 Fields mode</strong><br/>Click a <strong>section, card, or form</strong> that contains inputs. We record label text + selectors for each field.');
           document.body.appendChild(inst);
         }
       });
@@ -2442,14 +2550,14 @@ export class BrowserRecorder {
         clickUntilGoneBtn.classList.toggle('active', clickUntilGoneMode);
 
         if (clickUntilGoneMode) {
-          clickUntilGoneBtn.innerHTML = `
+          setHTML(clickUntilGoneBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 10h1m4 0h1m-5 4h4"></path>
               <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
               <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
             <span>Select</span>
-          `;
+          `);
           clickUntilGoneBtn.style.background = '#4CAF50';
           clickUntilGoneBtn.style.borderColor = '#45a049';
 
@@ -2472,13 +2580,13 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          clickUntilGoneInstructions.innerHTML = `
+          setHTML(clickUntilGoneInstructions, `
             <strong>🔄 Click Until Gone Mode</strong><br>
             Click on a button/element to repeatedly click it until it disappears, is hidden, or becomes disabled
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
               Perfect for "Load More", pagination, and "Next" buttons
             </div>
-          `;
+          `);
 
           try {
             if (document.body) {
@@ -2526,14 +2634,14 @@ export class BrowserRecorder {
           // Change cursor to indicate mode
           document.body.style.cursor = 'crosshair';
         } else {
-          clickUntilGoneBtn.innerHTML = `
+          setHTML(clickUntilGoneBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 10h1m4 0h1m-5 4h4"></path>
               <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
               <path d="M15 9l-3 3-3-3" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
             <span>Loop</span>
-          `;
+          `);
           clickUntilGoneBtn.style.background = '#00BCD4';
           clickUntilGoneBtn.style.borderColor = '#0097A7';
 
@@ -2808,11 +2916,11 @@ export class BrowserRecorder {
         transition: opacity 0.3s ease, transform 0.3s ease;
         pointer-events: none;
       `;
-      notification.innerHTML = `
+      setHTML(notification, `
         <strong>🎯 Playwright Recorder</strong><br>
         • Press <kbd>Option</kbd> to highlight elements<br>
         • Press <kbd>Option</kbd> + <kbd>Shift</kbd> to enable Call Gemini
-      `;
+      `);
       
       const notificationStyle = document.createElement('style');
       notificationStyle.textContent = `
@@ -4128,7 +4236,7 @@ export class BrowserRecorder {
             box-shadow: 0 8px 32px rgba(0,0,0,0.3);
           `;
 
-          modalContent.innerHTML = `
+          setHTML(modalContent, `
             <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #333;">📅 Select Date Timeframe</h3>
             <p style="margin: 0 0 20px 0; font-size: 14px; color: #666;">Choose which date to use when replaying this test:</p>
 
@@ -4186,7 +4294,7 @@ export class BrowserRecorder {
               <button id="date-cancel" style="padding: 10px 20px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Cancel</button>
               <button id="date-confirm" style="padding: 10px 20px; background: #9C27B0; color: white; border: 1px solid #9C27B0; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Confirm</button>
             </div>
-          `;
+          `);
 
           modal.appendChild(modalContent);
           document.body.appendChild(modal);
@@ -4697,7 +4805,7 @@ export class BrowserRecorder {
             box-shadow: 0 8px 32px rgba(0,0,0,0.3);
           `;
           
-          modalContent.innerHTML = `
+          setHTML(modalContent, `
             <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #333;">Wait for Element</h3>
             <p style="margin: 0 0 20px 0; color: #666; font-size: 14px;">
               Selected element: <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${target.tagName}${target.id ? '#' + target.id : ''}</code>
@@ -4722,7 +4830,7 @@ export class BrowserRecorder {
               <button id="wait-cancel" style="padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px;">Cancel</button>
               <button id="wait-confirm" style="padding: 8px 16px; background: #2196F3; color: white; border: 1px solid #2196F3; border-radius: 6px; cursor: pointer; font-size: 14px;">Add Wait</button>
             </div>
-          `;
+          `);
           
           modal.appendChild(modalContent);
           document.body.appendChild(modal);
@@ -6209,12 +6317,12 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                           offset > 0 ? `today + ${offset} days` :
                           `today - ${Math.abs(offset)} days`;
 
-        successNotification.innerHTML = `
+        setHTML(successNotification, `
           <strong>✅ Date Picker Recorded!</strong><br>
           <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
             Timeframe: ${offsetText}
           </div>
-        `;
+        `);
 
         try {
           if (document.body) {
@@ -6405,7 +6513,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               backdrop-filter: blur(10px);
             `;
 
-            notification.innerHTML = `
+            setHTML(notification, `
               <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <span style="font-size: 32px;">📤</span>
                 <div style="flex: 1; text-align: left;">
@@ -6417,7 +6525,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               <div style="font-size: 12px; opacity: 0.8; margin-top: 8px; font-weight: 400; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
                 Chain recording in progress
               </div>
-            `;
+            `);
 
             // Add animation keyframes
             if (!document.querySelector('#upload-notification-styles')) {
@@ -6498,7 +6606,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               backdrop-filter: blur(10px);
             `;
 
-            notification.innerHTML = `
+            setHTML(notification, `
               <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <span style="font-size: 32px;">❌</span>
                 <div style="flex: 1; text-align: left;">
@@ -6509,7 +6617,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               <div style="font-size: 12px; opacity: 0.8; margin-top: 8px; font-weight: 400; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
                 You may need to select the file manually
               </div>
-            `;
+            `);
 
             document.body.appendChild(notification);
 
@@ -6703,12 +6811,12 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             font-weight: 500;
           `;
 
-          errorNotification.innerHTML = `
+          setHTML(errorNotification, `
             <strong>❌ Error</strong><br>
             <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
               You must mark at least one date component!
             </div>
-          `;
+          `);
 
           if (document.body) {
             document.body.appendChild(errorNotification);
