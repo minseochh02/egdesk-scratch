@@ -294,7 +294,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_query_tax_invoices',
         description:
-          'Query tax invoices (세금계산서) synced from Hometax. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자상호, 공급자대표자명, 공급받는자사업자등록번호, 공급받는자상호, 공급받는자대표자명, 합계금액, 공급가액, 세액, 전자세금계산서종류, 발급유형, 영수청구구분, 품목명, 품목공급가액, 품목세액, created_at }] }',
+          'Query tax invoices (세금계산서) synced from Hometax. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자종사업장번호, 공급자상호, 공급자대표자명, 공급자주소, 공급받는자사업자등록번호, 공급받는자종사업장번호, 공급받는자상호, 공급받는자대표자명, 공급받는자주소, 합계금액, 공급가액, 세액, 전자세금계산서분류, 전자세금계산서종류, 발급유형, 비고, 영수청구구분, 공급자이메일, 공급받는자이메일1, 공급받는자이메일2, 품목일자, 품목명, 품목규격, 품목수량, 품목단가, 품목공급가액, 품목세액, 품목비고, excel_file_path, created_at }] }',
         inputSchema: {
           type: 'object',
           properties: {
@@ -332,7 +332,7 @@ export class FinanceHubMCPService implements IMCPService {
       {
         name: 'financehub_query_tax_exempt_invoices',
         description:
-          'Query tax-exempt invoices (면세 계산서) synced from Hometax. Same column structure as financehub_query_tax_invoices. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자상호, 공급자대표자명, 공급받는자사업자등록번호, 공급받는자상호, 공급받는자대표자명, 합계금액, 공급가액, 세액, 전자세금계산서종류, 발급유형, 영수청구구분, 품목명, 품목공급가액, 품목세액, created_at }] }',
+          'Query tax-exempt invoices (면세 전자계산서) synced from Hometax. Same column structure as financehub_query_tax_invoices except 세액 and 품목세액 are always 0. Returns: { totalMatching: number, limit: number, offset: number, invoices: [{ id, business_number, invoice_type("sales"|"purchase"), 작성일자, 승인번호, 발급일자, 전송일자, 공급자사업자등록번호, 공급자종사업장번호, 공급자상호, 공급자대표자명, 공급자주소, 공급받는자사업자등록번호, 공급받는자종사업장번호, 공급받는자상호, 공급받는자대표자명, 공급받는자주소, 합계금액, 공급가액, 세액(always 0), 전자세금계산서분류, 전자세금계산서종류, 발급유형, 비고, 영수청구구분, 공급자이메일, 공급받는자이메일1, 공급받는자이메일2, 품목일자, 품목명, 품목규격, 품목수량, 품목단가, 품목공급가액, 품목세액(always 0), 품목비고, excel_file_path, created_at }] }',
         inputSchema: {
           type: 'object',
           properties: {
