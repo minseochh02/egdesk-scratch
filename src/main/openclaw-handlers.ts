@@ -361,6 +361,26 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             const succeeded = out.includes('openclaw.json') || out.includes('Telegram: ok');
             log(succeeded ? `onboard: ${out.slice(0, 300)}` : `onboard failed (non-fatal): ${(e.message || out).slice(0, 300)}`);
           }
+
+          // onboard doesn't reliably write agents.defaults.model in non-interactive mode —
+          // without it openclaw falls back to its built-in OpenAI default.
+          try {
+            const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+            const cfg = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) : {};
+            cfg.agents = cfg.agents ?? {};
+            cfg.agents.defaults = cfg.agents.defaults ?? {};
+            cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
+            if (!cfg.agents.defaults.model.primary) {
+              cfg.agents.defaults.model.primary = 'google/gemini-2.5-flash';
+              fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+              log('Set agents.defaults.model.primary → google/gemini-2.5-flash');
+            } else {
+              log(`agents.defaults.model.primary already set: ${cfg.agents.defaults.model.primary}`);
+            }
+          } catch (e: any) {
+            log(`Could not write model config (non-fatal): ${e?.message}`);
+          }
+
         } else {
           log('⚠️ No Gemini API key — skipping onboard');
         }
