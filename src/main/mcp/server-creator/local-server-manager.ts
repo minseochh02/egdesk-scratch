@@ -32,6 +32,7 @@ import { KoreanLawMCPService } from '../korean-law/korean-law-mcp-service';
 import { PageIndexMCPService } from '../pageindex/pageindex-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
+import { IMCPService, MCPTool, MCPToolResult } from '../types/mcp-service';
 import { getSQLiteManager } from '../../sqlite/manager';
 
 // Database path helper
@@ -148,12 +149,18 @@ export class LocalServerManager {
   private filesystemSSEHandler: SSEMCPHandler | null = null;
   private fileConversionSSEHandler: SSEMCPHandler | null = null;
   private appsScriptSSEHandler: SSEMCPHandler | null = null;
+  private mcpSSEHandler: SSEMCPHandler | null = null; // Combined handler for GET/POST /mcp (SSE transport)
   
   // HTTP Stream Handlers
   private httpStreamHandler: HTTPStreamHandler | null = null;
   private filesystemHTTPStreamHandler: HTTPStreamHandler | null = null;
   private appsScriptHTTPStreamHandler: HTTPStreamHandler | null = null;
-  
+
+  // Kakao answer store — maps userKey → stored AI answer (consumed on 'ㅇ' retrieval)
+  private kakaoAnswerStore = new Map<string, string>();
+  // Pending callback registrations — maps callbackId → { userKey }
+  private kakaoPendingCallbacks = new Map<string, { userKey: string }>();
+
   // Power management
   private powerSaveBlockerId: number | null = null;
 
@@ -384,8 +391,24 @@ export class LocalServerManager {
     console.log(`📨 Incoming request: ${req.method} ${url}`);
 
     // Root endpoint - List all available MCP servers (GET only)
-    if ((url === '/' || url === '/mcp') && req.method === 'GET') {
+    if (url === '/' && req.method === 'GET') {
       this.handleMCPServerList(res);
+      return;
+    }
+
+    // GET /mcp — SSE transport: open SSE stream and send endpoint event pointing to /mcp/message
+    // OpenClaw and other clients using the old MCP SSE transport send GET first to discover
+    // where to POST messages. We respond with an SSE stream + endpoint event.
+    if (url === '/mcp' && req.method === 'GET') {
+      const sseHandler = this.getMCPSSEHandler();
+      await sseHandler.handleSSEStream(req, res);
+      return;
+    }
+
+    // POST /mcp/message — SSE transport message endpoint (client POSTs here after GET /mcp)
+    if (url === '/mcp/message' && req.method === 'POST') {
+      const sseHandler = this.getMCPSSEHandler();
+      await sseHandler.handleMessage(req, res);
       return;
     }
 
@@ -532,6 +555,12 @@ export class LocalServerManager {
     // AI Center MCP Server endpoints (workflows + neuron entities/relations/tags)
     if (url.startsWith('/ai-center')) {
       await this.handleAICenterEndpoint(req, res, url);
+      return;
+    }
+
+    // KakaoTalk answer callback — OpenClaw posts the AI answer here
+    if (url.startsWith('/kakao/callback/') && req.method === 'POST') {
+      await this.handleKakaoAnswerCallback(req, res, url);
       return;
     }
 
@@ -772,6 +801,65 @@ export class LocalServerManager {
       this.aiCenterMCPService = new AICenterMCPService();
     }
     return this.aiCenterMCPService;
+  }
+
+  /**
+   * Create a combined MCP service that aggregates all enabled tool services.
+   * This is used for the main /mcp SSE endpoint exposed to OpenClaw.
+   */
+  private createCombinedMCPService(): IMCPService {
+    const self = this;
+
+    function safeTools(service: IMCPService): MCPTool[] {
+      try { return service.listTools(); } catch { return []; }
+    }
+
+    function getServices(): IMCPService[] {
+      const list: IMCPService[] = [];
+      try { list.push(self.getFinanceHubMCPService()); } catch {}
+      try { list.push(self.getKoreanLawMCPService()); } catch {}
+      try { list.push(self.getUserDataMCPService()); } catch {}
+      try { list.push(self.getConversationsMCPService()); } catch {}
+      try { list.push(self.getSheetsMCPService()); } catch {}
+      try { list.push(self.getInternalKnowledgeMCPService()); } catch {}
+      try { list.push(self.getAICenterMCPService()); } catch {}
+      try { list.push(self.getPageIndexMCPService()); } catch {}
+      try { list.push(self.getFilesystemMCPService()); } catch {}
+      return list;
+    }
+
+    return {
+      getServerInfo: () => ({ name: 'egdesk-mcp-server', version: '1.0.0' }),
+      getCapabilities: () => ({ tools: {}, resources: {} }),
+
+      listTools(): MCPTool[] {
+        const all: MCPTool[] = [];
+        for (const svc of getServices()) {
+          all.push(...safeTools(svc));
+        }
+        return all;
+      },
+
+      async executeTool(name: string, args: Record<string, any>): Promise<MCPToolResult> {
+        for (const svc of getServices()) {
+          if (safeTools(svc).some(t => t.name === name)) {
+            if (svc.initialize) await svc.initialize();
+            return svc.executeTool(name, args);
+          }
+        }
+        throw new Error(`Tool not found: ${name}`);
+      }
+    };
+  }
+
+  /**
+   * Get or create the combined SSE handler for the main /mcp endpoint
+   */
+  private getMCPSSEHandler(): SSEMCPHandler {
+    if (!this.mcpSSEHandler) {
+      this.mcpSSEHandler = new SSEMCPHandler(this.createCombinedMCPService(), '/mcp/message', 'mcp-combined');
+    }
+    return this.mcpSSEHandler;
   }
 
   /**
@@ -1832,27 +1920,142 @@ export class LocalServerManager {
 
   /**
    * KakaoTalk skill endpoint.
-   * Receives a Kakao skill webhook and proxies it to the OpenClaw plugin at
-   * localhost:18789/kakao/skill, which handles the ACK, AI dispatch, and
-   * callback to KakaoTalk.
+   *
+   * If the user's utterance is 'ㅇ' or 'o', return the last stored AI answer
+   * for that user (consumed on retrieval).
+   *
+   * Otherwise:
+   *  1. Immediately return a holding message telling the user to type 'ㅇ'.
+   *  2. Forward the request to OpenClaw in the background, replacing the
+   *     Kakao-issued callbackUrl with our own /kakao/callback/:id endpoint.
+   *  3. When OpenClaw calls our callback, store the answer keyed by userKey.
    */
   private async handleKakaoSkill(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    await this.proxyToOpenClaw(req, res);
+    // Read body
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', resolve);
+    });
+    const bodyText = Buffer.concat(chunks).toString();
+
+    let body: any;
+    try {
+      body = JSON.parse(bodyText);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+
+    const utterance: string = (body?.userRequest?.utterance ?? '').trim();
+    const userKey: string =
+      body?.userRequest?.user?.properties?.botUserKey ||
+      body?.userRequest?.user?.properties?.plusfriendUserKey ||
+      body?.userRequest?.user?.id ||
+      'unknown';
+
+    // ── 'ㅇ' retrieval command ────────────────────────────────────────────────
+    if (utterance === 'ㅇ' || utterance === 'o') {
+      const cached = this.kakaoAnswerStore.get(userKey);
+      if (cached) {
+        this.kakaoAnswerStore.delete(userKey);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          version: '2.0',
+          template: { outputs: [{ simpleText: { text: cached } }] },
+        }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          version: '2.0',
+          template: { outputs: [{ simpleText: { text: '아직 처리 중이에요. 잠시 후 다시 \'ㅇ\'를 입력해주세요 😊' } }] },
+        }));
+      }
+      return;
+    }
+
+    // ── Holding message + background dispatch ─────────────────────────────────
+    // Generate a callback ID so we can store the AI answer when it arrives
+    const callbackId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.kakaoPendingCallbacks.set(callbackId, { userKey });
+
+    // Replace the Kakao-issued callbackUrl with our own intercept endpoint.
+    // This lets OpenClaw work normally while we capture (and store) the answer.
+    const ourCallbackUrl = `http://localhost:8080/kakao/callback/${callbackId}`;
+    const modifiedBody = JSON.parse(JSON.stringify(body));
+    if (modifiedBody.userRequest) {
+      modifiedBody.userRequest.callbackUrl = ourCallbackUrl;
+    }
+
+    // Return the holding message immediately (no useCallback — this IS the response)
+    const now = new Date();
+    const minute = now.getMinutes();
+    const holdText = `처리 중이에요! 잠시 후 'ㅇ'를 입력하면 답변을 드릴게요 😊\n(약 ${minute}분 ${now.getSeconds()}초에 접수됨)`;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      version: '2.0',
+      template: { outputs: [{ simpleText: { text: holdText } }] },
+    }));
+
+    // Fire off to OpenClaw in background — no await, we already responded
+    fetch('http://localhost:18789/kakao/skill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(modifiedBody),
+    }).catch((err: unknown) => {
+      console.error('[KakaoSkill] Background OpenClaw dispatch failed:', err);
+    });
   }
 
   /**
-   * Synchronous variant — same proxy, but without a callbackUrl in the body
-   * so the OpenClaw plugin returns the AI reply directly in the response.
+   * Receives the AI answer from OpenClaw (it POSTs here instead of the
+   * original Kakao callbackUrl).  Stores the answer text for the user to
+   * retrieve by typing 'ㅇ'.
+   */
+  private async handleKakaoAnswerCallback(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: string,
+  ): Promise<void> {
+    const callbackId = url.replace('/kakao/callback/', '');
+    const pending = this.kakaoPendingCallbacks.get(callbackId);
+
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', resolve);
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+
+    if (!pending) {
+      console.warn(`[KakaoCallback] Unknown callbackId: ${callbackId}`);
+      return;
+    }
+    this.kakaoPendingCallbacks.delete(callbackId);
+
+    let answerText = '';
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      // Kakao callback body: { version, template: { outputs: [{ simpleText: { text } }] } }
+      answerText =
+        payload?.template?.outputs?.[0]?.simpleText?.text ||
+        payload?.template?.outputs?.[0]?.textCard?.text ||
+        JSON.stringify(payload);
+    } catch {
+      answerText = Buffer.concat(chunks).toString() || '(응답 파싱 실패)';
+    }
+
+    this.kakaoAnswerStore.set(pending.userKey, answerText);
+    console.log(`[KakaoCallback] Stored answer for user ${pending.userKey} (${answerText.length} chars)`);
+  }
+
+  /**
+   * Synchronous variant — same proxy, useful for testing.
    */
   private async handleKakaoSkillSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    await this.proxyToOpenClaw(req, res);
-  }
-
-  /**
-   * Forward the raw request body to OpenClaw's kakao plugin endpoint and
-   * stream the response back to the caller.
-   */
-  private async proxyToOpenClaw(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve) => {
       req.on('data', (c: Buffer) => chunks.push(c));
