@@ -375,6 +375,7 @@ async function createKakaoChannel(
             await channelMenu.click();
             console.log('[kakao:createChannel] Clicked "채널". Waiting for settings page...');
             await page.waitForTimeout(5000);
+            await dismissKakaoPopups(page);
           } catch (e: any) {
             console.error('[kakao:createChannel] Failed to click "채널" menu:', e.message);
           }
