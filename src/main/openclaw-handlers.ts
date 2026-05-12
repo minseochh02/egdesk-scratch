@@ -346,7 +346,25 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           log(`Kakao plugin install (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
 
-        // ── 3b. Run onboard daemon ──
+        // ── 3b. Configure Gemini as the AI provider, then install daemon ──
+        const geminiKeyForOnboard = cleanEnv.GEMINI_API_KEY;
+        if (geminiKeyForOnboard) {
+          log('Running: openclaw onboard --non-interactive (Gemini)');
+          try {
+            const { stdout: onboardOut, stderr: onboardErr } = await execAsync(
+              `openclaw onboard --non-interactive --accept-risk --mode local --auth-choice gemini-api-key --gemini-api-key "${geminiKeyForOnboard}"`,
+              { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
+            );
+            log(`onboard: ${(onboardOut || onboardErr || 'done').trim().slice(0, 300)}`);
+          } catch (e: any) {
+            const out = (e.stdout || e.stderr || '').trim();
+            const succeeded = out.includes('openclaw.json') || out.includes('Telegram: ok');
+            log(succeeded ? `onboard: ${out.slice(0, 300)}` : `onboard failed (non-fatal): ${(e.message || out).slice(0, 300)}`);
+          }
+        } else {
+          log('⚠️ No Gemini API key — skipping onboard');
+        }
+
         log('Running: openclaw onboard --install-daemon');
         try {
           const { stdout: onboardOut, stderr: onboardErr } = await execAsync('openclaw onboard --install-daemon', {
