@@ -309,10 +309,10 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           // Register the EGDesk local MCP server under the correct openclaw schema path
           freshCfg.mcp = freshCfg.mcp ?? {};
           freshCfg.mcp.servers = freshCfg.mcp.servers ?? {};
-          freshCfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080' };
+          freshCfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080/mcp' };
           fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
           fs.writeFileSync(lastGoodPath, JSON.stringify(freshCfg, null, 2));
-          log('Config finalized with mcp.servers.egdesk → http://localhost:8080');
+          log('Config finalized with mcp.servers.egdesk → http://localhost:8080/mcp');
         } catch (e: any) {
           log(`Config finalize (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
         }
@@ -388,7 +388,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             // Restore MCP server entry (wiped by onboard overwrite)
             cfg.mcp = cfg.mcp ?? {};
             cfg.mcp.servers = cfg.mcp.servers ?? {};
-            cfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080' };
+            cfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080/mcp' };
             log('Restored mcp.servers.egdesk after onboard overwrite');
 
             fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));

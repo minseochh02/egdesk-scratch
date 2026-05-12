@@ -277,34 +277,50 @@ const OpenClawPage: React.FC = () => {
 
     addLog(`Using tunnel URL: ${skillUrl}`);
 
-    // Step A: Create Channel
-    addLog(`Creating KakaoTalk channel "@${searchId}"...`);
+    // Step A: Create Channel — skip if already done and saved in profile
     let channelOk = false;
-    try {
-      const channelResult = await (window as any).electron.debug.kakao.createChannel(
-        PROFILE_NAME, channelName, searchId
-      );
-      if (channelResult?.success) {
-        addLog(`✅ KakaoTalk channel created: @${searchId}`);
-        setKakaoSearchId(searchId);
-        if (channelResult.channelUrl) {
-          setKakaoChannelUrl(channelResult.channelUrl);
-          addLog(`채널 URL: ${channelResult.channelUrl}`);
+    let resolvedSearchId = searchId;
+    let resolvedChannelUrl = '';
+
+    if (kakaoSetup && kakaoSearchId) {
+      addLog(`✅ KakaoTalk channel already set up (@${kakaoSearchId}) — skipping creation.`);
+      resolvedSearchId = kakaoSearchId;
+      resolvedChannelUrl = kakaoChannelUrl;
+      channelOk = true;
+    } else {
+      addLog(`Creating KakaoTalk channel "@${searchId}"...`);
+      try {
+        const channelResult = await (window as any).electron.debug.kakao.createChannel(
+          PROFILE_NAME, channelName, searchId
+        );
+        if (channelResult?.success) {
+          addLog(`✅ KakaoTalk channel created: @${searchId}`);
+          resolvedSearchId = searchId;
+          resolvedChannelUrl = channelResult.channelUrl ?? '';
+          setKakaoSearchId(searchId);
+          if (channelResult.channelUrl) {
+            setKakaoChannelUrl(channelResult.channelUrl);
+            addLog(`채널 URL: ${channelResult.channelUrl}`);
+          }
+          channelOk = true;
+        } else {
+          addLog(`⚠️ KakaoTalk channel creation failed: ${channelResult?.error || 'Unknown error'}`);
         }
-        channelOk = true;
-      } else {
-        addLog(`⚠️ KakaoTalk channel creation failed: ${channelResult?.error || 'Unknown error'}`);
+      } catch (e: any) {
+        addLog(`⚠️ KakaoTalk channel error: ${e?.message || e}`);
       }
-    } catch (e: any) {
-      addLog(`⚠️ KakaoTalk channel error: ${e?.message || e}`);
     }
 
-    // Step B: Create Bot (only if channel was created)
+    // Step B: Create Bot — skip if channel and bot are already done
     if (channelOk) {
+      if (kakaoSetup && kakaoBotName) {
+        addLog(`✅ KakaoTalk bot already set up (${kakaoBotName}) — skipping creation.`);
+        setKakaoSetup(true);
+      } else {
       addLog(`Creating KakaoTalk bot "${botName}"...`);
       try {
         const botResult = await (window as any).electron.debug.kakao.createBot(
-          PROFILE_NAME, botName, `@${searchId}`, skillUrl
+          PROFILE_NAME, botName, `@${resolvedSearchId}`, skillUrl
         );
         if (botResult?.success) {
           addLog(`✅ KakaoTalk bot created and deployed: ${botName}`);
@@ -314,8 +330,8 @@ const OpenClawPage: React.FC = () => {
           try {
             await (window as any).electron.debug.googleProfile.update(PROFILE_NAME, {
               kakaoSetup: true,
-              kakaoSearchId: searchId,
-              kakaoChannelUrl: channelResult?.channelUrl ?? '',
+              kakaoSearchId: resolvedSearchId,
+              kakaoChannelUrl: resolvedChannelUrl,
               kakaoBotName: botName,
             });
           } catch { /* non-fatal */ }
@@ -325,6 +341,7 @@ const OpenClawPage: React.FC = () => {
       } catch (e: any) {
         addLog(`⚠️ KakaoTalk bot error: ${e?.message || e}`);
       }
+      } // end else (bot not yet created)
     }
 
     // Don't call setStep('done') here — let the caller decide what comes next
