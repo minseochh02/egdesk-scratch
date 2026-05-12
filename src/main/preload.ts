@@ -2217,6 +2217,7 @@ const electronHandler = {
       getEmail: (profileName: string) => ipcRenderer.invoke('google-profile:get-email', { profileName }),
       getPhone: (profileName: string) => ipcRenderer.invoke('google-profile:get-phone', { profileName }),
       list: () => ipcRenderer.invoke('google-profile:list'),
+      update: (profileName: string, data: Record<string, unknown>) => ipcRenderer.invoke('google-profile:update', { profileName, data }),
       delete: (profileName: string) => ipcRenderer.invoke('google-profile:delete', { profileName }),
     },
     // GitHub account creation via saved Google profile
