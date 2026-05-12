@@ -89,6 +89,12 @@ const OpenClawPage: React.FC = () => {
             setTelegramBotTokens([profile.telegramBotToken]);
             setTelegramSetup(true);
           }
+          if (profile.kakaoSetup) {
+            setKakaoSetup(true);
+            if (profile.kakaoSearchId) setKakaoSearchId(profile.kakaoSearchId);
+            if (profile.kakaoChannelUrl) setKakaoChannelUrl(profile.kakaoChannelUrl);
+            if (profile.kakaoBotName) setKakaoBotName(profile.kakaoBotName);
+          }
           setStep('done');
         }
       } catch (_) {}
@@ -304,6 +310,15 @@ const OpenClawPage: React.FC = () => {
           addLog(`✅ KakaoTalk bot created and deployed: ${botName}`);
           setKakaoBotName(botName);
           setKakaoSetup(true);
+          // Persist Kakao config so it survives app restart
+          try {
+            await (window as any).electron.debug.googleProfile.update(PROFILE_NAME, {
+              kakaoSetup: true,
+              kakaoSearchId: searchId,
+              kakaoChannelUrl: channelResult?.channelUrl ?? '',
+              kakaoBotName: botName,
+            });
+          } catch { /* non-fatal */ }
         } else {
           addLog(`⚠️ KakaoTalk bot creation failed: ${botResult?.error || 'Unknown error'}`);
         }
@@ -465,12 +480,19 @@ const OpenClawPage: React.FC = () => {
     } catch { /* non-fatal */ }
   };
 
-  // Poll status every 10s when on the done screen
+  // Poll status every 10s when on the done screen.
+  // Use recursive setTimeout (not setInterval) so the next poll only starts after the
+  // previous one finishes — prevents concurrent openclaw channels status subprocesses
+  // from stacking up if a call takes close to the 10s timeout.
   useEffect(() => {
     if (step !== 'done') return;
-    refreshStatus();
-    const interval = setInterval(refreshStatus, 10_000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    const poll = async () => {
+      await refreshStatus();
+      if (!cancelled) setTimeout(poll, 10_000);
+    };
+    poll();
+    return () => { cancelled = true; };
   }, [step]);
 
   const handleStartGateway = async () => {

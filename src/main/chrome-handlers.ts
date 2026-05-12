@@ -5087,6 +5087,22 @@ test('recorded test', async ({ page }) => {
   });
 
   /**
+   * Merge arbitrary fields into a profile's profile.json.
+   */
+  ipcMain.handle('google-profile:update', async (_event, { profileName, data }: { profileName: string; data: Record<string, unknown> }) => {
+    try {
+      const profileDir = path.join(getGoogleProfilesDir(), profileName);
+      if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
+      const metaPath = path.join(profileDir, 'profile.json');
+      const existing = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : {};
+      fs.writeFileSync(metaPath, JSON.stringify({ ...existing, ...data }, null, 2));
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
    * Delete a saved Google profile directory.
    */
   ipcMain.handle('google-profile:delete', async (_event, { profileName }: { profileName: string }) => {

@@ -799,6 +799,10 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           } catch { /* not ready yet */ }
         }
 
+        // Detach stdout/stderr before unreffing — otherwise the main process keeps reading
+        // every byte the gateway prints indefinitely and burns CPU.
+        gatewayProc.stdout?.destroy();
+        gatewayProc.stderr?.destroy();
         gatewayProc.unref();
 
         if (gatewayStartError) {
@@ -1139,6 +1143,23 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         };
       }
 
+      // 2b. Ensure Kakao plugin is installed (idempotent — openclaw skips if already present)
+      try {
+        const { app: electronApp } = require('electron');
+        const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
+        const prodResourcesPath = process.resourcesPath
+          || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
+        const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin'))
+          ? devResourcesPath
+          : (prodResourcesPath || devResourcesPath);
+        const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
+        if (fs.existsSync(pluginPath)) {
+          await execAsync(`openclaw plugins install "${pluginPath}"`, {
+            env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024,
+          });
+        }
+      } catch { /* non-fatal — plugin may already be installed */ }
+
       // 3. Spawn and capture initial output for debugging
       const spawnOpts = IS_WIN
         ? { env: cleanEnv, detached: false, stdio: ['ignore', 'pipe', 'pipe'] as const, shell: true }
@@ -1153,6 +1174,10 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       // Wait a few seconds to see if it crashes immediately
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
+          // Detach stdout/stderr before unreffing — otherwise Electron keeps reading every
+          // byte the gateway prints, accumulating it in `output` indefinitely and burning CPU.
+          proc.stdout?.destroy();
+          proc.stderr?.destroy();
           proc.unref();
           resolve({ success: true });
         }, 4000);
