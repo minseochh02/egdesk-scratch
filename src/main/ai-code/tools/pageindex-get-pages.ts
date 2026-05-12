@@ -3,6 +3,7 @@
  */
 
 import type { ToolExecutor } from '../../types/ai-types';
+import { getPageIndexService } from '../../pageindex/pageindex-service';
 
 export class PageIndexGetPagesTool implements ToolExecutor {
   name = 'pageindex_get_pages';
@@ -14,14 +15,7 @@ export class PageIndexGetPagesTool implements ToolExecutor {
     const { doc_id, pages } = args;
     if (!doc_id) throw new Error('doc_id is required');
     if (!pages) throw new Error('pages is required');
-
-    const response = await fetch('http://localhost:8080/pageindex/tools/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'pageindex_get_pages', arguments: args }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'pageindex_get_pages failed');
-    return data.result.content[0].text;
+    const service = getPageIndexService();
+    return service.getPageContent(doc_id, pages);
   }
 }

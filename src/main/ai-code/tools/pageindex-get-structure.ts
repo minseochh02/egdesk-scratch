@@ -3,6 +3,7 @@
  */
 
 import type { ToolExecutor } from '../../types/ai-types';
+import { getPageIndexService } from '../../pageindex/pageindex-service';
 
 export class PageIndexGetStructureTool implements ToolExecutor {
   name = 'pageindex_get_structure';
@@ -13,14 +14,7 @@ export class PageIndexGetStructureTool implements ToolExecutor {
   async execute(args: { doc_id: string }): Promise<string> {
     const { doc_id } = args;
     if (!doc_id) throw new Error('doc_id is required');
-
-    const response = await fetch('http://localhost:8080/pageindex/tools/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'pageindex_get_structure', arguments: args }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'pageindex_get_structure failed');
-    return data.result.content[0].text;
+    const service = getPageIndexService();
+    return service.getDocumentStructure(doc_id);
   }
 }

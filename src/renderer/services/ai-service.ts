@@ -48,7 +48,7 @@ export class AIService {
     message: string,
     options: {
       tools?: ToolDefinition[];
-      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law';
+      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law' | 'pageindex';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;
@@ -208,7 +208,7 @@ export class AIService {
     message: string,
     options: {
       tools?: ToolDefinition[];
-      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law';
+      toolContext?: 'filesystem' | 'apps-script' | 'all' | 'korean-law' | 'pageindex';
       maxTurns?: number;
       timeoutMs?: number;
       autoExecuteTools?: boolean;

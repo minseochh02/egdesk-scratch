@@ -431,3 +431,199 @@
   margin-left: 0.5rem;
   padding-left: 0.5rem;
 }
+
+/* ─── Mode Toggle ─────────────────────────────────────────── */
+
+.pi-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 10px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.pi-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pi-mode-btn:hover { color: #e2e8f0; }
+
+.pi-mode-btn.is-active {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+
+/* ─── Chat Mode ───────────────────────────────────────────── */
+
+.pi-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.pi-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.pi-chat-messages::-webkit-scrollbar { width: 4px; }
+.pi-chat-messages::-webkit-scrollbar-track { background: transparent; }
+.pi-chat-messages::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 2px; }
+
+.pi-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  text-align: center;
+  padding: 40px;
+  gap: 10px;
+}
+
+.pi-chat-empty-icon {
+  font-size: 48px;
+  opacity: 0.25;
+  margin-bottom: 12px;
+}
+
+.pi-chat-empty p {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+.pi-chat-hint {
+  font-size: 12px !important;
+  color: #475569 !important;
+}
+
+.pi-chat-msg {
+  display: flex;
+}
+
+.pi-chat-msg--user {
+  justify-content: flex-end;
+}
+
+.pi-chat-msg--assistant {
+  justify-content: flex-start;
+}
+
+.pi-chat-bubble {
+  max-width: 78%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.pi-chat-msg--user .pi-chat-bubble {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.pi-chat-msg--assistant .pi-chat-bubble {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border-bottom-left-radius: 4px;
+}
+
+.pi-chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  flex-shrink: 0;
+}
+
+.pi-chat-input {
+  flex: 1;
+  padding: 11px 16px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  color: #e2e8f0;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.pi-chat-input::placeholder { color: #475569; }
+
+.pi-chat-input:focus {
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.pi-chat-input:disabled { opacity: 0.5; }
+
+.pi-chat-send-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  flex-shrink: 0;
+}
+
+.pi-chat-send-btn:hover { opacity: 0.9; }
+.pi-chat-send-btn:active { transform: scale(0.96); }
+.pi-chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.pi-chat-clear-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.pi-chat-clear-btn:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.pi-chat-clear-btn:disabled { opacity: 0.4; cursor: not-allowed; }
