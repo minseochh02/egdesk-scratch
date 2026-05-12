@@ -362,19 +362,38 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             log(succeeded ? `onboard: ${out.slice(0, 300)}` : `onboard failed (non-fatal): ${(e.message || out).slice(0, 300)}`);
           }
 
-          // onboard doesn't reliably write agents.defaults.model in non-interactive mode —
-          // without it openclaw falls back to its built-in OpenAI default.
+          // onboard does a full "Config overwrite" — it replaces openclaw.json entirely, wiping
+          // the telegram bot token and mcp.servers we wrote in step 2.  Restore them now,
+          // and also force the Gemini model (onboard only prints instructions, doesn't set it).
           try {
             const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
             const cfg = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) : {};
+
+            // Force Gemini model — openclaw falls back to its built-in OpenAI default otherwise
             cfg.agents = cfg.agents ?? {};
             cfg.agents.defaults = cfg.agents.defaults ?? {};
             cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
             cfg.agents.defaults.model.primary = 'google/gemini-2.5-flash';
-            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
             log('Set agents.defaults.model.primary → google/gemini-2.5-flash');
+
+            // Restore telegram bot token (wiped by onboard overwrite)
+            if (resolvedToken) {
+              cfg.channels = cfg.channels ?? {};
+              cfg.channels.telegram = cfg.channels.telegram ?? {};
+              cfg.channels.telegram.botToken = resolvedToken;
+              cfg.channels.telegram.enabled = true;
+              log('Restored channels.telegram.botToken after onboard overwrite');
+            }
+
+            // Restore MCP server entry (wiped by onboard overwrite)
+            cfg.mcp = cfg.mcp ?? {};
+            cfg.mcp.servers = cfg.mcp.servers ?? {};
+            cfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080' };
+            log('Restored mcp.servers.egdesk after onboard overwrite');
+
+            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
           } catch (e: any) {
-            log(`Could not write model config (non-fatal): ${e?.message}`);
+            log(`Could not write model/restore config (non-fatal): ${e?.message}`);
           }
 
         } else {
