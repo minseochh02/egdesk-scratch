@@ -4,6 +4,7 @@
  */
 
 import type { ToolExecutor } from '../../types/ai-types';
+import { getPageIndexService } from '../../pageindex/pageindex-service';
 
 export class PageIndexIndexDocumentTool implements ToolExecutor {
   name = 'pageindex_index_document';
@@ -14,14 +15,12 @@ export class PageIndexIndexDocumentTool implements ToolExecutor {
   async execute(args: { file_path: string }): Promise<string> {
     const { file_path } = args;
     if (!file_path) throw new Error('file_path is required');
-
-    const response = await fetch('http://localhost:8080/pageindex/tools/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'pageindex_index_document', arguments: args }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'pageindex_index_document failed');
-    return data.result.content[0].text;
+    const service = getPageIndexService();
+    const docId = await service.indexDocument(file_path);
+    return JSON.stringify({
+      success: true,
+      doc_id: docId,
+      message: `Document indexed successfully. Use doc_id "${docId}" with other pageindex tools.`,
+    }, null, 2);
   }
 }

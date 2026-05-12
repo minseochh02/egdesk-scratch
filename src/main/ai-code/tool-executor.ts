@@ -57,7 +57,12 @@ import {
   CompanyResearchSearchTool,
   KoreanLawSearchTool,
   KoreanLawGetTextTool,
-  KoreanLawGetDecisionTool
+  KoreanLawGetDecisionTool,
+  PageIndexIndexDocumentTool,
+  PageIndexListDocumentsTool,
+  PageIndexGetDocumentTool,
+  PageIndexGetStructureTool,
+  PageIndexGetPagesTool,
 } from './tools';
 
 
@@ -826,6 +831,46 @@ export class ToolRegistry {
           required: ['id']
         };
 
+      case 'pageindex_index_document':
+        return {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string', description: 'Absolute path to the PDF file to index' }
+          },
+          required: ['file_path']
+        };
+
+      case 'pageindex_list_documents':
+        return { type: 'object', properties: {}, required: [] };
+
+      case 'pageindex_get_document':
+        return {
+          type: 'object',
+          properties: {
+            doc_id: { type: 'string', description: 'Document ID returned by pageindex_index_document or pageindex_list_documents' }
+          },
+          required: ['doc_id']
+        };
+
+      case 'pageindex_get_structure':
+        return {
+          type: 'object',
+          properties: {
+            doc_id: { type: 'string', description: 'Document ID' }
+          },
+          required: ['doc_id']
+        };
+
+      case 'pageindex_get_pages':
+        return {
+          type: 'object',
+          properties: {
+            doc_id: { type: 'string', description: 'Document ID' },
+            pages: { type: 'string', description: 'Pages to retrieve: "5", "3,8", "5-7", "1,3,5-7"' }
+          },
+          required: ['doc_id', 'pages']
+        };
+
       default:
         return {
           type: 'object',
@@ -1021,6 +1066,13 @@ export class ToolRegistry {
     this.registerTool(new KoreanLawSearchTool());
     this.registerTool(new KoreanLawGetTextTool());
     this.registerTool(new KoreanLawGetDecisionTool());
+
+    // PageIndex Tools (vectorless PDF RAG)
+    this.registerTool(new PageIndexIndexDocumentTool());
+    this.registerTool(new PageIndexListDocumentsTool());
+    this.registerTool(new PageIndexGetDocumentTool());
+    this.registerTool(new PageIndexGetStructureTool());
+    this.registerTool(new PageIndexGetPagesTool());
   }
 }
 
@@ -1088,9 +1140,21 @@ export function getKoreanLawTools(): ToolExecutor[] {
 }
 
 /**
+ * Get PageIndex tools for document RAG context
+ */
+export function getPageIndexTools(): ToolExecutor[] {
+  return [
+    new PageIndexListDocumentsTool(),
+    new PageIndexGetDocumentTool(),
+    new PageIndexGetStructureTool(),
+    new PageIndexGetPagesTool(),
+  ];
+}
+
+/**
  * Get tool names for a specific context
  */
-export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'user-data' | 'korean-law' | 'all'): string[] {
+export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | 'user-data' | 'korean-law' | 'pageindex' | 'all'): string[] {
   switch (context) {
     case 'filesystem':
       return getFilesystemTools().map(t => t.name);
@@ -1100,6 +1164,8 @@ export function getToolNamesForContext(context: 'filesystem' | 'apps-script' | '
       return getUserDataTools().map(t => t.name);
     case 'korean-law':
       return getKoreanLawTools().map(t => t.name);
+    case 'pageindex':
+      return getPageIndexTools().map(t => t.name);
     case 'all':
     default:
       return Array.from(toolRegistry['tools'].keys());

@@ -3,6 +3,7 @@
  */
 
 import type { ToolExecutor } from '../../types/ai-types';
+import { getPageIndexService } from '../../pageindex/pageindex-service';
 
 export class PageIndexListDocumentsTool implements ToolExecutor {
   name = 'pageindex_list_documents';
@@ -10,13 +11,8 @@ export class PageIndexListDocumentsTool implements ToolExecutor {
   dangerous = false;
 
   async execute(_args: Record<string, never>): Promise<string> {
-    const response = await fetch('http://localhost:8080/pageindex/tools/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'pageindex_list_documents', arguments: {} }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'pageindex_list_documents failed');
-    return data.result.content[0].text;
+    const service = getPageIndexService();
+    const documents = service.listDocuments();
+    return JSON.stringify({ total: documents.length, documents }, null, 2);
   }
 }
