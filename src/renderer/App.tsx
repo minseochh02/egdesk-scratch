@@ -312,7 +312,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.24</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.25</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -620,6 +620,10 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [googleProfiles, setGoogleProfiles] = useState<any[]>([]);
   const [googleProfileLoading, setGoogleProfileLoading] = useState(false);
   const [googleProfileStatus, setGoogleProfileStatus] = useState<Record<string, { authenticated?: boolean; checking?: boolean }>>({});
+  const [googleLoginEmail, setGoogleLoginEmail] = useState('');
+  const [googleLoginPassword, setGoogleLoginPassword] = useState('');
+  const [googleLoginLoading, setGoogleLoginLoading] = useState(false);
+  const [googleLoginStage, setGoogleLoginStage] = useState<string | null>(null);
 
   // GitHub automation state
   const [githubProfileName, setGithubProfileName] = useState('openclaw-default');
@@ -640,6 +644,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [kakaoBotName, setKakaoBotName] = useState('EGClaw Bot');
   const [kakaoSkillUrl, setKakaoSkillUrl] = useState('');
   const [kakaoRunning, setKakaoRunning] = useState(false);
+  const [kakaoReuseExisting, setKakaoReuseExisting] = useState(false);
 
 // Define addDebugLog function at the component level
   const addDebugLog = (message: string) => {
@@ -2031,6 +2036,84 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </button>
             </div>
 
+            {/* Automated Login */}
+            <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '4px' }}>
+              <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '10px', fontWeight: 'bold' }}>Automated Login (fills email + password automatically)</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                <input
+                  type="email"
+                  placeholder="Google email"
+                  value={googleLoginEmail}
+                  onChange={(e) => setGoogleLoginEmail(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+                <input
+                  type="password"
+                  placeholder="Google password"
+                  value={googleLoginPassword}
+                  onChange={(e) => setGoogleLoginPassword(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
+                />
+              </div>
+              {googleLoginStage && (
+                <div style={{ marginBottom: '10px', padding: '8px 12px', backgroundColor: '#111', border: '1px solid #333', borderRadius: '4px', color: '#aaa', fontSize: '12px', fontFamily: 'monospace' }}>
+                  Stage: {googleLoginStage}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  disabled={googleLoginLoading}
+                  onClick={async () => {
+                    if (!googleProfileName.trim()) { alert('Enter a profile name above'); return; }
+                    if (!googleLoginEmail.trim()) { alert('Enter a Google email'); return; }
+                    if (!googleLoginPassword.trim()) { alert('Enter the Google password'); return; }
+                    setGoogleLoginLoading(true);
+                    setGoogleLoginStage('starting');
+                    addDebugLog(`🤖 Auto-login for "${googleProfileName}" as ${googleLoginEmail}...`);
+                    const onStatus = (data: { stage: string; message: string }) => {
+                      setGoogleLoginStage(`${data.stage}: ${data.message}`);
+                      addDebugLog(`  [${data.stage}] ${data.message}`);
+                    };
+                    const removeListener = (window as any).electron.ipcRenderer.on('google:status', onStatus);
+                    try {
+                      const result = await (window as any).electron.debug.googleProfile.login(googleProfileName.trim(), googleLoginEmail.trim(), googleLoginPassword);
+                      if (result?.success) {
+                        addDebugLog(`✅ Auto-login succeeded for "${googleProfileName}"`);
+                        setGoogleLoginStage('done ✅');
+                        await loadGoogleProfiles();
+                      } else {
+                        addDebugLog(`❌ Auto-login failed: ${result?.error}`);
+                        setGoogleLoginStage(`error: ${result?.error}`);
+                      }
+                    } catch (e: any) {
+                      addDebugLog(`❌ Error: ${e?.message || e}`);
+                      setGoogleLoginStage(`error: ${e?.message || e}`);
+                    } finally {
+                      if (typeof removeListener === 'function') removeListener();
+                      setGoogleLoginLoading(false);
+                    }
+                  }}
+                  style={{ padding: '8px 16px', backgroundColor: '#1b5e20', color: '#fff', border: 'none', borderRadius: '4px', cursor: googleLoginLoading ? 'not-allowed' : 'pointer', opacity: googleLoginLoading ? 0.6 : 1, whiteSpace: 'nowrap', fontWeight: 'bold' }}
+                >
+                  {googleLoginLoading ? 'Logging in...' : 'Login (Automated)'}
+                </button>
+                <button
+                  disabled={!googleLoginLoading}
+                  onClick={async () => {
+                    try {
+                      await (window as any).electron.debug.googleProfile.resendTwoFactor();
+                      addDebugLog('📲 Resent 2FA notification');
+                    } catch (e: any) {
+                      addDebugLog(`❌ Resend error: ${e?.message || e}`);
+                    }
+                  }}
+                  style={{ padding: '8px 16px', backgroundColor: '#1a3a5c', color: '#fff', border: 'none', borderRadius: '4px', cursor: googleLoginLoading ? 'pointer' : 'not-allowed', opacity: googleLoginLoading ? 1 : 0.4, whiteSpace: 'nowrap' }}
+                >
+                  Resend 2FA
+                </button>
+              </div>
+            </div>
+
             {/* Saved Profiles List */}
             {googleProfiles.length === 0 ? (
               <div style={{ color: '#666', fontSize: '12px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '4px', border: '1px solid #333' }}>
@@ -2374,6 +2457,14 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#fff' }}
               />
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '13px', marginBottom: '10px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={kakaoReuseExisting}
+                onChange={(e) => setKakaoReuseExisting(e.target.checked)}
+              />
+              Reuse existing channel/bot if found
+            </label>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button
                 disabled={kakaoRunning}
@@ -2388,7 +2479,8 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     const result = await (window as any).electron.debug.kakao.createChannel(
                       kakaoProfileName.trim() || 'openclaw-default',
                       kakaoChannelName.trim(),
-                      kakaoSearchId.trim()
+                      kakaoSearchId.trim(),
+                      kakaoReuseExisting
                     );
                     if (result?.success) {
                       addDebugLog(`✅ KakaoTalk channel created: @${result.searchId || kakaoSearchId}`);
@@ -2426,7 +2518,8 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                       kakaoProfileName.trim() || 'openclaw-default',
                       kakaoBotName.trim(),
                       `@${kakaoSearchId.trim()}`,
-                      kakaoSkillUrl.trim()
+                      kakaoSkillUrl.trim(),
+                      kakaoReuseExisting
                     );
                     if (result?.success) {
                       addDebugLog(`✅ KakaoTalk bot created and deployed: ${result.botName || kakaoBotName}`);
@@ -2465,7 +2558,8 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     const chResult = await (window as any).electron.debug.kakao.createChannel(
                       kakaoProfileName.trim() || 'openclaw-default',
                       kakaoChannelName.trim(),
-                      kakaoSearchId.trim()
+                      kakaoSearchId.trim(),
+                      kakaoReuseExisting
                     );
                     if (chResult?.success) {
                       addDebugLog(`  ✅ Channel created: @${kakaoSearchId}`);
@@ -2475,7 +2569,8 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                         kakaoProfileName.trim() || 'openclaw-default',
                         kakaoBotName.trim(),
                         `@${kakaoSearchId.trim()}`,
-                        kakaoSkillUrl.trim()
+                        kakaoSkillUrl.trim(),
+                        kakaoReuseExisting
                       );
                       if (botResult?.success) {
                         addDebugLog(`  ✅ Bot created and deployed: ${kakaoBotName}`);

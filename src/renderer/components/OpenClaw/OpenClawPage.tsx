@@ -21,6 +21,8 @@ function cleanGmailToUsername(email: string): string {
 
 const OpenClawPage: React.FC = () => {
   const [step, setStep] = useState<Step>('welcome');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [googleEmail, setGoogleEmail] = useState('');
   const [googlePhone, setGooglePhone] = useState('');
   const googlePhoneRef = useRef('');
@@ -388,24 +390,27 @@ const OpenClawPage: React.FC = () => {
   };
 
   const handleGetStarted = async () => {
+    if (!loginEmail || !loginPassword) {
+      setError('Please enter your Google email and password.');
+      return;
+    }
     setError('');
     setLogs([]);
     setStep('logging-in');
-    addLog('Opening Chrome — log in with your Google account, then close the window.');
+    addLog('Opening Chrome — entering your Google credentials automatically…');
 
     try {
-      const result = await (window as any).electron.debug.googleProfile.launch(PROFILE_NAME);
+      const result = await (window as any).electron.debug.googleProfile.login(PROFILE_NAME, loginEmail, loginPassword);
       setGoogleStatus(null);
       if (!result?.success) {
-        setError(result?.error || 'Failed to launch Chrome.');
+        setError(result?.error || 'Failed to log in to Google.');
         setStep('welcome');
         return;
       }
 
-      // Chrome closed — detect the Gmail used
+      // Use the email we already know
       addLog('Login saved. Detecting Google account…');
-      const emailResult = await (window as any).electron.debug.googleProfile.getEmail(PROFILE_NAME);
-      const email: string = emailResult?.email || '';
+      const email: string = result.detectedEmail || loginEmail;
       const username = email ? cleanGmailToUsername(email) : 'egdesk-user';
 
       if (email) {
@@ -686,6 +691,7 @@ const OpenClawPage: React.FC = () => {
     } catch { /* non-fatal — profile may not exist yet */ }
 
     setStep('welcome');
+    setLoginPassword('');
     setGoogleEmail('');
     setGooglePhone('');
     googlePhoneRef.current = '';
@@ -739,6 +745,36 @@ const OpenClawPage: React.FC = () => {
           {error && (
             <p style={{ color: '#f87171', fontSize: '13px', marginBottom: '16px' }}>{error}</p>
           )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px', textAlign: 'left' }}>
+            <div>
+              <label style={{ display: 'block', color: '#aaa', fontSize: '12px', marginBottom: '4px' }}>Google Email</label>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                placeholder="you@gmail.com"
+                style={{
+                  width: '100%', padding: '10px 12px', borderRadius: '6px',
+                  border: '1px solid #444', backgroundColor: '#1a1a1a',
+                  color: '#fff', fontSize: '14px', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', color: '#aaa', fontSize: '12px', marginBottom: '4px' }}>Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{
+                  width: '100%', padding: '10px 12px', borderRadius: '6px',
+                  border: '1px solid #444', backgroundColor: '#1a1a1a',
+                  color: '#fff', fontSize: '14px', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
           <button
             onClick={handleGetStarted}
             style={{
@@ -791,30 +827,60 @@ const OpenClawPage: React.FC = () => {
             </div>
           )}
 
-          {/* Stage indicator for opening / logged-in states */}
+          {/* Stage indicator for all non-waiting stages */}
           {googleStatus && googleStatus.stage !== 'waiting-for-login' && (() => {
             const cfg: Record<string, { icon: string; color: string; bg: string; border: string }> = {
-              'opening':     { icon: '🌐', color: '#aaa',    bg: '#1a1a1a', border: '#444' },
-              'logged-in':   { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'opening':         { icon: '🌐', color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'navigating':      { icon: '🌐', color: '#aaa',    bg: '#1a1a1a', border: '#444' },
+              'filling-email':   { icon: '✉️',  color: '#93c5fd', bg: '#0c1a2e', border: '#3b82f6' },
+              'filling-password':{ icon: '🔑', color: '#93c5fd', bg: '#0c1a2e', border: '#3b82f6' },
+              'waiting-2fa':     { icon: '📱', color: '#fbbf24', bg: '#1c1200', border: '#d97706' },
+              '2fa-approved':    { icon: '✅', color: '#4ade80', bg: '#0d2a1a', border: '#16a34a' },
+              'profile-linked':  { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
+              'logged-in':       { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
               'already-logged-in': { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },
             };
             const c = cfg[googleStatus.stage] ?? { icon: '⏳', color: '#aaa', bg: '#1a1a1a', border: '#444' };
             return (
-              <div style={{
-                marginBottom: '16px', borderRadius: '6px',
-                border: `1px solid ${c.border}`, backgroundColor: c.bg,
-                padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
-                textAlign: 'left',
-              }}>
-                <span style={{ fontSize: '18px', lineHeight: 1 }}>{c.icon}</span>
-                <div style={{ color: c.color, fontSize: '13px' }}>{googleStatus.message}</div>
-              </div>
+              <>
+                <div style={{
+                  marginBottom: '16px', borderRadius: '6px',
+                  border: `1px solid ${c.border}`, backgroundColor: c.bg,
+                  padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+                  textAlign: 'left',
+                }}>
+                  <span style={{ fontSize: '18px', lineHeight: 1 }}>{c.icon}</span>
+                  <div style={{ color: c.color, fontSize: '13px' }}>{googleStatus.message}</div>
+                </div>
+                {googleStatus.stage === 'waiting-2fa' && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <p style={{ color: '#888', fontSize: '13px', marginBottom: '10px' }}>
+                      Approve the sign-in prompt on your phone, then come back here.<br/>
+                      If you didn't receive it, tap the button below.
+                    </p>
+                    <button
+                      onClick={() => (window as any).electron.debug.googleProfile.resendTwoFactor()}
+                      style={{
+                        padding: '8px 20px',
+                        backgroundColor: '#1a1a1a',
+                        color: '#fbbf24',
+                        border: '1px solid #d97706',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Resend it
+                    </button>
+                  </div>
+                )}
+              </>
             );
           })()}
 
           {!googleStatus && (
             <p style={{ color: '#888', fontSize: '14px', marginBottom: '32px', lineHeight: 1.6 }}>
-              Chrome is opening — sign in with your Google account and the window will close automatically.
+              Chrome is opening — signing in with your Google account automatically…
             </p>
           )}
 

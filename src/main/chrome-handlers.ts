@@ -4186,6 +4186,9 @@ test('recorded test', async ({ page }) => {
   // Google Chrome Profile Session — persistent login tester
   // ---------------------------------------------------------------------------
 
+  // Module-level reference so the resend-2fa handler can reach the active login page
+  let activeLoginPage: import('playwright-core').Page | null = null;
+
   function getGoogleProfilesDir(): string {
     try {
       const userData = app.getPath('userData');
@@ -4336,6 +4339,311 @@ test('recorded test', async ({ page }) => {
       return { success: true, profileDir, detectedEmail };
     } catch (error) {
       console.error('[Google Profile] launch error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Automated Google login: fill email + password, wait for phone 2FA approval,
+   * then click the Chrome profile-switch dialog to link the profile.
+   *
+   * Handles multi-MFA flows observed in the wild:
+   *  A) Standard: email → password → phone notification
+   *  B) Passkey first: email → passkey prompt → "Try another way" → "Enter your password" → password → phone notification
+   *  C) 2FA method selection: email → password → "Choose how you want to sign in" list → select phone "Yes" option
+   */
+  ipcMain.handle('google-profile:login', async (event, { profileName, email, password }: { profileName: string; email: string; password: string }) => {
+    const glStatus = (stage: string, message: string) => {
+      try { event.sender.send('google:status', { stage, message }); } catch {}
+    };
+
+    // Helper: check if a locator is visible without throwing
+    const isVisible = async (loc: import('playwright-core').Locator) =>
+      loc.isVisible({ timeout: 500 }).catch(() => false);
+
+    // Helper: click the first visible locator from a list of candidates
+    const tryClick = async (candidates: import('playwright-core').Locator[]) => {
+      for (const loc of candidates) {
+        if (await isVisible(loc)) { await loc.click(); return true; }
+      }
+      return false;
+    };
+
+    try {
+      const profilesDir = getGoogleProfilesDir();
+      if (!fs.existsSync(profilesDir)) fs.mkdirSync(profilesDir, { recursive: true });
+
+      const profileDir = path.join(profilesDir, profileName);
+      if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
+
+      const { chromium } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromium.use(StealthPlugin());
+
+      glStatus('opening', 'Opening Chrome…');
+      const ctx = await chromium.launchPersistentContext(profileDir, {
+        headless: false,
+        channel: 'chrome',
+        viewport: null,
+        args: [
+          '--no-default-browser-check',
+          '--no-first-run',
+          '--disable-blink-features=AutomationControlled',
+          '--remote-debugging-port=0', // auto-assigns a port; written to DevToolsActivePort
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      });
+
+      const page = ctx.pages().length > 0 ? ctx.pages()[0] : await ctx.newPage();
+      activeLoginPage = page;
+
+      // ── 1. Navigate to Google sign-in ──
+      glStatus('navigating', 'Navigating to Google sign-in…');
+      await page.goto('https://accounts.google.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+
+      // ── 2. Fill email ──
+      glStatus('filling-email', 'Entering email…');
+      await page.waitForSelector('[id="identifierId"]', { timeout: 15_000 });
+      await page.fill('[id="identifierId"]', email);
+      await tryClick([
+        page.locator('[id="identifierNext"]'),
+        page.getByRole('button', { name: 'Next' }),
+        page.locator('button:has-text("Next")'),
+      ]);
+
+      // ── 3. Post-email screen: may be password OR passkey prompt ──
+      glStatus('filling-password', 'Checking for passkey or password prompt…');
+      await page.waitForTimeout(2_500);
+
+      // 3a. Passkey / fingerprint screen — click "Try another way" to get to password list
+      const tryAnotherWay = [
+        page.getByRole('button', { name: /try another way/i }),
+        page.getByRole('span', { name: /try another way/i }),
+        page.locator('.VfPpkd-vQzf8d').filter({ hasText: /try another way/i }),
+      ];
+      if (await tryClick(tryAnotherWay)) {
+        console.log('[Google Login] Passkey screen detected — clicked "Try another way"');
+        await page.waitForTimeout(1_500);
+
+        // 3b. Now a list of methods appears — pick "Enter your password"
+        const enterPasswordOption = [
+          page.getByRole('div', { name: /enter your password/i }),
+          page.locator('.l5PPKe').filter({ hasText: /enter your password/i }),
+          page.locator('li').filter({ hasText: /enter your password/i }),
+        ];
+        if (await tryClick(enterPasswordOption)) {
+          console.log('[Google Login] Clicked "Enter your password" from method list');
+          await page.waitForTimeout(1_500);
+        }
+      }
+
+      // ── 4. Fill password (handles both [name="Passwd"] and aria-label variants) ──
+      glStatus('filling-password', 'Entering password…');
+      const pwdLocator = page.locator('[name="Passwd"], .whsOnd, [aria-label="Enter your password"]').first();
+      await pwdLocator.waitFor({ state: 'visible', timeout: 15_000 });
+      await pwdLocator.fill(password);
+
+      await tryClick([
+        page.locator('[id="passwordNext"]'),
+        page.getByRole('button', { name: 'Next' }),
+        page.locator('.VfPpkd-vQzf8d').filter({ hasText: /^Next$/ }),
+        page.locator('.VfPpkd-RLmnJb').nth(1), // ripple element fallback
+      ]);
+
+      // ── 5. Post-password screen: may be 2FA method selection ──
+      await page.waitForTimeout(2_500);
+
+      // 5a. "Choose how you want to sign in" list — select the phone "Yes" notification option
+      const twoFAMethodScreen = [
+        page.locator('text=Choose how you want to sign in'),
+        page.locator('text=2-Step Verification'),
+      ];
+      let on2FAMethodScreen = false;
+      for (const loc of twoFAMethodScreen) {
+        if (await isVisible(loc)) { on2FAMethodScreen = true; break; }
+      }
+
+      if (on2FAMethodScreen) {
+        console.log('[Google Login] 2FA method selection screen detected');
+        // Try to click the "Yes" / phone notification option
+        const yesOption = [
+          page.locator('strong').filter({ hasText: /^Yes$/ }),
+          page.locator('li').filter({ hasText: /yes/i }).first(),
+          page.locator('[data-challengeid]').filter({ hasText: /yes/i }).first(),
+        ];
+        if (await tryClick(yesOption)) {
+          console.log('[Google Login] Clicked phone "Yes" 2FA option');
+          await page.waitForTimeout(1_500);
+        } else {
+          // Couldn't auto-select — fall through and let user handle it
+          console.log('[Google Login] Could not auto-select 2FA method — user may need to choose manually');
+        }
+      }
+
+      // ── 6. Wait for phone 2FA approval (URL leaves accounts.google.com) ──
+      glStatus('waiting-2fa', 'Waiting for phone approval… Check your phone.');
+
+      // waitForURL with a predicate is more reliable than waitForFunction here:
+      // waitForFunction loses its JS context on each navigation (causing spurious TimeoutErrors),
+      // while waitForURL is navigation-aware and simply waits for the URL to match.
+      await page.waitForURL(
+        (url: URL) => !url.hostname.includes('accounts.google.com'),
+        { timeout: 300_000, waitUntil: 'commit' }
+      );
+
+      activeLoginPage = null;
+      glStatus('2fa-approved', 'Phone approved! Checking for Chrome profile dialog…');
+
+      // ── 7. Click the Chrome "Switch profile?" DICE dialog via CDP ──
+      // The dialog is a WebContents rendered inside Chrome's process — NOT a Playwright page —
+      // but it IS visible via Chrome DevTools Protocol as a target.
+      // We read the debug port from DevToolsActivePort, query /json/list for all targets,
+      // find the signin intercept page, connect via raw WebSocket, and click the button
+      // through its Shadow DOM using Runtime.evaluate.
+      glStatus('2fa-approved', 'Looking for Chrome profile dialog…');
+
+      try {
+        // Read the CDP debug port Chrome wrote to disk
+        const devToolsPortFile = path.join(profileDir, 'DevToolsActivePort');
+        let debugPort = 0;
+        for (let i = 0; i < 20; i++) {
+          try {
+            const content = fs.readFileSync(devToolsPortFile, 'utf-8');
+            const parsed = parseInt(content.split('\n')[0], 10);
+            if (parsed > 0) { debugPort = parsed; break; }
+          } catch { }
+          await page.waitForTimeout(300);
+        }
+        console.log('[google-login] CDP debug port:', debugPort);
+
+        if (debugPort > 0) {
+          // Poll /json/list until the signin intercept target appears (up to 12s)
+          let signinTarget: any = null;
+          for (let i = 0; i < 24; i++) {
+            const targetsJson: string = await new Promise((resolve, reject) => {
+              require('http').get(`http://localhost:${debugPort}/json/list`, (res: any) => {
+                let d = ''; res.on('data', (c: any) => d += c); res.on('end', () => resolve(d));
+              }).on('error', reject);
+            });
+            const targets: any[] = JSON.parse(targetsJson);
+            console.log('[google-login] CDP targets:', targets.map((t: any) => `${t.type}: ${t.url}`));
+            signinTarget = targets.find((t: any) =>
+              t.webSocketDebuggerUrl &&
+              (t.url.includes('signin') || t.url.includes('dice') || t.url.includes('chrome-signin'))
+            );
+            if (signinTarget) break;
+            await page.waitForTimeout(500);
+          }
+
+          if (signinTarget) {
+            console.log('[google-login] Found signin target:', signinTarget.url);
+            // Connect to the target's WebSocket and evaluate JS to click the accept button
+            await new Promise<void>((resolve) => {
+              const WS = require('ws');
+              const ws = new WS(signinTarget.webSocketDebuggerUrl);
+              const timeout = setTimeout(() => { try { ws.close(); } catch {} resolve(); }, 6000);
+
+              ws.on('open', () => {
+                ws.send(JSON.stringify({
+                  id: 1,
+                  method: 'Runtime.evaluate',
+                  params: {
+                    expression: `
+                      (() => {
+                        const app = document.querySelector('chrome-signin-app');
+                        if (!app) return 'no-app';
+                        const root = app.shadowRoot;
+                        if (!root) return 'no-shadow';
+                        // Try known IDs first, then fall back to first non-cancel cr-button
+                        const btn =
+                          root.querySelector('#accept-button') ||
+                          root.querySelector('cr-button#acceptButton') ||
+                          root.querySelector('cr-button:not([id*="cancel"]):not([id*="no"])') ||
+                          root.querySelector('cr-button');
+                        if (!btn) return 'no-button: ' + root.innerHTML.slice(0, 200);
+                        btn.click();
+                        return 'clicked: ' + (btn.textContent || btn.id);
+                      })()
+                    `,
+                    returnByValue: true,
+                  },
+                }));
+              });
+
+              ws.on('message', (data: any) => {
+                const msg = JSON.parse(data.toString());
+                const val = msg?.result?.result?.value ?? JSON.stringify(msg);
+                console.log('[google-login] CDP eval:', val);
+                clearTimeout(timeout);
+                ws.close();
+                resolve();
+              });
+
+              ws.on('error', (e: any) => {
+                console.log('[google-login] CDP WS error:', e?.message);
+                clearTimeout(timeout);
+                resolve();
+              });
+            });
+
+            glStatus('profile-linked', 'Chrome profile linked to Google account.');
+          } else {
+            glStatus('profile-linked', 'No signin dialog found — profile may already be linked.');
+          }
+        }
+      } catch (e: any) {
+        console.log('[google-login] DICE dialog error (non-fatal):', e?.message);
+        glStatus('profile-linked', 'Login complete (dialog step skipped).');
+      }
+
+      await page.waitForTimeout(2_000);
+
+      // ── 8. Save metadata ──
+      const metaPath = path.join(profileDir, 'profile.json');
+      const existing = fs.existsSync(metaPath)
+        ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+        : {};
+      fs.writeFileSync(metaPath, JSON.stringify({
+        ...existing,
+        profileName,
+        profileDir,
+        googleEmail: email,
+        createdAt: existing.createdAt ?? new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      }, null, 2));
+
+      await ctx.close().catch(() => {});
+
+      glStatus('logged-in', `Logged in as ${email}`);
+      return { success: true, profileDir, detectedEmail: email };
+    } catch (error) {
+      activeLoginPage = null;
+      console.error('[Google Profile] login error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Trigger "Resend it" on the active 2FA page (only works while login is in progress).
+   */
+  ipcMain.handle('google-profile:resend-2fa', async () => {
+    if (!activeLoginPage) return { success: false, error: 'No active login in progress' };
+    try {
+      // Try multiple selectors for the "Resend it" button
+      const resendSelectors = [
+        'button:has-text("Resend it")',
+        'button:has-text("Resend")',
+        '[data-action="resend"]',
+      ];
+      for (const sel of resendSelectors) {
+        const el = activeLoginPage.locator(sel).first();
+        if (await el.isVisible().catch(() => false)) {
+          await el.click();
+          return { success: true };
+        }
+      }
+      return { success: false, error: '"Resend it" button not found' };
+    } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });

@@ -75,9 +75,6 @@ async function detectExistingChannel(page: any): Promise<
   await page.waitForTimeout(2000);
   await dismissKakaoPopups(page);
 
-  // Detection temporarily disabled — always proceed with creation
-  return { found: false };
-
   // Prefer active (non-deleted) channels first
   let cardLocator = page.locator('.box_plus:not(.box_delete)').first();
   if (await cardLocator.count() === 0) {
@@ -125,9 +122,6 @@ async function detectExistingBot(page: any): Promise<
   // Pending-deletion bots: my-list-bot-item div.item_botlist.off_item (has span.txt_status.status_del)
   // Bot name is in span.txt_name > span.inner_txt.
 
-  // Detection temporarily disabled — always proceed with creation
-  return { found: false };
-
   // Prefer active (non-deleted) bots first
   let botCard = page.locator('my-list-bot-item .item_botlist:not(.off_item)').first();
   if (await botCard.count() === 0) {
@@ -151,7 +145,8 @@ async function detectExistingBot(page: any): Promise<
 async function createKakaoChannel(
   profileDir: string,
   channelName: string,
-  searchId: string
+  searchId: string,
+  reuseExisting: boolean = false
 ): Promise<{ success: true; searchId: string; channelUrl: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
@@ -171,13 +166,17 @@ async function createKakaoChannel(
     await dismissKakaoPopups(page);
 
     // 2. Check for an existing channel before running the creation wizard
-    console.log('[kakao:createChannel] Checking for existing channels on business.kakao.com/profiles...');
-    const existingChannel = await detectExistingChannel(page);
-    if (existingChannel.found) {
-      console.log(`[kakao:createChannel] Reusing existing channel — skipping wizard.`);
-      return { success: true, searchId: existingChannel.searchId, channelUrl: existingChannel.channelUrl };
+    if (reuseExisting) {
+      console.log('[kakao:createChannel] Checking for existing channels on business.kakao.com/profiles...');
+      const existingChannel = await detectExistingChannel(page);
+      if (existingChannel.found) {
+        console.log(`[kakao:createChannel] Reusing existing channel — skipping wizard.`);
+        return { success: true, searchId: existingChannel.searchId, channelUrl: existingChannel.channelUrl };
+      }
+      console.log('[kakao:createChannel] No existing channel found — running creation wizard.');
+    } else {
+      console.log('[kakao:createChannel] Skipping existing channel detection — proceeding with creation wizard.');
     }
-    console.log('[kakao:createChannel] No existing channel found — running creation wizard.');
 
     // 3. Navigate to Profiles & click "새 채널 만들기" — retry up to 3×
     let wizardFrame: any = null;
@@ -418,7 +417,8 @@ async function createKakaoBot(
   profileDir: string,
   botName: string,
   channelSearchId: string,
-  skillUrl: string
+  skillUrl: string,
+  reuseExisting: boolean = false
 ): Promise<{ success: true; botName: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
@@ -476,14 +476,18 @@ async function createKakaoBot(
     }
 
     // 3. Check for an existing bot before running the creation flow
-    console.log('[kakao:createBot] Checking for existing bots...');
     await page.waitForTimeout(1000);
-    const existingBot = await detectExistingBot(page);
-    if (existingBot.found) {
-      console.log(`[kakao:createBot] Reusing existing bot "${existingBot.botName}" — skipping creation.`);
-      return { success: true, botName: existingBot.botName };
+    if (reuseExisting) {
+      console.log('[kakao:createBot] Checking for existing bots...');
+      const existingBot = await detectExistingBot(page);
+      if (existingBot.found) {
+        console.log(`[kakao:createBot] Reusing existing bot "${existingBot.botName}" — skipping creation.`);
+        return { success: true, botName: existingBot.botName };
+      }
+      console.log('[kakao:createBot] No existing bot found — running creation flow.');
+    } else {
+      console.log('[kakao:createBot] Skipping existing bot detection — proceeding with creation flow.');
     }
-    console.log('[kakao:createBot] No existing bot found — running creation flow.');
 
     // 4. Create bot
     console.log('[kakao:createBot] Creating bot...');
@@ -745,10 +749,10 @@ async function createKakaoBot(
 export function registerKakaoHandlers(getGoogleProfilesDir: () => string): void {
   ipcMain.handle(
     'kakao:createChannel',
-    async (_event, { profileName, channelName, searchId }: { profileName: string; channelName: string; searchId: string }) => {
+    async (_event, { profileName, channelName, searchId, reuseExisting }: { profileName: string; channelName: string; searchId: string; reuseExisting?: boolean }) => {
       try {
         const profileDir = getProfileDir(getGoogleProfilesDir, profileName);
-        return await createKakaoChannel(profileDir, channelName, searchId);
+        return await createKakaoChannel(profileDir, channelName, searchId, reuseExisting ?? false);
       } catch (err: any) {
         return { success: false, error: err?.message || String(err) };
       }
@@ -757,10 +761,10 @@ export function registerKakaoHandlers(getGoogleProfilesDir: () => string): void 
 
   ipcMain.handle(
     'kakao:createBot',
-    async (_event, { profileName, botName, channelSearchId, skillUrl }: { profileName: string; botName: string; channelSearchId: string; skillUrl: string }) => {
+    async (_event, { profileName, botName, channelSearchId, skillUrl, reuseExisting }: { profileName: string; botName: string; channelSearchId: string; skillUrl: string; reuseExisting?: boolean }) => {
       try {
         const profileDir = getProfileDir(getGoogleProfilesDir, profileName);
-        return await createKakaoBot(profileDir, botName, channelSearchId, skillUrl);
+        return await createKakaoBot(profileDir, botName, channelSearchId, skillUrl, reuseExisting ?? false);
       } catch (err: any) {
         return { success: false, error: err?.message || String(err) };
       }
