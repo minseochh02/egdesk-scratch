@@ -757,6 +757,24 @@ export class FinanceHubDbManager {
     return crypto.scryptSync(defaultSecret, 'egdesk-salt', 32);
   }
 
+  private normalizeAccountNumber(bankId: string | null, accountNumber: string): string {
+    if (!accountNumber) return '';
+    // 1. 하이픈 및 공백 제거
+    let normalized = accountNumber.replace(/[-\s]/g, '');
+    
+    // 2. KB 국민은행 특유의 접두어 처리 (14자리이고 246으로 시작하는 경우)
+    if (bankId === 'kookmin' && normalized.length === 14 && normalized.startsWith('246')) {
+      normalized = normalized.slice(3);
+    }
+
+    // 3. 우리은행 특유의 접두어 처리 (005로 시작하는 12자리인 경우 1을 붙여 1005로 통일)
+    if (bankId === 'woori' && normalized.length === 12 && normalized.startsWith('005')) {
+      normalized = '1' + normalized;
+    }
+    
+    return normalized;
+  }
+
   // ========================================
   // Account Operations (Multi-Bank)
   // ========================================
@@ -774,9 +792,10 @@ export class FinanceHubDbManager {
     metadata?: Record<string, any>;
   }): BankAccount {
     const now = new Date().toISOString();
+    const normalizedAcc = this.normalizeAccountNumber(data.bankId, data.accountNumber);
     
     // Check if exists
-    const existing = this.getAccountByNumber(data.bankId, data.accountNumber);
+    const existing = this.getAccountByNumber(data.bankId, normalizedAcc);
     
     if (existing) {
       // Update
@@ -822,7 +841,7 @@ export class FinanceHubDbManager {
       stmt.run(
         id,
         data.bankId,
-        data.accountNumber,
+        normalizedAcc,
         data.accountName || '',
         data.customerName || '',
         data.balance || 0,
@@ -848,10 +867,11 @@ export class FinanceHubDbManager {
   }
 
   getAccountByNumber(bankId: string, accountNumber: string): BankAccount | null {
+    const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
     const stmt = this.db.prepare(`
       SELECT * FROM accounts WHERE bank_id = ? AND account_number = ?
     `);
-    const row = stmt.get(bankId, accountNumber) as any;
+    const row = stmt.get(bankId, normalizedAcc) as any;
     if (!row) return null;
     return this.mapRowToAccount(row);
   }
@@ -873,39 +893,61 @@ export class FinanceHubDbManager {
   }
 
   getAccountTransactionCounts(): Record<string, number> {
-    const rows = this.db
+    const result: Record<string, number> = {};
+
+    // 1. Unified transactions table (legacy)
+    const rows1 = this.db
       .prepare(`SELECT account_id, COUNT(*) as cnt FROM transactions GROUP BY account_id`)
       .all() as { account_id: string; cnt: number }[];
-    const result: Record<string, number> = {};
-    rows.forEach(r => { result[r.account_id] = r.cnt; });
+    rows1.forEach(r => { result[r.account_id] = (result[r.account_id] || 0) + r.cnt; });
+
+    // 2. Separate tables if enabled
+    if (this.useSeparateTransactionTables()) {
+      try {
+        const rowsBank = this.db
+          .prepare(`SELECT account_id, COUNT(*) as cnt FROM bank_transactions GROUP BY account_id`)
+          .all() as { account_id: string; cnt: number }[];
+        rowsBank.forEach(r => { result[r.account_id] = (result[r.account_id] || 0) + r.cnt; });
+
+        const rowsCard = this.db
+          .prepare(`SELECT account_id, COUNT(*) as cnt FROM card_transactions GROUP BY account_id`)
+          .all() as { account_id: string; cnt: number }[];
+        rowsCard.forEach(r => { result[r.account_id] = (result[r.account_id] || 0) + r.cnt; });
+      } catch (e) {
+        console.warn('[FinanceHub] Failed to count transactions from separate tables:', e.message);
+      }
+    }
+
     return result;
   }
 
-  updateAccountStatus(accountNumber: string, isActive: boolean): boolean {
+  updateAccountStatus(bankId: string, accountNumber: string, isActive: boolean): boolean {
+    const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
     const stmt = this.db.prepare(`
       UPDATE accounts 
       SET is_active = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE account_number = ?
+      WHERE bank_id = ? AND account_number = ?
     `);
     
-    const result = stmt.run(isActive ? 1 : 0, accountNumber);
+    const result = stmt.run(isActive ? 1 : 0, bankId, normalizedAcc);
     return result.changes > 0;
   }
 
-  deleteAccount(accountNumber: string): boolean {
+  deleteAccount(bankId: string, accountNumber: string): boolean {
+    const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
     // Start a transaction to ensure data integrity
     const deleteTransactions = this.db.prepare(`
       DELETE FROM transactions 
-      WHERE account_id IN (SELECT id FROM accounts WHERE account_number = ?)
+      WHERE account_id IN (SELECT id FROM accounts WHERE bank_id = ? AND account_number = ?)
     `);
     
     const deleteAccount = this.db.prepare(`
-      DELETE FROM accounts WHERE account_number = ?
+      DELETE FROM accounts WHERE bank_id = ? AND account_number = ?
     `);
     
     const transaction = this.db.transaction(() => {
-      deleteTransactions.run(accountNumber);
-      const result = deleteAccount.run(accountNumber);
+      deleteTransactions.run(bankId, normalizedAcc);
+      const result = deleteAccount.run(bankId, normalizedAcc);
       return result.changes > 0;
     });
     
