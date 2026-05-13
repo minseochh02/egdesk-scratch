@@ -585,6 +585,7 @@ interface GmailMcpAPI {
     saveUserDataToDatabase: (connectionId: string, userEmail: string, messageRecords: any[], statsRecord: any) => Promise<{ success: boolean; error?: string }>;
     fetchMessages: (connectionId: string, options?: any) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
     fetchStats: (connectionId: string) => Promise<{ success: boolean; stats?: any; error?: string }>;
+    detectMode: (serviceAccountKey: any, email: string) => Promise<{ success: boolean; mode?: 'workspace' | 'personal'; error?: string }>;
     markAsRead: (connectionId: string, messageId: string) => Promise<{ success: boolean; error?: string }>;
     deleteMessage: (connectionId: string, messageId: string) => Promise<{ success: boolean; error?: string }>;
     sendReply: (connectionId: string, messageId: string, replyText: string) => Promise<{ success: boolean; error?: string }>;

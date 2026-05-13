@@ -35,8 +35,9 @@ export interface GmailConnection {
   id: string;
   name: string;
   email: string;
-  adminEmail: string;
-  serviceAccountKey: any;
+  mode?: 'workspace' | 'personal';
+  adminEmail?: string;
+  serviceAccountKey?: any;
   createdAt: string;
   updatedAt: string;
   type: 'gmail';

@@ -12,8 +12,9 @@ interface GmailConnectionData {
   id: string;
   name: string;
   email: string;
+  mode: 'workspace' | 'personal';
   adminEmail: string;
-  serviceAccountKey: any;
+  serviceAccountKey?: any;
   createdAt: string;
   updatedAt: string;
   type: 'gmail';
@@ -23,69 +24,39 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [fileContent, setFileContent] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [connectionName, setConnectionName] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
+  const [email, setEmail] = useState('');
+  const [showEmailInput, setShowEmailInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
+  const [isLoading, setIsLoading] = useState(false);
+  const [personalLoading, setPersonalLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [showOAuthOption, setShowOAuthOption] = useState(false);
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); };
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    
+    e.preventDefault(); setIsDragOver(false);
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
-    }
+    if (files.length > 0) handleFileSelect(files[0]);
   };
-
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileSelect(files[0]);
-    }
+    if (files && files.length > 0) handleFileSelect(files[0]);
   };
 
   const handleFileSelect = async (file: File) => {
-    if (!file.name.endsWith('.json')) {
-      setError('Please select a JSON file');
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
-      setError('File size must be less than 5MB');
-      return;
-    }
-
+    if (!file.name.endsWith('.json')) { setError('Please select a JSON file'); return; }
+    if (file.size > 5 * 1024 * 1024) { setError('File size must be less than 5MB'); return; }
     setError('');
     setUploadedFile(file);
     setIsLoading(true);
-
     try {
       const content = await readFileAsText(file);
       const jsonData = JSON.parse(content);
-      
-      // Validate service account key structure
-      if (!jsonData.type || jsonData.type !== 'service_account') {
-        throw new Error('Invalid service account key file');
-      }
-      
-      if (!jsonData.client_email || !jsonData.private_key) {
-        throw new Error('Missing required fields in service account key');
-      }
-
+      if (!jsonData.type || jsonData.type !== 'service_account') throw new Error('Invalid service account key file');
+      if (!jsonData.client_email || !jsonData.private_key) throw new Error('Missing required fields in service account key');
       setFileContent(jsonData);
-      setConnectionName(jsonData.client_email || 'Gmail Service Account');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON file');
       setUploadedFile(null);
@@ -95,72 +66,75 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
     }
   };
 
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
+  const readFileAsText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target?.result as string);
       reader.onerror = () => reject(new Error('Failed to read file'));
       reader.readAsText(file);
     });
-  };
 
   const handleRemoveFile = () => {
-    setUploadedFile(null);
-    setFileContent(null);
-    setConnectionName('');
-    setAdminEmail('');
-    setError('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    setUploadedFile(null); setFileContent(null); setError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleConnect = async () => {
-    if (!fileContent || !connectionName.trim() || !adminEmail.trim()) {
-      setError('Please upload a valid service account key file, enter a connection name, and provide an admin email');
+    if (!fileContent) {
+      setError('Please upload a valid service account key file');
       return;
     }
 
-    // Validate admin email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(adminEmail.trim())) {
-      setError('Please enter a valid admin email address');
+    if (showEmailInput && !email.trim()) {
+      setError('Please enter an email address to connect');
       return;
     }
 
-    setIsLoading(true);
-    setError('');
-
+    setIsLoading(true); setError('');
     try {
+      // If we don't have an email yet, we try to detect using the service account's own domain 
+      // or common admin patterns, but realistically we need an email to check delegation.
+      // We'll ask for one if it's missing.
+      if (!email.trim()) {
+        setShowEmailInput(true);
+        setIsLoading(false);
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) { setError('Please enter a valid email address'); setIsLoading(false); return; }
+
+      // Auto-detect: try Directory API to see if this is a workspace domain
+      const detectResult = await (window.electron as any).gmailMCP.detectMode(fileContent, email.trim());
+      const mode: 'workspace' | 'personal' = detectResult.mode || 'personal';
+
       const connectionData: GmailConnectionData = {
         id: `gmail-${Date.now()}`,
-        name: connectionName.trim(),
-        email: fileContent.client_email,
-        adminEmail: adminEmail.trim(),
+        name: email.trim(),
+        email: email.trim(),
+        mode,
+        adminEmail: email.trim(),
         serviceAccountKey: fileContent,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        type: 'gmail'
+        type: 'gmail',
       };
 
-      // Save to Electron store
       const result = await window.electron.mcpConfig.connections.add(connectionData);
-      
       if (result.success) {
         onConnect(result.connection);
       } else {
         setError(result.error || 'Failed to save Gmail connection');
       }
-    } catch (error) {
-      console.error('Error saving Gmail connection:', error);
-      setError('Failed to save Gmail connection. Please try again.');
+    } catch (err: any) {
+      const msg = err.message || 'Failed to connect Gmail';
+      setError(msg);
+      if (msg.includes('unauthorized_client') || msg.includes('gmail.com')) {
+        setError('This service account is not authorized to access this email. Note: Service accounts cannot access personal @gmail.com accounts.');
+      }
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleBrowseClick = () => {
-    fileInputRef.current?.click();
   };
 
   return (
@@ -168,29 +142,29 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
       <div className="connector-header">
         <button className="return-btn" onClick={onBack}>
           <FontAwesomeIcon icon={faArrowRight} />
-          <span>Back to MCP Tools</span>
+          <span>Back</span>
         </button>
       </div>
-      
+
       <div className="connection-form-section">
         <div className="form-container">
           <div className="form-header">
             <div className="form-title">
-              <h3>Gmail Service Account Setup</h3>
-              <p>Upload your Google Service Account JSON key file to connect Gmail for AI-powered email integration</p>
+              <h3>Connect Gmail</h3>
+              <p>Upload your Google Service Account key and enter an email address to connect</p>
             </div>
           </div>
-          
+
           <div className="gmail-form">
             {/* File Upload Area */}
             <div className="form-group">
               <label>Service Account Key File</label>
-              <div 
+              <div
                 className={`file-upload-area ${isDragOver ? 'drag-over' : ''} ${uploadedFile ? 'has-file' : ''}`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={handleBrowseClick}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <input
                   ref={fileInputRef}
@@ -199,12 +173,9 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
                   onChange={handleFileInputChange}
                   style={{ display: 'none' }}
                 />
-                
                 {!uploadedFile ? (
                   <div className="upload-content">
-                    <div className="upload-icon">
-                      <FontAwesomeIcon icon={faUpload} />
-                    </div>
+                    <div className="upload-icon"><FontAwesomeIcon icon={faUpload} /></div>
                     <div className="upload-text">
                       <h4>Drop your service account JSON file here</h4>
                       <p>or click to browse files</p>
@@ -218,9 +189,7 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
                 ) : (
                   <div className="file-preview">
                     <div className="file-info">
-                      <div className="file-icon">
-                        <FontAwesomeIcon icon={faFile} />
-                      </div>
+                      <div className="file-icon"><FontAwesomeIcon icon={faFile} /></div>
                       <div className="file-details">
                         <h4>{uploadedFile.name}</h4>
                         <p>{(uploadedFile.size / 1024).toFixed(1)} KB</p>
@@ -230,26 +199,18 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
                         </div>
                       </div>
                     </div>
-                    <button 
-                      className="remove-file-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFile();
-                      }}
-                    >
+                    <button className="remove-file-btn" onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}>
                       <FontAwesomeIcon icon={faTimes} />
                     </button>
                   </div>
                 )}
-                
-                {isLoading && (
+                {isLoading && !fileContent && (
                   <div className="loading-overlay">
                     <div className="spinner"></div>
                     <p>Validating file...</p>
                   </div>
                 )}
               </div>
-              
               {error && (
                 <div className="error-message">
                   <FontAwesomeIcon icon={faTimes} />
@@ -258,33 +219,22 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
               )}
             </div>
 
-            {/* Connection Name */}
-            <div className="form-group">
-              <label htmlFor="connectionName">Connection Name</label>
-              <input
-                id="connectionName"
-                type="text"
-                value={connectionName}
-                onChange={(e) => setConnectionName(e.target.value)}
-                placeholder="Enter a name for this Gmail connection"
-                disabled={!fileContent}
-              />
-              <small>This will help you identify this connection later</small>
-            </div>
-
-            {/* Admin Email */}
-            <div className="form-group">
-              <label htmlFor="adminEmail">Admin Email (for Domain-Wide Delegation)</label>
-              <input
-                id="adminEmail"
-                type="email"
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@quus.cloud"
-                disabled={!fileContent}
-              />
-              <small>Enter the email of a Super Admin user in your Google Workspace domain</small>
-            </div>
+            {/* Email Address - shown after JSON upload or if needed */}
+            {(fileContent || showEmailInput) && (
+              <div className="form-group">
+                <label htmlFor="email">Email Address</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@yourdomain.com or you@yourdomain.com"
+                />
+                <small>
+                  Enter an email to check for Workspace domain access, or a specific user's email to connect.
+                </small>
+              </div>
+            )}
 
             {/* Service Account Info */}
             {fileContent && (
@@ -303,37 +253,24 @@ const GmailConnectorForm: React.FC<GmailConnectorFormProps> = ({ onBack, onConne
                     <strong>Client ID:</strong>
                     <span>{fileContent.client_id || 'N/A'}</span>
                   </div>
-                  <div className="info-item">
-                    <strong>Auth URI:</strong>
-                    <span>{fileContent.auth_uri || 'N/A'}</span>
-                  </div>
                 </div>
               </div>
             )}
 
             {/* Form Actions */}
             <div className="form-actions">
-              <button 
-                className="cancel-btn"
-                onClick={onBack}
-              >
+              <button className="cancel-btn" onClick={onBack}>
                 Cancel
               </button>
-              <button 
+              <button
                 className="submit-btn"
                 onClick={handleConnect}
-                disabled={!fileContent || !connectionName.trim() || !adminEmail.trim() || isLoading}
+                disabled={!fileContent || !email.trim() || isLoading}
               >
                 {isLoading ? (
-                  <>
-                    <div className="spinner"></div>
-                    Connecting...
-                  </>
+                  <><div className="spinner"></div>Connecting...</>
                 ) : (
-                  <>
-                    <FontAwesomeIcon icon={faEnvelope} />
-                    Connect Gmail
-                  </>
+                  <><FontAwesomeIcon icon={faEnvelope} />Connect Gmail</>
                 )}
               </button>
             </div>
