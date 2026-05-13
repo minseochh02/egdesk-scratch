@@ -1515,7 +1515,7 @@ export class FinanceHubScheduler extends EventEmitter {
       // Import transactions grouped by card number
       if (allTransactions.length > 0) {
         // Get existing accounts for this card company to match by last 6 digits
-        const existingAccounts = financeHubDb.getAccounts(cardCompanyId);
+        const existingAccounts = financeHubDb.getAccountsByBank(cardCompanyId);
         console.log(`[FinanceHubScheduler] 🔍 Found ${existingAccounts.length} existing accounts for ${cardCompanyId}`);
 
         // Group transactions by matched accountNumber
