@@ -2213,6 +2213,8 @@ const electronHandler = {
     // Google Chrome profile session tester
     googleProfile: {
       launch: (profileName: string) => ipcRenderer.invoke('google-profile:launch', { profileName }),
+      login: (profileName: string, email: string, password: string) => ipcRenderer.invoke('google-profile:login', { profileName, email, password }),
+      resendTwoFactor: () => ipcRenderer.invoke('google-profile:resend-2fa'),
       check: (profileName: string) => ipcRenderer.invoke('google-profile:check', { profileName }),
       getEmail: (profileName: string) => ipcRenderer.invoke('google-profile:get-email', { profileName }),
       getPhone: (profileName: string) => ipcRenderer.invoke('google-profile:get-phone', { profileName }),
@@ -2234,10 +2236,10 @@ const electronHandler = {
     },
     // KakaoTalk channel + bot creation
     kakao: {
-      createChannel: (profileName: string, channelName: string, searchId: string) =>
-        ipcRenderer.invoke('kakao:createChannel', { profileName, channelName, searchId }),
-      createBot: (profileName: string, botName: string, channelSearchId: string, skillUrl: string) =>
-        ipcRenderer.invoke('kakao:createBot', { profileName, botName, channelSearchId, skillUrl }),
+      createChannel: (profileName: string, channelName: string, searchId: string, reuseExisting: boolean) =>
+        ipcRenderer.invoke('kakao:createChannel', { profileName, channelName, searchId, reuseExisting }),
+      createBot: (profileName: string, botName: string, channelSearchId: string, skillUrl: string, reuseExisting: boolean) =>
+        ipcRenderer.invoke('kakao:createBot', { profileName, botName, channelSearchId, skillUrl, reuseExisting }),
     },
     openclaw: {
       setup: (profileName: string, botToken: string) =>
