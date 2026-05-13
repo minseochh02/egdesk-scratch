@@ -2622,6 +2622,7 @@ gmailMCP: {
   saveUserDataToDatabase: (connectionId: string, userEmail: string, messageRecords: any[], statsRecord: any) => ipcRenderer.invoke('gmail-mcp-save-user-data', connectionId, userEmail, messageRecords, statsRecord),
   fetchMessages: (connectionId: string, options?: any) => ipcRenderer.invoke('gmail-mcp-fetch-messages', connectionId, options),
   fetchStats: (connectionId: string) => ipcRenderer.invoke('gmail-mcp-fetch-stats', connectionId),
+  detectMode: (serviceAccountKey: any, email: string) => ipcRenderer.invoke('gmail-mcp-detect-mode', serviceAccountKey, email),
   markAsRead: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-mark-as-read', connectionId, messageId),
   deleteMessage: (connectionId: string, messageId: string) => ipcRenderer.invoke('gmail-mcp-delete-message', connectionId, messageId),
   sendReply: (connectionId: string, messageId: string, replyText: string) => ipcRenderer.invoke('gmail-mcp-send-reply', connectionId, messageId, replyText),

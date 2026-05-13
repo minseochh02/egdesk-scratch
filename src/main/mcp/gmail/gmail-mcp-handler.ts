@@ -3,6 +3,8 @@ import { ipcMain } from 'electron';
 import { GmailMCPFetcher } from './gmail-service';
 import { GmailConnection } from '../../types/gmail-types';
 import { getStore } from '../../storage';
+import { getAuthService } from '../../auth/auth-service';
+import { google } from 'googleapis';
 
 // Store active fetcher instances
 const fetcherInstances = new Map<string, GmailMCPFetcher>();
@@ -322,6 +324,34 @@ export function registerGmailMCPHandlers() {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
       };
+    }
+  });
+
+  // Detect whether a service account has workspace domain-wide delegation access
+  ipcMain.handle('gmail-mcp-detect-mode', async (event, serviceAccountKey: any, email: string) => {
+    try {
+      const domain = email.split('@')[1];
+      if (!domain) {
+        return { success: true, mode: 'personal' };
+      }
+
+      const jwtClient = new google.auth.JWT({
+        email: serviceAccountKey.client_email,
+        key: serviceAccountKey.private_key,
+        scopes: ['https://www.googleapis.com/auth/admin.directory.user.readonly'],
+        subject: email,
+      });
+      await jwtClient.authorize();
+
+      const directory = google.admin({ version: 'directory_v1' });
+      await directory.users.list({ auth: jwtClient, domain, maxResults: 1 });
+
+      return { success: true, mode: 'workspace' };
+    } catch (error: any) {
+      console.error('Error detecting Gmail mode:', error);
+      // If it's a hard authorization error, we still return success: true but mode: 'personal'
+      // This allows the app to proceed with a single-user connection if that's what the user wants.
+      return { success: true, mode: 'personal' };
     }
   });
 

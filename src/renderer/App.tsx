@@ -72,6 +72,7 @@ import RookiePage from './components/Rookie/RookiePage';
 import OpenClawPage from './components/OpenClaw/OpenClawPage';
 import LawyerPage from './components/Lawyer/LawyerPage';
 import PageIndexPage from './components/PageIndex/PageIndexPage';
+import GmailPage from './components/Gmail/GmailPage';
 import openclawIcon from '../../assets/openclaw.svg';
 import ollamaIcon from '../../assets/ollama.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
@@ -312,7 +313,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.25</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.26</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -3521,6 +3522,7 @@ function AppContent() {
             <Route path="/openclaw" element={<OpenClawPage />} />
             <Route path="/lawyer" element={<LawyerPage />} />
             <Route path="/pageindex" element={<PageIndexPage />} />
+            <Route path="/gmail" element={<GmailPage />} />
 
             {/* Fallback to home for unknown routes */}
             <Route path="*" element={<Navigate to="/" replace />} />

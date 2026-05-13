@@ -19,6 +19,7 @@ export interface DomainUser {
 export class GmailMCPFetcher {
   private connection: GmailConnection;
   private jwtClient: any;
+  private oauth2Client: any;
   private gmail: any;
   private directory: any;
   private database: GmailDatabase;
@@ -42,13 +43,33 @@ export class GmailMCPFetcher {
   private async initializeGoogleClient() {
     try {
       console.log('Initializing Google client...');
-      console.log('Google object:', google);
-      console.log('Google auth:', google.auth);
       
+      // Check if we should use OAuth2 or Service Account
+      if (!this.connection.serviceAccountKey) {
+        console.log('No service account key, attempting OAuth2 initialization...');
+        const authService = getAuthService();
+        const token = await authService.getGoogleWorkspaceToken();
+        
+        if (!token?.access_token) {
+          throw new Error('No valid Google OAuth token found. Please sign in with Google.');
+        }
+
+        this.oauth2Client = new google.auth.OAuth2();
+        this.oauth2Client.setCredentials({
+          access_token: token.access_token,
+          refresh_token: token.refresh_token,
+          expiry_date: token.expires_at ? token.expires_at * 1000 : undefined,
+        });
+
+        this.gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
+        console.log('Gmail API initialized with OAuth2');
+        return;
+      }
+
       // Use the service account key from the connection configuration
       const serviceAccountKey = this.connection.serviceAccountKey;
       
-      if (!serviceAccountKey || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
+      if (!serviceAccountKey.client_email || !serviceAccountKey.private_key) {
         throw new Error('Invalid service account key in connection configuration');
       }
 
@@ -71,24 +92,54 @@ export class GmailMCPFetcher {
       await this.jwtClient.authorize();
       
       // Initialize both Gmail and Directory APIs
-      this.gmail = google.gmail({ version: 'v1' });
-      this.directory = google.admin({ version: 'directory_v1' });
+      this.gmail = google.gmail({ version: 'v1', auth: this.jwtClient });
+      this.directory = google.admin({ version: 'directory_v1', auth: this.jwtClient });
       
       console.log('Gmail API initialized:', !!this.gmail);
       console.log('Directory API initialized:', !!this.directory);
+      
+      console.log('Attempting to authorize JWT client...');
+      await this.jwtClient.authorize();
       console.log('Google auth success for domain-wide delegation');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google auth error:', err);
-      throw new Error(`Failed to initialize Google client: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
+      let friendlyError = err.message || 'Unknown error';
+      if (err.message?.includes('unauthorized_client')) {
+        if (this.connection.adminEmail?.endsWith('@gmail.com')) {
+          friendlyError = `Service accounts cannot impersonate personal @gmail.com accounts (${this.connection.adminEmail}). Please use a Google Workspace account or switch to "Sign in with Google".`;
+        } else {
+          friendlyError = `Domain-Wide Delegation unauthorized for ${this.connection.adminEmail}. Please ensure the Service Account Client ID is authorized in the Google Workspace Admin Console with the required scopes.`;
+        }
+      }
+      
+      // Re-throw with a better message for the UI
+      throw new Error(friendlyError);
     }
   }
 
   /**
-   * Fetch all users in the quus.cloud domain
+   * Fetch all users in the domain
    */
   async fetchAllDomainUsers(): Promise<DomainUser[]> {
     try {
-      console.log('Fetching all users in quus.cloud domain...');
+      if (!this.connection.serviceAccountKey) {
+        // OAuth2 mode doesn't support listing domain users (usually)
+        return [{
+          id: 'me',
+          email: this.connection.email,
+          name: this.connection.name,
+          displayName: this.connection.name,
+          isAdmin: false,
+          isSuspended: false,
+        }];
+      }
+      const domain = this.connection.adminEmail?.split('@')[1] || this.connection.email.split('@')[1];
+      if (!domain) {
+        throw new Error('Could not determine domain from connection email');
+      }
+
+      console.log(`Fetching all users in ${domain} domain...`);
       
       if (!this.directory) {
         throw new Error('Directory API not initialized');
@@ -100,7 +151,7 @@ export class GmailMCPFetcher {
       do {
         const response = await this.directory.users.list({
           auth: this.jwtClient,
-          domain: 'quus.cloud',
+          domain,
           maxResults: 500, // Maximum allowed by API
           pageToken: pageToken,
           orderBy: 'email'
@@ -127,7 +178,7 @@ export class GmailMCPFetcher {
         pageToken = response.data?.nextPageToken;
       } while (pageToken);
 
-      console.log(`Found ${users.length} users in quus.cloud domain`);
+      console.log(`Found ${users.length} users in ${domain} domain`);
 
       // Save users to database
       try {
@@ -161,10 +212,14 @@ export class GmailMCPFetcher {
   /**
    * Create a new JWT client for impersonating a specific user
    */
-  private createUserJWTClient(userEmail: string) {
+  private async getAuthClient(userEmail: string) {
+    if (!this.connection.serviceAccountKey) {
+      return this.oauth2Client;
+    }
+
     const serviceAccountKey = this.connection.serviceAccountKey;
     
-    return new google.auth.JWT({
+    const client = new google.auth.JWT({
       email: serviceAccountKey.client_email,
       key: serviceAccountKey.private_key,
       scopes: [
@@ -173,6 +228,9 @@ export class GmailMCPFetcher {
       ],
       subject: userEmail // Impersonate the specific user
     });
+
+    await client.authorize();
+    return client;
   }
 
   /**
@@ -187,14 +245,13 @@ export class GmailMCPFetcher {
     try {
       console.log(`Fetching Gmail messages for user: ${userEmail}`);
       
-      const userJWTClient = this.createUserJWTClient(userEmail);
-      await userJWTClient.authorize();
+      const authClient = await this.getAuthClient(userEmail);
       
       const gmail = google.gmail({ version: 'v1' });
       
       const response = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId: this.connection.serviceAccountKey ? userEmail : 'me',
         maxResults: options.maxResults || 50,
         q: options.query || '',
         labelIds: options.labelIds,
@@ -207,7 +264,7 @@ export class GmailMCPFetcher {
 
       // Fetch detailed message data for each message ID
       const messagePromises = response.data.messages.map(async (msg: any) => {
-        return this.getUserMessageDetails(userEmail, userJWTClient, msg.id);
+        return this.getUserMessageDetails(userEmail, authClient, msg.id);
       });
 
       const messages = await Promise.all(messagePromises);
@@ -249,13 +306,13 @@ export class GmailMCPFetcher {
   /**
    * Get detailed message information for a specific user
    */
-  private async getUserMessageDetails(userEmail: string, userJWTClient: any, messageId: string): Promise<GmailMessage | null> {
+  private async getUserMessageDetails(userEmail: string, authClient: any, messageId: string): Promise<GmailMessage | null> {
     try {
       const gmail = google.gmail({ version: 'v1' });
       
       const response = await gmail.users.messages.get({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId: this.connection.serviceAccountKey ? userEmail : 'me',
         id: messageId,
         format: 'full'
       });
@@ -295,23 +352,24 @@ export class GmailMCPFetcher {
     try {
       console.log(`Fetching Gmail stats for user: ${userEmail}`);
       
-      const userJWTClient = this.createUserJWTClient(userEmail);
-      await userJWTClient.authorize();
+      const authClient = await this.getAuthClient(userEmail);
       
       const gmail = google.gmail({ version: 'v1' });
       
+      const userId = this.connection.serviceAccountKey ? userEmail : 'me';
+
       // Get total messages
       const totalResponse = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId,
         maxResults: 1
       });
       const totalMessages = totalResponse.data.resultSizeEstimate || 0;
 
       // Get unread messages
       const unreadResponse = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId,
         labelIds: ['UNREAD'],
         maxResults: 1
       });
@@ -319,8 +377,8 @@ export class GmailMCPFetcher {
 
       // Get important messages
       const importantResponse = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId,
         labelIds: ['IMPORTANT'],
         maxResults: 1
       });
@@ -328,8 +386,8 @@ export class GmailMCPFetcher {
 
       // Get sent messages
       const sentResponse = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId,
         labelIds: ['SENT'],
         maxResults: 1
       });
@@ -339,8 +397,8 @@ export class GmailMCPFetcher {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const recentResponse = await gmail.users.messages.list({
-        auth: userJWTClient,
-        userId: userEmail,
+        auth: authClient,
+        userId,
         q: `after:${Math.floor(yesterday.getTime() / 1000)}`,
         maxResults: 1
       });

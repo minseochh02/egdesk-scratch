@@ -415,6 +415,23 @@
   color: #667eea;
 }
 
+.egdesk-landing-gmail-card:hover {
+  border-color: #ea4335;
+}
+
+.egdesk-landing-gmail-card:hover::before {
+  background: linear-gradient(90deg, #ea4335, #fbbc04);
+}
+
+.egdesk-landing-gmail-card .egdesk-landing-card-icon {
+  background: linear-gradient(135deg, #ea4335, #fbbc04);
+}
+
+.egdesk-landing-gmail-card:hover .egdesk-landing-feature-tag {
+  background: #fde8e6;
+  color: #ea4335;
+}
+
 /* Additional Options */
 .egdesk-landing-additional-options {
   text-align: center;

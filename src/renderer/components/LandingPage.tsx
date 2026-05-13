@@ -27,6 +27,7 @@ import {
   faMicrochip,
   faGavel,
   faBrain,
+  faEnvelope,
 } from '../utils/fontAwesomeIcons';
 import openclawIcon from '../../../assets/openclaw.svg';
 import ollamaIcon from '../../../assets/ollama.svg';
@@ -213,6 +214,21 @@ const LandingPage: React.FC = () => {
                 <span className="egdesk-landing-feature-tag">Server Registration</span>
                 <span className="egdesk-landing-feature-tag">AI Connection</span>
                 <span className="egdesk-landing-feature-tag">Protocol Management</span>
+              </div>
+            </Link>
+
+            <Link to="/gmail" className="egdesk-landing-action-card egdesk-landing-gmail-card">
+              <div className="egdesk-landing-card-icon">
+                <FontAwesomeIcon icon={faEnvelope} />
+              </div>
+              <h3 className="egdesk-landing-card-title">Gmail</h3>
+              <p className="egdesk-landing-card-description">
+                Connect Google Workspace and browse domain Gmail accounts.
+              </p>
+              <div className="egdesk-landing-card-features">
+                <span className="egdesk-landing-feature-tag">Domain Users</span>
+                <span className="egdesk-landing-feature-tag">Email Browser</span>
+                <span className="egdesk-landing-feature-tag">Excel Export</span>
               </div>
             </Link>
 

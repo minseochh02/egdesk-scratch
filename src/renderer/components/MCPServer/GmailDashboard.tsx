@@ -39,8 +39,9 @@ interface GmailConnection {
   id: string;
   name: string;
   email: string;
-  adminEmail: string;
-  serviceAccountKey: any;
+  mode?: 'workspace' | 'personal';
+  adminEmail?: string;
+  serviceAccountKey?: any;
   createdAt: string;
   updatedAt: string;
   type: 'gmail';
@@ -65,16 +66,44 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
   const [loadingUserData, setLoadingUserData] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'users' | 'gmail'>('users');
 
+  const isPersonal = connection.mode === 'personal';
+
   useEffect(() => {
-    loadDomainUsers();
+    if (isPersonal) {
+      loadPersonalInbox();
+    } else {
+      loadDomainUsers();
+    }
   }, [connection]);
+
+  const loadPersonalInbox = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [messagesResult, statsResult] = await Promise.all([
+        (window.electron as any).gmailMCP.fetchUserMessages(connection.id, connection.email, { maxResults: 50 }),
+        (window.electron as any).gmailMCP.fetchUserStats(connection.id, connection.email),
+      ]);
+
+      if (!messagesResult.success) throw new Error(messagesResult.error || 'Failed to fetch messages');
+      if (!statsResult.success) throw new Error(statsResult.error || 'Failed to fetch stats');
+
+      setUserMessages(messagesResult.messages || []);
+      setUserStats(statsResult.stats || null);
+      setViewMode('gmail');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load inbox');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadDomainUsers = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch domain users from Gmail MCP API
+
       const usersResult = await (window.electron as any).gmailMCP.fetchDomainUsers(connection.id);
 
       if (!usersResult.success) {
@@ -90,7 +119,11 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
   };
 
   const handleRefresh = async () => {
-    await loadDomainUsers();
+    if (isPersonal) {
+      await loadPersonalInbox();
+    } else {
+      await loadDomainUsers();
+    }
     onRefresh?.();
   };
 
@@ -347,14 +380,20 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
     const matchesSearch = user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          user.displayName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesFilter = filterStatus === 'all' || 
+    const matchesFilter = filterStatus === 'all' ||
                          (filterStatus === 'admin' && user.isAdmin) ||
                          (filterStatus === 'suspended' && user.isSuspended) ||
                          (filterStatus === 'active' && !user.isSuspended);
-    
     return matchesSearch && matchesFilter;
   });
+
+  const filteredMessages = isPersonal && searchQuery
+    ? userMessages.filter(m =>
+        m.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.from.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.snippet.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : userMessages;
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Never';
@@ -407,22 +446,57 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
       <div className="gmail-dashboard">
         <div className="gmail-dashboard-loading">
           <div className="gmail-dashboard-spinner"></div>
-          <p>Loading domain users...</p>
+          <p>{isPersonal ? 'Loading inbox...' : 'Loading domain users...'}</p>
         </div>
       </div>
     );
   }
 
   if (error) {
+    const isAuthError = error.includes('unauthorized_client') || error.includes('@gmail.com') || error.includes('Domain-Wide Delegation');
+    
     return (
       <div className="gmail-dashboard">
         <div className="gmail-dashboard-error">
           <FontAwesomeIcon icon={faTriangleExclamation} />
-          <h3>Error Loading Domain Users</h3>
-          <p>{error}</p>
-          <button onClick={handleRefresh} className="gmail-dashboard-retry-btn">
-            Try Again
-          </button>
+          <h3>{isPersonal ? 'Error Loading Inbox' : 'Error Loading Domain Users'}</h3>
+          <p style={{ maxWidth: '500px', margin: '0 auto 24px' }}>{error}</p>
+          
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button onClick={handleRefresh} className="gmail-dashboard-retry-btn">
+              Try Again
+            </button>
+            
+            {isAuthError && (
+              <button 
+                onClick={async () => {
+                  const scopes = [
+                    'https://www.googleapis.com/auth/gmail.readonly',
+                    'https://www.googleapis.com/auth/gmail.send',
+                    'https://www.googleapis.com/auth/userinfo.email',
+                  ].join(' ');
+                  await (window.electron as any).auth.signInWithGoogle(scopes);
+                }} 
+                className="gmail-dashboard-retry-btn"
+                style={{ background: 'linear-gradient(135deg, #ea4335 0%, #fbbc04 100%)' }}
+              >
+                <FontAwesomeIcon icon={faEnvelope} style={{ marginRight: '8px' }} />
+                Sign in with Google
+              </button>
+            )}
+          </div>
+
+          {isAuthError && !connection.email.endsWith('@gmail.com') && (
+            <div style={{ marginTop: '32px', textAlign: 'left', background: 'rgba(255,255,255,0.1)', padding: '20px', borderRadius: '12px', fontSize: '14px', color: 'white' }}>
+              <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Setup Checklist for Workspace:</h4>
+              <ol style={{ paddingLeft: '20px', margin: 0 }}>
+                <li>Go to <strong>admin.google.com</strong> &gt; Security &gt; API Controls</li>
+                <li>Click <strong>Manage Domain Wide Delegation</strong></li>
+                <li>Add new Client ID: <code>{connection.serviceAccountKey?.client_id || 'From JSON'}</code></li>
+                <li>Add Scopes: <code>https://www.googleapis.com/auth/gmail.readonly, https://www.googleapis.com/auth/gmail.send</code></li>
+              </ol>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -433,7 +507,7 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
       {/* Header */}
       <div className="gmail-dashboard-header">
         <div className="gmail-dashboard-header-left">
-          {viewMode === 'gmail' ? (
+          {!isPersonal && viewMode === 'gmail' ? (
             <button className="gmail-dashboard-back-btn" onClick={handleBackToUsers}>
               <FontAwesomeIcon icon={faArrowRight} />
               <span>Back to Users</span>
@@ -441,7 +515,7 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
           ) : onBack ? (
             <button className="gmail-dashboard-back-btn" onClick={onBack}>
               <FontAwesomeIcon icon={faArrowRight} />
-              <span>Back to MCP Tools</span>
+              <span>Back</span>
             </button>
           ) : null}
           <div className="gmail-dashboard-title">
@@ -449,8 +523,20 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
               <FontAwesomeIcon icon={viewMode === 'gmail' ? faEnvelope : faUsers} />
             </div>
             <div>
-              <h2>{viewMode === 'gmail' ? `${selectedUser?.displayName || selectedUser?.name}'s Gmail` : 'Domain Users Dashboard'}</h2>
-              <p>{viewMode === 'gmail' ? selectedUser?.email : 'quus.cloud domain users'}</p>
+              <h2>
+                {isPersonal
+                  ? 'My Inbox'
+                  : viewMode === 'gmail'
+                  ? `${selectedUser?.displayName || selectedUser?.name}'s Gmail`
+                  : 'Domain Users Dashboard'}
+              </h2>
+              <p>
+                {isPersonal
+                  ? connection.email
+                  : viewMode === 'gmail'
+                  ? selectedUser?.email
+                  : `${connection.email?.split('@')[1] || 'workspace'} domain users`}
+              </p>
             </div>
           </div>
         </div>
@@ -557,39 +643,51 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
 
       {/* Search and Filter */}
       <div className="gmail-dashboard-controls">
-        <div className="gmail-dashboard-search">
-          <FontAwesomeIcon icon={faSearch} />
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="gmail-dashboard-filter">
-          <FontAwesomeIcon icon={faChartBar} />
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option value="all">All Users</option>
-            <option value="admin">Admins</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
-        </div>
-        <button 
+        {!isPersonal && (
+          <>
+            <div className="gmail-dashboard-search">
+              <FontAwesomeIcon icon={faSearch} />
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="gmail-dashboard-filter">
+              <FontAwesomeIcon icon={faChartBar} />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="all">All Users</option>
+                <option value="admin">Admins</option>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+          </>
+        )}
+        {isPersonal && (
+          <div className="gmail-dashboard-search">
+            <FontAwesomeIcon icon={faSearch} />
+            <input
+              type="text"
+              placeholder="Search messages..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        )}
+        <button
           className="gmail-dashboard-export-btn"
           onClick={handleExportToExcel}
           title={viewMode === 'users' ? 'Export all users with their Gmail messages to Excel' : 'Export Gmail messages to Excel'}
-          disabled={viewMode === 'gmail' && (!selectedUser || userMessages.length === 0)}
+          disabled={viewMode === 'gmail' && (!isPersonal && (!selectedUser || userMessages.length === 0)) || (isPersonal && userMessages.length === 0)}
         >
           <FontAwesomeIcon icon={faDownload} />
           <span>
-            {viewMode === 'users' 
-              ? 'Export All Gmail Data' 
-              : 'Export Messages'
-            }
+            {viewMode === 'users' ? 'Export All Gmail Data' : 'Export Messages'}
           </span>
         </button>
       </div>
@@ -649,15 +747,15 @@ const GmailDashboard: React.FC<GmailDashboardProps> = ({ connection, onBack, onR
               <div className="gmail-dashboard-spinner"></div>
               <p>Loading Gmail data...</p>
             </div>
-          ) : userMessages.length === 0 ? (
+          ) : filteredMessages.length === 0 ? (
             <div className="gmail-dashboard-empty">
               <FontAwesomeIcon icon={faEnvelope} />
               <h3>No Messages Found</h3>
-              <p>This user has no Gmail messages.</p>
+              <p>{isPersonal ? 'Your inbox is empty.' : 'This user has no Gmail messages.'}</p>
             </div>
           ) : (
             <div className="gmail-dashboard-messages-list">
-              {userMessages.map((message) => (
+              {filteredMessages.map((message) => (
                 <div
                   key={message.id}
                   className={`gmail-dashboard-message ${!message.isRead ? 'unread' : ''} ${message.isImportant ? 'important' : ''}`}
