@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
-const { isWindows, waitForKookminKbCertificateWindow } = require('../../utils/windows-uia-native');
+const { isWindows, waitForKookminKbCertificateWindow, focusCertElement } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -439,6 +439,7 @@ class KookminBankAutomator extends BaseBankAutomator {
         this._kookminCorporateCertPhase = 'idle';
         return { success: false, error: uia.error || '인증서 창을 찾지 못했습니다.' };
       }
+      this._kookminCertWindowClass = uia.matchedClass;
       this._kookminCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
       return {
@@ -482,9 +483,28 @@ class KookminBankAutomator extends BaseBankAutomator {
       });
       await this._arduinoHid.connect();
 
-      this.log(`[KB] 인증서 입력 단계 시작 (TAB 이동 방식)...`);
+      this.log(`[KB] 인증서 입력 단계 시작...`);
       
-      const inputSteps = KOOKMIN_NATIVE_CERT_STEPS;
+      let inputSteps = KOOKMIN_NATIVE_CERT_STEPS;
+
+      // [개선] 직접 포커스 시도 (Delfino QWidget 환경)
+      if (this._kookminCertWindowClass) {
+        this.log(`[KB] 인증서 입력창 직접 포커스 시도 (${this._kookminCertWindowClass})...`);
+        const focusResult = focusCertElement(this._kookminCertWindowClass, 'passwordFrame');
+        
+        if (focusResult.ok) {
+          this.log(`   ✅ 포커스 성공! (${focusResult.method}) - TAB 단계를 건너뜁니다.`);
+          // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
+          const pwIndex = KOOKMIN_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
+          inputSteps = KOOKMIN_NATIVE_CERT_STEPS.filter((s, idx) => {
+            if (s.key === 'TAB') return false;
+            if (s.key === 'ENTER' && idx < pwIndex) return false;
+            return true;
+          });
+        } else {
+          this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
+        }
+      }
 
       await runNativeCertArduinoSteps(
         this._arduinoHid,
@@ -547,8 +567,42 @@ class KookminBankAutomator extends BaseBankAutomator {
     }
   }
 
+  async _closeKookminPopups() {
+    try {
+      await this.page.evaluate(() => {
+        const btns = document.querySelectorAll('button, a, span, div');
+        for (const b of btns) {
+          const text = b.textContent?.trim() || '';
+          if (
+            (text === '닫기' || text === '팝업 닫기' || text === '오늘 하루 열지않기' || text === '확인' || text === '오늘 하루 보지 않기') &&
+            b.offsetParent !== null
+          ) {
+            const rect = b.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              // @ts-ignore
+              b.click();
+            }
+          }
+        }
+        // KB 특유의 레이어 팝업 처리
+        const layers = document.querySelectorAll('.layer_popup, .popup_wrap, .pop_wrap, [class*="popup"]');
+        for (const l of layers) {
+          const closeBtn = l.querySelector('.btn_close, .close, [class*="close"]');
+          if (closeBtn) {
+            // @ts-ignore
+            closeBtn.click();
+          }
+        }
+      });
+      this.log('   - 팝업 닫기 시도 완료');
+    } catch (e) {
+      this.warn('   - 팝업 닫기 실패:', e.message);
+    }
+  }
+
   async _navigateKookminBizTransactionInquiry() {
     this.log('[NAV] 메뉴 탐색 시작 (엔진 레벨 마우스 클릭 방식)...');
+    await this._closeKookminPopups();
     
     // 헬퍼: 요소를 찾아 중심 좌표 반환
     const getPos = async (selector, text) => {
@@ -571,6 +625,8 @@ class KookminBankAutomator extends BaseBankAutomator {
     if (bizPos) {
       await this.page.mouse.click(bizPos.x, bizPos.y);
       this.log(`   - [STEP 1] 기업 탭 클릭 (${bizPos.x}, ${bizPos.y})`);
+      await this.page.waitForTimeout(2000);
+      await this._closeKookminPopups();
     } else {
       this.log('   - [STEP 1] 기업 탭 발견 실패');
     }

@@ -904,9 +904,9 @@ export class SQLiteManager {
     });
 
     // Update account status (active/inactive)
-    ipcMain.handle('sqlite-financehub-update-account-status', async (event, accountNumber, isActive) => {
+    ipcMain.handle('sqlite-financehub-update-account-status', async (event, bankId, accountNumber, isActive) => {
       try {
-        const result = this.getFinanceHubManager().updateAccountStatus(accountNumber, isActive);
+        const result = this.getFinanceHubManager().updateAccountStatus(bankId, accountNumber, isActive);
         return { success: true, data: result };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -914,9 +914,9 @@ export class SQLiteManager {
     });
 
     // Delete account (for debugging malformed data)
-    ipcMain.handle('sqlite-financehub-delete-account', async (event, accountNumber) => {
+    ipcMain.handle('sqlite-financehub-delete-account', async (event, bankId, accountNumber) => {
       try {
-        const result = this.getFinanceHubManager().deleteAccount(accountNumber);
+        const result = this.getFinanceHubManager().deleteAccount(bankId, accountNumber);
         return { success: result, data: result };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

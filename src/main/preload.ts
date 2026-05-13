@@ -2466,10 +2466,10 @@ const electronHandler = {
     upsertAccount: (accountData: any) => ipcRenderer.invoke('sqlite-financehub-upsert-account', accountData),
     importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any, isCard?: boolean) =>
       ipcRenderer.invoke('sqlite-financehub-import-transactions', bankId, accountData, transactionsData, syncMetadata, isCard),
-    updateAccountStatus: (accountNumber: string, isActive: boolean) =>
-      ipcRenderer.invoke('sqlite-financehub-update-account-status', accountNumber, isActive),
-    deleteAccount: (accountNumber: string) => 
-      ipcRenderer.invoke('sqlite-financehub-delete-account', accountNumber),
+    updateAccountStatus: (bankId: string, accountNumber: string, isActive: boolean) =>
+      ipcRenderer.invoke('sqlite-financehub-update-account-status', bankId, accountNumber, isActive),
+    deleteAccount: (bankId: string, accountNumber: string) => 
+      ipcRenderer.invoke('sqlite-financehub-delete-account', bankId, accountNumber),
     // Credential operations (database)
     saveCredentials: (bankId: string, userId: string, password: string, metadata?: any) =>
       ipcRenderer.invoke('sqlite-financehub-save-credentials', bankId, userId, password, metadata),

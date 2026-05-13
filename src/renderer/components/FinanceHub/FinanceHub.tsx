@@ -851,7 +851,7 @@ const FinanceHub: React.FC = () => {
         break;
     }
     
-    const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+    const formatDateStr = (date: Date) => date.toISOString().slice(0, 10);
     return {
       startDate: formatDateStr(startDate),
       endDate: formatDateStr(today)
@@ -976,21 +976,28 @@ const FinanceHub: React.FC = () => {
         openDate: result.metadata?.openDate || '',
       };
 
-      const transactionsData = (result.transactions || []).map((tx: any) => ({
-        date: tx.date ? String(tx.date).replace(/[-.]/g, '') : '',
-        time: tx.time || '',
-        transaction_datetime: tx.transaction_datetime || '',
-        type: tx.type || '',
-        withdrawal: tx.withdrawal || 0,
-        deposit: tx.deposit || 0,
-        description: tx.description || '',
-        description2: tx.description2 || '',
-        balance: tx.balance || 0,
-        branch: tx.branch || '',
-        counterparty: tx.counterparty || '',
-        counterpartyAccount: tx.counterpartyAccount || '',
-        memo: tx.memo || '',
-      }));
+      const transactionsData = (result.transactions || []).map((tx: any) => {
+        let date = tx.date ? String(tx.date) : '';
+        // Ensure YYYY-MM-DD format
+        if (date.length === 8 && !date.includes('-')) {
+          date = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+        }
+        return {
+          date,
+          time: tx.time || '',
+          transaction_datetime: tx.transaction_datetime || '',
+          type: tx.type || '',
+          withdrawal: tx.withdrawal || 0,
+          deposit: tx.deposit || 0,
+          description: tx.description || '',
+          description2: tx.description2 || '',
+          balance: tx.balance || 0,
+          branch: tx.branch || '',
+          counterparty: tx.counterparty || '',
+          counterpartyAccount: tx.counterpartyAccount || '',
+          memo: tx.memo || '',
+        };
+      });
 
       // [개선] 데이터가 없는 경우를 '성공(0건)'으로 처리
       if (transactionsData.length === 0) {
@@ -1132,7 +1139,7 @@ const FinanceHub: React.FC = () => {
         const today = new Date();
         const start = new Date();
         start.setDate(today.getDate() - 30); // Exactly 30 days
-        const formatDateStr = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+        const formatDateStr = (date: Date) => date.toISOString().slice(0, 10);
         dateRange = { startDate: formatDateStr(start), endDate: formatDateStr(today) };
       } else {
         dateRange = getDateRange(period);
@@ -2775,7 +2782,7 @@ const FinanceHub: React.FC = () => {
     
     try {
       // Call API to disable the account
-      const result = await window.electron.financeHubDb.updateAccountStatus(accountNumber, false);
+      const result = await window.electron.financeHubDb.updateAccountStatus(bankId, accountNumber, false);
       if (result.success) {
         // Update the UI - mark account as inactive
         await loadConnectedBanks();
@@ -2793,7 +2800,7 @@ const FinanceHub: React.FC = () => {
     
     try {
       // Call API to enable the account
-      const result = await window.electron.financeHubDb.updateAccountStatus(accountNumber, true);
+      const result = await window.electron.financeHubDb.updateAccountStatus(bankId, accountNumber, true);
       if (result.success) {
         // Update the UI - mark account as active
         await loadConnectedBanks();
@@ -2811,7 +2818,7 @@ const FinanceHub: React.FC = () => {
     
     try {
       // Call API to delete the account
-      const result = await window.electron.financeHubDb.deleteAccount(accountNumber);
+      const result = await window.electron.financeHubDb.deleteAccount(bankId, accountNumber);
       if (result.success) {
         // Update the UI - remove account
         await loadConnectedBanks();
