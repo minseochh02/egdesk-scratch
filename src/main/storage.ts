@@ -34,6 +34,8 @@ export function initializeStore(): Promise<void> {
           // This will store summarized/derived project insights keyed by project id/path
           // Example shape (planned): { [projectId]: { lastAnalyzedAt, summary, features, risks, todos } }
           smartProjectContext: {},
+          // Google Profiles: Store for GitHub, Telegram, and Kakao settings
+          googleProfiles: {},
           // MCP Configuration: Store for Model Context Protocol server configurations
           mcpConfiguration: {
             // Gmail MCP servers (existing)

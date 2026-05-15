@@ -5071,6 +5071,7 @@ const createWindow = async () => {
 
     // Generate or restore the dedicated Kakao callback API key (fixed — survives tunnel reconnects)
     try {
+      const store = getStore();
       const mcpConfig = (store.get('mcpConfiguration') as any) ?? {};
       const existingKakaoKey = mcpConfig.kakaoCallbackApiKey as string | undefined;
       const kakaoCallbackApiKey = existingKakaoKey || randomUUID();
@@ -5089,6 +5090,7 @@ const createWindow = async () => {
     // Restore tunnel API key into local server manager on startup
     // Without this, /user-data/ and /financehub routes are unprotected until tunnel reconnects
     try {
+      const store = getStore();
       const mcpConfig = (store.get('mcpConfiguration') as any) ?? {};
       const tunnelApiKey = mcpConfig?.tunnel?.apiKey as string | undefined;
       if (tunnelApiKey) {
@@ -5406,21 +5408,25 @@ app.on('before-quit', async () => {
 
   const store = getStore();
   // Cleanup tunnels and clear stored config
-  try {
-    stopAllTunnels();
-    const mcpConfig = store.get('mcpConfiguration');
-    const existingTunnel = mcpConfig.tunnel ?? {};
-    mcpConfig.tunnel = {
-      ...existingTunnel,
-      registered: false,
-      registrationId: '',
-      registeredAt: '',
-      lastConnectedAt: '',
-    };
-    store.set('mcpConfiguration', mcpConfig);
-    console.log('💾 Marked tunnel as disconnected on app quit (serverName and publicUrl preserved)');
-  } catch (error) {
-    console.error('⚠️ Failed to cleanup tunnels on quit:', error);
+  if (store) {
+    try {
+      stopAllTunnels();
+      const mcpConfig = store.get('mcpConfiguration');
+      if (mcpConfig) {
+        const existingTunnel = mcpConfig.tunnel ?? {};
+        mcpConfig.tunnel = {
+          ...existingTunnel,
+          registered: false,
+          registrationId: '',
+          registeredAt: '',
+          lastConnectedAt: '',
+        };
+        store.set('mcpConfiguration', mcpConfig);
+        console.log('💾 Marked tunnel as disconnected on app quit (serverName and publicUrl preserved)');
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to cleanup tunnels on quit:', error);
+    }
   }
 
   // Cleanup WordPress handler resources
