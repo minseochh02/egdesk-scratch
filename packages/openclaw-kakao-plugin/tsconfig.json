@@ -9,13 +9,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "openclaw/plugin-sdk": ["./node_modules/openclaw/dist/plugin-sdk/plugin-sdk/index.d.ts"]
-    }
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

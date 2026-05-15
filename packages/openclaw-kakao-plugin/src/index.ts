@@ -1,4 +1,5 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import {
   kakaoPlugin,
   resolveKakaoAccount,
@@ -14,7 +15,7 @@ export default defineChannelPluginEntry({
   name: "카카오톡",
   description: "카카오톡 채널 챗봇 플러그인",
   plugin: kakaoPlugin,
-  registerFull(api) {
+  registerFull(api: OpenClawPluginApi) {
     setKakaoRuntime(api.runtime);
     api.registerChannel({ plugin: kakaoPlugin });
 
