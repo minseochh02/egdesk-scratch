@@ -43,8 +43,8 @@ console.log('Installing dependencies in plugin directory…');
 execSync('npm install', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 
 // Compile
-console.log('Running tsc…');
-execSync('npx tsc', { cwd: PLUGIN_SRC, stdio: 'inherit' });
+console.log('Running npm run build…');
+execSync('npm run build', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 console.log('Compiled.');
 
 // ── 2. Copy into resources/ ────────────────────────────────────────────────
