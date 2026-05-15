@@ -11,8 +11,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.0",
-    "openclaw": "latest"
+    "openclaw": "^2026.5.12",
+    "typescript": "^5.3.0"
   },
   "peerDependencies": {
     "openclaw": "*"
