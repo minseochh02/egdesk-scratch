@@ -13,7 +13,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '../..');
-const PLUGIN_SRC = path.join(ROOT, '../openclaw-kakao-plugin');
+const PLUGIN_SRC = path.join(ROOT, 'packages/openclaw-kakao-plugin');
 const DEST = path.join(ROOT, 'resources/openclaw-kakao-plugin');
 
 function copyDir(src, dest) {
@@ -37,23 +37,14 @@ if (!fs.existsSync(PLUGIN_SRC)) {
 
 // ── 1. Compile the plugin ──────────────────────────────────────────────────
 console.log('Compiling kakao plugin…');
-const installedPlugin = path.join(
-  require('os').homedir(),
-  '.openclaw/extensions/kakao'
-);
 
-// Sync source files to installed location (which has node_modules)
-for (const f of fs.readdirSync(path.join(PLUGIN_SRC, 'src'))) {
-  const src = path.join(PLUGIN_SRC, 'src', f);
-  const dst = path.join(installedPlugin, 'src', f);
-  fs.mkdirSync(path.dirname(dst), { recursive: true });
-  fs.copyFileSync(src, dst);
-}
+// Install dependencies
+console.log('Installing dependencies in plugin directory…');
+execSync('npm install', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 
-const tsc = path.join(installedPlugin, 'node_modules/.bin/tsc');
-execSync(`"${tsc}" --project "${path.join(installedPlugin, 'tsconfig.json')}"`, {
-  stdio: 'inherit',
-});
+// Compile
+console.log('Running tsc…');
+execSync('npx tsc', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 console.log('Compiled.');
 
 // ── 2. Copy into resources/ ────────────────────────────────────────────────
@@ -62,7 +53,7 @@ if (fs.existsSync(DEST)) fs.rmSync(DEST, { recursive: true });
 fs.mkdirSync(DEST, { recursive: true });
 
 // dist/ (compiled output)
-copyDir(path.join(installedPlugin, 'dist'), path.join(DEST, 'dist'));
+copyDir(path.join(PLUGIN_SRC, 'dist'), path.join(DEST, 'dist'));
 
 // package.json + openclaw.plugin.json
 for (const f of ['package.json', 'openclaw.plugin.json']) {

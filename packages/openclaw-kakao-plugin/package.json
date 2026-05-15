@@ -1,0 +1,49 @@
+{
+  "name": "@openclaw/kakao",
+  "version": "0.1.0",
+  "description": "OpenClaw 카카오톡 채널 플러그인",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "kakao",
+      "label": "카카오톡",
+      "selectionLabel": "카카오톡 채널 (챗봇)",
+      "docsPath": "/channels/kakao",
+      "docsLabel": "kakao",
+      "blurb": "카카오톡 채널 챗봇을 통한 메시징",
+      "order": 80,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@openclaw/kakao",
+      "localPath": "extensions/kakao",
+      "defaultChoice": "local"
+    }
+  },
+  "keywords": [
+    "openclaw",
+    "kakao",
+    "kakaotalk",
+    "chatbot"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}
