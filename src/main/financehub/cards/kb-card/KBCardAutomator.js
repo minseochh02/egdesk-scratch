@@ -567,7 +567,7 @@ class KBCardAutomator extends BaseBankAutomator {
 
       this.log(`File size: ${fileBuffer.length} bytes`);
 
-      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
       
       if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
         throw new Error(`No sheets found in Excel file: ${filePath}`);
@@ -577,7 +577,7 @@ class KBCardAutomator extends BaseBankAutomator {
       this.log(`Using sheet: ${sheetName}`);
       
       const worksheet = workbook.Sheets[sheetName];
-      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
       
       this.log(`Raw data rows: ${rawData.length}`);
       
