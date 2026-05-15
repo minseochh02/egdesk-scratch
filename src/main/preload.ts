@@ -2252,6 +2252,8 @@ const electronHandler = {
         ipcRenderer.invoke('openclaw:start'),
       stop: () =>
         ipcRenderer.invoke('openclaw:stop'),
+      reset: (profileName: string) =>
+        ipcRenderer.invoke('openclaw:reset', { profileName }),
     },
   },
 

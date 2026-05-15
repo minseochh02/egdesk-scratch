@@ -686,10 +686,11 @@ const OpenClawPage: React.FC = () => {
   };
 
   const handleReset = async () => {
-    // Clear the Chrome profile so the next run starts with a clean browser session
+    // Perform a deep reset: clear Electron Store + openclaw.json + Chrome profile
     try {
+      await (window as any).electron.debug.openclaw.reset(PROFILE_NAME);
       await (window as any).electron.debug.googleProfile.delete(PROFILE_NAME);
-    } catch { /* non-fatal — profile may not exist yet */ }
+    } catch { /* non-fatal */ }
 
     setStep('welcome');
     setLoginPassword('');
