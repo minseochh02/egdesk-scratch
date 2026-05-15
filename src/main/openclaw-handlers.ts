@@ -115,6 +115,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       const homeDir = os.homedir();
       const configDir = path.join(homeDir, '.openclaw');
       const configPath = path.join(configDir, 'openclaw.json');
+      const setupProfileDir = path.join(getGoogleProfilesDir(), profileName);
 
       // Read profile metadata from Electron Store (fallback if caller didn't pass them)
       const { getStore } = require('./storage');
@@ -255,7 +256,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
           if (fs.existsSync(pluginPath)) {
             log(`Installing Kakao plugin from ${pluginPath}…`);
-            await execAsync(`openclaw plugins install "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+            await execAsync(`openclaw plugins install --force "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
           }
         } catch (e: any) {
           log(`Kakao plugin install (non-fatal): ${e?.message}`);
@@ -585,6 +586,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
     const homeDir = os.homedir();
+    const profileDir = path.join(getGoogleProfilesDir(), profileName);
 
     const cleanEnv = makeCleanEnv(homeDir);
 
@@ -742,7 +744,8 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         const { stdout: preCheck } = await execAsync('openclaw channels status', {
           env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024,
         });
-        if (preCheck.includes('connected')) {
+        // Only skip if connected AND not reporting an unauthorized error
+        if (preCheck.includes('connected') && !preCheck.includes('Unauthorized')) {
           log('✅ Telegram already connected — skipping browser /start flow.');
           alreadyConnectedEarly = true;
         }
@@ -1072,7 +1075,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           : (prodResourcesPath || devResourcesPath);
         const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
         if (fs.existsSync(pluginPath)) {
-          await execAsync(`openclaw plugins install "${pluginPath}"`, {
+          await execAsync(`openclaw plugins install --force "${pluginPath}"`, {
             env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024,
           });
         }
@@ -1124,5 +1127,35 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:stop', async () => {
     await killGateway();
     return { success: true };
+  });
+
+  // ---------------------------------------------------------------------------
+  // OpenClaw — deep reset (clear store + config file)
+  // ---------------------------------------------------------------------------
+  ipcMain.handle('openclaw:reset', async (_event, { profileName }: { profileName: string }) => {
+    try {
+      // 1. Clear profile from Electron Store
+      const { getStore } = require('./storage');
+      const store = getStore();
+      const profiles = store.get('googleProfiles') || {};
+      delete profiles[profileName];
+      store.set('googleProfiles', profiles);
+
+      // 2. Wipe openclaw.json
+      const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+      if (fs.existsSync(configPath)) {
+        fs.writeFileSync(configPath, JSON.stringify({
+          gateway: { mode: 'local' },
+          channels: {}
+        }, null, 2));
+      }
+
+      // 3. Kill gateway
+      await killGateway().catch(() => {});
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   });
 }

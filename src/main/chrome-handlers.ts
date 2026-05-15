@@ -4200,6 +4200,44 @@ test('recorded test', async ({ page }) => {
   }
 
   /**
+   * Helper: Extract an 8-digit verification code from Gmail.
+   */
+  async function extractVerificationCodeFromGmail(context: import('playwright-core').BrowserContext, ghStatus: (stage: string, message: string) => void): Promise<string> {
+    ghStatus('sudo-checking-gmail', 'Opening Gmail to find the verification code…');
+    let code = '';
+    const gmailPage = await context.newPage();
+    try {
+      // Search directly for the GitHub verification email
+      await gmailPage.goto('https://mail.google.com/mail/u/0/#search/from%3Agithub.com+subject%3A%22verify%22', {
+        waitUntil: 'load',
+        timeout: 30_000,
+      });
+      await gmailPage.waitForTimeout(4000);
+
+      // Wait for email rows to load — target the row containing a GitHub sender
+      const githubRow = gmailPage.locator('tr.zA').filter({ hasText: /github/i }).first();
+      const rowVisible = await githubRow.isVisible({ timeout: 20_000 }).catch(() => false);
+      if (rowVisible) {
+        await githubRow.click();
+        await gmailPage.waitForTimeout(3000);
+
+        // Extract code from the email body (handles "Verification code: xxxxxx" format)
+        const bodyText = await gmailPage.locator('.a3s, .ii.gt, .adP').first().innerText({ timeout: 10_000 }).catch(() => '');
+        const match = bodyText.match(/Verification code:\s*(\d{6,8})/i) || bodyText.match(/\b(\d{6,8})\b/);
+        if (match) {
+          code = match[1];
+          ghStatus('sudo-code-found', `Verification code found: ${code}`);
+        }
+      }
+    } catch (e) {
+      console.log('[Gmail] Failed to extract code:', e);
+    } finally {
+      await gmailPage.close().catch(() => {});
+    }
+    return code;
+  }
+
+  /**
    * Launch a persistent Chrome context for Google login. The profile is kept on
    * disk so subsequent sessions reuse the authenticated state.
    */
@@ -4908,6 +4946,34 @@ test('recorded test', async ({ page }) => {
         }
       };
 
+      const readPhoneFieldContent = async (cssSelector: string): Promise<string> => {
+        return page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          return el ? ((el as HTMLElement).innerText ?? '').replace(/\D/g, '') : '';
+        }, cssSelector).catch(() => '');
+      };
+
+      const fillRemainingPhone = async (cssSelector: string) => {
+        const inputLocator = page.locator(cssSelector).first();
+        await inputLocator.click({ timeout: 3000 });
+        let existing = '';
+        for (let i = 0; i < 20; i++) {
+          await page.waitForTimeout(100);
+          existing = await readPhoneFieldContent(cssSelector);
+          if (existing.length > 0) break;
+        }
+        const target = localNumber.replace(/\D/g, '');
+        let alreadyTyped = 0;
+        for (let len = Math.min(existing.length, target.length); len >= 1; len--) {
+          if (target.startsWith(existing.slice(-len))) {
+            alreadyTyped = len;
+            break;
+          }
+        }
+        const toType = target.slice(alreadyTyped);
+        if (toType) await page.keyboard.type(toType, { delay: 50 });
+      };
+
       try {
         // ── Phase A: Telegram login ──
         tgStatus('navigating', 'Opening Telegram Web…');
@@ -4943,8 +5009,6 @@ test('recorded test', async ({ page }) => {
           tgStatus('awaiting-code', `Code was already sent to ${phoneOnScreen}`, 'Enter the verification code in the browser window to continue.');
         }
 
-        // Polls for login success; if "Code expired" appears, clicks the pencil icon,
-        // re-enters the phone number, and waits for a fresh code (repeats up to 5 times).
         const waitForLoginWithExpireRetry = async (maxWaitMs = 300_000, codeScreenVisible = false) => {
           const deadline = Date.now() + maxWaitMs;
           let attempt = 0;
@@ -5085,50 +5149,15 @@ test('recorded test', async ({ page }) => {
           // The phone number field is a contenteditable div (not an <input>), so we must use keyboard.type()
           // We read what's already in the field and only type the missing suffix —
           // e.g. if "+82 1" is already shown, we only type "01234567" not the full "101234567"
-          const readPhoneFieldContent = async (cssSelector: string): Promise<string> => {
-            // Playwright's locator.innerText() can return "" on Telegram's contenteditable.
-            // Reading directly via page.evaluate() is more reliable.
-            return page.evaluate((sel) => {
-              const el = document.querySelector(sel);
-              return el ? ((el as HTMLElement).innerText ?? '').replace(/\D/g, '') : '';
-            }, cssSelector).catch(() => '');
-          };
-
-          const fillRemainingPhone = async (cssSelector: string) => {
-            const inputLocator = page.locator(cssSelector).first();
-            await inputLocator.click({ timeout: 3000 });
-            // Poll up to 2s for Telegram to auto-insert its prefix (e.g. "1" for +82)
-            let existing = '';
-            for (let i = 0; i < 20; i++) {
-              await page.waitForTimeout(100);
-              existing = await readPhoneFieldContent(cssSelector);
-              console.log(`[fillPhone] poll ${i}: selector="${cssSelector}" existing="${existing}"`);
-              if (existing.length > 0) break;
-            }
-            const target = localNumber.replace(/\D/g, '');
-            // existing may include country code digits (e.g. "82" from "+82 ") followed by
-            // whatever Telegram auto-filled (e.g. "1"). Find the longest suffix of existing
-            // that is also a prefix of target — that's what Telegram already typed.
-            let alreadyTyped = 0;
-            for (let len = Math.min(existing.length, target.length); len >= 1; len--) {
-              if (target.startsWith(existing.slice(-len))) {
-                alreadyTyped = len;
-                break;
-              }
-            }
-            const toType = target.slice(alreadyTyped);
-            console.log(`[fillPhone] existing="${existing}" target="${target}" alreadyTyped=${alreadyTyped} toType="${toType}"`);
-            if (toType) await page.keyboard.type(toType, { delay: 50 });
-          };
-
+          
           try {
             await page.locator('[data-left-pattern]').first().waitFor({ timeout: 5000 });
             await fillRemainingPhone('[data-left-pattern]');
-          } catch {
+          } catch (e) {
             // Fallback: third input-field-input div (0=hidden, 1=country code, 2=phone)
             try {
               await fillRemainingPhone('.input-field-input:nth-child(3)');
-            } catch {
+            } catch (innerE) {
               // Could not fill phone — user may need to enter manually
             }
           }
@@ -5182,7 +5211,7 @@ test('recorded test', async ({ page }) => {
 
         // Click START BOT if visible (on the t.me preview page)
         try {
-          const startBtn = page.getByRole('a', { name: 'START BOT' });
+          const startBtn = page.locator('a').filter({ hasText: 'START BOT' });
           await startBtn.waitFor({ timeout: 8000 });
           await startBtn.hover({ force: true });
           await startBtn.click({ timeout: 5000 });
@@ -5198,7 +5227,7 @@ test('recorded test', async ({ page }) => {
         // Click OPEN IN WEB
         tgStatus('opening-botfather', 'Opening BotFather in Telegram Web…');
         try {
-          const openBtn = page.getByRole('span', { name: 'OPEN IN WEB' });
+          const openBtn = page.locator('span').filter({ hasText: 'OPEN IN WEB' });
           await openBtn.waitFor({ timeout: 8000 });
           await openBtn.hover({ force: true });
           await openBtn.click({ timeout: 5000 });
@@ -5550,7 +5579,7 @@ test('recorded test', async ({ page }) => {
           ghStatus('google-login', 'Clicking "Continue with Google"…');
           try {
             try {
-              const locator = page.getByRole('span', { name: 'Continue with Google' });
+              const locator = page.locator('span').filter({ hasText: 'Continue with Google' });
               await locator.hover({ force: true });
               await locator.click({ timeout: 8000 });
               continueWithGoogleClicked = true;
@@ -5585,15 +5614,44 @@ test('recorded test', async ({ page }) => {
 
         // Step 3b: Handle Google Permission screen ("Google will allow GitHub to access...")
         // This screen appears for new accounts or when re-authorizing.
-        const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
         try {
-          if (await googleContinueBtn.isVisible({ timeout: 8000 })) {
+          const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
+          if (await googleContinueBtn.isVisible()) {
             ghStatus('selecting-account', 'Confirming Google permissions…');
             await googleContinueBtn.click({ force: true });
             await page.waitForTimeout(3000);
           }
         } catch (e) {
-          // If not visible, just proceed
+          // If not visible or error, just proceed
+        }
+
+        // Step 3c: Handle "Link account" screen
+        // This appears if the email exists on GitHub but Google sign-in isn't linked yet.
+        try {
+          const linkAccountBtn = page.locator('button').filter({ hasText: /Link account|계정 연결/i }).first();
+          if (await linkAccountBtn.isVisible()) {
+            ghStatus('selecting-account', 'Linking Google account to GitHub…');
+            await linkAccountBtn.click({ force: true });
+            await page.waitForTimeout(3000);
+
+            // Check if a verification code is requested after linking
+            const otpInput = page.locator('input[name="sudo_email_otp"], #otp, input[name="verification_code"]').first();
+            if (await otpInput.isVisible({ timeout: 5000 })) {
+              ghStatus('selecting-account', 'Verification code required for linking…');
+              const code = await extractVerificationCodeFromGmail(context, ghStatus);
+              if (code) {
+                await otpInput.fill(code);
+                await page.waitForTimeout(500);
+                await page.locator('button[type="submit"]').click().catch(() => {});
+                await page.waitForTimeout(3000);
+              } else {
+                ghStatus('sudo-awaiting-code', 'Please enter the verification code sent to your Gmail manually.');
+                await page.waitForTimeout(30000); // Give user time to do it manually
+              }
+            }
+          }
+        } catch (e) {
+          // Optional step
         }
 
         // Step 4: Check if this Google account already has a GitHub account linked.
@@ -5616,7 +5674,7 @@ test('recorded test', async ({ page }) => {
 
           ghStatus('submitting', 'Submitting account creation form…');
           try {
-            const createBtn = page.getByRole('span', { name: 'Create account' });
+            const createBtn = page.locator('span').filter({ hasText: 'Create account' });
             await createBtn.hover({ force: true });
             await createBtn.click({ timeout: 8000 });
           } catch {
@@ -5780,10 +5838,38 @@ test('recorded test', async ({ page }) => {
               }
 
               // Handle Google Permission screen ("Google will allow GitHub to access...")
-              const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
-              if (await googleContinueBtn.isVisible({ timeout: 8000 })) {
-                await googleContinueBtn.click({ force: true });
-                await page.waitForTimeout(3000);
+              try {
+                const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
+                if (await googleContinueBtn.isVisible()) {
+                  await googleContinueBtn.click({ force: true });
+                  await page.waitForTimeout(3000);
+                }
+              } catch (e) {
+                // Optional step
+              }
+
+              // Handle "Link account" screen
+              try {
+                const linkAccountBtn = page.locator('button').filter({ hasText: /Link account|계정 연결/i }).first();
+                if (await linkAccountBtn.isVisible()) {
+                  await linkAccountBtn.click({ force: true });
+                  await page.waitForTimeout(3000);
+
+                  // Check if a verification code is requested after linking
+                  const otpInput = page.locator('input[name="sudo_email_otp"], #otp, input[name="verification_code"]').first();
+                  if (await otpInput.isVisible({ timeout: 5000 })) {
+                    ghStatus2('google-login', 'Verification code required for linking…');
+                    const code = await extractVerificationCodeFromGmail(context, ghStatus2);
+                    if (code) {
+                      await otpInput.fill(code);
+                      await page.waitForTimeout(500);
+                      await page.locator('button[type="submit"]').click().catch(() => {});
+                      await page.waitForTimeout(3000);
+                    }
+                  }
+                }
+              } catch (e) {
+                // Optional step
               }
             }
           } catch (e) {
@@ -5869,7 +5955,7 @@ test('recorded test', async ({ page }) => {
 
         // Click "Tokens (classic)" or "For general use" from the dropdown
         try {
-          await page.getByRole('link', { name: /Tokens \(classic\)/i }).click({ timeout: 5000 });
+          await page.locator('a').filter({ hasText: /Tokens \(classic\)/i }).click({ timeout: 5000 });
         } catch {
           try {
             await page.getByText('For general use').click({ timeout: 5000 });
@@ -5911,13 +5997,24 @@ test('recorded test', async ({ page }) => {
             // For now, we'll try to use the password passed to the login handler if we can store it, 
             // but since this is a separate handler, we'll just wait for the user.
             ghStatus2('sudo-awaiting-code', 'Please enter your GitHub password in the browser window to continue.');
-            await page.waitForURL(url => !url.includes('/sessions/sudo'), { timeout: 120_000 }).catch(() => {});
+            await page.waitForURL(url => !url.href.includes('/sessions/sudo'), { timeout: 120_000 }).catch(() => {});
           }
 
           // Confirm the code input appeared before we go look for the email
           const otpInput = page.locator('input[name="sudo_email_otp"], #otp').first();
           if (await otpInput.isVisible({ timeout: 5000 })) {
-            // ... existing email extraction logic ...
+            const sudoCode = await extractVerificationCodeFromGmail(context, ghStatus2);
+
+            if (sudoCode) {
+              await page.locator('input[name="sudo_email_otp"]').fill(sudoCode);
+              await page.locator('button[type="submit"]').click();
+              await page.waitForURL(url => !url.href.includes('/sessions/sudo'), { timeout: 15_000 }).catch(() => {});
+            } else {
+              ghStatus2('sudo-awaiting-code', 'Please enter the verification code in the browser window.');
+              await page.waitForURL(url => !url.href.includes('/sessions/sudo'), { timeout: 120_000 }).catch(() => {});
+            }
+          }
+        }
 
         // After potential sudo redirect, confirm we're on the token form
         const onFormAfterSudo = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
