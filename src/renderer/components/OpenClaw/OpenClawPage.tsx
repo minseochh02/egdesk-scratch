@@ -43,6 +43,7 @@ const OpenClawPage: React.FC = () => {
   const [telegramStatus, setTelegramStatus] = useState<{ stage: string; message: string; action?: string } | null>(null);
   const [githubStatus, setGithubStatus] = useState<{ stage: string; message: string } | null>(null);
   const [googleStatus, setGoogleStatus] = useState<{ stage: string; message: string } | null>(null);
+  const [reuseKakao, setReuseKakao] = useState(true);
 
   // Listen for Telegram status events from the backend during setup
   useEffect(() => {
@@ -284,7 +285,7 @@ const OpenClawPage: React.FC = () => {
     let resolvedSearchId = searchId;
     let resolvedChannelUrl = '';
 
-    if (kakaoSetup && kakaoSearchId) {
+    if (kakaoSetup && kakaoSearchId && reuseKakao) {
       addLog(`✅ KakaoTalk channel already set up (@${kakaoSearchId}) — skipping creation.`);
       resolvedSearchId = kakaoSearchId;
       resolvedChannelUrl = kakaoChannelUrl;
@@ -293,7 +294,7 @@ const OpenClawPage: React.FC = () => {
       addLog(`Creating KakaoTalk channel "@${searchId}"...`);
       try {
         const channelResult = await (window as any).electron.debug.kakao.createChannel(
-          PROFILE_NAME, channelName, searchId
+          PROFILE_NAME, channelName, searchId, reuseKakao
         );
         if (channelResult?.success) {
           addLog(`✅ KakaoTalk channel created: @${searchId}`);
@@ -315,14 +316,14 @@ const OpenClawPage: React.FC = () => {
 
     // Step B: Create Bot — skip if channel and bot are already done
     if (channelOk) {
-      if (kakaoSetup && kakaoBotName) {
+      if (kakaoSetup && kakaoBotName && reuseKakao) {
         addLog(`✅ KakaoTalk bot already set up (${kakaoBotName}) — skipping creation.`);
         setKakaoSetup(true);
       } else {
       addLog(`Creating KakaoTalk bot "${botName}"...`);
       try {
         const botResult = await (window as any).electron.debug.kakao.createBot(
-          PROFILE_NAME, botName, `@${resolvedSearchId}`, skillUrl
+          PROFILE_NAME, botName, `@${resolvedSearchId}`, skillUrl, reuseKakao
         );
         if (botResult?.success) {
           addLog(`✅ KakaoTalk bot created and deployed: ${botName}`);
@@ -774,6 +775,18 @@ const OpenClawPage: React.FC = () => {
                 }}
               />
             </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', justifyContent: 'center' }}>
+            <input
+              type="checkbox"
+              id="reuseKakao"
+              checked={reuseKakao}
+              onChange={e => setReuseKakao(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            <label htmlFor="reuseKakao" style={{ color: '#aaa', fontSize: '13px', cursor: 'pointer' }}>
+              Reuse existing Kakao channel/bot if found
+            </label>
           </div>
           <button
             onClick={handleGetStarted}

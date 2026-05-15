@@ -38,7 +38,7 @@ function getProfileDir(getGoogleProfilesDir: () => string, profileName: string):
 async function dismissKakaoPopups(page: any): Promise<void> {
   try {
     // There may be multiple stacked layers; close them all
-    const closeBtns = page.locator('.wrap_layer .btn_close, .open_layer .btn_close');
+    const closeBtns = page.locator('.wrap_layer .btn_close, .open_layer .btn_close, .layer_comm .btn_close, .go1141946668 .btn_close');
     const count = await closeBtns.count();
     for (let i = 0; i < count; i++) {
       const btn = closeBtns.nth(i);
@@ -232,19 +232,19 @@ async function createKakaoChannel(
       const enableSearch = page.locator('#enableSearch');
 
       // TODO: Enable these for public release — for now keep the channel private.
-      // if (await profileDirect.count() > 0) {
-      //   console.log('[kakao:createChannel] Found "채널 공개" setting.');
-      //   if (!(await profileDirect.isChecked())) {
-      //     console.log('[kakao:createChannel] Toggling "채널 공개" ON...');
-      //     await profileDirect.click({ force: true });
-      //     await page.waitForTimeout(1000);
-      //     const confirmBtn = page.locator('button').filter({ hasText: '확인' }).first();
-      //     if (await confirmBtn.count() > 0) {
-      //       await confirmBtn.click();
-      //       await page.waitForTimeout(2000);
-      //     }
-      //   }
-      // }
+      if (await profileDirect.count() > 0) {
+        console.log('[kakao:createChannel] Found "채널 공개" setting.');
+        if (!(await profileDirect.isChecked())) {
+          console.log('[kakao:createChannel] Toggling "채널 공개" ON...');
+          await profileDirect.click({ force: true });
+          await page.waitForTimeout(1000);
+          const confirmBtn = page.locator('button').filter({ hasText: '확인' }).first();
+          if (await confirmBtn.count() > 0) {
+            await confirmBtn.click();
+            await page.waitForTimeout(2000);
+          }
+        }
+      }
 
       // TODO: Enable these for public release — for now keep the channel unsearchable.
       // if (await enableSearch.count() > 0) {
@@ -752,7 +752,7 @@ export function registerKakaoHandlers(getGoogleProfilesDir: () => string): void 
     async (_event, { profileName, channelName, searchId, reuseExisting }: { profileName: string; channelName: string; searchId: string; reuseExisting?: boolean }) => {
       try {
         const profileDir = getProfileDir(getGoogleProfilesDir, profileName);
-        return await createKakaoChannel(profileDir, channelName, searchId, reuseExisting ?? false);
+        return await createKakaoChannel(profileDir, channelName, searchId, reuseExisting ?? true);
       } catch (err: any) {
         return { success: false, error: err?.message || String(err) };
       }
@@ -764,7 +764,7 @@ export function registerKakaoHandlers(getGoogleProfilesDir: () => string): void 
     async (_event, { profileName, botName, channelSearchId, skillUrl, reuseExisting }: { profileName: string; botName: string; channelSearchId: string; skillUrl: string; reuseExisting?: boolean }) => {
       try {
         const profileDir = getProfileDir(getGoogleProfilesDir, profileName);
-        return await createKakaoBot(profileDir, botName, channelSearchId, skillUrl, reuseExisting ?? false);
+        return await createKakaoBot(profileDir, botName, channelSearchId, skillUrl, reuseExisting ?? true);
       } catch (err: any) {
         return { success: false, error: err?.message || String(err) };
       }

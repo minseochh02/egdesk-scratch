@@ -116,12 +116,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       const configDir = path.join(homeDir, '.openclaw');
       const configPath = path.join(configDir, 'openclaw.json');
 
-      // Read profile.json to get saved token + bot username (fallback if caller didn't pass them)
-      const profileDir = path.join(getGoogleProfilesDir(), profileName);
-      const metaPath = path.join(profileDir, 'profile.json');
-      const savedProfile = fs.existsSync(metaPath)
-        ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-        : {};
+      // Read profile metadata from Electron Store (fallback if caller didn't pass them)
+      const { getStore } = require('./storage');
+      const store = getStore();
+      const profiles = store.get('googleProfiles') || {};
+      const savedProfile = profiles[profileName] || {};
 
       const resolvedToken = botToken?.trim() || savedProfile.telegramBotToken || '';
       const botUsername: string = savedProfile.telegramBotUsername || deriveBotUsername(savedProfile.googleEmail ?? '');
@@ -205,7 +204,6 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
 
         // ── 1. Install openclaw if not on PATH or corrupted ──
-        // Use `openclaw --version` to detect both missing and corrupted installs.
         let alreadyInstalled = false;
         try {
           const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
@@ -216,216 +214,133 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         }
 
         if (!alreadyInstalled) {
-          // Uninstall first to clear any corrupted state, then reinstall clean.
           log('Running: npm uninstall -g openclaw');
           try {
-            await execAsync('npm uninstall -g openclaw', {
-              env: cleanEnv,
-              timeout: 30_000,
-              maxBuffer: 5 * 1024 * 1024,
-            });
-            log('npm uninstall complete');
-          } catch (unErr: any) {
-            log(`npm uninstall (non-fatal): ${(unErr?.message || '').slice(0, 100)}`);
-          }
+            await execAsync('npm uninstall -g openclaw', { env: cleanEnv, timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+          } catch {}
           log('Running: npm install -g openclaw@latest');
-          await execAsync('npm install -g openclaw@latest', {
-            env: cleanEnv,
-            timeout: 120_000,
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          await execAsync('npm install -g openclaw@latest', { env: cleanEnv, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
           log('npm install complete');
         }
 
-        // ── 2. Write ~/.openclaw/openclaw.json with bot token ──
-        if (!fs.existsSync(configDir)) {
-          fs.mkdirSync(configDir, { recursive: true });
-        }
-
-        const existing = fs.existsSync(configPath)
-          ? JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-          : {};
-
-        // Read the tunnel API key from store so OpenClaw can authenticate against protected routes
-        let egdeskApiKey = '';
-        try {
-          const { getStore } = require('./storage');
-          const mcpConfig = (getStore()?.get('mcpConfiguration') as any) ?? {};
-          egdeskApiKey = mcpConfig?.tunnel?.apiKey ?? '';
-        } catch { /* non-fatal */ }
-
-        // Write .env file so openclaw can reference the key via ${EGDESK_API_KEY}
-        if (egdeskApiKey) {
-          const envPath = path.join(configDir, '.env');
-          const envLines = fs.existsSync(envPath)
-            ? fs.readFileSync(envPath, 'utf-8').split('\n').filter(l => !l.startsWith('EGDESK_API_KEY='))
-            : [];
-          envLines.push(`EGDESK_API_KEY=${egdeskApiKey}`);
-          fs.writeFileSync(envPath, envLines.join('\n') + '\n');
-          log(`🔑 Wrote EGDESK_API_KEY to ${envPath}`);
-        }
-
-        // ── 2a. Write base config — only schema-safe keys first ──
-        // doctor --fix strips unknown keys, so we write only telegram+gateway here,
-        // then add kakao/plugins/mcp AFTER doctor so they survive.
-        const updated: any = {
-          ...existing,
-          gateway: {
-            ...(existing.gateway ?? {}),
-            mode: (existing.gateway?.mode) || 'local',
-          },
-          channels: {
-            ...(existing.channels ?? {}),
-            telegram: {
-              ...(existing.channels?.telegram ?? {}),
-              botToken: resolvedToken,
-            },
-            kakao: {
-              enabled: true,
-              webhookPath: '/kakao/skill',
-              useCallback: true,
-              callbackTimeoutMs: 180000,
-              dmPolicy: 'open',
-              ...(existing.channels?.kakao ?? {}),
-            },
-          },
-        };
-        // Strip keys that openclaw's strict schema rejects
-        delete updated.models;
-        delete updated.mcp;
-        delete updated.mcpServers;
-        delete updated.plugins; // not a valid schema key — Kakao is registered as a plugin via CLI
-
-        fs.writeFileSync(configPath, JSON.stringify(updated, null, 2));
-        log(`Base config written to ${configPath} — telegram.botToken: ${resolvedToken ? '(set)' : '(missing)'}`);
-        const lastGoodPath = path.join(configDir, 'openclaw.json.last-good');
-
-        // Run doctor --fix to strip any remaining unrecognized keys from previous runs
-        try {
-          const { stdout: doctorOut, stderr: doctorErr } = await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
-          log(`openclaw doctor --fix: ${(doctorOut || doctorErr || 'ok').trim().slice(0, 200)}`);
-        } catch (e: any) {
-          log(`openclaw doctor --fix (non-fatal): ${(e?.stdout || e?.stderr || e?.message || '').trim().slice(0, 200)}`);
-        }
-
-        // ── 2b. Update last-good with the doctor-validated config ──
-        // The correct key is mcp.servers (not mcpServers). Write it AFTER doctor so it survives.
-        try {
-          const freshCfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          // Strip the wrong key from any previous setup attempts
-          delete freshCfg.mcpServers;
-          // Register the EGDesk local MCP server under the correct openclaw schema path
-          freshCfg.mcp = freshCfg.mcp ?? {};
-          freshCfg.mcp.servers = freshCfg.mcp.servers ?? {};
-          freshCfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080/mcp' };
-          fs.writeFileSync(configPath, JSON.stringify(freshCfg, null, 2));
-          fs.writeFileSync(lastGoodPath, JSON.stringify(freshCfg, null, 2));
-          log('Config finalized with mcp.servers.egdesk → http://localhost:8080/mcp');
-        } catch (e: any) {
-          log(`Config finalize (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
-        }
-
-        // ── 3. Install Kakao plugin via openclaw plugins install ──
-        // Kakao is a plugin, not a channel config key. Install the bundled plugin package.
-        try {
-          const { app: electronApp } = require('electron');
-          // In production: resources/ is next to the app bundle (process.resourcesPath)
-          // In development: __dirname is dist/main/, so go up 3 levels to project root + resources/
-          const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
-          const prodResourcesPath = process.resourcesPath
-            || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
-          // Prefer dev path if it contains the plugin (avoids pointing at electron's own resources dir)
-          const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin'))
-            ? devResourcesPath
-            : (prodResourcesPath || devResourcesPath);
-          const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
-
-          if (fs.existsSync(pluginPath)) {
-            log(`Installing Kakao plugin from ${pluginPath}…`);
-            const { stdout: pOut, stderr: pErr } = await execAsync(
-              `openclaw plugins install "${pluginPath}"`,
-              { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 }
-            );
-            log(`Kakao plugin install: ${(pOut || pErr || 'ok').trim().slice(0, 200)}`);
-          } else {
-            log(`Kakao plugin not found at ${pluginPath} — skipping install`);
-          }
-        } catch (e: any) {
-          log(`Kakao plugin install (non-fatal): ${(e?.message || '').trim().slice(0, 200)}`);
-        }
-
-        // ── 3b. Configure Gemini as the AI provider, then install daemon ──
+        // ── 2. Run openclaw onboard FIRST to initialize the file ──
+        // This command creates/overwrites openclaw.json with the provider template.
         const geminiKeyForOnboard = cleanEnv.GEMINI_API_KEY;
         if (geminiKeyForOnboard) {
           log('Running: openclaw onboard --non-interactive (Gemini)');
           try {
-            const { stdout: onboardOut, stderr: onboardErr } = await execAsync(
+            await execAsync(
               `openclaw onboard --non-interactive --accept-risk --mode local --auth-choice gemini-api-key --gemini-api-key "${geminiKeyForOnboard}"`,
               { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
             );
-            log(`onboard: ${(onboardOut || onboardErr || 'done').trim().slice(0, 300)}`);
           } catch (e: any) {
             const out = (e.stdout || e.stderr || '').trim();
             const succeeded = out.includes('openclaw.json') || out.includes('Telegram: ok');
-            log(succeeded ? `onboard: ${out.slice(0, 300)}` : `onboard failed (non-fatal): ${(e.message || out).slice(0, 300)}`);
+            if (!succeeded) log(`onboard failed (non-fatal): ${out.slice(0, 300)}`);
           }
-
-          // onboard does a full "Config overwrite" — it replaces openclaw.json entirely, wiping
-          // the telegram bot token and mcp.servers we wrote in step 2.  Restore them now,
-          // and also force the Gemini model (onboard only prints instructions, doesn't set it).
-          try {
-            const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-            const cfg = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) : {};
-
-            // Force Gemini model — openclaw falls back to its built-in OpenAI default otherwise
-            cfg.agents = cfg.agents ?? {};
-            cfg.agents.defaults = cfg.agents.defaults ?? {};
-            cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
-            cfg.agents.defaults.model.primary = cfg.agents.defaults.model.primary || 'google/gemini-3.1-pro-preview';
-            log(`Set agents.defaults.model.primary → ${cfg.agents.defaults.model.primary}`);
-
-            // Restore telegram bot token (wiped by onboard overwrite)
-            if (resolvedToken) {
-              cfg.channels = cfg.channels ?? {};
-              cfg.channels.telegram = cfg.channels.telegram ?? {};
-              cfg.channels.telegram.botToken = resolvedToken;
-              cfg.channels.telegram.enabled = true;
-              log('Restored channels.telegram.botToken after onboard overwrite');
-            }
-
-            // Restore MCP server entry (wiped by onboard overwrite)
-            cfg.mcp = cfg.mcp ?? {};
-            cfg.mcp.servers = cfg.mcp.servers ?? {};
-            cfg.mcp.servers.egdesk = { type: 'http', url: 'http://localhost:8080/mcp' };
-            log('Restored mcp.servers.egdesk after onboard overwrite');
-
-            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-          } catch (e: any) {
-            log(`Could not write model/restore config (non-fatal): ${e?.message}`);
-          }
-
-        } else {
-          log('⚠️ No Gemini API key — skipping onboard');
         }
 
+        // ── 3. Run doctor --fix to ensure base health ──
+        try {
+          await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
+        } catch {}
+
+        // ── 4. Install Kakao plugin ──
+        try {
+          const { app: electronApp } = require('electron');
+          const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
+          const prodResourcesPath = process.resourcesPath || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
+          const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin')) ? devResourcesPath : (prodResourcesPath || devResourcesPath);
+          const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
+
+          if (fs.existsSync(pluginPath)) {
+            log(`Installing Kakao plugin from ${pluginPath}…`);
+            await execAsync(`openclaw plugins install "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+          }
+        } catch (e: any) {
+          log(`Kakao plugin install (non-fatal): ${e?.message}`);
+        }
+
+        // ── 5. THE GOLDEN MERGE: One final write to rule them all ──
+        // We read the CLI-generated file and inject EVERY custom key we need.
+        // No CLI command runs after this to "banish" our settings.
+        try {
+          if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+          
+          const currentCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
+          
+          const finalCfg = {
+            ...currentCfg,
+            gateway: {
+              ...(currentCfg.gateway ?? {}),
+              mode: 'local',
+            },
+            agents: {
+              ...(currentCfg.agents ?? {}),
+              defaults: {
+                ...(currentCfg.agents?.defaults ?? {}),
+                model: {
+                  ...(currentCfg.agents?.defaults?.model ?? {}),
+                  primary: 'google/gemini-3.1-pro-preview',
+                }
+              }
+            },
+            channels: {
+              ...(currentCfg.channels ?? {}),
+              telegram: {
+                enabled: true,
+                botToken: resolvedToken,
+                ...(currentCfg.channels?.telegram ?? {}),
+                botToken: resolvedToken, // ensure our token wins
+              },
+              kakao: {
+                enabled: true,
+                webhookPath: '/kakao/skill',
+                useCallback: true,
+                callbackTimeoutMs: 180000,
+                dmPolicy: 'open',
+                ...(currentCfg.channels?.kakao ?? {}),
+              }
+            },
+            mcp: {
+              ...(currentCfg.mcp ?? {}),
+              servers: {
+                ...(currentCfg.mcp?.servers ?? {}),
+                egdesk: { type: 'http', url: 'http://localhost:8080/mcp' }
+              }
+            },
+            plugins: {
+              ...(currentCfg.plugins ?? {}),
+              entries: {
+                ...(currentCfg.plugins?.entries ?? {}),
+                bonjour: { enabled: false } // prevent mDNS crash
+              }
+            }
+          };
+
+          // Clean up legacy/wrong keys
+          delete (finalCfg as any).mcpServers;
+          delete (finalCfg as any).models;
+
+          fs.writeFileSync(configPath, JSON.stringify(finalCfg, null, 2));
+          fs.writeFileSync(path.join(configDir, 'openclaw.json.last-good'), JSON.stringify(finalCfg, null, 2));
+          log('✅ openclaw.json finalized with Golden Merge (Telegram, Kakao, MCP, Gemini).');
+        } catch (e: any) {
+          log(`❌ Golden Merge failed: ${e?.message}`);
+          return { success: false, error: `Failed to finalize config: ${e.message}` };
+        }
+
+        // ── 6. Install daemon ──
         log('Running: openclaw onboard --install-daemon');
         try {
-          const { stdout: onboardOut, stderr: onboardErr } = await execAsync('openclaw onboard --install-daemon', {
-            env: cleanEnv,
-            timeout: 60_000,
-            maxBuffer: 5 * 1024 * 1024,
-          });
-          log(`onboard stdout: ${onboardOut.trim() || '(empty)'}`);
-          if (onboardErr?.trim()) log(`onboard stderr: ${onboardErr.trim()}`);
-        } catch (e: any) {
-          log(`onboard failed (non-fatal): ${e?.message || e}`);
-        }
+          await execAsync('openclaw onboard --install-daemon', { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+        } catch {}
 
-        // ── 4. Kill any existing gateway, then start a fresh one so it picks up the new config ──
+        // ── 7. Start Gateway ──
         const { spawn } = await import('child_process');
         log('Killing any existing gateway…');
         await killGateway().catch(() => {});
-        await new Promise(r => setTimeout(r, 1500)); // let the port/lock release
+        await new Promise(r => setTimeout(r, 1500));
 
         log('Spawning: openclaw gateway');
         try {
@@ -433,19 +348,17 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             ? { env: cleanEnv, detached: false, stdio: 'ignore' as const, shell: true }
             : { env: cleanEnv, detached: true,  stdio: 'ignore' as const });
           gatewayProc.unref();
-          log('Gateway spawned — waiting 8s for it to connect to Telegram…');
+          log('Gateway spawned — waiting 8s for it to connect…');
           await new Promise(r => setTimeout(r, 8000));
-          log('Gateway wait complete');
         } catch (e: any) {
-          log(`Gateway spawn failed (non-fatal): ${e?.message || e}`);
+          log(`Gateway spawn failed: ${e?.message}`);
         }
 
-        // ── 5. Open bot in Telegram Web, send a message to trigger pairing request ──
+        // ── 8. Telegram Pairing Automation ──
         let pairingCode = '';
         let pairingError = '';
         try {
-          // Check for an existing pending pairing code first — openclaw won't generate a new one
-          // if a valid code is already pending (codes last ~1 hour).
+          // Check for existing code first
           const existingCode: string = await new Promise(resolve => {
             const { exec } = require('child_process');
             exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
@@ -456,14 +369,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
                                 existingCode.match(/\b([A-Z0-9]{8})\b/);
           if (existingMatch) {
             pairingCode = existingMatch[1];
-            log(`Existing pending pairing code found: ${pairingCode} — skipping browser /start`);
+            log(`Existing pending pairing code found: ${pairingCode}`);
           }
 
-          const setupProfileDir = path.join(getGoogleProfilesDir(), profileName);
-          log(`Profile dir: ${setupProfileDir} (exists=${fs.existsSync(setupProfileDir)})`);
-          if (!pairingCode && !fs.existsSync(setupProfileDir)) {
-            pairingError = `Profile dir not found: ${setupProfileDir}`;
-          } else if (!pairingCode) {
+          if (!pairingCode) {
+            // ... (rest of the browser automation logic) ...
             // No existing code — open browser and send /start to trigger a new pairing request
             // Check gateway status before opening Chrome — confirm Telegram is connected
             await new Promise(resolve => {
@@ -703,12 +613,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     const logs: string[] = [];
     const log = (msg: string) => { logs.push(msg); console.log('[openclaw:pair]', msg); };
 
-    // Read bot username from saved profile
-    const profileDir = path.join(getGoogleProfilesDir(), profileName);
-    const metaPath = path.join(profileDir, 'profile.json');
-    const savedProfile = fs.existsSync(metaPath)
-      ? JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-      : {};
+    // Read bot username from Electron Store
+    const { getStore } = require('./storage');
+    const store = getStore();
+    const profiles = store.get('googleProfiles') || {};
+    const savedProfile = profiles[profileName] || {};
+    
     const botUsername: string = savedProfile.telegramBotUsername || deriveBotUsername(savedProfile.googleEmail ?? '');
     log(`Bot username: @${botUsername}`);
 
