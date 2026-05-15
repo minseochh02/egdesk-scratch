@@ -759,8 +759,8 @@ export class FinanceHubDbManager {
 
   private normalizeAccountNumber(bankId: string | null, accountNumber: string): string {
     if (!accountNumber) return '';
-    // 1. 하이픈 및 공백 제거
-    let normalized = accountNumber.replace(/[-\s]/g, '');
+    // 1. 하이픈, 공백 및 별표(*) 제거
+    let normalized = accountNumber.replace(/[-\s*]/g, '');
     
     // 2. KB 국민은행 특유의 접두어 처리 (14자리이고 246으로 시작하는 경우)
     if (bankId === 'kookmin' && normalized.length === 14 && normalized.startsWith('246')) {

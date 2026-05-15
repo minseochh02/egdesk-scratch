@@ -123,6 +123,11 @@ export function migrate016CreateCardTransactions(db: Database.Database): void {
     -- Billing date index for monthly reports
     CREATE INDEX idx_card_transactions_billing_date
       ON card_transactions(billing_date);
+    
+    -- Global deduplication index using approval_number
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_card_transactions_dedup_appr
+      ON card_transactions(card_company_id, approval_number)
+      WHERE approval_number IS NOT NULL AND approval_number != '';
   `);
 
   console.log('  ✅ Indexes created');

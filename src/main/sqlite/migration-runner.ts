@@ -128,6 +128,15 @@ export async function runSqliteMigrations({
     console.error('⚠️ Migration 027 error:', migration027Error.message);
   }
 
+  try {
+    const { migrate032ImproveCardDedupIndex } = await import(
+      './migrations/032-improve-card-dedup-index'
+    );
+    migrate032ImproveCardDedupIndex(financeHubDb);
+  } catch (migration032Error: any) {
+    console.error('⚠️ Migration 032 error:', migration032Error.message);
+  }
+
   // =============================================
   // Migration 009: Add vector embeddings support
   // =============================================

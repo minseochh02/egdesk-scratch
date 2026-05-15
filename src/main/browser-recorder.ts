@@ -203,9 +203,9 @@ export class BrowserRecorder {
   private isDateMarkingMode: boolean = false;
   private dateMarkingStep: 'year' | 'month' | 'day' | null = null;
   private dateMarkingSelectors: {
-    year?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    month?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
-    day?: { selector: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    year?: { selector: string; xpath: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    month?: { selector: string; xpath: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
+    day?: { selector: string; xpath: string; elementType: 'select' | 'button' | 'input'; dropdownSelector?: string };
   } = {};
   private dateMarkingOffset: number = 0; // Days from today
 
@@ -972,6 +972,7 @@ export class BrowserRecorder {
         // ── Attempt 3: textContent fallback ──────────────────────────────────
         el.textContent = html.replace(/<[^>]+>/g, '');
       };
+      (window as any).setHTML = setHTML;
 
       // Define helper functions first (before any usage)
       // Clean function to remove non-serializable properties before sending to Playwright
@@ -1065,7 +1066,7 @@ export class BrowserRecorder {
 
       // Create highlight toggle button
       const highlightBtn = document.createElement('button');
-      setHTML(highlightBtn, `
+      (window as any).setHTML(highlightBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -1078,7 +1079,7 @@ export class BrowserRecorder {
       // Create coordinate mode button
       const coordBtn = document.createElement('button');
       coordBtn.setAttribute('data-coord-mode', 'true');
-      setHTML(coordBtn, `
+      (window as any).setHTML(coordBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23"></line>
           <line x1="1" y1="12" x2="23" y2="12"></line>
@@ -1091,7 +1092,7 @@ export class BrowserRecorder {
       // Create wait for element button
       const waitBtn = document.createElement('button');
       waitBtn.setAttribute('data-wait-mode', 'true');
-      setHTML(waitBtn, `
+      (window as any).setHTML(waitBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
@@ -1103,7 +1104,7 @@ export class BrowserRecorder {
       // Create mark date button
       const markDateBtn = document.createElement('button');
       markDateBtn.setAttribute('data-date-marking-mode', 'false');
-      setHTML(markDateBtn, `
+      (window as any).setHTML(markDateBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -1117,7 +1118,7 @@ export class BrowserRecorder {
       // Create capture table button
       const captureTableBtn = document.createElement('button');
       captureTableBtn.setAttribute('data-capture-table', 'true');
-      setHTML(captureTableBtn, `
+      (window as any).setHTML(captureTableBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="3" y1="9" x2="21" y2="9"></line>
@@ -1132,7 +1133,7 @@ export class BrowserRecorder {
       // Capture labeled fields (region pick — not limited to <form>)
       const captureLabeledFieldsBtn = document.createElement('button');
       captureLabeledFieldsBtn.setAttribute('data-capture-labeled-fields', 'true');
-      setHTML(captureLabeledFieldsBtn, `
+      (window as any).setHTML(captureLabeledFieldsBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 7h16M4 12h10M4 17h14"></path>
           <rect x="14" y="10" width="6" height="4" rx="1"></rect>
@@ -1144,7 +1145,7 @@ export class BrowserRecorder {
       // Create click until gone button
       const clickUntilGoneBtn = document.createElement('button');
       clickUntilGoneBtn.setAttribute('data-click-until-gone', 'false');
-      setHTML(clickUntilGoneBtn, `
+      (window as any).setHTML(clickUntilGoneBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 10h1m4 0h1m-5 4h4"></path>
           <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
@@ -1156,7 +1157,7 @@ export class BrowserRecorder {
 
       // Create stop recording button
       const stopBtn = document.createElement('button');
-      setHTML(stopBtn, `
+      (window as any).setHTML(stopBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="6" width="12" height="12" fill="currentColor"></rect>
         </svg>
@@ -1166,7 +1167,7 @@ export class BrowserRecorder {
 
       // Create Gemini button
       const geminiBtn = document.createElement('button');
-      setHTML(geminiBtn, `
+      (window as any).setHTML(geminiBtn, `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
         </svg>
@@ -1178,7 +1179,7 @@ export class BrowserRecorder {
       
       // Recording indicator
       const recordingIndicator = document.createElement('div');
-      setHTML(recordingIndicator, `
+      (window as any).setHTML(recordingIndicator, `
         <span style="
           display: inline-block;
           width: 6px;
@@ -1409,7 +1410,7 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          setHTML(coordNotification, `
+          (window as any).setHTML(coordNotification, `
             <strong>📍 Coordinate Mode Active</strong><br>
             Clicks will be recorded as X,Y coordinates
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
@@ -1531,7 +1532,7 @@ export class BrowserRecorder {
         // Hide the controller to indicate stopping
         controller.style.opacity = '0.5';
         stopBtn.disabled = true;
-        setHTML(stopBtn, `
+        (window as any).setHTML(stopBtn, `
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
           </svg>
@@ -1555,7 +1556,7 @@ export class BrowserRecorder {
           transition: opacity 0.3s ease, transform 0.3s ease;
           pointer-events: none;
         `;
-        setHTML(stopNotification, `
+        (window as any).setHTML(stopNotification, `
           <strong>⏹️ Recording Stopped</strong><br>
           Generating test code...
           <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
@@ -1617,7 +1618,7 @@ export class BrowserRecorder {
         waitBtn.classList.toggle('active', waitMode);
         
         if (waitMode) {
-          setHTML(waitBtn, `
+          (window as any).setHTML(waitBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
@@ -1646,7 +1647,7 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          setHTML(waitInstructions, `
+          (window as any).setHTML(waitInstructions, `
             <strong>🎯 Wait Mode Active</strong><br>
             Click on an element to wait for it to load
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
@@ -1700,7 +1701,7 @@ export class BrowserRecorder {
           // Change cursor to indicate wait mode
           document.body.style.cursor = 'crosshair';
         } else {
-          setHTML(waitBtn, `
+          (window as any).setHTML(waitBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
@@ -1771,7 +1772,7 @@ export class BrowserRecorder {
             cursor: move;
             user-select: none;
           `;
-          setHTML(dateMarkingInstructions, `
+          (window as any).setHTML(dateMarkingInstructions, `
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
               <strong>📅 Date Marking Mode Active</strong>
               <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
@@ -1921,7 +1922,7 @@ export class BrowserRecorder {
         const instruction = step === 'year' ? 'years' : step === 'month' ? 'months (1-12 or names)' : 'days (1-31)';
         const skipBtnId = `skip-${step}-btn`;
 
-        setHTML(dateMarkingInstructions, `
+        (window as any).setHTML(dateMarkingInstructions, `
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
             <strong>📅 Date Marking Mode Active</strong>
             <span style="opacity: 0.6; font-size: 11px;">↕️ Drag to move</span>
@@ -2439,7 +2440,7 @@ export class BrowserRecorder {
             max-width: 300px;
             pointer-events: none;
           `;
-          setHTML(inst, '<strong>📋 Fields mode</strong><br/>Click a <strong>section, card, or form</strong> that contains inputs. We record label text + selectors for each field.');
+          (window as any).setHTML(inst, '<strong>📋 Fields mode</strong><br/>Click a <strong>section, card, or form</strong> that contains inputs. We record label text + selectors for each field.');
           document.body.appendChild(inst);
         }
       });
@@ -2550,7 +2551,7 @@ export class BrowserRecorder {
         clickUntilGoneBtn.classList.toggle('active', clickUntilGoneMode);
 
         if (clickUntilGoneMode) {
-          setHTML(clickUntilGoneBtn, `
+          (window as any).setHTML(clickUntilGoneBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 10h1m4 0h1m-5 4h4"></path>
               <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
@@ -2580,7 +2581,7 @@ export class BrowserRecorder {
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
           `;
-          setHTML(clickUntilGoneInstructions, `
+          (window as any).setHTML(clickUntilGoneInstructions, `
             <strong>🔄 Click Until Gone Mode</strong><br>
             Click on a button/element to repeatedly click it until it disappears, is hidden, or becomes disabled
             <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; font-style: italic;">
@@ -2634,7 +2635,7 @@ export class BrowserRecorder {
           // Change cursor to indicate mode
           document.body.style.cursor = 'crosshair';
         } else {
-          setHTML(clickUntilGoneBtn, `
+          (window as any).setHTML(clickUntilGoneBtn, `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 10h1m4 0h1m-5 4h4"></path>
               <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"></path>
@@ -2916,7 +2917,7 @@ export class BrowserRecorder {
         transition: opacity 0.3s ease, transform 0.3s ease;
         pointer-events: none;
       `;
-      setHTML(notification, `
+      (window as any).setHTML(notification, `
         <strong>🎯 Playwright Recorder</strong><br>
         • Press <kbd>Option</kbd> to highlight elements<br>
         • Press <kbd>Option</kbd> + <kbd>Shift</kbd> to enable Call Gemini
@@ -3058,6 +3059,82 @@ export class BrowserRecorder {
           }, 0);
         }
       };
+
+      // Trusted-Types-safe innerHTML replacement.
+      const setHTML = (el: Element, html: string): void => {
+        // ── Attempt 1: standard text/html parse ──────────────────────────────
+        try {
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          el.replaceChildren(...Array.from(doc.body.childNodes));
+          return;
+        } catch (_) { /* Trusted Types blocked it — try XML paths */ }
+
+        // ── Helpers for XML normalization ────────────────────────────────────
+        // Converts just-enough HTML to well-formed XML so the XML parser accepts it.
+        const toXML = (s: string): string => s
+          // Self-close void elements (must come before boolean-attr fix)
+          .replace(
+            /<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)(\s[^>]*?)?\s*(?<!\/)>/gi,
+            '<$1$2/>'
+          )
+          // Boolean attributes must have values in XML  e.g. checked → checked="checked"
+          .replace(
+            /(\s)(checked|disabled|readonly|selected|required|autofocus|multiple|open)(?=[\s/>])/gi,
+            '$1$2="$2"'
+          );
+
+        const adoptAll = (src: Element, dest: Element) => {
+          dest.replaceChildren();
+          while (src.firstChild) dest.appendChild(document.adoptNode(src.firstChild));
+        };
+
+        try {
+          const trimmed = html.trim();
+
+          if (trimmed.startsWith('<svg')) {
+            // ── Attempt 2a: SVG content ─────────────────────────────────────
+            // image/svg+xml is NOT a TrustedHTML sink.
+            const svgEnd = trimmed.lastIndexOf('</svg>') + 6;
+            const svgStr = trimmed.slice(0, svgEnd);
+            const rest   = trimmed.slice(svgEnd).trim();
+
+            const svgDoc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+            if (!svgDoc.querySelector('parsererror')) {
+              el.replaceChildren(document.adoptNode(svgDoc.documentElement));
+
+              if (rest) {
+                // Sibling nodes after </svg> (usually a <span>label</span>)
+                const xDoc = new DOMParser().parseFromString(
+                  `<r xmlns="http://www.w3.org/1999/xhtml">${toXML(rest)}</r>`,
+                  'application/xml'
+                );
+                if (!xDoc.querySelector('parsererror')) {
+                  const r = xDoc.documentElement;
+                  while (r.firstChild) el.appendChild(document.adoptNode(r.firstChild));
+                } else {
+                  el.appendChild(document.createTextNode(rest.replace(/<[^>]+>/g, '')));
+                }
+              }
+              return;
+            }
+          }
+
+          // ── Attempt 2b: General HTML as XHTML ───────────────────────────
+          // application/xml is NOT a TrustedHTML sink.
+          const xDoc = new DOMParser().parseFromString(
+            `<r xmlns="http://www.w3.org/1999/xhtml">${toXML(html)}</r>`,
+            'application/xml'
+          );
+          if (!xDoc.querySelector('parsererror')) {
+            adoptAll(xDoc.documentElement, el);
+            return;
+          }
+        } catch (_) { /* XML parse also failed */ }
+
+        // ── Attempt 3: textContent fallback ──────────────────────────────────
+        el.textContent = html.replace(/<[^>]+>/g, '');
+      };
+      (window as any).setHTML = setHTML;
 
       // ========================================
       // DEBUGGING TOOLS FOR SPA INTERFERENCE
@@ -3806,6 +3883,196 @@ export class BrowserRecorder {
       // Using mousedown in capture phase to intercept BEFORE regular click handlers
       const dateMarkingProcessedElements = new WeakSet<HTMLElement>();
 
+      const showDateOffsetModal = () => {
+        // Check if modal already exists to prevent duplicates
+        if (document.getElementById('playwright-date-offset-modal') || (window as any).__dateOffsetModalShowing) {
+          console.log('📅 Date offset modal already showing, skipping...');
+          return;
+        }
+
+        // Set flag immediately to prevent duplicate processing
+        (window as any).__dateOffsetModalShowing = true;
+
+        // Show modal to choose date offset
+        const modal = document.createElement('div');
+        modal.id = 'playwright-date-offset-modal'; // Add ID for skipping in mousedown listener
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 999999;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          padding: 24px;
+          min-width: 400px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        `;
+
+        (window as any).setHTML(modalContent, `
+          <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #333;">📅 Select Date Timeframe</h3>
+          <p style="margin: 0 0 20px 0; font-size: 14px; color: #666;">Choose which date to use when replaying this test:</p>
+
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="0" checked style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div>
+                <div style="font-weight: 500; color: #333;">Today</div>
+                <div style="font-size: 12px; color: #666;">Use today's date when running</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div>
+                <div style="font-weight: 500; color: #333;">Tomorrow</div>
+                <div style="font-size: 12px; color: #666;">Today + 1 day</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="-1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div>
+                <div style="font-weight: 500; color: #333;">Yesterday</div>
+                <div style="font-size: 12px; color: #666;">Today - 1 day</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="-7" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div>
+                <div style="font-weight: 500; color: #333;">Last Week</div>
+                <div style="font-size: 12px; color: #666;">Today - 7 days</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="-30" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div>
+                <div style="font-weight: 500; color: #333;">Last Month</div>
+                <div style="font-size: 12px; color: #666;">Today - 30 days</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+              <input type="radio" name="date-offset" value="custom" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+              <div style="flex: 1;">
+                <div style="font-weight: 500; color: #333; margin-bottom: 8px;">Custom Offset</div>
+                <input type="number" id="custom-offset" placeholder="Days from today (e.g., -14 for 14 days ago)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" disabled>
+              </div>
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 12px; justify-content: flex-end;">
+            <button id="date-cancel" style="padding: 10px 20px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Cancel</button>
+            <button id="date-confirm" style="padding: 10px 20px; background: #9C27B0; color: white; border: 1px solid #9C27B0; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Confirm</button>
+          </div>
+        `);
+
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Add hover effects to radio labels
+        const labels = modalContent.querySelectorAll('label');
+        labels.forEach(label => {
+          label.addEventListener('mouseenter', () => {
+            (label as HTMLElement).style.borderColor = '#9C27B0';
+            (label as HTMLElement).style.background = '#f3e5f5';
+          });
+          label.addEventListener('mouseleave', () => {
+            const radio = label.querySelector('input[type="radio"]') as HTMLInputElement;
+            if (!radio.checked) {
+              (label as HTMLElement).style.borderColor = '#e0e0e0';
+              (label as HTMLElement).style.background = 'white';
+            }
+          });
+        });
+
+        // Handle radio selection highlighting
+        const radios = modalContent.querySelectorAll('input[type="radio"]');
+        const customInput = modalContent.querySelector('#custom-offset') as HTMLInputElement;
+
+        radios.forEach(radio => {
+          radio.addEventListener('change', () => {
+            // Reset all labels
+            labels.forEach(l => {
+              (l as HTMLElement).style.borderColor = '#e0e0e0';
+              (l as HTMLElement).style.background = 'white';
+            });
+
+            // Highlight selected
+            const selectedLabel = radio.closest('label') as HTMLElement;
+            selectedLabel.style.borderColor = '#9C27B0';
+            selectedLabel.style.background = '#f3e5f5';
+
+            // Enable/disable custom input
+            if ((radio as HTMLInputElement).value === 'custom') {
+              customInput.disabled = false;
+              customInput.focus();
+            } else {
+              customInput.disabled = true;
+            }
+          });
+        });
+
+        // Handle modal actions
+        const cancelBtn = modalContent.querySelector('#date-cancel') as HTMLElement;
+        const confirmBtn = modalContent.querySelector('#date-confirm') as HTMLElement;
+
+        cancelBtn.addEventListener('click', () => {
+          modal.remove();
+          // Clear modal showing flag
+          (window as any).__dateOffsetModalShowing = false;
+          // Exit date marking mode and reset
+          if ((window as any).__exitDateMarkingMode) {
+            (window as any).__exitDateMarkingMode();
+          }
+        });
+
+        confirmBtn.addEventListener('click', () => {
+          const selectedRadio = modalContent.querySelector('input[name="date-offset"]:checked') as HTMLInputElement;
+          let offset = 0;
+
+          if (selectedRadio.value === 'custom') {
+            const customValue = customInput.value;
+            if (customValue && !isNaN(parseInt(customValue))) {
+              offset = parseInt(customValue);
+            } else {
+              alert('Please enter a valid number for custom offset');
+              return;
+            }
+          } else {
+            offset = parseInt(selectedRadio.value);
+          }
+
+          // Send the offset to the recorder
+          if ((window as any).__playwrightRecorderOnDateOffsetSelected) {
+            callPlaywrightFunction((window as any).__playwrightRecorderOnDateOffsetSelected, offset);
+          }
+
+          modal.remove();
+          // Clear modal showing flag
+          (window as any).__dateOffsetModalShowing = false;
+
+          // Exit date marking mode
+          if ((window as any).__exitDateMarkingMode) {
+            (window as any).__exitDateMarkingMode();
+          }
+        });
+      };
+
+      (window as any).__showDateOffsetModal = showDateOffsetModal;
+
       // Create the date marking mousedown handler as a named function for dynamic attachment/detachment
       const dateMarkingMousedownHandler = (e: MouseEvent) => {
         // CHECK MODE FIRST - before any DOM operations to avoid performance overhead
@@ -4201,191 +4468,7 @@ export class BrowserRecorder {
 
         // IMPORTANT: If this was the day element (step 3/3), show date offset modal
         if (step === 'day') {
-          // Check if modal already exists to prevent duplicates
-          if (document.getElementById('playwright-date-offset-modal') || (window as any).__dateOffsetModalShowing) {
-            console.log('📅 Date offset modal already showing, skipping...');
-            return;
-          }
-
-          // Set flag immediately to prevent duplicate processing
-          (window as any).__dateOffsetModalShowing = true;
-
-          // Show modal to choose date offset
-          const modal = document.createElement('div');
-          modal.id = 'playwright-date-offset-modal'; // Add ID for skipping in mousedown listener
-          modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 999999;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          `;
-
-          const modalContent = document.createElement('div');
-          modalContent.style.cssText = `
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            min-width: 400px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-          `;
-
-          setHTML(modalContent, `
-            <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #333;">📅 Select Date Timeframe</h3>
-            <p style="margin: 0 0 20px 0; font-size: 14px; color: #666;">Choose which date to use when replaying this test:</p>
-
-            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="0" checked style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div>
-                  <div style="font-weight: 500; color: #333;">Today</div>
-                  <div style="font-size: 12px; color: #666;">Use today's date when running</div>
-                </div>
-              </label>
-
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div>
-                  <div style="font-weight: 500; color: #333;">Tomorrow</div>
-                  <div style="font-size: 12px; color: #666;">Today + 1 day</div>
-                </div>
-              </label>
-
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="-1" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div>
-                  <div style="font-weight: 500; color: #333;">Yesterday</div>
-                  <div style="font-size: 12px; color: #666;">Today - 1 day</div>
-                </div>
-              </label>
-
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="-7" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div>
-                  <div style="font-weight: 500; color: #333;">Last Week</div>
-                  <div style="font-size: 12px; color: #666;">Today - 7 days</div>
-                </div>
-              </label>
-
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="-30" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div>
-                  <div style="font-weight: 500; color: #333;">Last Month</div>
-                  <div style="font-size: 12px; color: #666;">Today - 30 days</div>
-                </div>
-              </label>
-
-              <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                <input type="radio" name="date-offset" value="custom" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
-                <div style="flex: 1;">
-                  <div style="font-weight: 500; color: #333; margin-bottom: 8px;">Custom Offset</div>
-                  <input type="number" id="custom-offset" placeholder="Days from today (e.g., -14 for 14 days ago)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" disabled>
-                </div>
-              </label>
-            </div>
-
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-              <button id="date-cancel" style="padding: 10px 20px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Cancel</button>
-              <button id="date-confirm" style="padding: 10px 20px; background: #9C27B0; color: white; border: 1px solid #9C27B0; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Confirm</button>
-            </div>
-          `);
-
-          modal.appendChild(modalContent);
-          document.body.appendChild(modal);
-
-          // Add hover effects to radio labels
-          const labels = modalContent.querySelectorAll('label');
-          labels.forEach(label => {
-            label.addEventListener('mouseenter', () => {
-              (label as HTMLElement).style.borderColor = '#9C27B0';
-              (label as HTMLElement).style.background = '#f3e5f5';
-            });
-            label.addEventListener('mouseleave', () => {
-              const radio = label.querySelector('input[type="radio"]') as HTMLInputElement;
-              if (!radio.checked) {
-                (label as HTMLElement).style.borderColor = '#e0e0e0';
-                (label as HTMLElement).style.background = 'white';
-              }
-            });
-          });
-
-          // Handle radio selection highlighting
-          const radios = modalContent.querySelectorAll('input[type="radio"]');
-          const customInput = modalContent.querySelector('#custom-offset') as HTMLInputElement;
-
-          radios.forEach(radio => {
-            radio.addEventListener('change', () => {
-              // Reset all labels
-              labels.forEach(l => {
-                (l as HTMLElement).style.borderColor = '#e0e0e0';
-                (l as HTMLElement).style.background = 'white';
-              });
-
-              // Highlight selected
-              const selectedLabel = radio.closest('label') as HTMLElement;
-              selectedLabel.style.borderColor = '#9C27B0';
-              selectedLabel.style.background = '#f3e5f5';
-
-              // Enable/disable custom input
-              if ((radio as HTMLInputElement).value === 'custom') {
-                customInput.disabled = false;
-                customInput.focus();
-              } else {
-                customInput.disabled = true;
-              }
-            });
-          });
-
-          // Handle modal actions
-          const cancelBtn = modalContent.querySelector('#date-cancel') as HTMLElement;
-          const confirmBtn = modalContent.querySelector('#date-confirm') as HTMLElement;
-
-          cancelBtn.addEventListener('click', () => {
-            modal.remove();
-            // Clear modal showing flag
-            (window as any).__dateOffsetModalShowing = false;
-            // Exit date marking mode and reset
-            if ((window as any).__exitDateMarkingMode) {
-              (window as any).__exitDateMarkingMode();
-            }
-          });
-
-          confirmBtn.addEventListener('click', () => {
-            const selectedRadio = modalContent.querySelector('input[name="date-offset"]:checked') as HTMLInputElement;
-            let offset = 0;
-
-            if (selectedRadio.value === 'custom') {
-              const customValue = customInput.value;
-              if (customValue && !isNaN(parseInt(customValue))) {
-                offset = parseInt(customValue);
-              } else {
-                alert('Please enter a valid number for custom offset');
-                return;
-              }
-            } else {
-              offset = parseInt(selectedRadio.value);
-            }
-
-            // Send the offset to the recorder
-            if ((window as any).__playwrightRecorderOnDateOffsetSelected) {
-              callPlaywrightFunction((window as any).__playwrightRecorderOnDateOffsetSelected, offset);
-            }
-
-            modal.remove();
-            // Clear modal showing flag
-            (window as any).__dateOffsetModalShowing = false;
-
-            // Exit date marking mode
-            if ((window as any).__exitDateMarkingMode) {
-              (window as any).__exitDateMarkingMode();
-            }
-          });
+          showDateOffsetModal();
         }
       }; // End of dateMarkingMousedownHandler function
 
@@ -4727,7 +4810,7 @@ export class BrowserRecorder {
           const geminiButton = document.querySelector('#browser-recorder-controller button:last-child') as HTMLElement;
           if (geminiButton) {
             // Set the current highlighted element to the clicked target
-            currentHighlightedElement = target;
+            highlightedElement = target;
 
             // Trigger Gemini analysis by clicking the button
             geminiButton.click();
@@ -4805,7 +4888,7 @@ export class BrowserRecorder {
             box-shadow: 0 8px 32px rgba(0,0,0,0.3);
           `;
           
-          setHTML(modalContent, `
+          (window as any).setHTML(modalContent, `
             <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #333;">Wait for Element</h3>
             <p style="margin: 0 0 20px 0; color: #666; font-size: 14px;">
               Selected element: <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${target.tagName}${target.id ? '#' + target.id : ''}</code>
@@ -6317,7 +6400,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
                           offset > 0 ? `today + ${offset} days` :
                           `today - ${Math.abs(offset)} days`;
 
-        setHTML(successNotification, `
+        (window as any).setHTML(successNotification, `
           <strong>✅ Date Picker Recorded!</strong><br>
           <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
             Timeframe: ${offsetText}
@@ -6513,7 +6596,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               backdrop-filter: blur(10px);
             `;
 
-            setHTML(notification, `
+            (window as any).setHTML(notification, `
               <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <span style="font-size: 32px;">📤</span>
                 <div style="flex: 1; text-align: left;">
@@ -6606,7 +6689,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
               backdrop-filter: blur(10px);
             `;
 
-            setHTML(notification, `
+            (window as any).setHTML(notification, `
               <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <span style="font-size: 32px;">❌</span>
                 <div style="flex: 1; text-align: left;">
@@ -6750,6 +6833,14 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
       console.log('✅ Month dropdown marked, waiting for day...');
     } else if (step === 'day') {
       console.log('✅ All 3 date elements marked! Modal should now be showing...');
+      
+      // Ensure modal is shown in the main frame, even if the click was in an iframe
+      this.page?.evaluate(() => {
+        if ((window as any).__showDateOffsetModal) {
+          (window as any).__showDateOffsetModal();
+        }
+      });
+      
       // Don't create action yet - wait for user to select offset in modal
       // The action will be created in __playwrightRecorderOnDateOffsetSelected
       // Don't exit date marking mode - it will be exited when modal is dismissed
@@ -6811,7 +6902,7 @@ ${finalImageDataUrl ? `// Image Size: ${Math.round(finalImageDataUrl.length / 10
             font-weight: 500;
           `;
 
-          setHTML(errorNotification, `
+          (window as any).setHTML(errorNotification, `
             <strong>❌ Error</strong><br>
             <div style="margin-top: 8px; font-size: 12px; opacity: 0.9;">
               You must mark at least one date component!
