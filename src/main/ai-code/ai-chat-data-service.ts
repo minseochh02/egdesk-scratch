@@ -15,7 +15,7 @@ export class AIChatDataService {
   private initializationPromise: Promise<void>;
 
   constructor() {
-    this.initializationPromise = this.initializeDatabase();
+    // Note: Database initialization is now handled via explicit call or on-demand
     this.registerIPCHandlers();
   }
 
@@ -23,7 +23,9 @@ export class AIChatDataService {
    * Initialize database connection
    * Note: Does NOT reinitialize the SQLite manager (uses existing singleton)
    */
-  private async initializeDatabase(): Promise<void> {
+  public async initialize(): Promise<void> {
+    if (this.aiChatDb) return;
+    
     try {
       // Ensure Electron app is ready before accessing app paths via SQLite manager
       if (!app.isReady()) {
@@ -35,7 +37,7 @@ export class AIChatDataService {
         this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());
         console.log('✅ SQLite database initialized for AI chat storage');
       } else {
-        // If not initialized yet, initialize it (only happens if this service is created first)
+        // If not initialized yet, initialize it
         const result = await this.sqliteManager.initialize();
         if (result.success) {
           this.aiChatDb = new AIChatDatabase(this.sqliteManager.getDatabase());

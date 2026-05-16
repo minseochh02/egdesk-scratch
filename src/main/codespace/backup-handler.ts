@@ -9,7 +9,15 @@ import { getDeveloperWindows } from '../coding/developer-windows';
 
 export class BackupHandler {
   constructor() {
+    // Note: Handlers are registered, but initialization is explicit
     this.registerHandlers();
+  }
+
+  /**
+   * Initialize the backup handler
+   */
+  public async initialize(): Promise<void> {
+    console.log('✅ Backup Handler initialized');
   }
 
   /**

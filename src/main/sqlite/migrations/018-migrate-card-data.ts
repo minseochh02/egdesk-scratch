@@ -54,19 +54,6 @@ export function migrate018MigrateCardData(db: Database.Database): void {
   // Migrate card transaction data
   console.log('  🔄 Copying card transaction data and extracting metadata...');
 
-  // Fetch all card transactions from source
-  const cardTransactions = db.prepare(`
-    SELECT
-      t.*,
-      a.account_number,
-      a.account_name
-    FROM transactions t
-    LEFT JOIN accounts a ON a.id = t.account_id
-    WHERE t.bank_id LIKE '%-card'
-  `).all() as any[];
-
-  console.log(`  📦 Processing ${cardTransactions.length} card transactions...`);
-
   // Prepare insert statement
   const insertStmt = db.prepare(`
     INSERT INTO card_transactions (
@@ -100,11 +87,24 @@ export function migrate018MigrateCardData(db: Database.Database): void {
     )
   `);
 
+  // Process transactions using iterate() to avoid loading all into memory
+  const cardTransactionsIterator = db.prepare(`
+    SELECT
+      t.*,
+      a.account_number,
+      a.account_name
+    FROM transactions t
+    LEFT JOIN accounts a ON a.id = t.account_id
+    WHERE t.bank_id LIKE '%-card'
+  `).iterate();
+
+  console.log(`  📦 Processing card transactions...`);
+
   // Process each transaction and extract metadata
   let successCount = 0;
   let errorCount = 0;
 
-  for (const txn of cardTransactions) {
+  for (const txn of cardTransactionsIterator as Iterable<any>) {
     try {
       // Parse metadata JSON
       let metadata: any = {};
@@ -112,7 +112,7 @@ export function migrate018MigrateCardData(db: Database.Database): void {
         try {
           metadata = JSON.parse(txn.metadata);
         } catch (e) {
-          console.warn(`  ⚠️ Failed to parse metadata for transaction ${txn.id}`);
+          // Silent parse error
         }
       }
 

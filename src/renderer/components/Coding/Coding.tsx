@@ -40,6 +40,8 @@ const Coding: React.FC = () => {
   const [nodeInstalled, setNodeInstalled] = useState<boolean | null>(null);
   const [nodeVersion, setNodeVersion] = useState<string>('');
   const [npmVersion, setNpmVersion] = useState<string>('');
+  const [localIP, setLocalIP] = useState<string>('localhost');
+  const [tunnelId, setTunnelId] = useState<string | null>(null);
   const [terminalLogs, setTerminalLogs] = useState<Record<string, string[]>>({});
   const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(new Set());
   const [autoScroll, setAutoScroll] = useState<Record<string, boolean>>({});
@@ -87,6 +89,50 @@ const Coding: React.FC = () => {
     };
 
     checkNode();
+  }, []);
+
+  // Fetch local IP address
+  useEffect(() => {
+    const fetchNetworkInfo = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.httpsServer?.getNetworkInfo) return;
+
+        const result = await electron.httpsServer.getNetworkInfo();
+        if (result && result.localIP) {
+          setLocalIP(result.localIP);
+        }
+      } catch (error) {
+        console.error('Failed to fetch network info:', error);
+      }
+    };
+
+    fetchNetworkInfo();
+  }, []);
+
+  // Get tunnel ID from Electron Store
+  useEffect(() => {
+    const fetchTunnelId = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.ipcRenderer) return;
+
+        const result = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+        const id = result.tunnel?.serverName;
+
+        if (result.success && id) {
+          setTunnelId(id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch tunnel config:', err);
+      }
+    };
+
+    fetchTunnelId();
+
+    // Poll every 5 seconds
+    const interval = setInterval(fetchTunnelId, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Fetch projects from registry
@@ -198,15 +244,28 @@ const Coding: React.FC = () => {
 
       // Step 1: HTTP server
       updateStep(1, 'active');
-      const httpResult = await electron.httpsServer.start({ port: 8080, useHTTPS: false });
+      
+      // Check for active SSL certificate to enable HTTPS
+      const httpsEnabled = localStorage.getItem('https-enabled') === 'true';
+      const certListResult = await electron.sslCertificate.list();
+      const activeIdResult = await electron.invoke('ssl-certificate-get-active-id');
+      const activeCertId = activeIdResult.success ? activeIdResult.id : null;
+      const activeCert = (httpsEnabled && certListResult.success) ? certListResult.certificates.find((c: any) => c.id === activeCertId) : null;
+
+      const httpResult = await electron.httpsServer.start({ 
+        port: 8080, 
+        useHTTPS: !!activeCert,
+        certificateId: activeCert?.id
+      });
       const httpPort = httpResult.port || 8080;
+      const protocol = !!activeCert ? 'https' : 'http';
+
       if (httpResult.success) {
-        updateStep(1, 'done', `Port ${httpPort}`);
+        updateStep(1, 'done', `${protocol.toUpperCase()} Port ${httpPort}`);
       } else if (httpResult.error?.includes('already running')) {
-        updateStep(1, 'done', `Already running on port ${httpPort}`);
+        updateStep(1, 'done', `Already running on ${protocol} port ${httpPort}`);
       } else {
         updateStep(1, 'error', httpResult.error || 'Failed to start HTTP server');
-        // Non-fatal — tunnel can still attempt connection
       }
 
       // Step 2: Tunnel
@@ -217,7 +276,7 @@ const Coding: React.FC = () => {
 
       let tunnelIsUp = false;
       if (tunnelName) {
-        const localServerUrl = `http://localhost:${httpPort}`;
+        const localServerUrl = `${protocol}://localhost:${httpPort}`;
         const tunnelResult = await electron.ipcRenderer.invoke('mcp-tunnel-start', tunnelName, localServerUrl);
         console.log('[TEMPLATE] tunnel result:', tunnelResult.success, tunnelResult.message, tunnelResult.error);
 
@@ -682,7 +741,53 @@ const Coding: React.FC = () => {
               <div className="coding-project-detail">
                 <span className="coding-detail-label">URL:</span>
                 <span className="coding-detail-value">
-                  <a href={project.url} target="_blank" rel="noopener noreferrer">{project.url}</a>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {tunnelId && project.mode === 'production' ? (
+                      <>
+                        <a 
+                          href={`${project.url}/t/${tunnelId}/p/${project.projectName}/`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {project.url}/t/{tunnelId}/p/{project.projectName}/
+                        </a>
+                        {localIP !== 'localhost' && (
+                          <a 
+                            href={`${project.url.replace('localhost', localIP)}/t/${tunnelId}/p/${project.projectName}/`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '12px', color: '#666' }}
+                          >
+                            {project.url.replace('localhost', localIP)}/t/{tunnelId}/p/{project.projectName}/ (Network)
+                          </a>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <a href={project.url} target="_blank" rel="noopener noreferrer">{project.url}</a>
+                        {localIP !== 'localhost' && (
+                          <a 
+                            href={project.url.replace('localhost', localIP)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '12px', color: '#666' }}
+                          >
+                            {project.url.replace('localhost', localIP)} (Network)
+                          </a>
+                        )}
+                      </>
+                    )}
+                    {tunnelId && (
+                      <a 
+                        href={`https://tunneling-service.onrender.com/t/${tunnelId}/p/${project.projectName}/`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ fontSize: '12px', color: '#0070f3' }}
+                      >
+                        https://tunneling-service.onrender.com/t/{tunnelId}/p/{project.projectName}/ (Tunnel)
+                      </a>
+                    )}
+                  </div>
                 </span>
               </div>
 

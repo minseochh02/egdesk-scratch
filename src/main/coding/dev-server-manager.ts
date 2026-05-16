@@ -69,6 +69,23 @@ export class DevServerManager {
   }
 
   /**
+   * Get the current active certificate ID from the service
+   */
+  private getActiveCertificateId(): string | null {
+    try {
+      const store = getStore();
+      const httpsEnabled = store.get('https-enabled', false) as boolean;
+      if (!httpsEnabled) return null;
+
+      const { SSLCertificateService } = require('../ssl/ssl-certificate-service');
+      return SSLCertificateService.getInstance().getActiveCertificateId();
+    } catch (error) {
+      console.error('Failed to get active certificate ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Initialize tunnel ID from store if available
    */
   private initializeTunnelId() {
@@ -460,6 +477,18 @@ export class DevServerManager {
         return { success: false, error: error.message };
       }
     });
+
+    ipcMain.handle('ssl-certificate:set-active', async (_event, certificateId: string | null) => {
+      try {
+        const { SSLCertificateService } = require('../ssl/ssl-certificate-service');
+        SSLCertificateService.getInstance().setActiveCertificateId(certificateId);
+        console.log(`🔧 DevServerManager: Active certificate set to ${certificateId}`);
+        return { success: true };
+      } catch (error: any) {
+        console.error('Failed to set active certificate:', error);
+        return { success: false, error: error.message };
+      }
+    });
   }
 
   /**
@@ -747,6 +776,45 @@ export class DevServerManager {
   }
 
   /**
+   * Write active certificate to temporary files for dev server use
+   */
+  private async writeTempCertificateFiles(): Promise<{ keyPath: string; certPath: string } | null> {
+    const activeCertId = this.getActiveCertificateId();
+    console.log(`🔍 DevServerManager: Checking for active certificate (ID: ${activeCertId})`);
+    if (!activeCertId) return null;
+
+    try {
+      const { SSLCertificateService } = require('../ssl/ssl-certificate-service');
+      const cert = SSLCertificateService.getInstance().getCertificate(activeCertId);
+
+      if (!cert) {
+        console.log(`⚠️ DevServerManager: Active certificate ID ${activeCertId} not found in store`);
+        return null;
+      }
+
+      console.log(`✅ DevServerManager: Found active certificate for ${cert.domain}`);
+
+      const tempDir = path.join(os.tmpdir(), 'egdesk-ssl');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const keyPath = path.join(tempDir, `${cert.id}.key`);
+      const certPath = path.join(tempDir, `${cert.id}.crt`);
+
+      fs.writeFileSync(keyPath, cert.privateKey);
+      fs.writeFileSync(certPath, cert.certificate);
+
+      console.log(`📝 DevServerManager: Wrote temp cert files to ${tempDir}`);
+
+      return { keyPath, certPath };
+    } catch (error) {
+      console.error('Failed to write temporary certificate files:', error);
+      return null;
+    }
+  }
+
+  /**
    * Start server in dev mode (no build step)
    */
   private async startDevModeServer(
@@ -762,18 +830,33 @@ export class DevServerManager {
     let command: string;
     let args: string[];
 
+    const sslFiles = await this.writeTempCertificateFiles();
+
     switch (projectType) {
       case 'nextjs':
         command = packageManagerCommand;
-        args = ['run', 'dev', '--', '-p', port.toString()];
+        // Bind to 0.0.0.0 to allow network access (IP address)
+        args = ['run', 'dev', '--', '-p', port.toString(), '-H', '0.0.0.0'];
+        if (sslFiles) {
+          args.push('--experimental-https');
+          args.push('--experimental-https-key', sslFiles.keyPath);
+          args.push('--experimental-https-cert', sslFiles.certPath);
+        }
         break;
       case 'vite':
         command = packageManagerCommand;
-        args = ['run', 'dev', '--', '--port', port.toString()];
+        // Bind to 0.0.0.0 to allow network access (IP address)
+        args = ['run', 'dev', '--', '--port', port.toString(), '--host', '0.0.0.0'];
+        if (sslFiles) {
+          args.push('--https');
+          // Vite might need a plugin or specific config for custom certs via CLI
+          // but many templates support these flags
+        }
         if (basePath) args.push('--base', basePath);
         break;
       case 'react':
         command = packageManagerCommand;
+        // For CRA, we use HOST environment variable
         args = ['start'];
         break;
       default:
@@ -784,7 +867,9 @@ export class DevServerManager {
     const serverEnv = {
       ...this.cleanEnv(),
       PORT: port.toString(),
-      NODE_ENV: 'development'
+      HOST: '0.0.0.0', // For CRA and others that respect HOST env var
+      NODE_ENV: 'development',
+      HTTPS: sslFiles ? 'true' : 'false', // For CRA
     };
 
     // DEV MODE: Do NOT set basePath env vars - framework should use empty basePath
@@ -816,21 +901,34 @@ export class DevServerManager {
     let command: string;
     let args: string[];
 
+    const sslFiles = await this.writeTempCertificateFiles();
+
     switch (projectType) {
       case 'nextjs':
         command = packageManagerCommand;
-        args = ['run', 'start', '--', '-p', port.toString()];
+        // Bind to 0.0.0.0 to allow network access (IP address)
+        args = ['run', 'start', '--', '-p', port.toString(), '-H', '0.0.0.0'];
+        // Next.js 'start' doesn't support experimental-https directly in the same way dev does
+        // but we can set environment variables if the project uses a custom server or is configured
         break;
       case 'vite':
         command = packageManagerCommand;
-        args = ['run', 'preview', '--', '--port', port.toString()];
+        // Bind to 0.0.0.0 to allow network access (IP address)
+        args = ['run', 'preview', '--', '--port', port.toString(), '--host', '0.0.0.0'];
+        if (sslFiles) {
+          args.push('--https');
+        }
         if (basePath) {
           args.push('--base', basePath);
         }
         break;
       case 'react':
         command = 'npx';
-        args = ['serve', '-s', 'build', '-l', port.toString()];
+        // Bind to 0.0.0.0 to allow network access (IP address)
+        args = ['serve', '-s', 'build', '-l', port.toString(), '-n'];
+        if (sslFiles) {
+          args.push('--ssl-cert', sslFiles.certPath, '--ssl-key', sslFiles.keyPath);
+        }
         break;
       default:
         command = packageManagerCommand;
@@ -840,7 +938,9 @@ export class DevServerManager {
     const serverEnv = {
       ...this.cleanEnv(),
       PORT: port.toString(),
-      NODE_ENV: 'production'
+      HOST: '0.0.0.0', // For apps that respect HOST env var
+      NODE_ENV: 'production',
+      HTTPS: sslFiles ? 'true' : 'false',
     };
 
     if (projectType === 'nextjs' && basePath) {
@@ -1083,21 +1183,32 @@ export class DevServerManager {
       let command: string;
       let args: string[];
 
+      const sslFiles = await this.writeTempCertificateFiles();
+
       switch (serverInfo.projectType) {
         case 'nextjs':
           command = packageManagerCommand;
-          args = ['run', 'start', '--', '-p', port.toString()];
+          // Bind to 0.0.0.0 to allow network access (IP address)
+          args = ['run', 'start', '--', '-p', port.toString(), '-H', '0.0.0.0'];
           break;
         case 'vite':
           command = packageManagerCommand;
-          args = ['run', 'preview', '--', '--port', port.toString()];
+          // Bind to 0.0.0.0 to allow network access (IP address)
+          args = ['run', 'preview', '--', '--port', port.toString(), '--host', '0.0.0.0'];
+          if (sslFiles) {
+            args.push('--https');
+          }
           if (basePath) {
             args.push('--base', basePath);
           }
           break;
         case 'react':
           command = 'npx';
-          args = ['serve', '-s', 'build', '-l', port.toString()];
+          // Bind to 0.0.0.0 to allow network access (IP address)
+          args = ['serve', '-s', 'build', '-l', port.toString(), '-n'];
+          if (sslFiles) {
+            args.push('--ssl-cert', sslFiles.certPath, '--ssl-key', sslFiles.keyPath);
+          }
           break;
         default:
           command = packageManagerCommand;
@@ -1113,7 +1224,9 @@ export class DevServerManager {
       const serverEnv = {
         ...cleanEnv,
         PORT: port.toString(),
-        NODE_ENV: 'production'
+        HOST: '0.0.0.0', // For apps that respect HOST env var
+        NODE_ENV: 'production',
+        HTTPS: sslFiles ? 'true' : 'false',
       };
 
       if (serverInfo.projectType === 'nextjs' && basePath) {
@@ -2072,9 +2185,10 @@ export default nextConfig;
       );
     }
 
+    const activeCertId = this.getActiveCertificateId();
     const serverInfo: ServerInfo = {
       port,
-      url: `http://localhost:${port}`,
+      url: `${activeCertId ? 'https' : 'http'}://localhost:${port}`,
       status: 'starting',
       process: serverProcess,
       projectPath: folderPath,

@@ -11,20 +11,22 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
   console.log('[Migration 027] Starting card transaction duplicate cleanup...');
 
   try {
-    // 1. Identify duplicates across accounts
-    const duplicates = db.prepare(`
+    // 1. Identify duplicates across accounts using iterate()
+    const duplicatesIterator = db.prepare(`
       SELECT approval_datetime, merchant_name, amount, COUNT(*) as count
       FROM card_transactions
       GROUP BY approval_datetime, merchant_name, amount
       HAVING count > 1
-    `).all() as { approval_datetime: string, merchant_name: string, amount: number }[];
+    `).iterate();
 
-    console.log(`  🔍 Found ${duplicates.length} sets of duplicate transactions.`);
+    console.log(`  🔍 Processing duplicate transactions...`);
 
     let totalDeleted = 0;
+    let setsProcessed = 0;
 
     db.transaction(() => {
-      for (const dup of duplicates) {
+      for (const dup of duplicatesIterator as Iterable<any>) {
+        setsProcessed++;
         // Get all instances of this transaction
         const instances = db.prepare(`
           SELECT ct.id, ct.account_id, a.account_name, ct.created_at
@@ -32,12 +34,7 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
           JOIN accounts a ON ct.account_id = a.id
           WHERE ct.approval_datetime = ? AND ct.merchant_name = ? AND ct.amount = ?
           ORDER BY 
-            CASE 
-              WHEN a.account_name LIKE '%수동 업로드%' THEN 2
-              WHEN a.account_name LIKE '%(전체)%' THEN 1
-              ELSE 0 
-            END ASC,
-            ct.created_at ASC
+          ...
         `).all(dup.approval_datetime, dup.merchant_name, dup.amount) as { id: string, account_id: string, account_name: string }[];
 
         if (instances.length > 1) {
@@ -53,7 +50,7 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
       }
     })();
 
-    console.log(`  ✅ Deleted ${totalDeleted} duplicate transactions.`);
+    console.log(`  ✅ Processed ${setsProcessed} duplicate sets, deleted ${totalDeleted} transactions.`);
     console.log('[Migration 027] Successfully completed.');
   } catch (error: any) {
     console.error('  ❌ Migration 027 failed:', error.message);

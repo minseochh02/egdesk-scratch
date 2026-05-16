@@ -36,6 +36,7 @@ import GmailConnectorForm from './GmailConnectorForm';
 import GmailDashboard from './GmailDashboard';
 import RunningServersTabs from './RunningServersTabs';
 import TunnelAndServerConfig from './TunnelAndServerConfig';
+import SSLCertificateSection from './SSLCertificateSection';
 import CloudMCPServerEditor from './CloudMCPServerEditor';
 import { GOOGLE_OAUTH_SCOPES } from '../../constants/googleScopes';
 
@@ -243,6 +244,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [mcpServerName, setMcpServerName] = useState<string>('my-mcp-server');
   const [isEditingMcpServerName, setIsEditingMcpServerName] = useState<boolean>(false);
   const [editingMcpServerNameValue, setEditingMcpServerNameValue] = useState<string>('');
+  const [httpsEnabled, setHttpsEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('https-enabled');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
 
   // OAuth State
   const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
@@ -1007,13 +1012,22 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           
           if (!status.isRunning) {
             console.log('🚀 Auto-starting HTTP server...');
+            
+            // Check for active SSL certificate
+            const httpsEnabled = localStorage.getItem('https-enabled') === 'true';
+            const certListResult = await window.electron.sslCertificate.list();
+            const activeIdResult = await window.electron.invoke('ssl-certificate-get-active-id');
+            const activeCertId = activeIdResult.success ? activeIdResult.id : null;
+            const activeCert = (httpsEnabled && certListResult.success) ? certListResult.certificates.find((c: any) => c.id === activeCertId) : null;
+
             const result = await window.electron.httpsServer.start({
               port: 8080,
-              useHTTPS: false
+              useHTTPS: !!activeCert,
+              certificateId: activeCert?.id
             });
 
             if (result.success) {
-              console.log('✅ HTTP server auto-started successfully on port', result.port);
+              console.log(`✅ ${activeCert ? 'HTTPS' : 'HTTP'} server auto-started successfully on port`, result.port);
               await loadHttpServerStatus();
               
               // Auto-start tunnel if enabled and was previously registered
@@ -1028,7 +1042,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
                   const tunnelStartResult = await window.electron.invoke(
                     'mcp-tunnel-start',
                     tunnelResult.tunnel.serverName,
-                    `http://localhost:${result.port || 8080}`
+                    `${activeCert ? 'https' : 'http'}://localhost:${result.port || 8080}`
                   );
                   
                   if (tunnelStartResult.success) {
@@ -1090,6 +1104,20 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     const newValue = !autoStartTunnelEnabled;
     setAutoStartTunnelEnabled(newValue);
     localStorage.setItem('mcp-tunnel-auto-start', JSON.stringify(newValue));
+  };
+
+  const toggleHttps = async () => {
+    const newValue = !httpsEnabled;
+    setHttpsEnabled(newValue);
+    localStorage.setItem('https-enabled', JSON.stringify(newValue));
+    
+    // Notify main process about the change
+    try {
+      await window.electron.invoke('https-server-set-enabled', newValue);
+      alert(`HTTPS ${newValue ? 'enabled' : 'disabled'}. Please restart the server for changes to take effect.`);
+    } catch (err) {
+      console.error('Failed to update HTTPS setting:', err);
+    }
   };
 
   // Periodic tunnel health checking with auto-disconnect
@@ -2303,7 +2331,11 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         toggleAutoStartTunnel={toggleAutoStartTunnel}
         tokenNeedsRefresh={tokenNeedsRefresh}
         handleReSignIn={handleReSignIn}
+        httpsEnabled={httpsEnabled}
+        toggleHttps={toggleHttps}
       />
+
+      <SSLCertificateSection />
 
       {/* Conditionally render Script Editor or Running Servers Tabs */}
       {showScriptEditor ? (
