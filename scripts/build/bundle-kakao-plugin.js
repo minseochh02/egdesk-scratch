@@ -40,12 +40,18 @@ console.log('Compiling kakao plugin…');
 
 // Install dependencies
 console.log('Installing dependencies in plugin directory…');
-execSync('npm install', { cwd: PLUGIN_SRC, stdio: 'inherit' });
+execSync('npm install --no-save', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 
 // Compile
 console.log('Running npm run build…');
 execSync('npm run build', { cwd: PLUGIN_SRC, stdio: 'inherit' });
 console.log('Compiled.');
+
+// Cleanup node_modules to prevent conflicts with OpenClaw's loader
+console.log('Cleaning up plugin node_modules…');
+if (fs.existsSync(path.join(PLUGIN_SRC, 'node_modules'))) {
+  fs.rmSync(path.join(PLUGIN_SRC, 'node_modules'), { recursive: true, force: true });
+}
 
 // ── 2. Copy into resources/ ────────────────────────────────────────────────
 console.log(`Copying to ${DEST}…`);

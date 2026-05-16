@@ -2,7 +2,7 @@
 import {
   type ChannelPlugin,
   type OpenClawConfig,
-} from "openclaw/plugin-sdk/channel-core";
+} from "openclaw/plugin-sdk/core";
 import { z } from "zod";
 import { getKakaoRuntime, setKakaoCfg } from "./runtime.js";
 
