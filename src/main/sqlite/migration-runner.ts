@@ -1,9 +1,4 @@
 import Database from 'better-sqlite3';
-import { createHometaxSchema } from './migrations/002-hometax-schema';
-import { createCashReceiptsSchema } from './migrations/005-cash-receipts-schema';
-import { createTaxExemptInvoicesSchema } from './migrations/024-tax-exempt-invoices-schema';
-import { createTaxBillsSchema } from './migrations/025-tax-bills-schema';
-import { migrate026UpdateCardDedupIndex } from './migrations/026-update-card-dedup-index';
 import { migrate027CleanupCardDuplicates } from './migrations/027-cleanup-card-duplicates';
 import { runOnceMigration } from './migration-state';
 
@@ -21,17 +16,28 @@ export async function runSqliteMigrations({
   // Legacy pre-separation database support has been removed.
   // Always initialize and migrate against dedicated financehub.db.
   console.log('✅ Initializing dedicated financehub database schema...');
-  const { initializeFinanceHubSchema } = await import('./financehub');
-  const { migrate006CombineDateTime } = await import('./migrations/006-combine-datetime');
-  initializeFinanceHubSchema(financeHubDb);
-  createHometaxSchema(financeHubDb);
-  createCashReceiptsSchema(financeHubDb);
-  createTaxExemptInvoicesSchema(financeHubDb);
-  createTaxBillsSchema(financeHubDb);
+  
+  await runOnceMigration(financeHubDb, 'initialize-financehub-schema', async () => {
+    const { initializeFinanceHubSchema } = await import('./financehub');
+    initializeFinanceHubSchema(financeHubDb);
+  });
+
+  await runOnceMigration(financeHubDb, '024-tax-exempt-invoices-schema', async () => {
+    const { createTaxExemptInvoicesSchema } = await import('./migrations/024-tax-exempt-invoices-schema');
+    createTaxExemptInvoicesSchema(financeHubDb);
+  });
+
+  await runOnceMigration(financeHubDb, '025-tax-bills-schema', async () => {
+    const { createTaxBillsSchema } = await import('./migrations/025-tax-bills-schema');
+    createTaxBillsSchema(financeHubDb);
+  });
 
   // Run datetime migration
   try {
-    migrate006CombineDateTime(financeHubDb);
+    await runOnceMigration(financeHubDb, '006-combine-datetime', async () => {
+      const { migrate006CombineDateTime } = await import('./migrations/006-combine-datetime');
+      migrate006CombineDateTime(financeHubDb);
+    });
   } catch (migrationError: any) {
     console.error('⚠️ Migration 006 error:', migrationError.message);
   }
@@ -40,21 +46,17 @@ export async function runSqliteMigrations({
   // Migration 015-019: Separate bank and card transaction tables
   // =============================================
   try {
-    const { migrate015CreateBankTransactions } = await import('./migrations/015-create-bank-transactions');
-    const { migrate016CreateCardTransactions } = await import('./migrations/016-create-card-transactions');
-    const { migrate017MigrateBankData } = await import('./migrations/017-migrate-bank-data');
-    const { migrate018MigrateCardData } = await import('./migrations/018-migrate-card-data');
-    const { migrate019VerifyMigration } = await import('./migrations/019-verify-migration');
+    await runOnceMigration(financeHubDb, '015-create-bank-transactions', async () => {
+      const { migrate015CreateBankTransactions } = await import('./migrations/015-create-bank-transactions');
+      migrate015CreateBankTransactions(financeHubDb);
+    });
 
-    migrate015CreateBankTransactions(financeHubDb);
-    migrate016CreateCardTransactions(financeHubDb);
-    migrate017MigrateBankData(financeHubDb);
-    migrate018MigrateCardData(financeHubDb);
-    await runOnceMigration(financeHubDb, '019-verify-migration', async () => {
-      migrate019VerifyMigration(financeHubDb);
+    await runOnceMigration(financeHubDb, '016-create-card-transactions', async () => {
+      const { migrate016CreateCardTransactions } = await import('./migrations/016-create-card-transactions');
+      migrate016CreateCardTransactions(financeHubDb);
     });
   } catch (migrationError: any) {
-    console.error('⚠️ Migrations 015-019 error:', migrationError.message);
+    console.error('⚠️ Migrations 015-016 error:', migrationError.message);
   }
 
   try {
@@ -76,63 +78,72 @@ export async function runSqliteMigrations({
   }
 
   try {
-    const { migrate023CreatePromissoryNotes } = await import('./migrations/023-create-promissory-notes');
-    migrate023CreatePromissoryNotes(financeHubDb);
+    await runOnceMigration(financeHubDb, '023-create-promissory-notes', async () => {
+      const { migrate023CreatePromissoryNotes } = await import('./migrations/023-create-promissory-notes');
+      migrate023CreatePromissoryNotes(financeHubDb);
+    });
   } catch (migration023Error: any) {
     console.error('⚠️ Migration 023 error:', migration023Error.message);
   }
 
   try {
-    const { migrate028CreateIbkB2bReceivables } = await import('./migrations/028-create-ibk-b2b-receivables');
-    migrate028CreateIbkB2bReceivables(financeHubDb);
+    await runOnceMigration(financeHubDb, '028-create-ibk-b2b-receivables', async () => {
+      const { migrate028CreateIbkB2bReceivables } = await import('./migrations/028-create-ibk-b2b-receivables');
+      migrate028CreateIbkB2bReceivables(financeHubDb);
+    });
   } catch (migration028Error: any) {
     console.error('⚠️ Migration 028 error:', migration028Error.message);
   }
 
   try {
-    const { migrate029CreateWooriB2bLoanExecutions } = await import(
-      './migrations/029-create-woori-b2b-loan-executions'
-    );
-    migrate029CreateWooriB2bLoanExecutions(financeHubDb);
+    await runOnceMigration(financeHubDb, '029-create-woori-b2b-loan-executions', async () => {
+      const { migrate029CreateWooriB2bLoanExecutions } = await import(
+        './migrations/029-create-woori-b2b-loan-executions'
+      );
+      migrate029CreateWooriB2bLoanExecutions(financeHubDb);
+    });
   } catch (migration029Error: any) {
     console.error('⚠️ Migration 029 error:', migration029Error.message);
   }
 
   try {
-    const { migrate030LoosenWooriB2bLoanExecutionsUnique } = await import(
-      './migrations/030-loosen-woori-b2b-loan-executions-unique'
-    );
-    migrate030LoosenWooriB2bLoanExecutionsUnique(financeHubDb);
+    await runOnceMigration(financeHubDb, '030-loosen-woori-b2b-loan-executions-unique', async () => {
+      const { migrate030LoosenWooriB2bLoanExecutionsUnique } = await import(
+        './migrations/030-loosen-woori-b2b-loan-executions-unique'
+      );
+      migrate030LoosenWooriB2bLoanExecutionsUnique(financeHubDb);
+    });
   } catch (migration030Error: any) {
     console.error('⚠️ Migration 030 error:', migration030Error.message);
   }
 
   try {
-    const { migrate031CreateIbkLoanTransactions } = await import(
-      './migrations/031-create-ibk-loan-transactions'
-    );
-    migrate031CreateIbkLoanTransactions(financeHubDb);
+    await runOnceMigration(financeHubDb, '031-create-ibk-loan-transactions', async () => {
+      const { migrate031CreateIbkLoanTransactions } = await import(
+        './migrations/031-create-ibk-loan-transactions'
+      );
+      migrate031CreateIbkLoanTransactions(financeHubDb);
+    });
   } catch (migration031Error: any) {
     console.error('⚠️ Migration 031 error:', migration031Error.message);
   }
 
   try {
-    migrate026UpdateCardDedupIndex(financeHubDb);
-  } catch (migration026Error: any) {
-    console.error('⚠️ Migration 026 error:', migration026Error.message);
-  }
-
-  try {
-    migrate027CleanupCardDuplicates(financeHubDb);
+    await runOnceMigration(financeHubDb, '027-cleanup-card-duplicates', async () => {
+      const { migrate027CleanupCardDuplicates } = await import('./migrations/027-cleanup-card-duplicates');
+      migrate027CleanupCardDuplicates(financeHubDb);
+    });
   } catch (migration027Error: any) {
     console.error('⚠️ Migration 027 error:', migration027Error.message);
   }
 
   try {
-    const { migrate032ImproveCardDedupIndex } = await import(
-      './migrations/032-improve-card-dedup-index'
-    );
-    migrate032ImproveCardDedupIndex(financeHubDb);
+    await runOnceMigration(financeHubDb, '032-improve-card-dedup-index', async () => {
+      const { migrate032ImproveCardDedupIndex } = await import(
+        './migrations/032-improve-card-dedup-index'
+      );
+      migrate032ImproveCardDedupIndex(financeHubDb);
+    });
   } catch (migration032Error: any) {
     console.error('⚠️ Migration 032 error:', migration032Error.message);
   }

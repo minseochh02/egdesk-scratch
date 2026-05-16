@@ -36,6 +36,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
   const [tunnelId, setTunnelId] = useState<string | null>(null);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const [localIP, setLocalIP] = useState<string>('localhost');
   const terminalRef = useRef<HTMLDivElement | null>(null);
 
   // Modal state
@@ -85,6 +86,25 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
     };
 
     checkNode();
+  }, []);
+
+  // Fetch local IP address
+  useEffect(() => {
+    const fetchNetworkInfo = async () => {
+      try {
+        const electron = (window as any).electron;
+        if (!electron?.httpsServer?.getNetworkInfo) return;
+
+        const result = await electron.httpsServer.getNetworkInfo();
+        if (result && result.localIP) {
+          setLocalIP(result.localIP);
+        }
+      } catch (error) {
+        console.error('Failed to fetch network info:', error);
+      }
+    };
+
+    fetchNetworkInfo();
   }, []);
 
   // Get tunnel ID from Electron Store
@@ -512,16 +532,26 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
             return null;
           })()}
 
-          {tunnelId && (registeredProject.type === 'nextjs' || registeredProject.mode === 'production') ? (
+          {tunnelId && registeredProject.mode === 'production' ? (
             <>
               <p><strong>URL:</strong> <a
-                href={`http://localhost:${registeredProject.port}/t/${tunnelId}/p/${registeredProject.projectName}/`}
+                href={`${registeredProject.url}/t/${tunnelId}/p/${registeredProject.projectName}/`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: '#0070f3' }}
               >
-                http://localhost:{registeredProject.port}/t/{tunnelId}/p/{registeredProject.projectName}/
+                {registeredProject.url}/t/{tunnelId}/p/{registeredProject.projectName}/
               </a></p>
+              {localIP !== 'localhost' && (
+                <p><strong>Network URL:</strong> <a
+                  href={`${registeredProject.url.replace('localhost', localIP)}/t/${tunnelId}/p/${registeredProject.projectName}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: '#0070f3' }}
+                >
+                  {registeredProject.url.replace('localhost', localIP)}/t/{tunnelId}/p/{registeredProject.projectName}/
+                </a></p>
+              )}
               <p style={{ fontSize: '12px', color: '#f5a623', marginTop: '8px' }}>
                 ⚠️ Note: Projects in production mode are configured with basePath for tunnel support. Access via tunnel or the URL above.
               </p>
@@ -529,6 +559,9 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
           ) : tunnelId ? (
             <>
               <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+              {localIP !== 'localhost' && (
+                <p><strong>Network URL:</strong> <a href={registeredProject.url.replace('localhost', localIP)} target="_blank" rel="noopener noreferrer">{registeredProject.url.replace('localhost', localIP)}</a></p>
+              )}
               <p><strong>Tunnel URL:</strong> <a
                 href={`https://tunneling-service.onrender.com/t/${tunnelId}/p/${registeredProject.projectName}/`}
                 target="_blank"
@@ -539,7 +572,12 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
               </a></p>
             </>
           ) : (
-            <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+            <>
+              <p><strong>Local URL:</strong> <a href={registeredProject.url} target="_blank" rel="noopener noreferrer">{registeredProject.url}</a></p>
+              {localIP !== 'localhost' && (
+                <p><strong>Network URL:</strong> <a href={registeredProject.url.replace('localhost', localIP)} target="_blank" rel="noopener noreferrer">{registeredProject.url.replace('localhost', localIP)}</a></p>
+              )}
+            </>
           )}
 
           <p><strong>Port:</strong> {registeredProject.port}</p>
@@ -549,7 +587,10 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       {!registeredProject && serverInfo && (
         <div className="developer-status">
           <p><strong>Status:</strong> {serverInfo.status}</p>
-          <p><strong>URL:</strong> <a href={serverInfo.url} target="_blank" rel="noopener noreferrer">{serverInfo.url}</a></p>
+          <p><strong>Local URL:</strong> <a href={serverInfo.url} target="_blank" rel="noopener noreferrer">{serverInfo.url}</a></p>
+          {localIP !== 'localhost' && (
+            <p><strong>Network URL:</strong> <a href={serverInfo.url.replace('localhost', localIP)} target="_blank" rel="noopener noreferrer">{serverInfo.url.replace('localhost', localIP)}</a></p>
+          )}
           <p><strong>Port:</strong> {serverInfo.port}</p>
         </div>
       )}

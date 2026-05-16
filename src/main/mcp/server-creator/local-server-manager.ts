@@ -33,7 +33,7 @@ import { PageIndexMCPService } from '../pageindex/pageindex-mcp-service';
 import { SSEMCPHandler } from './sse-handler';
 import { HTTPStreamHandler } from './http-stream-handler';
 import { IMCPService, MCPTool, MCPToolResult } from '../types/mcp-service';
-import { getSQLiteManager } from '../../sqlite/manager';
+import { SSLCertificateService } from '../../ssl/ssl-certificate-service';
 
 // Database path helper
 function getDatabasePath(): string {
@@ -76,6 +76,7 @@ export interface HTTPServerOptions {
   useHTTPS?: boolean;  // Optional: false = HTTP, true = HTTPS (for tunnel mode)
   keyPath?: string;
   certPath?: string;
+  certificateId?: string; // Optional: ID of a certificate from the store
 }
 
 export interface HTTPServerStatus {
@@ -225,6 +226,17 @@ export class LocalServerManager {
       return await this.getMCPServerStatus(serverName);
     });
 
+    ipcMain.handle('https-server-set-enabled', async (event, enabled: boolean) => {
+      try {
+        this.store.set('https-enabled', enabled);
+        console.log(`🔒 HTTPS setting updated: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+        return { success: true };
+      } catch (error: any) {
+        console.error('Failed to set HTTPS setting:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     console.log('✅ Local Server Manager IPC handlers registered');
   }
 
@@ -238,7 +250,11 @@ export class LocalServerManager {
         return { success: false, error: 'Server is already running' };
       }
 
-      this.useHTTPS = options.useHTTPS || false;
+      // Default to HTTPS if a certificate is available and not explicitly disabled
+      const httpsEnabled = this.store.get('https-enabled', false) as boolean;
+      const activeCertId = SSLCertificateService.getInstance().getActiveCertificateId();
+      this.useHTTPS = options.useHTTPS ?? (httpsEnabled && !!activeCertId);
+      const certificateId = options.certificateId || activeCertId;
 
       // Create request handler
       const requestHandler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
@@ -292,20 +308,33 @@ export class LocalServerManager {
       };
 
       // Create HTTP or HTTPS server based on options
-      if (this.useHTTPS && options.keyPath && options.certPath) {
-        // HTTPS mode (for tunnel use later)
+      if (this.useHTTPS) {
         let sslOptions: any;
-        if (options.keyPath.startsWith('-----BEGIN') || options.certPath.startsWith('-----BEGIN')) {
-          sslOptions = { key: options.keyPath, cert: options.certPath };
-        } else {
-          if (!fs.existsSync(options.keyPath) || !fs.existsSync(options.certPath)) {
-            return { success: false, error: 'SSL certificate files not found' };
+
+        if (certificateId) {
+          const cert = SSLCertificateService.getInstance().getCertificate(certificateId);
+          if (cert) {
+            sslOptions = { key: cert.privateKey, cert: cert.certificate };
+            console.log(`🔒 Using Let's Encrypt certificate for ${cert.domain}`);
+          } else {
+            return { success: false, error: 'SSL certificate not found in store' };
           }
-          sslOptions = {
-            key: fs.readFileSync(options.keyPath),
-            cert: fs.readFileSync(options.certPath),
-          };
+        } else if (options.keyPath && options.certPath) {
+          if (options.keyPath.startsWith('-----BEGIN') || options.certPath.startsWith('-----BEGIN')) {
+            sslOptions = { key: options.keyPath, cert: options.certPath };
+          } else {
+            if (!fs.existsSync(options.keyPath) || !fs.existsSync(options.certPath)) {
+              return { success: false, error: 'SSL certificate files not found' };
+            }
+            sslOptions = {
+              key: fs.readFileSync(options.keyPath),
+              cert: fs.readFileSync(options.certPath),
+            };
+          }
+        } else {
+          return { success: false, error: 'No SSL certificate provided' };
         }
+
         this.server = https.createServer(sslOptions, requestHandler);
         console.log('🔒 Creating HTTPS server...');
       } else {
@@ -393,6 +422,23 @@ export class LocalServerManager {
     // Root endpoint - List all available MCP servers (GET only)
     if (url === '/' && req.method === 'GET') {
       this.handleMCPServerList(res);
+      return;
+    }
+
+    // Let's Encrypt ACME challenge handler
+    if (url.startsWith('/.well-known/acme-challenge/') && req.method === 'GET') {
+      const token = url.split('/').pop() || '';
+      const response = SSLCertificateService.getInstance().getChallengeResponse(token);
+      
+      if (response) {
+        console.log(`✅ Serving ACME challenge for token: ${token}`);
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end(response);
+      } else {
+        console.warn(`⚠️ ACME challenge token not found: ${token}`);
+        res.writeHead(404);
+        res.end('Not Found');
+      }
       return;
     }
 
@@ -734,6 +780,7 @@ export class LocalServerManager {
     if (!this.userDataMCPService) {
       // Use the existing database connection from SQLiteManager instead of creating a new one
       // This prevents "database is locked" errors from multiple connections
+      const { getSQLiteManager } = require('../../sqlite/manager');
       const manager = getSQLiteManager();
       const database = manager.getUserDataDatabase();
       this.userDataMCPService = new UserDataMCPService(database);
@@ -745,6 +792,7 @@ export class LocalServerManager {
     if (!this.financeHubMCPService) {
       // Use the existing database connection from SQLiteManager instead of creating a new one
       // This prevents "database is locked" errors from multiple connections
+      const { getSQLiteManager } = require('../../sqlite/manager');
       const manager = getSQLiteManager();
       const database = manager.getFinanceHubDatabase();
       this.financeHubMCPService = new FinanceHubMCPService(database);
@@ -778,6 +826,7 @@ export class LocalServerManager {
   private getInternalKnowledgeMCPService(): InternalKnowledgeMCPService {
     if (!this.internalKnowledgeMCPService) {
       // Business identity data is in WordPress database, company research is in Conversations database
+      const { getSQLiteManager } = require('../../sqlite/manager');
       const manager = getSQLiteManager();
       const wordpressDatabase = manager.getWordPressDatabase();
       const conversationsDatabase = manager.getConversationsDatabase();

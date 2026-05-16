@@ -52,7 +52,7 @@ export class AutonomousGeminiClient implements AIClientService {
   private currentConversationId?: string;
 
   constructor() {
-    this.initializeSQLite();
+    // Note: SQLite initialization is now handled via explicit call or on-demand
     this.registerIPCHandlers();
   }
 
@@ -78,7 +78,9 @@ export class AutonomousGeminiClient implements AIClientService {
   /**
    * Initialize SQLite database for AI chat storage
    */
-  private async initializeSQLite(): Promise<void> {
+  public async initialize(): Promise<void> {
+    if (this.aiChatDb) return;
+
     try {
       const result = await this.sqliteManager.initialize();
       if (result.success) {

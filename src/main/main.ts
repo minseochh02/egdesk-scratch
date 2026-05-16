@@ -91,6 +91,7 @@ import { registerNaverBlogHandlers } from './naver/blog-handlers';
 import { registerChromeHandlers } from './chrome-handlers';
 import { registerDesktopRecorderHandlers } from './desktop-recorder-handlers';
 import { registerSimpleRecorderHandlers } from './simple-recorder-handlers';
+import { registerSSLCertificateHandlers } from './ssl/ssl-certificate-handler';
 import { registerEGDeskMCP, testEGDeskMCPConnection } from './mcp/gmail/registration-service';
 import { registerGmailMCPHandlers } from './mcp/gmail/gmail-mcp-handler';
 import { getMCPServerManager } from './mcp/gmail/mcp-server-manager';
@@ -3068,7 +3069,7 @@ const createWindow = async () => {
         // Initialize Autonomous Gemini AI Client with streaming and tool execution
         (async () => {
           try {
-            const client = autonomousGeminiClient;
+            await autonomousGeminiClient.initialize();
             console.log('✅ Autonomous Gemini AI Client initialized');
           } catch (error) {
             console.error('❌ Failed to initialize Autonomous Gemini AI Client:', error);
@@ -3078,9 +3079,7 @@ const createWindow = async () => {
         // Initialize AI Chat Data Service
         (async () => {
           try {
-            const dataService = aiChatDataService;
-            // Wait for its internal initialization
-            await (dataService as any).initializationPromise;
+            await aiChatDataService.initialize();
             console.log('✅ AI Chat Data Service initialized');
           } catch (error) {
             console.error('❌ Failed to initialize AI Chat Data Service:', error);
@@ -3090,8 +3089,7 @@ const createWindow = async () => {
         // Initialize Backup Handler
         (async () => {
           try {
-            const backupService = backupHandler;
-            console.log('✅ Backup Handler initialized');
+            await backupHandler.initialize();
           } catch (error) {
             console.error('❌ Failed to initialize Backup Handler:', error);
           }
@@ -5056,6 +5054,9 @@ const createWindow = async () => {
 
     // Register Sync Setup handlers (auto-inject sync endpoints)
     registerSyncSetupHandlers();
+
+    // Register SSL Certificate handlers
+    registerSSLCertificateHandlers();
 
     // Register Scheduler Recovery handlers
     const { registerSchedulerRecoveryHandlers } = await import('./scheduler/recovery-ipc-handler');

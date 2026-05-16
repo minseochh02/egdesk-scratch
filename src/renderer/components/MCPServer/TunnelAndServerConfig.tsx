@@ -87,6 +87,9 @@ interface TunnelAndServerConfigProps {
   // OAuth Props
   tokenNeedsRefresh?: boolean;
   handleReSignIn?: () => Promise<void>;
+  // HTTPS Props
+  httpsEnabled?: boolean;
+  toggleHttps?: () => void;
 }
 
 const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
@@ -117,7 +120,9 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   toggleAutoStart,
   toggleAutoStartTunnel,
   tokenNeedsRefresh = false,
-  handleReSignIn
+  handleReSignIn,
+  httpsEnabled = false,
+  toggleHttps
 }) => {
   const handleCopyPublicUrl = () => {
     if (activeTunnelConfig.publicUrl) {
@@ -407,6 +412,7 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                 alignItems: 'center',
                 gap: '10px',
                 cursor: toggleAutoStartTunnel ? 'pointer' : 'default',
+                marginBottom: '10px',
                 padding: '8px 12px',
                 background: 'rgba(255, 255, 255, 0.03)',
                 borderRadius: '6px',
@@ -427,6 +433,35 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '500' }}>Auto-start Tunnel</div>
                   <div style={{ fontSize: '11px', opacity: 0.6 }}>Reconnect tunnel if previously registered</div>
+                </div>
+              </label>
+
+              {/* HTTPS Toggle */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: toggleHttps ? 'pointer' : 'default',
+                padding: '8px 12px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '6px',
+                transition: 'background 0.2s ease'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={httpsEnabled}
+                  onChange={toggleHttps}
+                  disabled={!toggleHttps}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: toggleHttps ? 'pointer' : 'default',
+                    accentColor: '#10b981'
+                  }}
+                />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '500' }}>Enable HTTPS (SSL)</div>
+                  <div style={{ fontSize: '11px', opacity: 0.6 }}>Serve internal API and projects over secure HTTPS</div>
                 </div>
               </label>
             </div>

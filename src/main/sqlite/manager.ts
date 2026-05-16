@@ -57,6 +57,7 @@ export class SQLiteManager {
   
   // State management
   private isInitialized = false;
+  private initializationPromise: Promise<{ success: boolean; error?: string }> | null = null;
   private initializationError: string | null = null;
   
   // Managers
@@ -94,78 +95,104 @@ export class SQLiteManager {
    * Initialize SQLite database
    */
   public async initialize(): Promise<{ success: boolean; error?: string }> {
-    try {
-      const result = await initializeSQLiteDatabase();
-      
-      if (!result.success) {
-        this.initializationError = result.error || 'Unknown initialization error';
-        return { success: false, error: this.initializationError };
-      }
-
-      // Set up the manager with the initialized databases
-      this.conversationsDb = result.conversationsDatabase!;
-      this.taskDb = result.taskDatabase!;
-      this.wordpressDb = result.wordpressDatabase!;
-      this.activityDb = result.activityDatabase!;
-      this.cloudmcpDb = result.cloudmcpDatabase!;
-      this.financeHubDb = result.financeHubDatabase!;
-      this.schedulerDb = result.schedulerDatabase!;
-      this.userDataDb = result.userDataDatabase!;
-      this.neuronDb = result.neuronDatabase!;
-      this.taskManager = result.taskManager!;
-      this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
-      this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
-      this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
-      this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb);
-      this.playwrightSchedulerManager = new SQLitePlaywrightSchedulerManager(this.wordpressDb);
-      this.activityManager = new SQLiteActivityManager(this.activityDb);
-      this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
-      this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
-      this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
-      this.userDataManager = new UserDataDbManager(this.userDataDb);
-      this.syncConfigManager = new SyncConfigManager(this.userDataDb);
-      this.neuronManager = new NeuronDbManager(this.neuronDb);
-      this.workflowManager = new WorkflowDbManager(this.neuronDb);
-
-      // Initialize vector manager if extension is loaded
-      try {
-        const { loadVectorExtension } = await import('./vector-extension');
-        const { isVectorSupported } = await import('./vector-extension');
-
-        if (isVectorSupported(this.conversationsDb)) {
-          const { VectorDbManager } = await import('./vector-manager');
-          this.vectorManager = new VectorDbManager(this.conversationsDb);
-          console.log('✅ Vector manager initialized');
-        } else {
-          console.log('ℹ️ Vector extension not loaded - vector features unavailable');
-        }
-      } catch (vectorError: any) {
-        console.warn('⚠️ Vector manager initialization failed:', vectorError.message);
-        // Don't fail initialization if vector support unavailable
-      }
-
-      this.isInitialized = true;
-
-      // Run cleanup migration for deleted Playwright tests
-      try {
-        const { cleanupDeletedPlaywrightTests } = await import('../migrations/cleanup-deleted-playwright-tests');
-        await cleanupDeletedPlaywrightTests();
-      } catch (cleanupError) {
-        console.error('Migration warning: Failed to cleanup deleted Playwright tests:', cleanupError);
-        // Don't fail initialization if cleanup fails
-      }
-
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.initializationError = errorMessage;
-      console.error('❌ Failed to initialize SQLite Manager:', errorMessage);
-      
-      return { 
-        success: false, 
-        error: `SQLite initialization failed: ${errorMessage}` 
-      };
+    // Return existing promise if initialization is in progress
+    if (this.initializationPromise) {
+      return this.initializationPromise;
     }
+
+    // Return success if already initialized
+    if (this.isInitialized) {
+      return { success: true };
+    }
+
+    // Create a new initialization promise
+    this.initializationPromise = (async () => {
+      try {
+        const result = await initializeSQLiteDatabase();
+        
+        if (!result.success) {
+          this.initializationError = result.error || 'Unknown initialization error';
+          this.initializationPromise = null; // Allow retrying on failure
+          return { success: false, error: this.initializationError };
+        }
+
+        // Set up the manager with the initialized databases
+        this.conversationsDb = result.conversationsDatabase!;
+        this.taskDb = result.taskDatabase!;
+        this.wordpressDb = result.wordpressDatabase!;
+        this.activityDb = result.activityDatabase!;
+        this.cloudmcpDb = result.cloudmcpDatabase!;
+        this.financeHubDb = result.financeHubDatabase!;
+        this.schedulerDb = result.schedulerDatabase!;
+        this.userDataDb = result.userDataDatabase!;
+        this.neuronDb = result.neuronDatabase!;
+        this.taskManager = result.taskManager!;
+        this.wordpressManager = new WordPressDatabaseManager(this.wordpressDb);
+        this.scheduledPostsManager = new SQLiteScheduledPostsManager(this.wordpressDb);
+        this.businessIdentityManager = new SQLiteBusinessIdentityManager(this.wordpressDb);
+        this.dockerSchedulerManager = new SQLiteDockerSchedulerManager(this.wordpressDb);
+        this.playwrightSchedulerManager = new SQLitePlaywrightSchedulerManager(this.wordpressDb);
+        this.activityManager = new SQLiteActivityManager(this.activityDb);
+        this.templateCopiesManager = new SQLiteTemplateCopiesManager(this.cloudmcpDb);
+        this.companyResearchManager = new SQLiteCompanyResearchManager(this.conversationsDb);
+        this.financeHubManager = new FinanceHubDbManager(this.financeHubDb);
+        this.userDataManager = new UserDataDbManager(this.userDataDb);
+        this.syncConfigManager = new SyncConfigManager(this.userDataDb);
+        this.neuronManager = new NeuronDbManager(this.neuronDb);
+        this.workflowManager = new WorkflowDbManager(this.neuronDb);
+
+        // Auto-initialize SSL certificates if none exist
+        try {
+          const { SSLCertificateService } = await import('../ssl/ssl-certificate-service');
+          await SSLCertificateService.getInstance().autoInitialize();
+        } catch (sslError) {
+          console.error('⚠️ SSL auto-initialization failed:', sslError);
+        }
+
+        // Initialize vector manager if extension is loaded
+        try {
+          const { loadVectorExtension } = await import('./vector-extension');
+          const { isVectorSupported } = await import('./vector-extension');
+
+          if (isVectorSupported(this.conversationsDb)) {
+            const { VectorDbManager } = await import('./vector-manager');
+            this.vectorManager = new VectorDbManager(this.conversationsDb);
+            console.log('✅ Vector manager initialized');
+          } else {
+            console.log('ℹ️ Vector extension not loaded - vector features unavailable');
+          }
+        } catch (vectorError: any) {
+          console.warn('⚠️ Vector manager initialization failed:', vectorError.message);
+          // Don't fail initialization if vector support unavailable
+        }
+
+        this.isInitialized = true;
+        this.initializationPromise = null; // Clear promise but keep isInitialized=true
+
+        // Run cleanup migration for deleted Playwright tests
+        try {
+          const { cleanupDeletedPlaywrightTests } = await import('../migrations/cleanup-deleted-playwright-tests');
+          await cleanupDeletedPlaywrightTests();
+        } catch (cleanupError) {
+          console.error('Migration warning: Failed to cleanup deleted Playwright tests:', cleanupError);
+          // Don't fail initialization if cleanup fails
+        }
+
+        return { success: true };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        this.initializationError = errorMessage;
+        this.initializationPromise = null; // Allow retrying
+        console.error('❌ Failed to initialize SQLite Manager:', errorMessage);
+        
+        return { 
+          success: false, 
+          error: `SQLite initialization failed: ${errorMessage}` 
+        };
+      }
+    })();
+
+    return this.initializationPromise;
   }
 
   /**
