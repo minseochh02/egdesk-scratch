@@ -86,18 +86,99 @@ async function trySemanticClick(root: Root, action: RecordedActionLocatorFields,
   }
 }
 
+/**
+ * Validate that a resolved locator matches the recorded metadata (text, role).
+ * Throws if validation fails, triggering the next fallback strategy.
+ */
+async function validateLocator(locator: Locator, action: RecordedActionLocatorFields): Promise<void> {
+  // 1. Text Validation: If we recorded innerText, ensure the element still contains it.
+  // We only do this for reasonably short strings (labels/button text).
+  if (action.innerText && action.innerText.length > 0 && action.innerText.length < 100) {
+    const actualText = await locator.innerText().catch(() => '');
+    const expected = action.innerText.trim();
+    if (!actualText.includes(expected)) {
+      throw new Error(`Validation failed: expected text "${expected}" but found "${actualText.trim()}"`);
+    }
+  }
+
+  // 2. Role/Tag Validation: Ensure the element type hasn't fundamentally changed.
+  if (action.role) {
+    const actualRole = await locator.getAttribute('role').catch(() => null);
+    const tagName = await locator.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+    
+    // Check if either the role attribute or the HTML tag name matches the recorded role.
+    const roleMatches = actualRole === action.role;
+    const tagMatches = tagName === action.role.toLowerCase();
+    
+    if (!roleMatches && !tagMatches) {
+      throw new Error(`Validation failed: expected role/tag "${action.role}" but found role="${actualRole}" tag="${tagName}"`);
+    }
+  }
+}
+
+/**
+ * Resolves a locator for a given strategy and performs validation/self-healing.
+ */
+async function resolveAndValidateLocator(
+  root: Root,
+  action: RecordedActionLocatorFields,
+  strategy: 'css' | 'xpath'
+): Promise<Locator> {
+  let base: Locator;
+  let idx: number | undefined;
+
+  if (strategy === 'css') {
+    if (!action.selector) throw new Error('missing selector');
+    base = root.locator(normalizeSelectorForPlaywright(action.selector));
+    idx = getDatePickerNthIndexFromCss(action.selector);
+  } else {
+    if (!action.xpath) throw new Error('missing xpath');
+    base = root.locator(`xpath=${action.xpath}`);
+  }
+
+  let locator = idx !== undefined ? base.nth(idx) : base;
+
+  try {
+    // 1. Try validating the primary locator
+    await validateLocator(locator, action);
+    return locator;
+  } catch (validationError) {
+    // 2. Self-Healing: If validation failed and we have an index, try shifting it by ±1
+    // This handles cases where an element was added/removed before our target.
+    if (idx !== undefined && action.innerText) {
+      console.log(`    ↪︎ Validation failed at index ${idx}, trying neighbor indices...`);
+      for (const offset of [-1, 1]) {
+        const neighborIdx = idx + offset;
+        if (neighborIdx < 0) continue;
+
+        const neighbor = base.nth(neighborIdx);
+        try {
+          // Check if neighbor exists and matches our metadata
+          const count = await neighbor.count().catch(() => 0);
+          if (count > 0) {
+            await validateLocator(neighbor, action);
+            console.log(`    ✓ Self-Healed! Found match at shifted index ${neighborIdx}`);
+            return neighbor;
+          }
+        } catch (neighborErr) {
+          // Neighbor doesn't match, keep looking
+        }
+      }
+    }
+
+    // If we couldn't recover, re-throw the validation error to trigger the next strategy
+    throw validationError;
+  }
+}
+
 async function tryCssClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
-  if (!action.selector) throw new Error('missing selector');
-  const base = root.locator(normalizeSelectorForPlaywright(action.selector));
-  const idx = getDatePickerNthIndexFromCss(action.selector);
-  const locator = idx !== undefined ? base.nth(idx) : base;
+  const locator = await resolveAndValidateLocator(root, action, 'css');
   if (!headless) await locator.hover({ force: true });
   await locator.click({ force: headless, timeout: 5000 });
 }
 
 async function tryXpathClick(root: Root, action: RecordedActionLocatorFields, headless?: boolean): Promise<void> {
-  if (!action.xpath) throw new Error('missing xpath');
-  const locator = root.locator(`xpath=${action.xpath}`);
+  const locator = await resolveAndValidateLocator(root, action, 'xpath');
   if (!headless) await locator.hover({ force: true });
   await locator.click({ force: headless });
 }
@@ -211,13 +292,11 @@ export async function fillWithOrderedStrategies(
   for (const strategy of order) {
     try {
       if (strategy === 'css') {
-        const base = root.locator(normalizeSelectorForPlaywright(action.selector));
-        const idx = getDatePickerNthIndexFromCss(action.selector);
-        const locator = idx !== undefined ? base.nth(idx) : base;
+        const locator = await resolveAndValidateLocator(root, action, 'css');
         await locator.fill(val);
       } else {
-        if (!action.xpath) throw new Error('missing xpath');
-        await root.locator(`xpath=${action.xpath}`).fill(val);
+        const locator = await resolveAndValidateLocator(root, action, 'xpath');
+        await locator.fill(val);
       }
       options?.onStrategyUsed?.(strategy);
       if (order.length > 1) {

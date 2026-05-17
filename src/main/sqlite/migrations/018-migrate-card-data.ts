@@ -87,8 +87,8 @@ export function migrate018MigrateCardData(db: Database.Database): void {
     )
   `);
 
-  // Process transactions using iterate() to avoid loading all into memory
-  const cardTransactionsIterator = db.prepare(`
+  // Process transactions using all() to avoid "database connection is busy" error
+  const cardTransactions = db.prepare(`
     SELECT
       t.*,
       a.account_number,
@@ -96,7 +96,7 @@ export function migrate018MigrateCardData(db: Database.Database): void {
     FROM transactions t
     LEFT JOIN accounts a ON a.id = t.account_id
     WHERE t.bank_id LIKE '%-card'
-  `).iterate();
+  `).all();
 
   console.log(`  📦 Processing card transactions...`);
 
@@ -104,7 +104,7 @@ export function migrate018MigrateCardData(db: Database.Database): void {
   let successCount = 0;
   let errorCount = 0;
 
-  for (const txn of cardTransactionsIterator as Iterable<any>) {
+  for (const txn of cardTransactions as any[]) {
     try {
       // Parse metadata JSON
       let metadata: any = {};

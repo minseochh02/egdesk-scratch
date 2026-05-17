@@ -1223,15 +1223,14 @@ export function registerUserDataIPCHandlers(): void {
             // Create worksheet with headers first
             worksheet = XLSX.utils.aoa_to_sheet([columnsToExport]);
 
-            // Process rows in batches
+            // Process rows in batches using all() to avoid "database connection is busy" error
             const query = `SELECT ${columnNames} FROM "${table.tableName}"`;
-            const stmt = db.prepare(query);
-            const iterator = stmt.iterate();
+            const rows = db.prepare(query).all();
 
             let batch: any[] = [];
             let batchCount = 0;
 
-            for (const row of iterator) {
+            for (const row of rows) {
               batch.push(row);
 
               if (batch.length >= BATCH_SIZE) {
@@ -1913,14 +1912,12 @@ export function registerUserDataIPCHandlers(): void {
             const columnList = columnsToExport.map(col => `"${col}"`).join(', ');
 
             const query = `SELECT ${columnsToExport.map(col => `"${col}"`).join(', ')} FROM "${table.tableName}"`;
-            const stmt = db.prepare(query);
+            const rows = db.prepare(query).all();
 
-            // Use iterate() instead of all() to stream rows
-            const iterator = stmt.iterate();
             let batch: string[] = [];
             let rowCount = 0;
 
-            for (const row of iterator) {
+            for (const row of rows) {
               const values = columnsToExport.map(col => {
                 const value = row[col];
                 if (value === null || value === undefined) {
