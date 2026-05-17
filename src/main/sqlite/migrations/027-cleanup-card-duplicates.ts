@@ -11,13 +11,13 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
   console.log('[Migration 027] Starting card transaction duplicate cleanup...');
 
   try {
-    // 1. Identify duplicates across accounts using iterate()
-    const duplicatesIterator = db.prepare(`
+    // 1. Identify duplicates across accounts using all() to avoid "busy" error
+    const duplicates = db.prepare(`
       SELECT approval_datetime, merchant_name, amount, COUNT(*) as count
       FROM card_transactions
       GROUP BY approval_datetime, merchant_name, amount
       HAVING count > 1
-    `).iterate();
+    `).all();
 
     console.log(`  🔍 Processing duplicate transactions...`);
 
@@ -25,7 +25,7 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
     let setsProcessed = 0;
 
     db.transaction(() => {
-      for (const dup of duplicatesIterator as Iterable<any>) {
+      for (const dup of duplicates as any[]) {
         setsProcessed++;
         // Get all instances of this transaction
         const instances = db.prepare(`
@@ -34,7 +34,12 @@ export function migrate027CleanupCardDuplicates(db: Database.Database): void {
           JOIN accounts a ON ct.account_id = a.id
           WHERE ct.approval_datetime = ? AND ct.merchant_name = ? AND ct.amount = ?
           ORDER BY 
-          ...
+            -- Prefer "real" accounts over catch-all or manual upload accounts
+            CASE 
+              WHEN a.account_name LIKE '%수동%' OR a.account_name LIKE '%통합%' THEN 2
+              ELSE 1
+            END ASC,
+            ct.created_at ASC
         `).all(dup.approval_datetime, dup.merchant_name, dup.amount) as { id: string, account_id: string, account_name: string }[];
 
         if (instances.length > 1) {

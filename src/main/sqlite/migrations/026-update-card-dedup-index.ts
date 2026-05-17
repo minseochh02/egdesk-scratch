@@ -27,18 +27,18 @@ export function migrate026UpdateCardDedupIndex(db: Database.Database): void {
     // 2. Remap transactions based on their card_number field
     console.log('  🔄 Remapping existing transactions to correct accounts...');
     
-    // Get BC Card transactions that have a card_number using iterate()
-    const transactionsIterator = db.prepare(`
+    // Get BC Card transactions that have a card_number using all() to avoid "busy" error
+    const transactions = db.prepare(`
       SELECT id, card_number, account_id 
       FROM card_transactions 
       WHERE card_company_id = 'bc-card' AND card_number IS NOT NULL AND card_number != ''
-    `).iterate();
+    `).all();
 
     let remappedCount = 0;
     const updateStmt = db.prepare("UPDATE card_transactions SET account_id = ? WHERE id = ?");
 
     db.transaction(() => {
-      for (const tx of transactionsIterator as Iterable<any>) {
+      for (const tx of transactions as any[]) {
         const cleaned = tx.card_number.replace(/[^\d]/g, '');
         const last6 = cleaned.slice(-6);
         const correctAccountId = accountMap.get(last6);
