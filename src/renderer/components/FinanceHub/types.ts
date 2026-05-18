@@ -71,6 +71,7 @@ export interface AccountInfo {
   balance: number;
   currency: string;
   lastUpdated: string;
+  metadata?: Record<string, any> | null;
 }
 
 export interface BankAccount {

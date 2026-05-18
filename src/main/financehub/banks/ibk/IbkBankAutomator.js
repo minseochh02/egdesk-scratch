@@ -450,21 +450,40 @@ class IbkBankAutomator extends BaseBankAutomator {
     const accounts = await this._getIbKAccounts();
     this.log(`[IBK] Found ${accounts.length} accounts from dropdown. Starting detail scraping (Timing A)...`);
 
-    for (const account of accounts) {
-      try {
-        const details = await this.getAccountAdditionalInfo(account.accountNumber);
-        if (details) {
-          this.log(`[IBK] 추가 계좌 메타데이터 수집 성공 (${account.accountNumber}):`, JSON.stringify(details));
-          account.customerName = details.customerName || account.customerName || '';
-          account.accountType = details.accountType || account.accountType || 'checking';
-          account.openDate = details.openDate || account.openDate || null;
-          account.metadata = {
-            ...(account.metadata || {}),
-            ...(details.metadata || {})
-          };
+    if (accounts.length === 0) {
+      return accounts;
+    }
+
+    try {
+      // 1. 상세조회 페이지로 1회 네비게이션
+      const frame = await this.navigateToAccountDetailsPage();
+      
+      // 2. 루프 돌며 개별 계좌 상세 파싱
+      for (const account of accounts) {
+        try {
+          const details = await this.getAccountDetailsOnPage(frame, account.accountNumber);
+          if (details) {
+            this.log(`[IBK] 추가 계좌 메타데이터 수집 성공 (${account.accountNumber}):`, JSON.stringify(details));
+            account.customerName = details.customerName || account.customerName || '';
+            account.accountType = details.accountType || account.accountType || 'checking';
+            account.openDate = details.openDate || account.openDate || null;
+            account.metadata = {
+              ...(account.metadata || {}),
+              ...(details.metadata || {})
+            };
+          }
+        } catch (e) {
+          this.warn(`[IBK] Failed to get additional details for ${account.accountNumber}:`, e.message);
         }
+      }
+    } catch (e) {
+      this.error('[IBK] 계좌 상세 수집 루프 실행 중 실패:', e.message);
+    } finally {
+      // 3. 원래 거래내역조회 페이지로 안전하게 복귀!
+      try {
+        await this.navigateToTransactionQueryPage();
       } catch (e) {
-        this.warn(`[IBK] Failed to get additional details for ${account.accountNumber}:`, e.message);
+        this.warn('[IBK] 거래내역조회 페이지 복귀 실패:', e.message);
       }
     }
 
@@ -472,60 +491,93 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * 계좌상세조회 페이지에 진입하여 계좌번호별 예금주명, 예금종류, 신규일자, 계좌상태, 계좌관리점, 금융거래한도계좌 여부를 추출합니다.
-   * @param {string} accountNumber 
-   * @returns {Promise<object|null>}
+   * 계좌상세조회 페이지에 진입하여 대기합니다.
+   * @returns {Promise<import('playwright-core').Frame>}
    */
-  async getAccountAdditionalInfo(accountNumber) {
-    if (!this.page) {
-      throw new Error('Browser page not initialized');
-    }
-    
-    this.log(`[IBK] getAccountAdditionalInfo(${accountNumber}) 개시...`);
-    
-    // 1. 팝업 및 방해 레이어 정리
-    await this._cleanupIbkPopups();
-    
-    let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
-    if (!mainframe) {
+  async navigateToAccountDetailsPage() {
+    this.log('[IBK] 계좌상세조회 페이지로 네비게이션을 시도합니다...');
+    let frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+    if (!frame) {
       await this.page.waitForTimeout(2000);
-      mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
     }
-    if (!mainframe) {
-      this.warn('[IBK] mainframe not found for account details.');
-      return null;
+    if (!frame) {
+      throw new Error('mainframe not found during page navigation');
     }
 
-    // 2. 계좌조회 -> 계좌상세조회 GNB 네비게이션
-    // 계좌조회 대메뉴 클릭
-    const clickedMenu = await this._robustClickMainframe(mainframe, 'span', '계좌조회');
+    // 팝업 닫기
+    await this._cleanupIbkPopups();
+
+    // 1. GNB '계좌조회' 대메뉴 클릭
+    const clickedMenu = await this._robustClickMainframe(frame, 'span', '계좌조회');
     if (!clickedMenu) {
-      this.warn('[IBK] 계좌조회 대메뉴 클릭 실패');
-      return null;
+      throw new Error('GNB "계좌조회" 대메뉴 클릭 실패');
     }
     await this.page.waitForTimeout(1000);
 
-    // 계좌상세조회 서브메뉴 클릭
-    const clickedSub = await this._robustClickMainframe(mainframe, 'span', '계좌상세조회');
+    // 2. GNB '계좌상세조회' 서브메뉴 클릭
+    const clickedSub = await this._robustClickMainframe(frame, 'span', '계좌상세조회');
     if (!clickedSub) {
-      this.warn('[IBK] 계좌상세조회 서브메뉴 클릭 실패');
-      return null;
+      throw new Error('GNB "계좌상세조회" 서브메뉴 클릭 실패');
     }
-    await this.page.waitForTimeout(2500);
+    
+    // 3. 드롭다운 '#tt1'이 로드될 때까지 최대 15초 대기
+    this.log('[IBK] 계좌상세조회 페이지 로딩 완료 및 드롭다운(#tt1) 대기 중...');
+    
+    // 프레임 재탐색
+    frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame() || frame;
+    
+    const dropdownSelector = 'select#tt1, [id="tt1"]';
+    try {
+      await frame.waitForSelector(dropdownSelector, { state: 'visible', timeout: 15000 });
+      this.log('[IBK] ✓ 계좌상세조회 드롭다운(#tt1) 발견!');
+      return frame;
+    } catch (e) {
+      this.warn('[IBK] 드롭다운(#tt1) 대기 타임아웃. 재획득 시도...');
+      frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame() || frame;
+      await frame.waitForSelector(dropdownSelector, { state: 'visible', timeout: 10000 });
+      this.log('[IBK] ✓ 재시도 끝에 드롭다운(#tt1) 발견!');
+      return frame;
+    }
+  }
 
-    // Re-acquire frame in case it refreshed
-    mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+  /**
+   * 거래내역조회 페이지로 복귀합니다.
+   */
+  async navigateToTransactionQueryPage() {
+    this.log('[IBK] 거래내역조회 페이지로 복귀합니다...');
+    let frame = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+    if (!frame) return;
 
-    // 3. 드롭다운에서 계좌 선택
-    // 드롭다운 셀렉터는 'select#tt1' 혹은 '[id="tt1"]'
-    const acctDropdown = mainframe.locator('select#tt1, [id="tt1"]').first();
+    await this._cleanupIbkPopups();
+
+    // GNB '계좌조회' 클릭
+    await this._robustClickMainframe(frame, 'span', '계좌조회');
+    await this.page.waitForTimeout(1000);
+
+    // GNB '거래내역조회' 클릭
+    await this._robustClickMainframe(frame, 'span', '거래내역조회');
+    await this.page.waitForTimeout(2000);
+    this.log('[IBK] ✓ 거래내역조회 페이지 복귀 완료.');
+  }
+
+  /**
+   * 계좌상세조회 페이지에 위치한 상태에서, 특정 계좌를 선택하고 확인 버튼을 눌러 상세 테이블 데이터를 추출합니다.
+   * @param {object} frame 
+   * @param {string} accountNumber 
+   * @returns {Promise<object|null>}
+   */
+  async getAccountDetailsOnPage(frame, accountNumber) {
+    this.log(`[IBK] getAccountDetailsOnPage(${accountNumber}) 개시...`);
+
+    // 1. 드롭다운 요소 획득
+    const acctDropdown = frame.locator('select#tt1, [id="tt1"]').first();
     const isDropdownVisible = await acctDropdown.isVisible({ timeout: 5000 }).catch(() => false);
     if (!isDropdownVisible) {
-      this.warn('[IBK] 계좌 선택 드롭다운(#tt1)을 찾을 수 없습니다.');
-      return null;
+      throw new Error('계좌 선택 드롭다운(#tt1)을 찾을 수 없습니다.');
     }
 
-    // 대상 계좌와 대칭되는 옵션 검색 및 선택
+    // 2. 대상 계좌 번호에 대응하는 옵션 매칭
     const cleanTarget = accountNumber.replace(/-/g, '');
     const options = await acctDropdown.evaluate((sel) => {
       return Array.from(sel.options).map((opt, i) => ({
@@ -549,48 +601,117 @@ class IbkBankAutomator extends BaseBankAutomator {
       return null;
     }
 
-    this.log(`[IBK] 매칭된 계좌 옵션 인덱스 선택: ${matchedIndex} (텍스트: "${options[matchedIndex].text}")`);
+    this.log(`[IBK] 매칭된 계좌 옵션 선택: 인덱스 ${matchedIndex} (텍스트: "${options[matchedIndex].text}")`);
     await acctDropdown.selectOption({ index: matchedIndex });
     await this.page.waitForTimeout(1000);
 
-    // 4. 조회 확인 버튼 클릭
-    try {
-      const okBtn = mainframe.locator('.btn_ok, a:has-text("확인")').first();
-      await okBtn.click({ timeout: 5000 });
-    } catch (e) {
-      this.warn('[IBK] 확인 버튼 클릭 예외 발생:', e.message);
-      // Fallback click via evaluate
-      await mainframe.evaluate(() => {
-        const okLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('확인') || a.classList.contains('btn_ok'));
-        if (okLink) okLink.click();
+    // 3. "조회" 또는 "확인" 버튼 클릭
+    let clicked = false;
+    const btnSelectors = [
+      '#_btnSubmit',
+      'a.btn_ok',
+      '.btn_ok'
+    ];
+
+    for (const sel of btnSelectors) {
+      try {
+        const btn = frame.locator(sel).first();
+        if (await btn.isVisible({ timeout: 1000 })) {
+          // Double check it's not a GNB menu by evaluating its path
+          const isGnb = await btn.evaluate(el => {
+            let parent = el.parentElement;
+            while (parent) {
+              const id = (parent.id || '').toLowerCase();
+              const cls = (typeof parent.className === 'string' ? parent.className : '').toLowerCase();
+              if (id.includes('gnb') || id.includes('header') || id.includes('menu') || id.includes('nav') ||
+                  cls.includes('gnb') || cls.includes('header') || cls.includes('menu') || cls.includes('nav')) {
+                return true;
+              }
+              parent = parent.parentElement;
+            }
+            return false;
+          });
+
+          if (!isGnb) {
+            await btn.click();
+            this.log(`[IBK] Clicked query button via selector: ${sel}`);
+            clicked = true;
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!clicked) {
+      this.warn('[IBK] 1차 Selector 클릭 실패, evaluate fallback 시도...');
+      clicked = await frame.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a, button, input[type="button"]')).filter(el => {
+          let parent = el.parentElement;
+          while (parent) {
+            const id = (parent.id || '').toLowerCase();
+            const cls = (typeof parent.className === 'string' ? parent.className : '').toLowerCase();
+            if (id.includes('gnb') || id.includes('header') || id.includes('menu') || id.includes('nav') ||
+                cls.includes('gnb') || cls.includes('header') || cls.includes('menu') || cls.includes('nav')) {
+              return false; // Exclude GNB, sidebar, header or top navigation links!
+            }
+            parent = parent.parentElement;
+          }
+          return true;
+        });
+        
+        // 1. "조회" 버튼 우선 검색
+        const queryBtn = links.find(el => {
+          const txt = el.textContent.trim();
+          return (txt === '조회' || txt.includes('조회')) && el.offsetParent !== null;
+        });
+        if (queryBtn) {
+          queryBtn.click();
+          return true;
+        }
+
+        // 2. "확인" 버튼 검색 (정확히 일치하는 것 우선)
+        const okBtnExact = links.find(el => el.textContent.trim() === '확인' && el.offsetParent !== null);
+        if (okBtnExact) {
+          okBtnExact.click();
+          return true;
+        }
+
+        // 3. 클래스명 기준
+        const okBtnClass = links.find(el => (el.classList.contains('btn_ok') || el.id === '_btnSubmit') && el.offsetParent !== null);
+        if (okBtnClass) {
+          okBtnClass.click();
+          return true;
+        }
+
+        return false;
       });
     }
-    
-    // 테이블 렌더링 대기
-    await this.page.waitForTimeout(3000);
-    mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
 
-    // 5. 지능형 테이블 파싱 엔진 실행
-    const scrapedData = await mainframe.evaluate(() => {
+    // 4. 테이블 렌더링 완료 대기
+    await this.page.waitForTimeout(3000);
+
+    // 5. 지능형 일대일 매칭 테이블 파싱
+    const scrapedData = await frame.evaluate(() => {
       const result = {};
       const rows = document.querySelectorAll('table tbody tr');
       if (rows.length === 0) return null;
 
       rows.forEach(row => {
-        const children = Array.from(row.children);
-        let currentKey = null;
+        const ths = Array.from(row.querySelectorAll('th'));
+        const tds = Array.from(row.querySelectorAll('td'));
         
-        for (const child of children) {
-          if (child.tagName === 'TH' && child.classList.contains('tit')) {
-            currentKey = child.textContent.trim().replace(/\s+/g, '');
-          } else if (child.tagName === 'TD' && currentKey) {
-            result[currentKey] = child.textContent.trim();
-            currentKey = null;
+        if (ths.length > 0 && tds.length > 0) {
+          for (let i = 0; i < Math.min(ths.length, tds.length); i++) {
+            const key = ths[i].textContent.trim().replace(/\s+/g, '');
+            const val = tds[i].textContent.trim();
+            if (key) {
+              result[key] = val;
+            }
           }
         }
       });
 
-      // 계좌번호 셀 단독 추출
+      // 단독 계좌번호 셀 추출
       const accountNoCell = document.querySelector('td.ip');
       if (accountNoCell) {
         result['계좌번호'] = accountNoCell.textContent.trim().split(/\s+/)[0];
@@ -600,13 +721,13 @@ class IbkBankAutomator extends BaseBankAutomator {
     });
 
     if (!scrapedData || Object.keys(scrapedData).length === 0) {
-      this.warn('[IBK] 계좌 상세 테이블 데이터 스크래핑 결과가 비어있습니다.');
+      this.warn(`[IBK] 계좌 상세 테이블 데이터가 비어있습니다 (${accountNumber})`);
       return null;
     }
 
-    this.log('[IBK] Raw Scraped Details:', JSON.stringify(scrapedData));
+    this.log(`[IBK] 파싱 결과: ${JSON.stringify(scrapedData)}`);
 
-    // 6. 데이터 표준화 및 정제 (잔액 정보 배제)
+    // 6. 데이터 정제 및 표준화 (잔액 정보 제외)
     const customerName = scrapedData['예금주명'] || '';
     const accountType = scrapedData['예금종류'] || 'checking';
     const openDate = scrapedData['신규일자'] || null;
@@ -614,6 +735,8 @@ class IbkBankAutomator extends BaseBankAutomator {
     const accountStatus = scrapedData['계좌상태'] || '활동';
     const branchName = scrapedData['계좌관리점'] || '';
     const isLimitAccount = scrapedData['금융거래한도계좌'] || 'NO';
+    const payableAmount = scrapedData['지급가능금액'] || scrapedData['출금가능금액'] || scrapedData['지급가능한도'] || '';
+    const contractAmount = scrapedData['약정금액'] || scrapedData['대출약정금액'] || '';
 
     return {
       accountNumber,
@@ -623,9 +746,27 @@ class IbkBankAutomator extends BaseBankAutomator {
       metadata: {
         accountStatus,
         branchName,
-        isLimitAccount
+        isLimitAccount,
+        payableAmount,
+        contractAmount
       }
     };
+  }
+
+  /**
+   * 단일 계좌 정보 조회용 호환성 래퍼 메서드
+   */
+  async getAccountAdditionalInfo(accountNumber) {
+    this.log(`[IBK] 단일 getAccountAdditionalInfo(${accountNumber}) 요청 수신.`);
+    try {
+      const frame = await this.navigateToAccountDetailsPage();
+      const details = await this.getAccountDetailsOnPage(frame, accountNumber);
+      await this.navigateToTransactionQueryPage();
+      return details;
+    } catch (e) {
+      this.error(`[IBK] 단일 getAccountAdditionalInfo 실패:`, e.message);
+      return null;
+    }
   }
 
   /**

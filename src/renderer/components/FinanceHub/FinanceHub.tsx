@@ -544,7 +544,8 @@ const FinanceHub: React.FC = () => {
             bankId: account.bankId,
             balance: account.balance,
             currency: account.currency || 'KRW',
-            lastUpdated: account.lastSyncedAt
+            lastUpdated: account.lastSyncedAt,
+            metadata: account.metadata
           });
           return acc;
         }, {});
@@ -2524,6 +2525,25 @@ const FinanceHub: React.FC = () => {
     try {
       const result = await window.electron.financeHub.getAccounts(bankId);
       if (result.success && result.accounts) {
+        // Save to SQLite database!
+        for (const acc of result.accounts) {
+          const accountBankId = acc.bankId || bankId;
+          await window.electron.financeHubDb.upsertAccount({
+            bankId: accountBankId,
+            accountNumber: acc.accountNumber,
+            accountName: acc.accountName,
+            customerName: acc.customerName || '사용자',
+            balance: acc.balance,
+            availableBalance: acc.balance,
+            openDate: acc.openDate || '',
+            accountType: acc.accountType || 'checking',
+            metadata: acc.metadata || null
+          });
+        }
+        await loadDatabaseStats();
+        await loadBanksAndAccounts();
+        await refreshAll();
+
         setConnectedBanks(prev => prev.map(bank =>
           bank.bankId === bankId
             ? { ...bank, accounts: result.accounts, lastSync: new Date(), status: 'connected' as const }
@@ -2537,7 +2557,7 @@ const FinanceHub: React.FC = () => {
     } finally {
       setIsFetchingAccounts(null);
     }
-  }, []);
+  }, [loadDatabaseStats, loadBanksAndAccounts, refreshAll]);
 
   const handleSelectBank = async (bank: BankConfig) => {
     if (!bank.supportsAutomation) {
@@ -2681,10 +2701,12 @@ const FinanceHub: React.FC = () => {
                   bankId: accountBankId,
                   accountNumber: acc.accountNumber,
                   accountName: acc.accountName,
-                  customerName: result.userName || '사용자',
+                  customerName: acc.customerName || result.userName || '사용자',
                   balance: acc.balance,
                   availableBalance: acc.balance,
-                  openDate: '',
+                  openDate: acc.openDate || '',
+                  accountType: acc.accountType || 'checking',
+                  metadata: acc.metadata || null
                 });
               }
               loadDatabaseStats();
@@ -2749,10 +2771,12 @@ const FinanceHub: React.FC = () => {
               bankId: accountBankId,
               accountNumber: acc.accountNumber,
               accountName: acc.accountName,
-              customerName: result.userName || '사용자',
+              customerName: acc.customerName || result.userName || '사용자',
               balance: acc.balance,
               availableBalance: acc.balance,
-              openDate: '',
+              openDate: acc.openDate || '',
+              accountType: acc.accountType || 'checking',
+              metadata: acc.metadata || null
             });
           }
           loadDatabaseStats();
@@ -2911,6 +2935,25 @@ const FinanceHub: React.FC = () => {
     try {
       const result = await window.electron.financeHub.getAccounts(bankId);
       if (result.success && result.accounts) {
+        // Save to SQLite database!
+        for (const acc of result.accounts) {
+          const accountBankId = acc.bankId || bankId;
+          await window.electron.financeHubDb.upsertAccount({
+            bankId: accountBankId,
+            accountNumber: acc.accountNumber,
+            accountName: acc.accountName,
+            customerName: acc.customerName || '사용자',
+            balance: acc.balance,
+            availableBalance: acc.balance,
+            openDate: acc.openDate || '',
+            accountType: acc.accountType || 'checking',
+            metadata: acc.metadata || null
+          });
+        }
+        await loadDatabaseStats();
+        await loadBanksAndAccounts();
+        await refreshAll();
+
         setConnectedBanks(prev => {
           const idx = prev.findIndex(b => b.bankId === bankId);
           if (idx >= 0) return prev.map((b, i) => i === idx ? {
@@ -2940,6 +2983,27 @@ const FinanceHub: React.FC = () => {
       if (!credResult.success || !credResult.credentials) { alert('저장된 인증 정보가 없습니다.'); return; }
       const result = await window.electron.financeHub.loginAndGetAccounts(bankId, credResult.credentials);
       if (result.success && result.isLoggedIn) {
+        // Save to SQLite database!
+        if (result.accounts && result.accounts.length > 0) {
+          for (const acc of result.accounts) {
+            const accountBankId = acc.bankId || bankId;
+            await window.electron.financeHubDb.upsertAccount({
+              bankId: accountBankId,
+              accountNumber: acc.accountNumber,
+              accountName: acc.accountName,
+              customerName: acc.customerName || result.userName || '사용자',
+              balance: acc.balance,
+              availableBalance: acc.balance,
+              openDate: acc.openDate || '',
+              accountType: acc.accountType || 'checking',
+              metadata: acc.metadata || null
+            });
+          }
+        }
+        await loadDatabaseStats();
+        await loadBanksAndAccounts();
+        await refreshAll();
+
         setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? {
           ...b,
           accounts: result.accounts || [],
@@ -3169,6 +3233,22 @@ const FinanceHub: React.FC = () => {
                                       {account.accountName || '계좌'} 
                                       {!isActive && <span className="finance-hub__inactive-badge">비활성</span>}
                                     </span>
+                                    {fullAccount?.metadata && (fullAccount.metadata.payableAmount || fullAccount.metadata.contractAmount || fullAccount.metadata.isLimitAccount === 'YES' || fullAccount.metadata.branchName) && (
+                                      <div className="finance-hub__account-meta-details" style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {fullAccount.metadata.isLimitAccount === 'YES' && (
+                                          <span className="finance-hub__meta-badge finance-hub__meta-badge--warning" style={{ backgroundColor: 'rgba(255, 188, 0, 0.1)', color: '#FFBC00', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold' }}>한도계좌</span>
+                                        )}
+                                        {fullAccount.metadata.payableAmount && (
+                                          <span>지급가능: <strong style={{ color: 'var(--text-normal)' }}>{fullAccount.metadata.payableAmount.includes('원') ? fullAccount.metadata.payableAmount : `${formatCurrency(Number(fullAccount.metadata.payableAmount.replace(/[^0-9-]/g, '')))}원`}</strong></span>
+                                        )}
+                                        {fullAccount.metadata.contractAmount && fullAccount.metadata.contractAmount !== '0' && fullAccount.metadata.contractAmount !== '0원' && (
+                                          <span>약정금액: <strong style={{ color: 'var(--text-normal)' }}>{fullAccount.metadata.contractAmount.includes('원') ? fullAccount.metadata.contractAmount : `${formatCurrency(Number(fullAccount.metadata.contractAmount.replace(/[^0-9-]/g, '')))}원`}</strong></span>
+                                        )}
+                                        {fullAccount.metadata.branchName && (
+                                          <span>관리점: {fullAccount.metadata.branchName}</span>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="finance-hub__account-actions">
                                     {account.balance > 0 && <span className="finance-hub__account-balance">{formatCurrency(account.balance)}</span>}

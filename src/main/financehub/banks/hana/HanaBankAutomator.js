@@ -490,7 +490,328 @@ class HanaBankAutomator extends BaseBankAutomator {
   }
 
   async getAccounts() {
-    return this._getHanaAccounts();
+    this.log('[Hana] getAccounts() 시작...');
+    const accounts = await this._getHanaAccounts();
+    this.log(`[Hana] Found ${accounts.length} accounts from dropdown. Starting detail scraping (Timing A)...`);
+
+    const finalAccounts = [];
+    const processedCleanNos = new Set();
+
+    try {
+      // 1. 상세조회(보유계좌 조회) 페이지로 1회 네비게이션
+      const frame = await this.navigateToAccountDetailsPage();
+      
+      // 2. 보유계좌 테이블 스크래핑
+      const detailsMap = await this.scrapeAllAccountDetails(frame);
+      
+      // 3. 루프 돌며 기존 드롭다운 계좌 상세 병합
+      for (const account of accounts) {
+        const cleanNo = account.accountNumber.replace(/-/g, '');
+        processedCleanNos.add(cleanNo);
+
+        const matchKey = Object.keys(detailsMap).find(k => k.replace(/-/g, '') === cleanNo);
+        if (matchKey) {
+          const details = detailsMap[matchKey];
+          this.log(`[Hana] 추가 계좌 메타데이터 매칭 성공 (${account.accountNumber}):`, JSON.stringify(details));
+          
+          if (details.customerName) account.customerName = details.customerName;
+          if (details.accountType) account.accountType = details.accountType;
+          if (details.openDate) account.openDate = details.openDate;
+          if (details.balance !== undefined) account.balance = details.balance;
+          if (details.availableBalance !== undefined) account.availableBalance = details.availableBalance;
+          if (details.currency) account.currency = details.currency;
+          
+          account.metadata = {
+            ...(account.metadata || {}),
+            ...(details.metadata || {})
+          };
+        }
+        finalAccounts.push(account);
+      }
+    } catch (e) {
+      this.error('[Hana] 계좌 상세 수집 루프 실행 중 실패:', e.message);
+      // 예외 발생 시 드롭다운 계좌들이라도 누락 없이 반환
+      if (finalAccounts.length === 0) {
+        return accounts;
+      }
+    } finally {
+      // 5. 원래 거래내역조회 페이지로 안전하게 복귀!
+      try {
+        await this.navigateToTransactionQueryPage();
+      } catch (e) {
+        this.warn('[Hana] 거래내역조회 페이지 복귀 실패:', e.message);
+      }
+    }
+
+    return finalAccounts;
+  }
+
+  /**
+   * 계좌상세조회(보유계좌 조회) 페이지로 네비게이션을 시도합니다.
+   * @returns {Promise<import('playwright-core').Frame>}
+   */
+  async navigateToAccountDetailsPage() {
+    this.log('[Hana] 계좌상세조회(보유계좌 조회) 페이지로 네비게이션을 시도합니다...');
+    let frame = this.page.frame({ name: 'hanaMainframe' }) || this._hanaFrame();
+    if (!frame) {
+      await this.page.waitForTimeout(2000);
+      frame = this.page.frame({ name: 'hanaMainframe' }) || this._hanaFrame();
+    }
+    if (!frame) {
+      throw new Error('hanaMainframe not found during page navigation');
+    }
+
+    // 팝업 닫기
+    await this._closeHanaPopups();
+
+    // 1. GNB '조회' 대메뉴 클릭 ([id="15000"])
+    try {
+      await frame.locator('[id="15000"]').click({ timeout: 10000 });
+      this.log('[Hana] GNB "조회" 버튼 클릭 완료');
+    } catch (e) {
+      try {
+        await this.page.getByRole('link', { name: '조회' }).click({ timeout: 10000 });
+        this.log('[Hana] GNB "조회" 롤 버튼 클릭 완료');
+      } catch (err) {
+        await frame.evaluate(() => {
+          const el = document.getElementById('15000');
+          if (el) el.click();
+        });
+      }
+    }
+    await this.page.waitForTimeout(1500);
+
+    // 2. '보유계좌 조회' 서브메뉴 클릭
+    try {
+      await frame.locator('a:has-text("보유계좌 조회")').click({ timeout: 10000 });
+      this.log('[Hana] "보유계좌 조회" 링크 클릭 완료');
+    } catch (e) {
+      await frame.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a'));
+        const target = links.find(a => a.textContent.trim() === '보유계좌 조회');
+        if (target) {
+          target.click();
+        } else {
+          const hrefTarget = Array.from(document.querySelectorAll('a')).find(a => a.getAttribute('href')?.includes('wcdep700r16i'));
+          if (hrefTarget) hrefTarget.click();
+        }
+      });
+    }
+    await this.page.waitForTimeout(3000);
+
+    // 3. '전체계좌' 탭 클릭
+    try {
+      await frame.locator('a:has-text("전체계좌")').click({ timeout: 10000 });
+      this.log('[Hana] "전체계좌" 탭 클릭 완료');
+    } catch (e) {
+      await frame.evaluate(() => {
+        const tabs = Array.from(document.querySelectorAll('a'));
+        const target = tabs.find(a => a.textContent.trim() === '전체계좌');
+        if (target) target.click();
+      });
+    }
+    await this.page.waitForTimeout(3000);
+    this.log('[Hana] ✓ 보유계좌 조회 (전체계좌 탭) 페이지 로딩 및 진입 완료.');
+    return frame;
+  }
+
+  /**
+   * 원래의 거래내역조회 페이지로 복귀합니다.
+   */
+  async navigateToTransactionQueryPage() {
+    this.log('[Hana] 거래내역조회 페이지로 복귀합니다...');
+    let frame = this.page.frame({ name: 'hanaMainframe' }) || this._hanaFrame();
+    if (!frame) return;
+
+    await this._closeHanaPopups();
+
+    // GNB '조회' 클릭
+    try {
+      await frame.locator('[id="15000"]').click({ timeout: 5000 });
+    } catch (e) {
+      try {
+        await this.page.getByRole('link', { name: '조회' }).click({ timeout: 5000 });
+      } catch (err) {}
+    }
+    await this.page.waitForTimeout(1000);
+
+    // GNB '거래내역 조회' 클릭
+    try {
+      await frame.locator('a[href*="menuItemId=wcdep700r16i"]').first().click({ timeout: 5000 });
+      this.log('[Hana] "거래내역 조회" 링크 클릭 완료');
+    } catch (e) {
+      await frame.evaluate(() => {
+        const links = document.querySelectorAll('a, button, span');
+        for (const a of links) {
+          const txt = a.textContent.trim();
+          if ((txt === '거래내역 조회' || txt === '거래내역조회') && a.offsetParent !== null) {
+            a.click();
+            return;
+          }
+        }
+      });
+    }
+    await this.page.waitForTimeout(2000);
+    this.log('[Hana] ✓ 거래내역조회 페이지 복귀 완료.');
+  }
+
+  /**
+   * 보유계좌 조회 페이지의 전체 테이블을 스크래핑하여 모든 계좌의 추가 정보(예금주명, 예금종류, 신규일자, 약정금액 등)를 획득합니다.
+   * @param {object} frame 
+   * @returns {Promise<object>}
+   */
+  async scrapeAllAccountDetails(frame) {
+    this.log('[Hana] 보유계좌 목록 테이블 스크래핑 시작...');
+    const result = await frame.evaluate(() => {
+      const accountsMap = {};
+
+      const tables = Array.from(document.querySelectorAll('table'));
+      
+      for (const table of tables) {
+        const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim().replace(/\s+/g, ' '));
+        if (headers.length === 0) continue;
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
+          if (cells.length === 0) continue;
+
+          const rowData = {};
+          headers.forEach((header, idx) => {
+            if (cells[idx] !== undefined) {
+              rowData[header] = cells[idx];
+            }
+          });
+
+          let acctNoRaw = '';
+          let acctName = '';
+          let openDate = '';
+          let accountStatus = '활동';
+          let branchName = '';
+          let isLimitAccount = 'NO';
+          let payableAmount = '';
+          let contractAmount = '';
+
+          // 1. 예금/신탁 테이블
+          if (headers.includes('[별칭] 계좌명') && headers.includes('계좌번호')) {
+            acctName = rowData['[별칭] 계좌명'] || '';
+            acctNoRaw = rowData['계좌번호'] || '';
+            openDate = rowData['신규일'] || '';
+            
+            const allText = row.textContent || '';
+            if (allText.includes('거래중지')) {
+              accountStatus = '거래중지';
+            } else if (allText.includes('해지')) {
+              accountStatus = '해지';
+            }
+
+            // 지급가능잔액/출금가능잔액 컬럼 자동 검색 및 대입
+            const payableKey = headers.find(h => h.includes('지급가능') || h.includes('출금가능') || h.includes('지급 가능') || h.includes('출금 가능'));
+            if (payableKey) {
+              payableAmount = rowData[payableKey] || '';
+            }
+
+            // 약정금액/한도금액 컬럼 자동 검색 및 대입
+            const contractKey = headers.find(h => h.includes('약정금액') || h.includes('약정한도') || h.includes('한도금액') || h.includes('한도 제한') || h.includes('대출한도') || h.includes('약정 한도'));
+            if (contractKey) {
+              contractAmount = rowData[contractKey] || '';
+            }
+          }
+          // 2. 대출 테이블
+          else if (headers.includes('대출종류/계좌번호')) {
+            const firstCellText = rowData['대출종류/계좌번호'] || '';
+            const parts = firstCellText.split(/\s+/).map(p => p.trim()).filter(Boolean);
+            if (parts.length >= 2) {
+              acctName = parts[0];
+              acctNoRaw = parts[1];
+            } else {
+              acctNoRaw = firstCellText;
+            }
+            openDate = rowData['신규일'] || '';
+            contractAmount = rowData['약정한도'] || '';
+
+            const payableKey = headers.find(h => h.includes('지급가능') || h.includes('출금가능') || h.includes('지급 가능') || h.includes('출금 가능'));
+            if (payableKey) {
+              payableAmount = rowData[payableKey] || '';
+            }
+          }
+          // 3. 기타 일반적인 계좌 테이블
+          else {
+            const acctColIdx = headers.findIndex(h => h.includes('계좌번호') || h.includes('계좌 번호'));
+            if (acctColIdx !== -1) {
+              acctNoRaw = cells[acctColIdx];
+              
+              const nameColIdx = headers.findIndex(h => h.includes('계좌명') || h.includes('상품명') || h.includes('종류'));
+              if (nameColIdx !== -1) acctName = cells[nameColIdx];
+
+              const openColIdx = headers.findIndex(h => h.includes('신규일') || h.includes('개설일'));
+              if (openColIdx !== -1) openDate = cells[openColIdx];
+
+              const payableKey = headers.find(h => h.includes('지급가능') || h.includes('출금가능') || h.includes('지급 가능') || h.includes('출금 가능'));
+              if (payableKey && cells[headers.indexOf(payableKey)] !== undefined) {
+                payableAmount = cells[headers.indexOf(payableKey)];
+              }
+
+              const contractKey = headers.find(h => h.includes('약정금액') || h.includes('약정한도') || h.includes('한도금액') || h.includes('한도 제한') || h.includes('대출한도') || h.includes('약정 한도'));
+              if (contractKey && cells[headers.indexOf(contractKey)] !== undefined) {
+                contractAmount = cells[headers.indexOf(contractKey)];
+              }
+            }
+          }
+
+          if (acctNoRaw) {
+            const cleanAcctNo = acctNoRaw.split(/\s+/)[0].replace(/[^0-9-]/g, '').trim();
+            if (cleanAcctNo) {
+              // 줄바꿈 및 다중 공백 제거, 거래중지/해지 등의 부가 텍스트를 제거하여 순수 상품명 정제
+              let cleanAcctName = acctName ? acctName.replace(/\s+/g, ' ').trim() : 'checking';
+              cleanAcctName = cleanAcctName.replace(/거래중지/g, '').replace(/해지/g, '').trim();
+
+              if (cleanAcctName.includes('한도제한') || cleanAcctName.includes('한도 제한')) {
+                isLimitAccount = 'YES';
+              }
+
+              accountsMap[cleanAcctNo] = {
+                accountNumber: cleanAcctNo,
+                customerName: '', 
+                accountType: cleanAcctName,
+                openDate: openDate ? openDate.replace(/\s+/g, '').trim() : null,
+                metadata: {
+                  accountStatus,
+                  branchName,
+                  isLimitAccount,
+                  payableAmount: payableAmount ? payableAmount.replace(/\s+/g, '').trim() : '',
+                  contractAmount: contractAmount ? contractAmount.replace(/\s+/g, '').trim() : ''
+                }
+              };
+            }
+          }
+        }
+      }
+
+      return accountsMap;
+    });
+
+    this.log(`[Hana] 스크래핑 완료. 총 ${Object.keys(result).length}개 계좌 상세 정보 획득.`);
+    return result;
+  }
+
+  /**
+   * 단일 계좌 정보 조회용 호환성 래퍼 메서드
+   */
+  async getAccountAdditionalInfo(accountNumber) {
+    this.log(`[Hana] 단일 getAccountAdditionalInfo(${accountNumber}) 요청 수신.`);
+    try {
+      const frame = await this.navigateToAccountDetailsPage();
+      const detailsMap = await this.scrapeAllAccountDetails(frame);
+      await this.navigateToTransactionQueryPage();
+
+      const cleanNo = accountNumber.replace(/-/g, '');
+      const matchKey = Object.keys(detailsMap).find(k => k.replace(/-/g, '') === cleanNo);
+      return matchKey ? detailsMap[matchKey] : null;
+    } catch (e) {
+      this.error(`[Hana] 단일 getAccountAdditionalInfo 실패:`, e.message);
+      return null;
+    }
   }
 
   _sanitizeHanaFilenamePart(s) {

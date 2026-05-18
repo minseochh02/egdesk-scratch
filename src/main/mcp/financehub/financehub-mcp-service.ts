@@ -523,7 +523,7 @@ export class FinanceHubMCPService implements IMCPService {
 
           result = {
             totalAccounts: accounts.length,
-            accounts: accounts.map((acc) => ({
+            accounts: accounts.map((acc: any) => ({
               id: acc.id,
               bankId: acc.bankId,
               accountNumber: acc.accountNumber,
@@ -537,7 +537,15 @@ export class FinanceHubMCPService implements IMCPService {
               isActive: acc.isActive,
               lastSyncedAt: acc.lastSyncedAt,
               createdAt: acc.createdAt,
-              updatedAt: acc.updatedAt
+              updatedAt: acc.updatedAt,
+              metadata: (() => {
+                if (!acc.metadata) return null;
+                try {
+                  return typeof acc.metadata === 'string' ? JSON.parse(acc.metadata) : acc.metadata;
+                } catch (e) {
+                  return acc.metadata;
+                }
+              })()
             }))
           };
           break;
