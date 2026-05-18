@@ -1522,7 +1522,7 @@ export class FinanceHubScheduler extends EventEmitter {
         const groups = new Map<string, { transactions: any[], accountName: string }>();
         
         for (const tx of allTransactions) {
-          const rawCardNumber = tx.cardNumber || tx.metadata?.cardNumber || '';
+          const rawCardNumber = tx.cardNumber || tx['카드번호'] || tx['이용카드'] || tx.cardUsed || tx.metadata?.cardNumber || '';
           const cleanedNumber = rawCardNumber.replace(/[^\d]/g, '');
           const last6 = cleanedNumber.length >= 6 ? cleanedNumber.slice(-6) : cleanedNumber;
           

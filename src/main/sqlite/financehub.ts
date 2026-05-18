@@ -771,6 +771,11 @@ export class FinanceHubDbManager {
     if (bankId === 'woori' && normalized.length === 12 && normalized.startsWith('005')) {
       normalized = '1' + normalized;
     }
+
+    // 4. 카드 계좌번호 하이픈 보존 및 자동 복구 (16자리 카드 번호의 경우 XXXX-XXXX-XXXX-XXXX 포맷 적용)
+    if (bankId && bankId.includes('card') && normalized.length === 16) {
+      normalized = normalized.replace(/(\d{4})(\d{4})(\d{4})(\d{4})/, '$1-$2-$3-$4');
+    }
     
     return normalized;
   }
@@ -1078,48 +1083,152 @@ export class FinanceHubDbManager {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const updateStmt = this.db.prepare(`
+      UPDATE bank_transactions SET
+        transaction_time = ?,
+        transaction_datetime = ?,
+        description = ?,
+        description2 = ?,
+        updated_at = ?
+      WHERE id = ?
+    `);
+
     let inserted = 0;
     let skipped = 0;
+
+    // 중복 방지를 위해 삽입하려는 날짜들의 기존 거래 내역을 한 번에 조회합니다.
+    const dates = Array.from(new Set(transactions.map((t) => t.date)));
+    let existing: Array<{
+      id: string;
+      transaction_date: string;
+      transaction_time: string;
+      withdrawal: number;
+      deposit: number;
+      balance: number;
+      description: string;
+      description2: string;
+    }> = [];
+
+    if (dates.length > 0) {
+      const placeholders = dates.map(() => '?').join(', ');
+      existing = this.db.prepare(`
+        SELECT id, transaction_date, transaction_time, withdrawal, deposit, balance, description, description2
+        FROM bank_transactions
+        WHERE account_id = ? AND transaction_date IN (${placeholders})
+      `).all(accountId, ...dates) as any[];
+    }
 
     const insertMany = this.db.transaction((txns: typeof transactions) => {
       for (const tx of txns) {
         const withdrawal = Number(tx.withdrawal) || 0;
         const deposit = Number(tx.deposit) || 0;
         const balance = Number(tx.balance) || 0;
+        const time = tx.time || '00:00:00';
 
         const transactionDatetime = tx.transaction_datetime ||
           (tx.date && tx.time ? tx.date.replace(/-/g, '/') + ' ' + tx.time : tx.date.replace(/-/g, '/'));
 
-        const result = insertStmt.run(
-          randomUUID(),
-          accountId,
-          bankId,
-          tx.date,
-          tx.time || null,
-          transactionDatetime,
-          tx.accountNumber || null,
-          tx.accountName || null,
-          deposit,
-          withdrawal,
-          balance,
-          tx.branch || null,
-          tx.counterpartyAccount || null,
-          tx.counterparty || null,
-          tx.description || null,
-          tx.description2 || null,
-          tx.memo || null,
-          0, // is_manual
-          tx.category || null,
-          now,
-          now
-        );
+        // 이미 존재하는 내역 중 중복된 내역이 있는지 세밀하게 체크합니다.
+        let isDuplicate = false;
+        let existingMatch: typeof existing[number] | null = null;
 
-        if (result.changes > 0) {
-          inserted++;
+        for (const ext of existing) {
+          if (
+            ext.withdrawal === withdrawal &&
+            ext.deposit === deposit &&
+            ext.balance === balance &&
+            ext.transaction_date === tx.date
+          ) {
+            const extTime = ext.transaction_time || '00:00:00';
+            if (time === extTime) {
+              isDuplicate = true;
+              existingMatch = ext;
+              break;
+            }
+
+            // 한쪽은 초 단위가 ':00' (엑셀 등에서 생략됨)이고 시/분이 동일한 경우도 중복으로 판정
+            const partsA = time.split(':');
+            const partsB = extTime.split(':');
+            const hourMinMatch = partsA[0] === partsB[0] && partsA[1] === partsB[1];
+            const isSec00A = partsA[2] === '00';
+            const isSec00B = partsB[2] === '00';
+
+            if (hourMinMatch && (isSec00A || isSec00B)) {
+              isDuplicate = true;
+              existingMatch = ext;
+              break;
+            }
+          }
+        }
+
+        if (isDuplicate && existingMatch) {
+          const extTime = existingMatch.transaction_time || '00:00:00';
+          const isSec00Ext = extTime.endsWith(':00');
+          const isSec00New = time.endsWith(':00');
+
+          // 기존 내역은 초가 생략(':00')되어 있었는데, 새로 입력하는 데이터는 상세 초 단위 정보가 포함되어 있다면
+          // 기존 거래 정보에 상세 크롤링 정보(상세 시간 및 상세 메타 정보)를 덮어씌워 업그레이드합니다.
+          if (isSec00Ext && !isSec00New) {
+            updateStmt.run(
+              time,
+              transactionDatetime,
+              tx.description || null,
+              tx.description2 || null,
+              now,
+              existingMatch.id
+            );
+            inserted++;
+            // 메모리 내 기존 정보도 업데이트하여 다음 루프에서의 중복을 방지
+            existingMatch.transaction_time = time;
+            existingMatch.description = tx.description || '';
+            existingMatch.description2 = tx.description2 || '';
+          } else {
+            skipped++;
+            if (skipped <= 3) {
+              console.log(`[FinanceHub] Bank duplicate ignored: account=${accountId}, datetime=${transactionDatetime}, withdrawal=${withdrawal}, deposit=${deposit}`);
+            }
+          }
         } else {
-          skipped++;
-          if (skipped <= 3) {
-            console.log(`[FinanceHub] Bank duplicate detected: account=${accountId}, datetime=${transactionDatetime}, withdrawal=${withdrawal}, deposit=${deposit}`);
+          // 신규 입력 진행
+          const result = insertStmt.run(
+            randomUUID(),
+            accountId,
+            bankId,
+            tx.date,
+            tx.time || null,
+            transactionDatetime,
+            tx.accountNumber || null,
+            tx.accountName || null,
+            deposit,
+            withdrawal,
+            balance,
+            tx.branch || null,
+            tx.counterpartyAccount || null,
+            tx.counterparty || null,
+            tx.description || null,
+            tx.description2 || null,
+            tx.memo || null,
+            0, // is_manual
+            tx.category || null,
+            now,
+            now
+          );
+
+          if (result.changes > 0) {
+            inserted++;
+            // 같은 트랜잭션 내에서 들어오는 후속 중복 건을 체크할 수 있도록 메모리 리스트에도 추가해줍니다.
+            existing.push({
+              id: '', 
+              transaction_date: tx.date,
+              transaction_time: time,
+              withdrawal,
+              deposit,
+              balance,
+              description: tx.description || '',
+              description2: tx.description2 || '',
+            });
+          } else {
+            skipped++;
           }
         }
       }
@@ -1268,8 +1377,8 @@ export class FinanceHubDbManager {
           transaction_datetime: ct.approvalDatetime,
           type: ct.salesType || '',
           category: ct.category,
-          withdrawal: ct.amount,
-          deposit: 0,
+          withdrawal: ct.isCancelled ? 0 : ct.amount,
+          deposit: ct.isCancelled ? ct.amount : 0,
           description: ct.merchantName,
           memo: ct.memo,
           balance: 0,

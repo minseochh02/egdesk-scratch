@@ -567,6 +567,10 @@ class BCCardAutomator extends BaseCardAutomator {
    */
   async setSearchCriteria(startDate, endDate) {
     this.log('Setting search criteria...');
+    
+    // Ensure date formats are pure YYYYMMDD (without hyphens/symbols)
+    const cleanStart = String(startDate).replace(/[^0-9]/g, '');
+    const cleanEnd = String(endDate).replace(/[^0-9]/g, '');
 
     try {
       // Step 1: Click "기간 지정" (period specification) label
@@ -579,26 +583,66 @@ class BCCardAutomator extends BaseCardAutomator {
       }
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
-      // Step 2: Fill start date in #fromDate (format: YYYYMMDD)
-      this.log(`Setting start date: ${startDate}`);
+      // Step 2 & 3: Inject dates directly via page.evaluate to bypass jQuery Datepicker popups and premature auto-filtering
+      this.log(`Setting dates via JS Evaluation: ${cleanStart} ~ ${cleanEnd}`);
       try {
-        await this.page.fill(this.config.xpaths.fromDateInput.css, startDate);
-      } catch (e) {
-        this.log('CSS selector failed, trying XPath fallback...');
-        await this.page.locator(`xpath=${this.config.xpaths.fromDateInput.xpath}`).fill(startDate);
-      }
-      await this.page.waitForTimeout(this.config.delays.betweenActions);
+        await this.page.evaluate(({ start, end, fromCss, fromXpath, toCss, toXpath }) => {
+          const getElement = (css, xpath) => {
+            if (css) {
+              const el = document.querySelector(css);
+              if (el) return el;
+            }
+            if (xpath) {
+              const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+              if (result.singleNodeValue) return result.singleNodeValue;
+            }
+            return null;
+          };
 
-      // Step 3: Fill end date in #toDate (format: YYYYMMDD)
-      this.log(`Setting end date: ${endDate}`);
-      try {
-        await this.page.fill(this.config.xpaths.toDateInput.css, endDate);
-      } catch (e) {
-        this.log('CSS selector failed, trying XPath fallback...');
-        await this.page.locator(`xpath=${this.config.xpaths.toDateInput.xpath}`).fill(endDate);
-      }
-      await this.page.waitForTimeout(this.config.delays.betweenActions);
+          const fromEl = getElement(fromCss, fromXpath) || document.getElementById('fromDate');
+          const toEl = getElement(toCss, toXpath) || document.getElementById('toDate');
 
+          if (fromEl) {
+            fromEl.value = start;
+            fromEl.dispatchEvent(new Event('input', { bubbles: true }));
+            fromEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (toEl) {
+            toEl.value = end;
+            toEl.dispatchEvent(new Event('input', { bubbles: true }));
+            toEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, {
+          start: cleanStart,
+          end: cleanEnd,
+          fromCss: this.config.xpaths.fromDateInput.css,
+          fromXpath: this.config.xpaths.fromDateInput.xpath,
+          toCss: this.config.xpaths.toDateInput.css,
+          toXpath: this.config.xpaths.toDateInput.xpath
+        });
+        this.log('JS Date injection successful');
+      } catch (evalError) {
+        this.warn('JS Date injection failed, falling back to standard page.fill...', evalError.message);
+        
+        // Fallback Step 2: Fill start date in #fromDate
+        this.log(`[Fallback] Setting start date: ${cleanStart}`);
+        try {
+          await this.page.fill(this.config.xpaths.fromDateInput.css, cleanStart);
+        } catch (e) {
+          await this.page.locator(`xpath=${this.config.xpaths.fromDateInput.xpath}`).fill(cleanStart);
+        }
+        await this.page.waitForTimeout(100); // Micro-delay to avoid trigger racing
+
+        // Fallback Step 3: Fill end date in #toDate
+        this.log(`[Fallback] Setting end date: ${cleanEnd}`);
+        try {
+          await this.page.fill(this.config.xpaths.toDateInput.css, cleanEnd);
+        } catch (e) {
+          await this.page.locator(`xpath=${this.config.xpaths.toDateInput.xpath}`).fill(cleanEnd);
+        }
+      }
+      
+      await this.page.waitForTimeout(this.config.delays.betweenActions);
       this.log('Search criteria set');
     } catch (error) {
       this.error('Failed to set search criteria:', error.message);
@@ -762,7 +806,7 @@ class BCCardAutomator extends BaseCardAutomator {
         if (!row.join('').trim()) continue;
 
         // Skip total rows (합계)
-        const firstCell = row[0] ? String(row[0]).trim() : '';
+        const firstCell = row[0] ? String(row[0]).replace(/\s+/g, '') : '';
         if (firstCell === '합' || firstCell === '합계' || firstCell.includes('합계')) {
           this.log('Skipping total row');
           continue;
@@ -841,9 +885,12 @@ class BCCardAutomator extends BaseCardAutomator {
 
       this.log(`Parsed ${transactions.length} transactions`);
 
-      // Calculate summary
+      // Calculate summary in KRW
       const totalAmount = transactions.reduce((sum, t) => {
-        const amount = parseFloat(t.approvalAmount) || 0;
+        const isOverseas = t.usageType === '해외' || (t.foreignAmountKRW && parseFloat(t.foreignAmountKRW) > 0);
+        const amount = isOverseas
+          ? (parseFloat(t.foreignAmountKRW) || 0)
+          : (parseFloat(t.approvalAmount) || 0);
         return sum + amount;
       }, 0);
 
