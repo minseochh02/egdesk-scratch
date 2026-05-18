@@ -148,6 +148,28 @@ export async function runSqliteMigrations({
     console.error('⚠️ Migration 032 error:', migration032Error.message);
   }
 
+  try {
+    await runOnceMigration(financeHubDb, '033-drop-incorrect-card-dedup-index', async () => {
+      const { migrate033DropIncorrectCardDedupIndex } = await import(
+        './migrations/033-drop-incorrect-card-dedup-index'
+      );
+      migrate033DropIncorrectCardDedupIndex(financeHubDb);
+    });
+  } catch (migration033Error: any) {
+    console.error('⚠️ Migration 033 error:', migration033Error.message);
+  }
+
+  try {
+    await runOnceMigration(financeHubDb, '034-ensure-dropped-card-dedup-index', async () => {
+      const { migrate034EnsureDroppedCardDedupIndex } = await import(
+        './migrations/034-ensure-dropped-card-dedup-index'
+      );
+      migrate034EnsureDroppedCardDedupIndex(financeHubDb);
+    });
+  } catch (migration034Error: any) {
+    console.error('⚠️ Migration 034 error:', migration034Error.message);
+  }
+
   // =============================================
   // Migration 009: Add vector embeddings support
   // =============================================

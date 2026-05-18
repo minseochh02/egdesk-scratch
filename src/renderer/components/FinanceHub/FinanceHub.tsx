@@ -1176,7 +1176,7 @@ const FinanceHub: React.FC = () => {
         const transactionsByCard = new Map();
 
         transactionsData.forEach((tx: any) => {
-          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || 'unknown';
+          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || tx['카드번호'] || tx.metadata?.cardNumber || 'unknown';
           if (!transactionsByCard.has(txCardNumber)) {
             transactionsByCard.set(txCardNumber, []);
           }
@@ -1191,11 +1191,20 @@ const FinanceHub: React.FC = () => {
 
         // Import transactions for each card separately
         for (const [txCardNumber, cardTransactions] of transactionsByCard.entries()) {
-          const cardInfo = cardConnection?.cards?.find(c => c.cardNumber.includes(txCardNumber) || txCardNumber.includes(c.cardNumber));
+          const cardInfo = cardConnection?.cards?.find(c => {
+            const cleanC = c.cardNumber.replace(/[^\d]/g, '');
+            const cleanTx = txCardNumber.replace(/[^\d]/g, '');
+            const last6C = cleanC.slice(-6);
+            const last6Tx = cleanTx.slice(-6);
+            return last6C && last6Tx && last6C === last6Tx;
+          });
+
+          const realCardNumber = cardInfo ? cardInfo.cardNumber : txCardNumber;
+          const defaultName = cardCompanyId === 'shinhan-card' ? '신한카드' : cardCompanyId === 'bc-card' ? 'BC카드' : '하나카드';
 
           const accountData = {
-            accountNumber: txCardNumber,
-            accountName: cardInfo?.cardName || `신한카드 ${txCardNumber}`,
+            accountNumber: realCardNumber,
+            accountName: cardInfo?.cardName || `${defaultName} ${txCardNumber}`,
             customerName: cardConnection?.alias || '',
             balance: 0,
           };
@@ -1470,7 +1479,7 @@ const FinanceHub: React.FC = () => {
 
         const transactionsByCard = new Map<string, any[]>();
         transactionsData.forEach((tx: any) => {
-          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || 'unknown';
+          const txCardNumber = tx['이용카드'] || tx.cardUsed || tx.cardNumber || tx['카드번호'] || tx.metadata?.cardNumber || 'unknown';
           if (!transactionsByCard.has(txCardNumber)) {
             transactionsByCard.set(txCardNumber, []);
           }
@@ -1478,12 +1487,18 @@ const FinanceHub: React.FC = () => {
         });
 
         for (const [txCardNumber, cardTransactions] of transactionsByCard.entries()) {
-          const cardInfo = cardConnection?.cards?.find(
-            (c) => c.cardNumber.includes(txCardNumber) || txCardNumber.includes(c.cardNumber)
-          );
+          const cardInfo = cardConnection?.cards?.find(c => {
+            const cleanC = c.cardNumber.replace(/[^\d]/g, '');
+            const cleanTx = txCardNumber.replace(/[^\d]/g, '');
+            const last6C = cleanC.slice(-6);
+            const last6Tx = cleanTx.slice(-6);
+            return last6C && last6Tx && last6C === last6Tx;
+          });
+
+          const realCardNumber = cardInfo ? cardInfo.cardNumber : txCardNumber;
 
           const accountData = {
-            accountNumber: txCardNumber,
+            accountNumber: realCardNumber,
             accountName: cardInfo?.cardName || `BC카드 ${txCardNumber}`,
             customerName: cardConnection?.alias || '',
             balance: 0,

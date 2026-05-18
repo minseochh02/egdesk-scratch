@@ -118,10 +118,17 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
                      (typeof cancellationField === 'string' && cancellationField.includes('취소'));
 
   // Determine the amount to use
-  // For NH Card cancellations, use the 취소금액 field instead of 국내이용금액(원)
-  const finalAmount = hasCancellationAmount
-    ? parseInt(String(cancellationAmount).replace(/[^\d-]/g, '')) || 0
-    : amount;
+  // If there is a foreign KRW amount, use that (both positive and negative values supported)
+  // Otherwise, use NH cancellation amount if available, else standard amount
+  const foreignAmountVal = cardTx.foreignAmountKRW || cardTx['해외승인원화금액'] || (cardTx.metadata && cardTx.metadata.foreignAmountKRW) || 0;
+  const foreignAmount = parseInt(String(foreignAmountVal).replace(/[^\d-]/g, '')) || 0;
+
+  let finalAmount = amount;
+  if (Math.abs(foreignAmount) > 0) {
+    finalAmount = foreignAmount;
+  } else if (hasCancellationAmount) {
+    finalAmount = parseInt(String(cancellationAmount).replace(/[^\d-]/g, '')) || 0;
+  }
 
   // Cancelled transactions are refunds (deposits), normal transactions are withdrawals
   // Use absolute value to handle BC Card's negative amounts for cancellations
@@ -153,6 +160,7 @@ function transformCardTransaction(cardTx, cardAccountId, cardCompanyId) {
     transactionBank: cardTx.transactionBank,
     exchangeRate: cardTx.exchangeRate,
     foreignAmountKRW: cardTx.foreignAmountKRW,
+    foreignAmountUSD: Math.abs(foreignAmount) > 0 ? (parseFloat(String(amountValue).replace(/[^\d.-]/g, '')) || null) : null,
     // Shinhan Card specific fields
     userName: cardTx.userName || cardTx['이용자명'] || cardTx['사용자명'],  // NH Card uses '사용자명'
     userNumber: cardTx.userNumber || cardTx['이용자번호'],

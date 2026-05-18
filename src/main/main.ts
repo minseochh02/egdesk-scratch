@@ -1374,7 +1374,7 @@ const createWindow = async () => {
           // 1. Group transactions by card number
           const transactionsByCard = new Map<string, any[]>();
           transactionsData.forEach((tx: any) => {
-            const txCardNumber = tx.cardNumber || tx['카드번호'] || tx['이용카드'] || tx.cardUsed || 'MANUAL-IMPORT';
+            const txCardNumber = tx.cardNumber || tx['카드번호'] || tx['이용카드'] || tx.cardUsed || tx.metadata?.cardNumber || 'MANUAL-IMPORT';
             if (!transactionsByCard.has(txCardNumber)) {
               transactionsByCard.set(txCardNumber, []);
             }
