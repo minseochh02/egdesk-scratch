@@ -1039,7 +1039,7 @@ class NHBankAutomator extends BaseBankAutomator {
             }
             if (header.includes('잔액')) {
               data.metadata.accountBalance = value;
-              data.metadata.balance = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+              data.metadata.balance = parseInt(value.replace(/[^0-9-]/g, '')) || 0;
             }
             if (header.includes('예금주명')) {
               data.metadata.accountOwner = value;
@@ -1095,10 +1095,10 @@ class NHBankAutomator extends BaseBankAutomator {
               time: time,
               transaction_datetime: transactionDatetime,
               type: cells[5]?.textContent.trim() || '',  // 거래내용 -> 적요
-              withdrawal: cells[2]?.textContent.replace(/[^0-9]/g, '') || '0',
-              deposit: cells[3]?.textContent.replace(/[^0-9]/g, '') || '0',
+              withdrawal: cells[2]?.textContent.replace(/[^0-9-]/g, '') || '0',
+              deposit: cells[3]?.textContent.replace(/[^0-9-]/g, '') || '0',
               description: cells[6]?.textContent.trim() || '',  // 거래기록사항 -> 내용
-              balance: cells[4]?.textContent.replace(/[^0-9]/g, '') || '0',
+              balance: cells[4]?.textContent.replace(/[^0-9-]/g, '') || '0',
               branch: cells[7]?.textContent.trim() || '',
               // Store additional NH-specific fields that aren't used in Excel
               transactionNote: cells[6]?.textContent.trim() || '',
