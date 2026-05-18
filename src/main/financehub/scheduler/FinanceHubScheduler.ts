@@ -1878,10 +1878,15 @@ export class FinanceHubScheduler extends EventEmitter {
             const accountData = {
               accountNumber,
               accountName: account.accountName || '계좌',
-              customerName: loginUserName || '',
+              customerName: account.customerName || loginUserName || '',
               balance: result.metadata?.balance || account.balance || 0,
               availableBalance: result.metadata?.availableBalance || 0,
-              openDate: result.metadata?.openDate || '',
+              openDate: result.metadata?.openDate || account.openDate || '',
+              accountType: account.accountType || 'checking',
+              metadata: {
+                ...(account.metadata || {}),
+                ...(result.metadata || {})
+              }
             };
 
             const syncMetadata = {

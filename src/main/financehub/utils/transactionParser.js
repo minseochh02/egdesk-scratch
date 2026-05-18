@@ -319,7 +319,13 @@ function splitCombinedDateTime(raw, style) {
 }
 
 function normalizeAmountCell(raw) {
-  return parseInt(String(raw).replace(/[^0-9]/g, ''), 10) || 0;
+  if (raw === undefined || raw === null || raw === '') return 0;
+  if (typeof raw === 'number') return raw;
+  const str = String(raw).trim();
+  const isNegative = /^\s*\(.+\)\s*$/.test(str) || str.includes('-');
+  const digits = str.replace(/\D/g, '');
+  const amount = parseInt(digits, 10) || 0;
+  return isNegative ? -amount : amount;
 }
 
 function buildHeaderNormToColMap(headerRow) {
@@ -576,9 +582,9 @@ function parseTransactionExcel(filePath, ctx) {
       }
 
       if (hasData) {
-        if (tx.withdrawal) tx.withdrawal = parseInt(String(tx.withdrawal).replace(/[^0-9]/g, ''), 10) || 0;
-        if (tx.deposit) tx.deposit = parseInt(String(tx.deposit).replace(/[^0-9]/g, ''), 10) || 0;
-        if (tx.balance) tx.balance = parseInt(String(tx.balance).replace(/[^0-9]/g, ''), 10) || 0;
+        if (tx.withdrawal !== undefined) tx.withdrawal = normalizeAmountCell(tx.withdrawal);
+        if (tx.deposit !== undefined) tx.deposit = normalizeAmountCell(tx.deposit);
+        if (tx.balance !== undefined) tx.balance = normalizeAmountCell(tx.balance);
 
         transactions.push(tx);
       }
