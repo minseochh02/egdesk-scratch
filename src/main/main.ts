@@ -663,6 +663,37 @@ const createWindow = async () => {
           }
           
           const accounts = await automator.getAccounts();
+          
+          // [개선] 수집된 계좌 정보를 자동으로 SQLite 데이터베이스에 저장(upsert)하여
+          // 탭을 이동하거나 새로고침했을 때 정보가 사라지는 현상을 완벽히 방지합니다.
+          try {
+            const sqliteManager = getSQLiteManager();
+            const financeHubManager = sqliteManager.getFinanceHubManager();
+            if (accounts && accounts.length > 0) {
+              let userDisplayName = '사용자';
+              if (credentials && credentials.accountType === 'corporate') {
+                userDisplayName = credentials.branchName || '기업';
+              }
+              for (const acc of accounts) {
+                const accountBankId = acc.bankId || bankId;
+                financeHubManager.upsertAccount({
+                  bankId: accountBankId,
+                  accountNumber: acc.accountNumber,
+                  accountName: acc.accountName,
+                  customerName: acc.customerName || userDisplayName,
+                  balance: acc.balance || 0,
+                  availableBalance: acc.balance || 0,
+                  openDate: acc.openDate || '',
+                  accountType: acc.accountType || 'checking',
+                  metadata: acc.metadata || null
+                });
+              }
+              console.log(`[FINANCE-HUB] Automatically upserted ${accounts.length} accounts for ${bankId} to database.`);
+            }
+          } catch (dbErr) {
+            console.error('[FINANCE-HUB] Failed to automatically upsert accounts in SQLite:', dbErr);
+          }
+
           return { success: true, accounts };
         } catch (error) {
           console.error(`[FINANCE-HUB] Failed to get accounts for ${bankId}:`, error);
