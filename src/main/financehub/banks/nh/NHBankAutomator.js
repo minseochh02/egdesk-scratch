@@ -1343,59 +1343,166 @@ class NHBankAutomator extends BaseBankAutomator {
       // Wait for results
       await this.page.waitForTimeout(3000);
 
-      // Check for "더보기" (Load More) button and click it to load all transactions
-      let moreButtonExists = true;
-      let loadMoreClicks = 0;
-      
-      while (moreButtonExists && loadMoreClicks < 10) { // Safety limit of 10 clicks
+      // isCorporate 변수는 상단에 이미 선언되어 있으므로 그대로 사용합니다.
+      if (isCorporate) {
+        this.log('NH Corporate: 기업 뱅킹 세션 감지됨. 엑셀 다운로드를 시작합니다...');
+        
+        // 엑셀 다운로드 이벤트 대기 설정 (Hana, Woori 등과 동일한 방식)
+        const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 }).catch(() => null);
+
+        // 엑셀저장 버튼 클릭 시도 (nhbank.spec.js와 동일한 다양한 셀렉터 시도)
+        this.log('NH Corporate: 엑셀저장 버튼 클릭 중...');
         try {
-          // Check if the "더보기" button exists
-          const moreButtonArea = await this.page.$('#moreBtnArea');
-          if (moreButtonArea) {
-            // Check if the area is visible
-            const isVisible = await moreButtonArea.isVisible();
-            if (isVisible) {
-              this.log(`Found "더보기" button, clicking to load more transactions (click ${loadMoreClicks + 1})...`);
-              
-              // Click the "더보기" link
-              const moreButtonLink = await this.page.$('#moreBtnArea a[onclick*="lfInquiryPage"]');
-              if (moreButtonLink) {
-                await moreButtonLink.click();
-                loadMoreClicks++;
+          await this.page.locator('a:has-text("엑셀저장")').first().click({ timeout: 5000 });
+        } catch (e) {
+          try {
+            await this.page.locator('.ibz-btn:has-text("엑셀저장")').first().click({ timeout: 5000 });
+          } catch (e2) {
+            try {
+              await this.page.locator('button:has-text("엑셀저장")').first().click({ timeout: 5000 });
+            } catch (e3) {
+              this.warn('NH Corporate: 일반적인 셀렉터로 엑셀저장 버튼을 클릭할 수 없습니다.');
+            }
+          }
+        }
+
+        // 다운로드와 타임아웃 레이싱 (데이터 없음 팝업 처리 등 대기)
+        const downloadResult = await Promise.race([
+          downloadPromise,
+          this.page.waitForTimeout(5000).then(() => 'timeout')
+        ]);
+
+        if (downloadResult === 'timeout' || !downloadResult) {
+          this.log('NH Corporate: 5초 내에 다운로드 이벤트가 수신되지 않았습니다. 내역 없음 팝업을 확인합니다...');
+          const noDataMsg = await this.page.evaluate(() => {
+            const body = document.body.textContent || '';
+            return (
+              body.includes('저장할 데이터가 없습니다') ||
+              body.includes('조회결과가 없습니다') ||
+              body.includes('거래내역이 없습니다') ||
+              body.includes('조회 내역이 없습니다') ||
+              body.includes('조회된 데이터가 없습니다')
+            );
+          });
+
+          if (noDataMsg) {
+            this.log('NH Corporate: "조회 내역 없음" 확인됨 (정상 종료)');
+            try {
+              // 내역 없음 확인 팝업창 닫기 클릭
+              await this.page.locator('button:has-text("확인"), a:has-text("확인")').first().click({ timeout: 3000 }).catch(() => {});
+            } catch (e) {}
+            return [];
+          }
+          
+          throw new Error('NH Corporate: 엑셀 다운로드에 실패했거나 내역 없음 팝업을 감지할 수 없습니다.');
+        }
+
+        const download = downloadResult;
+        const suggestedFilename = download.suggestedFilename();
+        const ext = path.extname(suggestedFilename) || '.xls';
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const safeAcc = String(accountNumber || 'unknown').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
+        
+        // 일관된 파일 포맷 이름 생성
+        const finalName = `NHBank_${safeAcc}_${ts}${ext}`;
+        const finalPath = path.join(this.outputDir, finalName);
+        
+        this.log(`NH Corporate: 다운로드된 파일을 저장 경로로 이동 중: ${finalPath}`);
+        await download.saveAs(finalPath);
+
+        if (!fs.existsSync(finalPath)) {
+          throw new Error(`NH Corporate: 저장 경로에 파일이 존재하지 않습니다: ${finalPath}`);
+        }
+
+        this.log(`NH Corporate: 엑셀 파일이 성공적으로 저장되었습니다: ${finalPath}`);
+
+        // 전역 Excel 파서를 사용하여 다운로드된 엑셀 파일 파싱
+        let parsed;
+        try {
+          parsed = parseTransactionExcel(finalPath, this);
+        } catch (parseErr) {
+          this.error('NH Corporate: 엑셀 파싱 중 오류 발생:', parseErr.message);
+          throw parseErr;
+        }
+
+        // 파싱된 거래 데이터를 UI/DB 적재 규격에 맞게 변환
+        const extractedData = {
+          metadata: {
+            bankName: 'NH농협은행',
+            accountNumber,
+            sourceFile: finalName,
+            channel: 'biz',
+          },
+          summary: {
+            totalCount: parsed.transactions?.length ?? 0,
+          },
+          transactions: parsed.transactions || [],
+          headers: [],
+        };
+
+        return [{
+          status: 'downloaded',
+          filename: finalName,
+          path: finalPath,
+          extractedData: extractedData
+        }];
+      } else {
+        this.log('NH Personal: 개인 뱅킹 세션 감지됨. 기존 DOM 스크래핑 방식을 진행합니다...');
+        
+        // Check for "더보기" (Load More) button and click it to load all transactions
+        let moreButtonExists = true;
+        let loadMoreClicks = 0;
+        
+        while (moreButtonExists && loadMoreClicks < 10) { // Safety limit of 10 clicks
+          try {
+            // Check if the "더보기" button exists
+            const moreButtonArea = await this.page.$('#moreBtnArea');
+            if (moreButtonArea) {
+              // Check if the area is visible
+              const isVisible = await moreButtonArea.isVisible();
+              if (isVisible) {
+                this.log(`Found "더보기" button, clicking to load more transactions (click ${loadMoreClicks + 1})...`);
                 
-                // Wait for new transactions to load
-                await this.page.waitForTimeout(2000);
+                // Click the "더보기" link
+                const moreButtonLink = await this.page.$('#moreBtnArea a[onclick*="lfInquiryPage"]');
+                if (moreButtonLink) {
+                  await moreButtonLink.click();
+                  loadMoreClicks++;
+                  
+                  // Wait for new transactions to load
+                  await this.page.waitForTimeout(2000);
+                } else {
+                  moreButtonExists = false;
+                }
               } else {
                 moreButtonExists = false;
               }
             } else {
               moreButtonExists = false;
             }
-          } else {
+          } catch (error) {
+            this.log('No more "더보기" button found or error clicking:', error.message);
             moreButtonExists = false;
           }
-        } catch (error) {
-          this.log('No more "더보기" button found or error clicking:', error.message);
-          moreButtonExists = false;
         }
-      }
-      
-      if (loadMoreClicks > 0) {
-        this.log(`Clicked "더보기" button ${loadMoreClicks} times to load all transactions`);
-      }
+        
+        if (loadMoreClicks > 0) {
+          this.log(`Clicked "더보기" button ${loadMoreClicks} times to load all transactions`);
+        }
 
-      // Extract transactions using NH Bank specific parser
-      const extractedData = await this.extractNHTransactions();
-      
-      // Create Excel file
-      const excelPath = await createExcelFromData(this, extractedData);
-      
-      return [{
-        status: 'downloaded',
-        filename: path.basename(excelPath),
-        path: excelPath,
-        extractedData: extractedData
-      }];
+        // Extract transactions using NH Bank specific parser
+        const extractedData = await this.extractNHTransactions();
+        
+        // Create Excel file
+        const excelPath = await createExcelFromData(this, extractedData);
+        
+        return [{
+          status: 'downloaded',
+          filename: path.basename(excelPath),
+          path: excelPath,
+          extractedData: extractedData
+        }];
+      }
 
     } catch (error) {
       this.error('Error fetching transactions:', error.message);
