@@ -2942,6 +2942,31 @@ auth: {
       return () => ipcRenderer.removeListener('simple-recorder:update', subscription);
     },
   },
+
+  // ========================================================================
+  // REAL-TIME DB EVENT LISTENERS
+  // ========================================================================
+  /**
+   * AI Center (Neuron DB) 실시간 데이터 변경 리스너
+   */
+  onDbChanged: (callback: (data: { tableName: string; action: string; rowId: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('db:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('db:changed', listener);
+    };
+  },
+
+  /**
+   * FinanceHub 실시간 금융 데이터 변경 리스너
+   */
+  onFinanceHubChanged: (callback: (data: { tableName: string; action: string; rowId: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('financehub:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('financehub:changed', listener);
+    };
+  },
 };
 
 // ============================================================================

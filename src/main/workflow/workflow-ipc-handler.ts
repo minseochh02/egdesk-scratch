@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { getSQLiteManager } from '../sqlite/manager';
 import { RunStatus, ApprovalDecision } from '../sqlite/workflow-db';
+import { TasksCalendarService } from '../sqlite/tasks-calendar-service';
 
 export function registerWorkflowIPCHandlers(): void {
   // ── Workflow CRUD ────────────────────────────────────────────────────────
@@ -191,4 +192,47 @@ export function registerWorkflowIPCHandlers(): void {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to record decision' };
     }
   });
+
+  // ── Tasks & Company Calendar (이중 저장소) IPC 핸들러 ──────────────────────
+
+  // 1. 활성 실무 태스크 조회 (오늘 할 일 목록용)
+  ipcMain.handle('tasks:get-active', async (_event, role?: string) => {
+    try {
+      const data = TasksCalendarService.getInstance().getActiveTasks(role);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to get active tasks' };
+    }
+  });
+
+  // 2. 전사 공유 비즈니스 데드라인 조회 (상태 없음)
+  ipcMain.handle('calendar:get-events', async () => {
+    try {
+      const data = TasksCalendarService.getInstance().getCalendarEvents();
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to get calendar events' };
+    }
+  });
+
+  // 3. 실무 태스크 완료 처리 및 승인/반려 의사 결정 반영
+  ipcMain.handle('tasks:complete-task', async (
+    _event, 
+    taskId: string, 
+    isApproval: boolean, 
+    approveStatus: 'completed' | 'approved' | 'rejected'
+  ) => {
+    try {
+      TasksCalendarService.getInstance().updateTaskStatus(taskId, approveStatus);
+      
+      // 태스크의 상태 변이가 발생하였으므로, 알림 브로드캐스트가 유기적으로 작동하도록 유도
+      const { NotificationManager } = require('../notification/notification-manager');
+      await NotificationManager.getInstance().handleTaskEvent(taskId, `업무가 ${approveStatus} 상태로 변경되었습니다.`);
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to complete task' };
+    }
+  });
 }
+

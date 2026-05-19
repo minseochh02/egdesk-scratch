@@ -526,14 +526,19 @@
 }
 
 .markdown-editor-wrapper .w-md-editor-text-pre,
-.markdown-editor-wrapper .w-md-editor-text-input {
-  background-color: #1a1d23;
-  color: #e0e0e0;
+.markdown-editor-wrapper .w-md-editor-text-input,
+.markdown-editor-wrapper .w-md-editor-text-input textarea,
+.markdown-editor-wrapper .w-md-editor-text-pre span,
+.markdown-editor-wrapper .w-md-editor-text-pre code {
+  background-color: #1a1d23 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
 
-.markdown-editor-wrapper .w-md-editor-preview {
-  background-color: #1a1d23;
-  color: #e0e0e0;
+.markdown-editor-wrapper .w-md-editor-preview,
+.markdown-editor-wrapper .w-md-editor-preview * {
+  background-color: #1a1d23 !important;
+  color: #ffffff !important;
 }
 
 /* Responsive Design */
