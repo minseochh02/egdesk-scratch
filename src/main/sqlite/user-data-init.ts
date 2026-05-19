@@ -150,5 +150,5 @@ export function initializeUserDataDatabaseSchema(db: Database.Database): void {
       ON user_data_files(storage_type);
   `);
 
-  console.log('✅ User Data database schema initialized (including file storage)');
+  console.log('✅ User Data database schema initialized');
 }

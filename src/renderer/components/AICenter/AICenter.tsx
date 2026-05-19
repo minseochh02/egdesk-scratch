@@ -309,7 +309,7 @@ function WorkflowDetail({ workflow }: { workflow: WorkflowDef }) {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
-type ActiveTab = 'workflows' | 'actions' | 'sources';
+type ActiveTab = 'workflows' | 'actions' | 'sources' | 'tasks' | 'calendar';
 
 const FIXED_ORIGIN_LABELS: Record<string, string> = {
   userdata:        'User Data',
@@ -321,9 +321,54 @@ const GROUPED_ORIGINS = new Set(['businessidentity']);
 export function AICenter() {
   const { workflows, loading }                        = useWorkflows();
   const { sources, loading: sourcesLoading }          = useDataSources();
-  const [activeTab, setActiveTab]                     = useState<ActiveTab>('workflows');
+  const [activeTab, setActiveTab]                     = useState<ActiveTab>('tasks'); // 기본 오늘 할 일 탭 활성화
   const [selectedWorkflow, setSelected]               = useState<WorkflowDef | null>(null);
   const [statusFilter, setStatusFilter]               = useState<WorkflowDef['status'] | 'all'>('all');
+
+  // [이중 저장소] 1. Tasks 및 Company Calendar 데이터를 담을 상태 선언
+  const [activeTasks, setActiveTasks]                 = useState<any[]>([]);
+  const [calendarEvents, setCalendarEvents]             = useState<any[]>([]);
+  const [tasksLoading, setTasksLoading]               = useState<boolean>(false);
+  const [calendarLoading, setCalendarLoading]         = useState<boolean>(false);
+
+  // [이중 저장소] 2. Tasks Fetcher
+  const fetchActiveTasks = async () => {
+    setTasksLoading(true);
+    try {
+      const res = await (window as any).electron.invoke('tasks:get-active');
+      if (res && res.success) {
+        setActiveTasks(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active tasks:', err);
+    } finally {
+      setTasksLoading(false);
+    }
+  };
+
+  // [이중 저장소] 3. Calendar Fetcher
+  const fetchCalendarEvents = async () => {
+    setCalendarLoading(true);
+    try {
+      const res = await (window as any).electron.invoke('calendar:get-events');
+      if (res && res.success) {
+        setCalendarEvents(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch calendar events:', err);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  // 탭 기동 시 데이터 자동 Fetch
+  React.useEffect(() => {
+    if (activeTab === 'tasks') {
+      fetchActiveTasks();
+    } else if (activeTab === 'calendar') {
+      fetchCalendarEvents();
+    }
+  }, [activeTab]);
 
   const displayGroups = useMemo(() => {
     const map = new Map<string, { title: string; items: DataSource[] }>();
@@ -371,6 +416,24 @@ export function AICenter() {
       {/* ── Toolbar ── */}
       <div className="aic-toolbar">
         <div className="aic-tabs">
+          <button
+            className={`aic-tab ${activeTab === 'tasks' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tasks')}
+          >
+            📋 Tasks
+            {activeTasks.length > 0 && (
+              <span className="aic-tab-badge active-tasks-badge">{activeTasks.length}</span>
+            )}
+          </button>
+          <button
+            className={`aic-tab ${activeTab === 'calendar' ? 'active' : ''}`}
+            onClick={() => setActiveTab('calendar')}
+          >
+            📅 Calendar
+            {calendarEvents.length > 0 && (
+              <span className="aic-tab-badge calendar-badge">{calendarEvents.length}</span>
+            )}
+          </button>
           <button
             className={`aic-tab ${activeTab === 'workflows' ? 'active' : ''}`}
             onClick={() => setActiveTab('workflows')}
@@ -423,6 +486,114 @@ export function AICenter() {
 
       {/* ── Body ── */}
       <div className="aic-body">
+        {/* ── Tasks 탭 패널 (엔진 실행의 단일 진실) ── */}
+        {activeTab === 'tasks' && (
+          <div className="aic-tasks-panel">
+            <div className="aic-panel-header-desc">
+              <h3>📋 실무자 오늘 업무 이력 (Tasks DB — 실행의 단일 진실)</h3>
+              <p>엔진이 읽고 쓰는 유일한 실행 데이터입니다. dependsOn 해소 및 승인 격상/반려 롤백 제어가 이 테이블 기준으로 작동합니다.</p>
+            </div>
+            {tasksLoading ? (
+              <div className="aic-sources-loading"><div className="aic-sources-spinner" /></div>
+            ) : activeTasks.length === 0 ? (
+              <div className="aic-empty">오늘 대기 중이거나 처리할 업무가 없습니다. 평화롭습니다! 😊</div>
+            ) : (
+              <div className="aic-tasks-grid-list">
+                {activeTasks.map(task => (
+                  <div key={task.id} className={`aic-task-item-card task-type-${task.task_type}`}>
+                    <div className="aic-task-card-header">
+                      <span className={`aic-task-type-indicator badge-${task.task_type}`}>
+                        {task.task_type === 'approval' ? '◈ 결재 승인' : '✔ 실무 수행'}
+                      </span>
+                      <span className="aic-task-time">{task.created_at}</span>
+                    </div>
+                    <div className="aic-task-card-body">
+                      <h4>{task.title}</h4>
+                      <div className="aic-task-meta-row">
+                        <span className="aic-task-role-tag">담당 역할: <strong>{task.role}</strong></span>
+                        <span className="aic-task-run-tag">Run ID: <small className="mono">{task.run_id.slice(0, 8)}...</small></span>
+                      </div>
+                    </div>
+                    <div className="aic-task-card-actions-row">
+                      {task.task_type === 'approval' ? (
+                        <>
+                          <button
+                            className="aic-task-btn btn-approve"
+                            onClick={async () => {
+                              const res = await (window as any).electron.invoke('task:approve', { taskId: task.id, runId: task.run_id });
+                              if (res) fetchActiveTasks();
+                            }}
+                          >
+                            승인 (Approve)
+                          </button>
+                          <button
+                            className="aic-task-btn btn-reject"
+                            onClick={async () => {
+                              const res = await (window as any).electron.invoke('task:reject', { taskId: task.id, runId: task.run_id });
+                              if (res) fetchActiveTasks();
+                            }}
+                          >
+                            반려 (Reject)
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="aic-task-btn btn-complete"
+                          onClick={async () => {
+                            const res = await (window as any).electron.invoke('task:complete', { taskId: task.id, runId: task.run_id });
+                            if (res) fetchActiveTasks();
+                          }}
+                        >
+                          완료 보고 (Complete)
+                        </button>
+                      )}
+                    </div>
+
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Company Calendar 탭 패널 (인간용 데드라인 뷰 — 상태 없음) ── */}
+        {activeTab === 'calendar' && (
+          <div className="aic-calendar-panel">
+            <div className="aic-panel-header-desc">
+              <h3>📅 전사 공유 비즈니스 데드라인 (Company Calendar — 인간용 뷰)</h3>
+              <p>전사 공유 마일스톤과 데드라인을 시각화합니다. 상태(status) 필드가 없으며 엔진이 물리 처리에 읽지 않는 안전한 전사적 뷰입니다.</p>
+            </div>
+            {calendarLoading ? (
+              <div className="aic-sources-loading"><div className="aic-sources-spinner" /></div>
+            ) : calendarEvents.length === 0 ? (
+              <div className="aic-empty">등록된 회사 데드라인 및 공유 일정이 없습니다.</div>
+            ) : (
+              <div className="aic-calendar-timeline-flow">
+                {calendarEvents.map(evt => (
+                  <div key={evt.id} className="aic-cal-timeline-item">
+                    <div className="aic-cal-timeline-date">
+                      <span className="cal-icon">📅</span>
+                      <strong>{evt.date}</strong>
+                    </div>
+                    <div className="aic-cal-timeline-card">
+                      <h4>{evt.title}</h4>
+                      {evt.description && <p className="cal-desc">{evt.description}</p>}
+                      <div className="aic-cal-timeline-footer">
+                        {evt.assignee_role && (
+                          <span className="cal-role">역할 참조: <strong>{evt.assignee_role}</strong></span>
+                        )}
+                        {evt.run_id && (
+                          <span className="cal-run">Run: <small className="mono">{evt.run_id.slice(0, 8)}</small></span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'workflows' && (
           <>
             <div className="aic-workflow-list">

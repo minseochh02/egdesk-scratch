@@ -407,6 +407,15 @@ export class SQLiteManager {
     return this.userDataDb!;
   }
 
+  /**
+   * Get the Neuron database instance (ai-system.db / AI Center DB)
+   */
+  public getNeuronDatabase(): Database.Database {
+    this.ensureInitialized();
+    return this.neuronDb!;
+  }
+
+
   public getActivityManager(): SQLiteActivityManager {
     this.ensureInitialized();
     if (!this.activityManager) {
