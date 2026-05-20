@@ -22,7 +22,8 @@ import {
   faExclamationTriangle,
   faSpinner,
   faTrash,
-  faFileInvoice
+  faFileInvoice,
+  faCog
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hooks
@@ -57,6 +58,21 @@ import {
   yearMonthKey,
 } from './bcCardRangeSyncDates';
 import { GOOGLE_OAUTH_SCOPES_STRING } from '../../constants/googleScopes';
+
+const normalizeAccForComparison = (bankId: string | null, accNum: string): string => {
+  if (!accNum) return '';
+  let normalized = accNum.replace(/[-\s*]/g, '');
+  if (bankId === 'kookmin' && normalized.length === 14 && normalized.startsWith('246')) {
+    normalized = normalized.slice(3);
+  }
+  if (bankId === 'woori' && normalized.length === 12 && normalized.startsWith('005')) {
+    normalized = '1' + normalized;
+  }
+  if (bankId && bankId.includes('card') && normalized.length === 16) {
+    normalized = normalized.replace(/(\d{4})(\d{4})(\d{4})(\d{4})/, '$1-$2-$3-$4');
+  }
+  return normalized;
+};
 
 // Sub-components
 import TransactionsPage from './TransactionsPage';
@@ -140,6 +156,17 @@ const FinanceHub: React.FC = () => {
   const [showPromissorySyncOptions, setShowPromissorySyncOptions] = useState<string | null>(null);
   const [isSyncingPromissory, setIsSyncingPromissory] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
+
+  // Account Limit Manual Input Modal state
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [selectedLimitAccount, setSelectedLimitAccount] = useState<{
+    bankId: string;
+    accountNumber: string;
+    isLimitAccount: string;
+    payableAmount: string;
+    contractAmount: string;
+  } | null>(null);
+  const [limitModalLoading, setLimitModalLoading] = useState(false);
 
   // Card-related state
   const [connectedCards, setConnectedCards] = useState<ConnectedCard[]>([]);
@@ -1340,7 +1367,10 @@ const FinanceHub: React.FC = () => {
 
     // Filter active accounts
     const activeAccounts = connection.accounts.filter(acc => {
-      const fullAccount = accounts.find(a => a.accountNumber === acc.accountNumber);
+      const fullAccount = accounts.find(a => 
+        normalizeAccForComparison(bankId, a.accountNumber) === 
+        normalizeAccForComparison(bankId, acc.accountNumber)
+      );
       return fullAccount?.isActive !== false;
     });
 
@@ -2872,6 +2902,44 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const handleOpenLimitModal = (bankId: string, accountNumber: string, fullAccount: any) => {
+    setSelectedLimitAccount({
+      bankId,
+      accountNumber,
+      isLimitAccount: fullAccount?.metadata?.isLimitAccount || 'NO',
+      payableAmount: fullAccount?.metadata?.payableAmount || '',
+      contractAmount: fullAccount?.metadata?.contractAmount || '',
+    });
+    setShowLimitModal(true);
+  };
+
+  const handleSaveAccountLimit = async () => {
+    if (!selectedLimitAccount) return;
+    setLimitModalLoading(true);
+    try {
+      const { bankId, accountNumber, isLimitAccount, payableAmount, contractAmount } = selectedLimitAccount;
+      const result = await window.electron.financeHubDb.updateAccountMetadata(bankId, accountNumber, {
+        isLimitAccount,
+        payableAmount,
+        contractAmount,
+      });
+
+      if (result.success && result.data === true) {
+        alert('계좌 한도 설정이 저장되었습니다.');
+        setShowLimitModal(false);
+        setSelectedLimitAccount(null);
+        await loadBanksAndAccounts(); // UI 갱신
+      } else {
+        alert(`저장 중 오류가 발생했습니다: ${result.error || '해당 계좌를 찾을 수 없습니다.'}`);
+      }
+    } catch (error) {
+      console.error('[FinanceHub] Save account limit error:', error);
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setLimitModalLoading(false);
+    }
+  };
+
   const handleCloseModal = () => {
     if (corporateNativeCertSessionActive && selectedBank?.id) {
       void window.electron.financeHub.corporateCertCancel(selectedBank.id);
@@ -3254,6 +3322,9 @@ const FinanceHub: React.FC = () => {
                                     {account.balance > 0 && <span className="finance-hub__account-balance">{formatCurrency(account.balance)}</span>}
                                     {isActive ? (
                                       <>
+                                        <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleOpenLimitModal(connection.bankId, account.accountNumber, fullAccount)} title="계좌 한도 설정">
+                                          <FontAwesomeIcon icon={faCog} />
+                                        </button>
                                         <div className="finance-hub__sync-dropdown">
                                           <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => setShowSyncOptions(showSyncOptions === account.accountNumber ? null : account.accountNumber)} disabled={isSyncing !== null || connection.status === 'pending'} title="동기화">
                                             <FontAwesomeIcon icon={isSyncing === account.accountNumber ? faSpinner : faSync} spin={isSyncing === account.accountNumber} />
@@ -4101,6 +4172,95 @@ const FinanceHub: React.FC = () => {
             </div>
             <div className="finance-hub__modal-body">
               <SchedulerSettings />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Limit Setting Modal */}
+      {showLimitModal && selectedLimitAccount && (
+        <div className="finance-hub__modal-overlay" onClick={() => { if (!limitModalLoading) setShowLimitModal(false); }}>
+          <div className="finance-hub__modal finance-hub__modal--limit" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+            <div className="finance-hub__modal-header">
+              <h2><FontAwesomeIcon icon={faCog} /> 계좌 한도 설정</h2>
+              <button className="finance-hub__modal-close" onClick={() => setShowLimitModal(false)} disabled={limitModalLoading}>✕</button>
+            </div>
+            <div className="finance-hub__modal-body" style={{ padding: '20px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: '1.5' }}>
+                계좌 번호: <strong>{formatAccountNumber(selectedLimitAccount.accountNumber)}</strong><br />
+                인터넷 뱅킹 자동 스크랩이 불가능한 은행의 한도 및 약정 정보를 수동으로 설정할 수 있습니다.
+              </p>
+              
+              <div className="finance-hub__form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>한도계좌 여부</label>
+                <select
+                  value={selectedLimitAccount.isLimitAccount}
+                  onChange={(e) => setSelectedLimitAccount(prev => prev ? { ...prev, isLimitAccount: e.target.value } : null)}
+                  className="finance-hub__input"
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-input)', color: 'var(--text-normal)' }}
+                >
+                  <option value="NO">일반 계좌</option>
+                  <option value="YES">한도 계좌</option>
+                </select>
+              </div>
+
+              <div className="finance-hub__form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>지급가능금액 (1일 이체한도 등)</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="예: 1,000,000"
+                    value={selectedLimitAccount.payableAmount ? Number(selectedLimitAccount.payableAmount.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setSelectedLimitAccount(prev => prev ? { ...prev, payableAmount: val } : null);
+                    }}
+                    className="finance-hub__input"
+                    style={{ width: '100%', padding: '10px 30px 10px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-input)', color: 'var(--text-normal)' }}
+                  />
+                  <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-muted)' }}>원</span>
+                </div>
+              </div>
+
+              <div className="finance-hub__form-group" style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>약정금액 (대출 약정액 등)</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="예: 50,000,000"
+                    value={selectedLimitAccount.contractAmount ? Number(selectedLimitAccount.contractAmount.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setSelectedLimitAccount(prev => prev ? { ...prev, contractAmount: val } : null);
+                    }}
+                    className="finance-hub__input"
+                    style={{ width: '100%', padding: '10px 30px 10px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-input)', color: 'var(--text-normal)' }}
+                  />
+                  <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-muted)' }}>원</span>
+                </div>
+              </div>
+
+              <div className="finance-hub__modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="finance-hub__btn finance-hub__btn--secondary"
+                  onClick={() => setShowLimitModal(false)}
+                  disabled={limitModalLoading}
+                  style={{ padding: '10px 16px', borderRadius: '6px' }}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="finance-hub__btn finance-hub__btn--primary"
+                  onClick={handleSaveAccountLimit}
+                  disabled={limitModalLoading}
+                  style={{ padding: '10px 20px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {limitModalLoading ? <FontAwesomeIcon icon={faSpinner} spin /> : null}
+                  저장
+                </button>
+              </div>
             </div>
           </div>
         </div>

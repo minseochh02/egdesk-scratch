@@ -949,6 +949,16 @@ export class SQLiteManager {
       }
     });
 
+    // Update account metadata
+    ipcMain.handle('sqlite-financehub-update-account-metadata', async (event, bankId, accountNumber, metadata) => {
+      try {
+        const result = this.getFinanceHubManager().updateAccountMetadata(bankId, accountNumber, metadata);
+        return { success: true, data: result };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    });
+
     // Delete account (for debugging malformed data)
     ipcMain.handle('sqlite-financehub-delete-account', async (event, bankId, accountNumber) => {
       try {

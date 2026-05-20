@@ -872,11 +872,24 @@ export class FinanceHubDbManager {
   }
 
   getAccountByNumber(bankId: string, accountNumber: string): BankAccount | null {
+    if (!accountNumber) return null;
     const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
+    const rawAcc = accountNumber.trim();
+    const rawAccWithoutSpace = rawAcc.replace(/\s/g, '');
+    
+    // DB의 account_number에 하이픈이 포함되어 있거나 공백이 포함된 경우, 혹은 완전히 정규화된 경우 모두 매칭되도록 함
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts WHERE bank_id = ? AND account_number = ?
+      SELECT * FROM accounts 
+      WHERE bank_id = ? 
+        AND (
+          account_number = ? 
+          OR account_number = ? 
+          OR account_number = ?
+          OR REPLACE(account_number, '-', '') = ?
+        )
+      LIMIT 1
     `);
-    const row = stmt.get(bankId, normalizedAcc) as any;
+    const row = stmt.get(bankId, normalizedAcc, rawAcc, rawAccWithoutSpace, normalizedAcc) as any;
     if (!row) return null;
     return this.mapRowToAccount(row);
   }
@@ -927,32 +940,63 @@ export class FinanceHubDbManager {
   }
 
   updateAccountStatus(bankId: string, accountNumber: string, isActive: boolean): boolean {
-    const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
+    const existing = this.getAccountByNumber(bankId, accountNumber);
+    if (!existing) return false;
+    
     const stmt = this.db.prepare(`
       UPDATE accounts 
       SET is_active = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE bank_id = ? AND account_number = ?
+      WHERE id = ?
     `);
     
-    const result = stmt.run(isActive ? 1 : 0, bankId, normalizedAcc);
+    const result = stmt.run(isActive ? 1 : 0, existing.id);
+    return result.changes > 0;
+  }
+
+  /**
+   * 계좌 메타데이터 수동 업데이트 및 기존 메타데이터와 병합
+   */
+  updateAccountMetadata(bankId: string, accountNumber: string, metadata: Record<string, any>): boolean {
+    // getAccountByNumber에 원래 계좌번호(하이픈 포함 가능)를 전달하여 유연하게 찾도록 함
+    const existing = this.getAccountByNumber(bankId, accountNumber);
+    if (!existing) {
+      return false;
+    }
+    
+    // 기존 메타데이터가 존재할 경우 새 메타데이터와 병합
+    const mergedMetadata = {
+      ...(existing.metadata || {}),
+      ...metadata
+    };
+    
+    // 기본키(ID)를 기준으로 정확히 매칭하여 업데이트 수행
+    const stmt = this.db.prepare(`
+      UPDATE accounts 
+      SET metadata = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    const result = stmt.run(JSON.stringify(mergedMetadata), existing.id);
     return result.changes > 0;
   }
 
   deleteAccount(bankId: string, accountNumber: string): boolean {
-    const normalizedAcc = this.normalizeAccountNumber(bankId, accountNumber);
-    // Start a transaction to ensure data integrity
+    const existing = this.getAccountByNumber(bankId, accountNumber);
+    if (!existing) return false;
+    
+    // 데이터 무결성 보장을 위해 트랜잭션 사용
     const deleteTransactions = this.db.prepare(`
       DELETE FROM transactions 
-      WHERE account_id IN (SELECT id FROM accounts WHERE bank_id = ? AND account_number = ?)
+      WHERE account_id = ?
     `);
     
     const deleteAccount = this.db.prepare(`
-      DELETE FROM accounts WHERE bank_id = ? AND account_number = ?
+      DELETE FROM accounts WHERE id = ?
     `);
     
     const transaction = this.db.transaction(() => {
-      deleteTransactions.run(bankId, normalizedAcc);
-      const result = deleteAccount.run(bankId, normalizedAcc);
+      deleteTransactions.run(existing.id);
+      const result = deleteAccount.run(existing.id);
       return result.changes > 0;
     });
     
