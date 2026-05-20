@@ -304,16 +304,21 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   _parseIbkAccountFromOption(text, value) {
     const t = (text || '').trim();
-    const dashed = t.match(/(\d{3})-(\d{2,6})-(\d{4,7})/);
-    if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
-    const digits = t.replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 16) {
-      if (digits.length === 13) return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
-      return digits;
+    const match = t.match(/([\d-]{10,22})/);
+    if (match) {
+      const parsed = match[1];
+      if (parsed.includes('-')) return parsed;
+      const digits = parsed.replace(/\D/g, '');
+      if (digits.length >= 10 && digits.length <= 16) {
+        if (digits.length === 13) return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+        if (digits.length === 14) return `${digits.slice(0, 3)}-${digits.slice(3, 9)}-${digits.slice(9, 11)}-${digits.slice(11)}`;
+        return digits;
+      }
     }
     const v = String(value || '').replace(/\D/g, '');
     if (v.length >= 10 && v.length <= 16) {
       if (v.length === 13) return `${v.slice(0, 6)}-${v.slice(6, 8)}-${v.slice(8)}`;
+      if (v.length === 14) return `${v.slice(0, 3)}-${v.slice(3, 9)}-${v.slice(9, 11)}-${v.slice(11)}`;
       return v;
     }
     return null;

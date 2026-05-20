@@ -840,6 +840,7 @@ interface FinanceHubDbAPI {
   getRecentSyncOperations: (limit?: number) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   upsertAccount: (accountData: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   importTransactions: (bankId: string, accountData: any, transactionsData: any[], syncMetadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateAccountMetadata: (bankId: string, accountNumber: string, metadata: any) => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
 /**

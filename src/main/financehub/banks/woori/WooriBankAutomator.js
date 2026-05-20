@@ -810,7 +810,7 @@ class WooriBankAutomator extends BaseBankAutomator {
 
     const accounts = [];
     const seen = new Set();
-    const re = /(\d{3}-\d{2,6}-\d{4,7})/;
+    const re = /(\d{3,4}-\d{2,6}-\d{3,7})/;
     for (const row of raw) {
       const m = row.text.match(re);
       if (!m) continue;

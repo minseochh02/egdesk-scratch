@@ -1,0 +1,506 @@
+[
+  {
+    "id": "ad5d2ced-f11d-4504-ac1e-96400ddeee45",
+    "bank_id": "bc-card",
+    "account_number": "4052-0308-9140-8904",
+    "account_name": "BLISS.7 SKYPASS",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.057Z"
+  },
+  {
+    "id": "407bf4ae-ee4e-4810-a1a8-28afe739415b",
+    "bank_id": "bc-card",
+    "account_number": "4140-0308-9212-0940",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.064Z"
+  },
+  {
+    "id": "3b2d5232-0c54-4d1e-8882-9810a1aa7bbe",
+    "bank_id": "bc-card",
+    "account_number": "4140-0313-8977-9974",
+    "account_name": "지식경제부 HI R&D(RCMS) 연구비카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.083Z"
+  },
+  {
+    "id": "48524c6d-f4cc-4ab6-997d-2dfcc4af9fe2",
+    "bank_id": "bc-card",
+    "account_number": "4140-0320-8326-6987",
+    "account_name": "IBK 컴퍼니카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.037Z"
+  },
+  {
+    "id": "5bff0d88-ed8a-46d0-8020-1da721feb3c3",
+    "bank_id": "bc-card",
+    "account_number": "4171-0315-1939-2906",
+    "account_name": "동반성공카드(신용)_포인트형",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.041Z"
+  },
+  {
+    "id": "bcdf0508-53ca-4d10-b635-bd6da2d2cdad",
+    "bank_id": "bc-card",
+    "account_number": "5290-1429-8403-8909",
+    "account_name": "Fighting Korea+",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.053Z"
+  },
+  {
+    "id": "3eefb53f-3724-4009-b811-f8ec3383f21e",
+    "bank_id": "bc-card",
+    "account_number": "5298-0380-6830-6901",
+    "account_name": "동반성공카드(체크)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:05.997Z"
+  },
+  {
+    "id": "d1059e48-38d9-4a95-afab-e8c35019d959",
+    "bank_id": "bc-card",
+    "account_number": "6210-0680-4764-3911",
+    "account_name": "동반성공카드(체크)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.001Z"
+  },
+  {
+    "id": "5530fcea-a1a5-4f1d-8a69-6fef5b413fed",
+    "bank_id": "bc-card",
+    "account_number": "9430-0307-8825-8901",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.075Z"
+  },
+  {
+    "id": "4042cb4c-bfe1-4532-a1d4-eef800fc2dc6",
+    "bank_id": "bc-card",
+    "account_number": "9430-0308-1734-2916",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.009Z"
+  },
+  {
+    "id": "35480a4d-63d8-45c9-a84a-3325fa5cc0cf",
+    "bank_id": "bc-card",
+    "account_number": "9430-0308-1734-2924",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.005Z"
+  },
+  {
+    "id": "c62f412f-df34-4427-b316-3a970890bdac",
+    "bank_id": "bc-card",
+    "account_number": "9430-0308-7795-6910",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.071Z"
+  },
+  {
+    "id": "a20683f7-b2af-4f1d-be18-8968e96e46f6",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0025-2931",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.079Z"
+  },
+  {
+    "id": "57361425-f1ce-4a9e-8526-8cac528e09bd",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0026-2948",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.068Z"
+  },
+  {
+    "id": "23d5fe2e-4ad1-41ed-9f00-82612621c773",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0027-2921",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.049Z"
+  },
+  {
+    "id": "7c6efba9-0180-4d20-8700-83a2c62e02ed",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0121-9947",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.021Z"
+  },
+  {
+    "id": "fc218f1a-1c00-4f89-a2dd-2c3b0e4a1457",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0123-9937",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.013Z"
+  },
+  {
+    "id": "fac46a08-bcc9-4780-8b02-315ca37ebf90",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0125-9950",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.061Z"
+  },
+  {
+    "id": "58f14b3f-5180-42aa-a2cb-665dbd91ff7b",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0126-9967",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.029Z"
+  },
+  {
+    "id": "3cc92b27-4209-4f1d-8303-43023b53129d",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-0130-6975",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.033Z"
+  },
+  {
+    "id": "afb42513-2433-4f1e-a450-902755f9525f",
+    "bank_id": "bc-card",
+    "account_number": "9430-0309-4716-6953",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.025Z"
+  },
+  {
+    "id": "11c5965c-8968-4d15-abc5-710869f2b2e6",
+    "bank_id": "bc-card",
+    "account_number": "9430-0310-7913-3951",
+    "account_name": "후불 하이패스카드 법인 (기업은행)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.086Z"
+  },
+  {
+    "id": "4c286184-f234-4816-bf90-11a03acbafea",
+    "bank_id": "bc-card",
+    "account_number": "9430-0312-0017-5905",
+    "account_name": "fine-biz클래식카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.017Z"
+  },
+  {
+    "id": "55b196a1-1613-43c3-83b3-b5ac667e58a8",
+    "bank_id": "bc-card",
+    "account_number": "9430-0318-2889-4903",
+    "account_name": "참! 좋은 Biz카드_비제휴(신용)",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.089Z"
+  },
+  {
+    "id": "c0962837-4e00-4c26-869d-1c65b1baf61a",
+    "bank_id": "bc-card",
+    "account_number": "9430-0329-1298-0996",
+    "account_name": "i biz Taxbill 세무지원형 포인트카드",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.045Z"
+  },
+  {
+    "id": "aadb5239-23af-4f92-8a93-43086c3bcd78",
+    "bank_id": "bc-card",
+    "account_number": "9500-6100-0096-0049",
+    "account_name": "카드의정석 기업 Plus+ Point_Woori",
+    "balance": 0,
+    "created_at": "2026-03-05T06:23:06.093Z"
+  },
+  {
+    "id": "0ecc9a6f-3854-4e63-a2c3-200e78aabc3a",
+    "bank_id": "bc-card",
+    "account_number": "B929954",
+    "account_name": "BC카드 B929954",
+    "balance": 0,
+    "created_at": "2026-05-18T05:03:36.262Z"
+  },
+  {
+    "id": "5263b31a-af96-4c5a-8d44-3c52b48889f2",
+    "bank_id": "bc-card",
+    "account_number": "M048918",
+    "account_name": "BC카드 M048918",
+    "balance": 0,
+    "created_at": "2026-05-18T05:03:36.064Z"
+  },
+  {
+    "id": "80adbf90-4733-4eeb-9ee3-8d1f11ecac72",
+    "bank_id": "hana",
+    "account_number": "213-890060-03204",
+    "account_name": "기업자유예금",
+    "balance": 0,
+    "created_at": "2026-04-09T06:44:16.559Z"
+  },
+  {
+    "id": "a092a388-6288-4e7c-9aaf-c86688c5fc07",
+    "bank_id": "hana",
+    "account_number": "24389002237204",
+    "account_name": "기업자유예금 [거래중지]",
+    "balance": 0,
+    "created_at": "2026-04-09T06:44:16.572Z"
+  },
+  {
+    "id": "b682b61b-4f39-4e2a-9b52-a06957a283ec",
+    "bank_id": "hana",
+    "account_number": "40291001311704",
+    "account_name": "수퍼플러스 [거래중지]",
+    "balance": 0,
+    "created_at": "2026-04-09T06:44:16.579Z"
+  },
+  {
+    "id": "99a59ce3-847f-4a10-aebb-4e018605a8ea",
+    "bank_id": "hana",
+    "account_number": "49791000404704",
+    "account_name": "기업자유예금",
+    "balance": 0,
+    "created_at": "2026-04-09T06:44:16.566Z"
+  },
+  {
+    "id": "3ceb9180-69bc-43b4-94c8-ab8f1f9f57cd",
+    "bank_id": "ibk",
+    "account_number": "30606356801061",
+    "account_name": "사무실 시제",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.141Z"
+  },
+  {
+    "id": "93ccb573-24d3-4746-bef0-d954d2d1b85c",
+    "bank_id": "ibk",
+    "account_number": "30606356804011",
+    "account_name": "통합통장",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.148Z"
+  },
+  {
+    "id": "83a4d03c-a546-4cb2-937e-c8badb045a08",
+    "bank_id": "ibk",
+    "account_number": "30606356804036",
+    "account_name": "마이너스통장",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.156Z"
+  },
+  {
+    "id": "e33f24c0-3aed-474f-aa7c-6d6aca73c050",
+    "bank_id": "ibk",
+    "account_number": "30606356804051",
+    "account_name": "기술보증자본금",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.164Z"
+  },
+  {
+    "id": "edfd8f86-4ef8-458d-a7b6-abd051d3ed6e",
+    "bank_id": "ibk",
+    "account_number": "30606356804075",
+    "account_name": "자본금증자통장",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.171Z"
+  },
+  {
+    "id": "41f887ec-62b2-4ad0-bb9c-422a0d2b3db3",
+    "bank_id": "ibk",
+    "account_number": "30606356894002",
+    "account_name": "직원퇴직연금",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.178Z"
+  },
+  {
+    "id": "6da900af-2199-4524-9054-21ff39cba6f2",
+    "bank_id": "ibk",
+    "account_number": "92200156801025",
+    "account_name": "보증부대출전용통장(기보)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.184Z"
+  },
+  {
+    "id": "a4c63c11-18eb-4ecc-a68b-614dce33a02e",
+    "bank_id": "ibk",
+    "account_number": "92200156804014",
+    "account_name": "기업자유예금",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.191Z"
+  },
+  {
+    "id": "d57daafb-1467-4ac7-96be-288597167889",
+    "bank_id": "ibk",
+    "account_number": "92200156804039",
+    "account_name": "기업자유예금",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.198Z"
+  },
+  {
+    "id": "aa1e93bf-3f9b-4948-affa-416766b22805",
+    "bank_id": "ibk",
+    "account_number": "92200156815111",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.205Z"
+  },
+  {
+    "id": "928fb5c0-b184-4a73-bd9b-baf5e7608028",
+    "bank_id": "ibk",
+    "account_number": "92200156815112",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.212Z"
+  },
+  {
+    "id": "150b96df-b9f5-4b05-aaea-2e3e0ad874d7",
+    "bank_id": "ibk",
+    "account_number": "92200156815113",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.219Z"
+  },
+  {
+    "id": "b2fd0e64-d20b-4c10-b887-2257d57268b5",
+    "bank_id": "ibk",
+    "account_number": "92200156815114",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.225Z"
+  },
+  {
+    "id": "d8c338e7-8ada-4cc4-94fc-ba74dded4985",
+    "bank_id": "ibk",
+    "account_number": "92200156815115",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.231Z"
+  },
+  {
+    "id": "66a55cb2-e30a-4556-8e47-a6d8927256b2",
+    "bank_id": "ibk",
+    "account_number": "92200156815116",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.237Z"
+  },
+  {
+    "id": "5fdc5744-2d2a-435e-a832-09a65d8299f1",
+    "bank_id": "ibk",
+    "account_number": "92200156815117",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.244Z"
+  },
+  {
+    "id": "ad570c72-1c68-4008-ac4b-b0d8ca145489",
+    "bank_id": "ibk",
+    "account_number": "92200156815118",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.251Z"
+  },
+  {
+    "id": "8dafc72a-f420-464c-ba35-fdd0ceba37f8",
+    "bank_id": "ibk",
+    "account_number": "92200156815119",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.257Z"
+  },
+  {
+    "id": "e4c4bf55-ac1e-43ac-bf79-22406f170c50",
+    "bank_id": "ibk",
+    "account_number": "92200156815120",
+    "account_name": "상호부금(IBK늘푸른하늘통장(기업)-..",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.263Z"
+  },
+  {
+    "id": "eda2810f-af41-4165-99e9-e968a739457a",
+    "bank_id": "ibk",
+    "account_number": "92200156815121",
+    "account_name": "주거래기업부금(정기적립식)",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.269Z"
+  },
+  {
+    "id": "cbaf04b3-80d8-447b-a6dd-90681fca7f30",
+    "bank_id": "ibk",
+    "account_number": "92200156875011",
+    "account_name": "특정금전신탁(초단기형(MMT))",
+    "balance": 0,
+    "created_at": "2026-05-18T06:59:51.276Z"
+  },
+  {
+    "id": "35ff1d94-f09e-416a-9424-2434ee7094a0",
+    "bank_id": "kookmin",
+    "account_number": "1000000000000",
+    "account_name": "예금",
+    "balance": 0,
+    "created_at": "2026-05-20T04:19:07.588Z"
+  },
+  {
+    "id": "125d09d7-2557-49ac-ac54-f01fb57fa8c8",
+    "bank_id": "kookmin",
+    "account_number": "2018168693",
+    "account_name": "국민은행 계좌",
+    "balance": 0,
+    "created_at": "2026-05-20T04:19:07.595Z"
+  },
+  {
+    "id": "b1226e9f-605f-4194-b70b-d1533392b709",
+    "bank_id": "kookmin",
+    "account_number": "601-04-165951",
+    "account_name": ":KB기업종합통장-보통예금",
+    "balance": 0,
+    "created_at": "2026-04-09T06:27:14.656Z"
+  },
+  {
+    "id": "843bfd85-d580-4c79-9cd0-8809281b64bf",
+    "bank_id": "nh",
+    "account_number": "301-0056-2119-31",
+    "account_name": "NH 계좌",
+    "balance": 0,
+    "created_at": "2026-04-30T09:01:48.024Z"
+  },
+  {
+    "id": "7b5b6099-31d7-4e26-99b6-4ca8db4154c2",
+    "bank_id": "shinhan",
+    "account_number": "140-007-770451",
+    "account_name": "((주)원컨덕터)",
+    "balance": 0,
+    "created_at": "2026-04-09T06:13:10.281Z"
+  },
+  {
+    "id": "9ae346c0-e342-4abe-a2bb-bfbc7199a872",
+    "bank_id": "shinhan",
+    "account_number": "140-009-229010",
+    "account_name": "((주)원컨덕터)",
+    "balance": 0,
+    "created_at": "2026-04-09T06:13:10.289Z"
+  },
+  {
+    "id": "835ed390-2382-47d0-8bad-e815d3aee15b",
+    "bank_id": "woori",
+    "account_number": "040327921220",
+    "account_name": "정기적금",
+    "balance": 0,
+    "created_at": "2026-04-09T07:42:53.433Z"
+  },
+  {
+    "id": "1d6b2ef5-9427-48a2-ab97-f4883901a997",
+    "bank_id": "woori",
+    "account_number": "040926736672",
+    "account_name": "정기적금",
+    "balance": 0,
+    "created_at": "2026-04-09T07:42:53.445Z"
+  },
+  {
+    "id": "ac11133d-a229-44d6-921b-7423ae8aeee3",
+    "bank_id": "woori",
+    "account_number": "1005803257683",
+    "account_name": "우리큐브(CUBE)기업자유예금",
+    "balance": 0,
+    "created_at": "2026-04-09T07:42:53.409Z"
+  },
+  {
+    "id": "08a9665f-c9e8-46ed-bdcb-ca2d3cc8698f",
+    "bank_id": "woori",
+    "account_number": "1005901173004",
+    "account_name": "기업자유예금",
+    "balance": 0,
+    "created_at": "2026-04-22T02:53:33.072Z"
+  }
+]

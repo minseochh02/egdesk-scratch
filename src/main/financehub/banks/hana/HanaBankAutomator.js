@@ -388,11 +388,12 @@ class HanaBankAutomator extends BaseBankAutomator {
    */
   _parseAccountNumberFromOptionText(text) {
     const t = (text || '').trim();
-    const dashed = t.match(/(\d{3})-(\d{2,6})-(\d{4,7})/);
+    const dashed = t.match(/(\d{3,4})-(\d{2,6})-(\d{3,7})/);
     if (dashed) return `${dashed[1]}-${dashed[2]}-${dashed[3]}`;
     const digits = t.replace(/\D/g, '');
     if (digits.length >= 10 && digits.length <= 16) {
       if (digits.length === 13) return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+      if (digits.length === 14) return `${digits.slice(0, 3)}-${digits.slice(3, 9)}-${digits.slice(9)}`;
       return digits;
     }
     return null;
