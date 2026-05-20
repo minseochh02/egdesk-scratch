@@ -1228,7 +1228,7 @@ class NHBankAutomator extends BaseBankAutomator {
                 break;
               } else {
                 // Fallback to label match
-                await dropdown.selectOption({ label: new RegExp(accountNumber) }).catch(() => {});
+                await dropdown.selectOption({ label: accountNumber }).catch(() => {});
                 await this.page.waitForTimeout(1000);
                 break;
               }
