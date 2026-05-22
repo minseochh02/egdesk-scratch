@@ -170,10 +170,11 @@ const BANK_EXCEL_PARSE_SCHEMA = {
     datetimeStyle: 'hanaSpace',
     columns: [
       { keys: ['거래일시'], role: '_dt' },
-      { keys: ['거래내용'], role: 'description' },
-      { keys: ['입금'], role: 'deposit' },
+      { keys: ['납입일자'], role: 'date' },
+      { keys: ['거래내용', '비고'], role: 'description' },
+      { keys: ['입금', '납입금액'], role: 'deposit' },
       { keys: ['출금'], role: 'withdrawal' },
-      { keys: ['거래후잔액'], role: 'balance' },
+      { keys: ['거래후잔액', '잔액'], role: 'balance' },
       { keys: ['상대계좌번호'], role: 'counterpartyAccount' },
       { keys: ['상대계좌예금주명'], role: 'counterparty' },
       { keys: ['거래구분'], role: 'jeogyo2', jeogyoKey: '거래구분' },
@@ -423,6 +424,58 @@ function parseTransactionRowWithSchema(row, headerNormToCol, schema) {
   return tx;
 }
 
+function extractMetadataFromRows(rows, headerRowIndex) {
+  const metadata = {
+    accountNumber: '',
+    accountName: '',
+    customerName: '',
+    balance: 0,
+    availableBalance: 0,
+    openDate: '',
+  };
+
+  const limit = headerRowIndex >= 0 ? headerRowIndex : Math.min(10, rows.length);
+  for (let i = 0; i < limit; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    for (const cell of row) {
+      if (cell == null || cell === '') continue;
+      const text = String(cell);
+
+      // 계좌번호 추출
+      const accMatch = text.match(/계좌번호\s*[:：]\s*([0-9\-]+)/);
+      if (accMatch && !metadata.accountNumber) {
+        metadata.accountNumber = accMatch[1].trim();
+      }
+
+      // 계좌명 추출 (계좌번호 바로 뒤 괄호 안의 문자열)
+      const accNameMatch = text.match(/계좌번호\s*[:：]\s*[0-9\-]+\s*\(([^)]+)\)/);
+      if (accNameMatch && !metadata.accountName) {
+        metadata.accountName = accNameMatch[1].trim();
+      }
+
+      // 예금주명 추출
+      const holderMatch = text.match(/예금주명\s*[:：]\s*([^\s\n]+)/);
+      if (holderMatch && !metadata.customerName) {
+        metadata.customerName = holderMatch[1].trim();
+      }
+
+      // 현재잔액 추출
+      const balanceMatch = text.match(/(?:현재잔액|계좌잔액)\s*[:：]\s*([0-9,]+)/);
+      if (balanceMatch && !metadata.balance) {
+        metadata.balance = parseInt(balanceMatch[1].replace(/,/g, ''), 10) || 0;
+      }
+
+      // 출금가능금액 추출
+      const availMatch = text.match(/출금가능금액\s*[:：]\s*([0-9,]+)/);
+      if (availMatch && !metadata.availableBalance) {
+        metadata.availableBalance = parseInt(availMatch[1].replace(/,/g, ''), 10) || 0;
+      }
+    }
+  }
+  return metadata;
+}
+
 function parseWithBankSchema(rows, headerRowIndex, schema, ctx) {
   const headerNormToCol = buildHeaderNormToColMap(rows[headerRowIndex]);
   const transactions = [];
@@ -444,7 +497,8 @@ function parseWithBankSchema(rows, headerRowIndex, schema, ctx) {
   if (ctx && ctx.log) {
     ctx.log(`Parsed ${transactions.length} transactions from Excel (bank schema, header row ${headerRowIndex + 1})`);
   }
-  return { transactions, metadata: {}, summary: {} };
+  const metadata = extractMetadataFromRows(rows, headerRowIndex);
+  return { transactions, metadata, summary: {} };
 }
 
 function resolveHeaderRowForParsing(rows, ctx, schema) {
@@ -592,9 +646,10 @@ function parseTransactionExcel(filePath, ctx) {
 
     if (ctx && ctx.log) ctx.log(`Parsed ${transactions.length} transactions from Excel`);
 
+    const metadata = extractMetadataFromRows(rows, headerRowIndex);
     return {
       transactions,
-      metadata: {},
+      metadata,
       summary: {},
     };
   } catch (error) {
