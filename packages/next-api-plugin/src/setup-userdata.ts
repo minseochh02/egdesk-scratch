@@ -53,7 +53,7 @@ export async function discoverTables(
       })
     });
 
-    const listResult = await listResponse.json().catch(() => null);
+    const listResult = (await listResponse.json().catch(() => null)) as any;
 
     if (listResult && typeof listResult === 'object' && listResult.success === false) {
       throw new Error(listResult.error || 'Failed to list tables');
@@ -98,7 +98,7 @@ export async function discoverTables(
         });
 
         if (schemaResponse.ok) {
-          const schemaResult = await schemaResponse.json();
+          const schemaResult = (await schemaResponse.json()) as any;
           const schemaContent = schemaResult.result?.content?.[0]?.text;
           const schemaData = schemaContent ? JSON.parse(schemaContent) : null;
 

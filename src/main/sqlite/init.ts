@@ -221,19 +221,33 @@ export async function initializeSQLiteDatabase(): Promise<DatabaseInitResult> {
     const neuronDb = new Database(neuronDbPath);
 
     // =============================================
-    // Configure FULL durability for user_data.db
+    // Configure HIGH PERFORMANCE & WAL mode for all SQLite databases
     // =============================================
-    // Use DELETE journal mode (default) with FULL synchronous for simplicity and reliability
-    // This ensures all transaction commits are immediately written to disk via fsync
-    // and prevents data loss on app shutdown with uncommitted changes
-    userDataDb.pragma('journal_mode=DELETE');
-    userDataDb.pragma('synchronous=FULL');
-    userDataDb.pragma('foreign_keys=ON');
-    console.log('✅ User Data DB configured with DELETE journal mode, synchronous=FULL, and foreign_keys=ON for immediate durability and referential integrity');
+    const configureHighPerformanceDb = (db: Database.Database, name: string) => {
+      try {
+        db.pragma('journal_mode=WAL');
+        db.pragma('synchronous=NORMAL');
+        db.pragma('foreign_keys=ON');
+        console.log(`✅ [DB Performance Tuning] ${name} configured with WAL journal mode, synchronous=NORMAL, and foreign_keys=ON`);
+      } catch (err: any) {
+        console.error(`⚠️ Failed to configure performance for ${name}:`, err.message);
+      }
+    };
 
-    // Configure neuron.db
-    neuronDb.pragma('journal_mode=WAL');
-    neuronDb.pragma('foreign_keys=ON');
+    configureHighPerformanceDb(conversationsDb, 'Conversations DB');
+    configureHighPerformanceDb(taskDb, 'Task DB');
+    configureHighPerformanceDb(wordpressDb, 'WordPress DB');
+    configureHighPerformanceDb(activityDb, 'Activity DB');
+    configureHighPerformanceDb(cloudmcpDb, 'CloudMCP DB');
+    configureHighPerformanceDb(financeHubDb, 'FinanceHub DB');
+    configureHighPerformanceDb(schedulerDb, 'Scheduler DB');
+    configureHighPerformanceDb(userDataDb, 'User Data DB');
+    configureHighPerformanceDb(neuronDb, 'Neuron DB');
+    if (syncDb && typeof syncDb.pragma === 'function') {
+      configureHighPerformanceDb(syncDb, 'Sync DB');
+    }
+
+    // Configure neuron.db schema
     initializeNeuronSchema(neuronDb);
     console.log('✅ Neuron DB initialized');
 

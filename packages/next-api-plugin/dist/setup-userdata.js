@@ -66,7 +66,7 @@ async function discoverTables(egdeskUrl = 'http://localhost:8080', apiKey) {
                 arguments: {}
             })
         });
-        const listResult = await listResponse.json().catch(() => null);
+        const listResult = (await listResponse.json().catch(() => null));
         if (listResult && typeof listResult === 'object' && listResult.success === false) {
             throw new Error(listResult.error || 'Failed to list tables');
         }
@@ -100,7 +100,7 @@ async function discoverTables(egdeskUrl = 'http://localhost:8080', apiKey) {
                     })
                 });
                 if (schemaResponse.ok) {
-                    const schemaResult = await schemaResponse.json();
+                    const schemaResult = (await schemaResponse.json());
                     const schemaContent = schemaResult.result?.content?.[0]?.text;
                     const schemaData = schemaContent ? JSON.parse(schemaContent) : null;
                     tablesWithColumns.push({

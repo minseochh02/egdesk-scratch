@@ -1885,6 +1885,22 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+      allowedOrigins: [
+        'localhost:3000',
+        '127.0.0.1:3000',
+        '*.loca.lt',
+        '*.ngrok.io',
+        '*.ngrok-free.app',
+        '*.trycloudflare.com',
+        '*.gitpod.io',
+        '*.tryhook.io',
+        '*.localto.net'
+      ]
+    }
+  }
 };
 
 console.log('🔍 DEBUG next.config.js: isDevelopment =', isDevelopment);
@@ -1894,7 +1910,7 @@ console.log('🔍 DEBUG next.config.js: assetPrefix =', nextConfig.assetPrefix);
 export default nextConfig;
 `;
       await fs.promises.writeFile(configPath, this.normalizeLineEndings(newConfig), 'utf8');
-      console.log(`✅ Created next.config.js with dynamic basePath (disabled in dev mode)`);
+      console.log(`✅ Created next.config.js with dynamic basePath (disabled in dev mode) and allowedOrigins`);
       return;
     }
 
@@ -1905,14 +1921,16 @@ export default nextConfig;
     const hasBasePath = content.includes('EGDESK_BASE_PATH') && content.includes("NODE_ENV === 'development'");
 
     // Check if config already has typescript/eslint settings
-    const hasTypeScriptConfig = content.includes('typescript:') || content.includes('typescript :');
-    const hasEslintConfig = content.includes('eslint:') || content.includes('eslint :');
     const hasIgnoreBuildErrors = content.includes('ignoreBuildErrors');
     const hasIgnoreDuringBuilds = content.includes('ignoreDuringBuilds');
 
+    // Check if allowedOrigins already exist
+    const hasAllowedOrigins = content.includes('allowedOrigins') && content.includes('loca.lt');
+    const hasExperimental = content.includes('experimental:') || content.includes('experimental :');
+
     // If everything is already configured, skip
-    if (hasBasePath && hasIgnoreBuildErrors && hasIgnoreDuringBuilds) {
-      console.log('✓ next.config already configured for dynamic basePath and error skipping');
+    if (hasBasePath && hasIgnoreBuildErrors && hasIgnoreDuringBuilds && hasAllowedOrigins) {
+      console.log('✓ next.config already configured for dynamic basePath, error skipping, and allowedOrigins');
       return;
     }
 
@@ -1968,8 +1986,38 @@ export default nextConfig;
   },`;
       }
 
+      // Add experimental.serverActions.allowedOrigins if not present
+      if (!hasAllowedOrigins) {
+        if (hasExperimental) {
+          const hasServerActions = content.includes('serverActions:') || content.includes('serverActions :');
+          if (hasServerActions) {
+            content = content.replace(/(serverActions\s*:\s*\{)/, `$1\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net'],`);
+          } else {
+            content = content.replace(/(experimental\s*:\s*\{)/, `$1\n    serverActions: {\n      bodySizeLimit: '10mb',\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net']\n    },`);
+          }
+        } else {
+          injection += `
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+      allowedOrigins: [
+        'localhost:3000',
+        '127.0.0.1:3000',
+        '*.loca.lt',
+        '*.ngrok.io',
+        '*.ngrok-free.app',
+        '*.trycloudflare.com',
+        '*.gitpod.io',
+        '*.tryhook.io',
+        '*.localto.net'
+      ]
+    }
+  },`;
+        }
+      }
+
       // Only inject if we have something to add
-      if (injection) {
+      if (injection || !hasAllowedOrigins) {
         content = content.slice(0, insertPoint) + injection + content.slice(insertPoint);
 
         // Add logging after the config object (only if basePath was added)
@@ -1983,7 +2031,7 @@ export default nextConfig;
         }
 
         await fs.promises.writeFile(configPath, this.normalizeLineEndings(content), 'utf8');
-        console.log(`✅ Configured ${path.basename(configPath)} with TypeScript/ESLint error skipping`);
+        console.log(`✅ Configured ${path.basename(configPath)} with allowedOrigins and TypeScript/ESLint error skipping`);
       } else {
         console.log('✓ next.config already has all required configuration');
       }

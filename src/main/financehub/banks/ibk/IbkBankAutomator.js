@@ -421,6 +421,15 @@ class IbkBankAutomator extends BaseBankAutomator {
       if (!accountNumber) {
         accountNumber = `value:${String(row.value).slice(0, 48)}`;
       }
+      
+      // 퇴직연금 계좌 배제 필터 (블랙리스트)
+      // 1) 계좌 번호에 '-94-' (기업은행 퇴직연금 대역)가 포함되거나
+      // 2) 텍스트 명칭에 '퇴직연금' 키워드가 들어있는 경우 제외
+      if (accountNumber && (accountNumber.includes('-94-') || row.text.includes('퇴직연금'))) {
+        this.log(`[IBK] 퇴직연금 계좌 감지 및 수집 제외 처리: ${accountNumber} (${row.text})`);
+        continue;
+      }
+
       const key =
         accountNumber.startsWith('value:') ? `${accountNumber}:${row.index}` : accountNumber.replace(/-/g, '');
       if (seen.has(key)) continue;
@@ -1863,13 +1872,13 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
       if (!frame) {
         this.error('IBK: mainframe not found');
-        return [];
+        throw new Error('IBK: mainframe을 찾을 수 없습니다.');
       }
 
       const { scope, id: acctSelectId } = await this._findIbkAccountSelect();
       if (!acctSelectId || !scope) {
         this.error('IBK: account <select> not found');
-        return [];
+        throw new Error('IBK: account <select> 요소를 찾을 수 없습니다.');
       }
       const idEsc = String(acctSelectId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       const acctSelect = scope.locator(`[id="${idEsc}"]`);
@@ -1892,7 +1901,8 @@ class IbkBankAutomator extends BaseBankAutomator {
       );
       const pickIdx = matchIdx >= 0 ? matchIdx : 0;
       await acctSelect.selectOption({ index: pickIdx });
-      await this.page.waitForTimeout(800);
+      // 계좌 선택 후 화면 리셋 및 폼 안정화를 위해 대기 시간 증가
+      await this.page.waitForTimeout(1500);
 
       const d = (startDate || '').replace(/\D/g, '');
       let yy;
@@ -1908,6 +1918,22 @@ class IbkBankAutomator extends BaseBankAutomator {
         yy = String(threeMonthsAgo.getFullYear());
         mm = String(threeMonthsAgo.getMonth() + 1).padStart(2, '0');
         dd = '01';
+      }
+
+      // 종료일 파싱 추가
+      const ed = (endDate || '').replace(/\D/g, '');
+      let ey;
+      let em;
+      let edd;
+      if (ed.length >= 8) {
+        ey = ed.slice(0, 4);
+        em = ed.slice(4, 6);
+        edd = ed.slice(6, 8);
+      } else {
+        const now = new Date();
+        ey = String(now.getFullYear());
+        em = String(now.getMonth() + 1).padStart(2, '0');
+        edd = String(now.getDate()).padStart(2, '0');
       }
 
       const yesterday = new Date();
@@ -1955,9 +1981,13 @@ class IbkBankAutomator extends BaseBankAutomator {
       };
 
       try {
+        // suffix '1'이 붙은 필드 셋과 붙지 않은 필드 셋에 모두 시작일과 종료일 주입
         await setYmdTriplet('inqy_sttg_ymd', yy, mm, dd);
+        await setYmdTriplet('inqy_sttg_ymd1', yy, mm, dd);
+        await setYmdTriplet('inqy_eymd', ey, em, edd);
+        await setYmdTriplet('inqy_eymd1', ey, em, edd);
       } catch (e) {
-        this.warn('IBK: start date selects:', e.message);
+        this.warn('IBK: date range selects:', e.message);
       }
       await this.page.waitForTimeout(600);
 
@@ -1995,7 +2025,11 @@ class IbkBankAutomator extends BaseBankAutomator {
           await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
         } catch (e) {}
         await this.page.waitForTimeout(800);
+        // 어제 날짜로 재시도 시에도 모든 필드 셋 재설정
         await setYmdTriplet('inqy_sttg_ymd', yestYY, yestMM, yestDD);
+        await setYmdTriplet('inqy_sttg_ymd1', yestYY, yestMM, yestDD);
+        await setYmdTriplet('inqy_eymd', yestYY, yestMM, yestDD);
+        await setYmdTriplet('inqy_eymd1', yestYY, yestMM, yestDD);
         await this.page.waitForTimeout(400);
         try {
           await frame.locator('[id="_btnSubmit"]').click({ timeout: 5000 });
@@ -2011,41 +2045,93 @@ class IbkBankAutomator extends BaseBankAutomator {
       // [개선] 페이지가 아닌 컨텍스트 전체에서 다운로드 감시 (팝업 다운로드 대응)
       const downloadPromise = this.context.waitForEvent('download', { timeout: 60000 });
       
-      // Step 1: Trigger download sequence
+      // Step 1: Trigger download sequence (Playwright Locator + evaluate Fallback)
       try {
-        console.log('   [IBK] "저장" -> "엑셀파일저장" 직접 클릭 시도...');
-        await frame.evaluate(() => {
-          const findAndClick = (txt) => {
+        this.log('   [IBK] "저장" -> "엑셀파일저장" Playwright Locator 클릭 시도...');
+        
+        // 1) "저장" 버튼 클릭 (span 또는 a 태그)
+        let saveClicked = false;
+        try {
+          const saveBtn = frame.locator('span:has-text("저장"), a:has-text("저장")').first();
+          if (await saveBtn.isVisible({ timeout: 2000 })) {
+            await saveBtn.click();
+            saveClicked = true;
+          }
+        } catch (e) {
+          this.warn(`[IBK] "저장" locator 클릭 실패: ${e.message}, evaluate fallback 시도`);
+        }
+
+        if (!saveClicked) {
+          await frame.evaluate(() => {
             const el = Array.from(document.querySelectorAll('span, a, button'))
-              .find(e => e.textContent.includes(txt));
+              .find(e => (e.textContent || '').trim() === '저장');
             if (el) el.click();
-          };
-          findAndClick('저장');
-        });
+          });
+        }
         await this.page.waitForTimeout(1000);
 
-        await frame.evaluate(() => {
-          const el = Array.from(document.querySelectorAll('span, a, button'))
-            .find(e => e.textContent.includes('엑셀파일저장'));
-          if (el) el.click();
-        });
+        // 2) "엑셀파일저장" 버튼 클릭 (span 또는 a 태그)
+        let excelClicked = false;
+        try {
+          const excelBtn = frame.locator('span:has-text("엑셀파일저장"), a:has-text("엑셀파일저장"), a:has-text("엑셀")').first();
+          if (await excelBtn.isVisible({ timeout: 2000 })) {
+            await excelBtn.click();
+            excelClicked = true;
+          }
+        } catch (e) {
+          this.warn(`[IBK] "엑셀파일저장" locator 클릭 실패: ${e.message}, evaluate fallback 시도`);
+        }
+
+        if (!excelClicked) {
+          await frame.evaluate(() => {
+            const el = Array.from(document.querySelectorAll('span, a, button'))
+              .find(e => (e.textContent || '').trim().includes('엑셀파일저장') || (e.textContent || '').trim() === '엑셀');
+            if (el) el.click();
+          });
+        }
         await this.page.waitForTimeout(1500);
         
-        // 라디오 버튼 및 최종 다운로드 버튼 클릭
-        await frame.evaluate(() => {
-          const radio = document.getElementById('DownloadExcel');
-          if (radio) radio.click();
-          
-          const btn = document.getElementById('DownloadButton');
-          if (btn) btn.click();
-        });
-        console.log('   [IBK] 다운로드 트리거 완료.');
+        // 3) 라디오 버튼 및 최종 다운로드 버튼 클릭
+        let radioClicked = false;
+        try {
+          const radio = frame.locator('[id="DownloadExcel"]');
+          if (await radio.isVisible({ timeout: 2000 })) {
+            await radio.click();
+            radioClicked = true;
+          }
+        } catch (e) {
+          this.warn(`[IBK] DownloadExcel 라디오 버튼 클릭 실패: ${e.message}`);
+        }
+
+        let downloadBtnClicked = false;
+        try {
+          const downloadBtn = frame.locator('[id="DownloadButton"]');
+          if (await downloadBtn.isVisible({ timeout: 2000 })) {
+            await downloadBtn.click();
+            downloadBtnClicked = true;
+          }
+        } catch (e) {
+          this.warn(`[IBK] DownloadButton 클릭 실패: ${e.message}`);
+        }
+
+        if (!radioClicked || !downloadBtnClicked) {
+          // fallback evaluate
+          await frame.evaluate(() => {
+            const radio = document.getElementById('DownloadExcel');
+            if (radio) radio.click();
+            
+            const btn = document.getElementById('DownloadButton');
+            if (btn) btn.click();
+          });
+        }
+
+        this.log('   [IBK] 다운로드 트리거 완료.');
       } catch (e) {
         this.warn('IBK: Error during download click sequence:', e.message);
       }
 
       // Step 2: [개선] 다운로드 이벤트와 파일 시스템 폴링을 동시에 Race
-      console.log('   [IBK] 다운로드 완료 대기 중 (Event + Polling)...');
+      this.log('   [IBK] 다운로드 완료 대기 중 (Event + Polling)...');
       
       const pollForFile = async (startTime) => {
         for (let i = 0; i < 30; i++) { // 최대 30초 폴링
@@ -2059,31 +2145,16 @@ class IbkBankAutomator extends BaseBankAutomator {
         throw new Error('polling timeout');
       };
 
+      // [개선] 안내 팝업 등의 텍스트 오진 방지를 위해 실시간 nodata innerText 폴링 제거
       const raced = await Promise.race([
         downloadPromise.then((dl) => ({ type: 'download', data: dl })),
         pollForFile(exportStartedAt),
         this.page.waitForTimeout(40000).then(() => ({ type: 'timeout' })),
-        frame.evaluate(() => {
-          return new Promise((resolve) => {
-            const check = () => {
-              const checkPhrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다', '까지 조회결과가 없습니다'];
-              const allText = document.body.innerText || '';
-              if (checkPhrases.some(phrase => allText.includes(phrase))) resolve({ type: 'nodata' });
-              else setTimeout(check, 1000);
-            };
-            check();
-          });
-        }),
       ]).catch(() => ({ type: 'timeout' }));
 
       let download = null;
       let suggested = 'ibk-export.xls';
       let fallbackFile = null;
-
-      if (raced.type === 'nodata') {
-        this.log('   [IBK] 데이터 없음 확인 (메시지 감지)');
-        return [];
-      }
 
       if (raced.type === 'polling') {
         this.log(`   [IBK] 파일 시스템 폴링으로 다운로드 감지 성공: ${path.basename(raced.data.path)}`);
@@ -2095,7 +2166,22 @@ class IbkBankAutomator extends BaseBankAutomator {
         suggested = download.suggestedFilename() || suggested;
       } else {
         this.error('   [IBK] 다운로드 감지 실패 (타임아웃)');
-        return [];
+        
+        // [디버깅] 타임아웃 발생 시 현재 화면 캡처 및 HTML 로그 생성 (분석용 덤프)
+        try {
+          const debugScreenshotPath = path.join(this.downloadDir, `debug_timeout_${accountNumber}.png`);
+          await this.page.screenshot({ path: debugScreenshotPath, fullPage: true });
+          this.log(`   [IBK/디버그] 타임아웃 화면 스크린샷 저장 완료: ${debugScreenshotPath}`);
+          
+          const debugHtml = await frame.evaluate(() => document.body.innerHTML || '');
+          const debugHtmlPath = path.join(this.downloadDir, `debug_timeout_${accountNumber}.html`);
+          require('fs').writeFileSync(debugHtmlPath, debugHtml, 'utf8');
+          this.log(`   [IBK/디버그] 타임아웃 화면 HTML 저장 완료: ${debugHtmlPath}`);
+        } catch (dbgErr) {
+          this.warn(`[IBK/디버그] 디버깅 덤프 생성 실패: ${dbgErr.message}`);
+        }
+        
+        throw new Error('IBK: 엑셀 다운로드 감지 실패 (타임아웃)');
       }
 
       const ext = path.extname(suggested) || '.xls';
@@ -2156,37 +2242,45 @@ class IbkBankAutomator extends BaseBankAutomator {
     } catch (error) {
       this.error('IBK getTransactions failed:', error.message);
       await this._cleanupIbkPopups(); // Always cleanup on fail too
-      return [];
+      throw error;
     }
   }
 
   async getTransactionsWithParsing(accountNumber, startDate, endDate) {
-    const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
-    
-    // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
-    if (!downloadResult || downloadResult.length === 0) {
-      this.log('IBK: getTransactions returned empty (no data), returning success with empty transactions.');
+    try {
+      const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
+      
+      // [수정] 내역 없음(Graceful Exit) 시 실패가 아닌 성공으로 반환
+      if (!downloadResult || downloadResult.length === 0) {
+        this.log('IBK: getTransactions returned empty (no data), returning success with empty transactions.');
+        return {
+          success: true,
+          transactions: [],
+          metadata: { bankName: 'IBK기업은행', accountNumber, totalCount: 0 },
+          summary: { totalCount: 0 }
+        };
+      }
+      const resultItem = downloadResult[0];
+      if (resultItem.status !== 'downloaded') {
+        return { success: false, error: 'Data extraction failed', downloadResult };
+      }
+      const extractedData = resultItem.extractedData;
       return {
         success: true,
-        transactions: [],
-        metadata: { bankName: 'IBK기업은행', accountNumber, totalCount: 0 },
-        summary: { totalCount: 0 }
+        file: resultItem.path,
+        filename: resultItem.filename,
+        metadata: extractedData.metadata,
+        summary: extractedData.summary,
+        transactions: extractedData.transactions,
+        headers: extractedData.headers,
+      };
+    } catch (error) {
+      this.error('IBK getTransactionsWithParsing failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
       };
     }
-    const resultItem = downloadResult[0];
-    if (resultItem.status !== 'downloaded') {
-      return { success: false, error: 'Data extraction failed', downloadResult };
-    }
-    const extractedData = resultItem.extractedData;
-    return {
-      success: true,
-      file: resultItem.path,
-      filename: resultItem.filename,
-      metadata: extractedData.metadata,
-      summary: extractedData.summary,
-      transactions: extractedData.transactions,
-      headers: extractedData.headers,
-    };
   }
 }
 
