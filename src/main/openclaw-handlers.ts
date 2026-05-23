@@ -102,6 +102,198 @@ async function killGateway(): Promise<void> {
   await new Promise(r => setTimeout(r, 2000));
 }
 
+/**
+ * Helper: ensure OpenClaw CLI is installed.
+ */
+async function ensureCliInstalled(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  let alreadyInstalled = false;
+  try {
+    const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
+    log(`openclaw already installed: ${verOut.trim()}`);
+    alreadyInstalled = true;
+  } catch (verErr: any) {
+    log(`openclaw check failed (${(verErr?.message || '').split('\n')[0].slice(0, 120)}) — reinstalling…`);
+  }
+
+  if (!alreadyInstalled) {
+    log('Running: npm uninstall -g openclaw');
+    try {
+      await execAsync('npm uninstall -g openclaw', { env: cleanEnv, timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    } catch {}
+    log('Running: npm install -g openclaw@latest');
+    await execAsync('npm install -g openclaw@latest', { env: cleanEnv, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+    log('npm install complete');
+  }
+  return true;
+}
+
+/**
+ * Helper: run OpenClaw onboard with Gemini.
+ */
+async function runOnboardGemini(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  const geminiKeyForOnboard = cleanEnv.GEMINI_API_KEY;
+  if (!geminiKeyForOnboard) {
+    log('⚠️ No Gemini API key found for onboard.');
+    return false;
+  }
+
+  log('Running: openclaw onboard --non-interactive (Gemini)');
+  try {
+    await execAsync(
+      `openclaw onboard --non-interactive --accept-risk --mode local --auth-choice gemini-api-key --gemini-api-key "${geminiKeyForOnboard}"`,
+      { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
+    );
+    return true;
+  } catch (e: any) {
+    const out = (e.stdout || e.stderr || '').trim();
+    const succeeded = out.includes('openclaw.json') || out.includes('Telegram: ok');
+    if (!succeeded) log(`onboard failed: ${out.slice(0, 300)}`);
+    return succeeded;
+  }
+}
+
+/**
+ * Helper: run OpenClaw doctor --fix.
+ */
+async function runDoctorFix(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  log('Running: openclaw doctor --fix');
+  try {
+    await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Helper: install Kakao plugin.
+ */
+async function installKakaoPlugin(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  try {
+    const { app: electronApp } = require('electron');
+    const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
+    const prodResourcesPath = process.resourcesPath || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
+    const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin')) ? devResourcesPath : (prodResourcesPath || devResourcesPath);
+    const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
+
+    if (fs.existsSync(pluginPath)) {
+      log(`Installing Kakao plugin from ${pluginPath}…`);
+      await execAsync(`openclaw plugins install --force "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+      return true;
+    } else {
+      log(`⚠️ Kakao plugin path not found: ${pluginPath}`);
+      return false;
+    }
+  } catch (e: any) {
+    log(`Kakao plugin install failed: ${e?.message}`);
+    return false;
+  }
+}
+
+/**
+ * Helper: run Golden Merge to write openclaw.json.
+ */
+async function runGoldenMerge(configDir: string, configPath: string, resolvedToken: string, log: (msg: string) => void): Promise<boolean> {
+  try {
+    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+    
+    const currentCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
+    
+    const finalCfg = {
+      ...currentCfg,
+      gateway: {
+        ...(currentCfg.gateway ?? {}),
+        mode: 'local',
+      },
+      agents: {
+        ...(currentCfg.agents ?? {}),
+        defaults: {
+          ...(currentCfg.agents?.defaults ?? {}),
+          model: {
+            ...(currentCfg.agents?.defaults?.model ?? {}),
+            primary: 'google/gemini-3.1-pro-preview',
+          }
+        }
+      },
+      channels: {
+        ...(currentCfg.channels ?? {}),
+        telegram: {
+          enabled: true,
+          botToken: resolvedToken,
+          ...(currentCfg.channels?.telegram ?? {}),
+          botToken: resolvedToken, // ensure our token wins
+        },
+        kakao: {
+          enabled: true,
+          webhookPath: '/kakao/skill',
+          useCallback: true,
+          callbackTimeoutMs: 180000,
+          dmPolicy: 'open',
+          ...(currentCfg.channels?.kakao ?? {}),
+        }
+      },
+      mcp: {
+        ...(currentCfg.mcp ?? {}),
+        servers: {
+          ...(currentCfg.mcp?.servers ?? {}),
+          egdesk: { type: 'http', url: 'http://localhost:8080/mcp' }
+        }
+      },
+      plugins: {
+        ...(currentCfg.plugins ?? {}),
+        entries: {
+          ...(currentCfg.plugins?.entries ?? {}),
+          bonjour: { enabled: false } // prevent mDNS crash
+        }
+      }
+    };
+
+    // Clean up legacy/wrong keys
+    delete (finalCfg as any).mcpServers;
+
+    fs.writeFileSync(configPath, JSON.stringify(finalCfg, null, 2));
+    fs.writeFileSync(path.join(configDir, 'openclaw.json.last-good'), JSON.stringify(finalCfg, null, 2));
+    log('✅ openclaw.json finalized with Golden Merge (Telegram, Kakao, MCP, Gemini).');
+    return true;
+  } catch (e: any) {
+    log(`❌ Golden Merge failed: ${e?.message}`);
+    return false;
+  }
+}
+
+/**
+ * Helper: install OpenClaw daemon.
+ */
+async function installDaemon(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  log('Running: openclaw onboard --install-daemon');
+  try {
+    await execAsync('openclaw onboard --install-daemon', { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): void {
   // ---------------------------------------------------------------------------
   // OpenClaw — install CLI, write Telegram bot token to ~/.openclaw/openclaw.json
@@ -205,137 +397,22 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
 
         // ── 1. Install openclaw if not on PATH or corrupted ──
-        let alreadyInstalled = false;
-        try {
-          const { stdout: verOut } = await execAsync('openclaw --version', { env: cleanEnv, timeout: 8_000 });
-          log(`openclaw already installed: ${verOut.trim()}`);
-          alreadyInstalled = true;
-        } catch (verErr: any) {
-          log(`openclaw check failed (${(verErr?.message || '').split('\n')[0].slice(0, 120)}) — reinstalling…`);
-        }
-
-        if (!alreadyInstalled) {
-          log('Running: npm uninstall -g openclaw');
-          try {
-            await execAsync('npm uninstall -g openclaw', { env: cleanEnv, timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
-          } catch {}
-          log('Running: npm install -g openclaw@latest');
-          await execAsync('npm install -g openclaw@latest', { env: cleanEnv, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
-          log('npm install complete');
-        }
+        await ensureCliInstalled(cleanEnv, log);
 
         // ── 2. Run openclaw onboard FIRST to initialize the file ──
-        // This command creates/overwrites openclaw.json with the provider template.
-        const geminiKeyForOnboard = cleanEnv.GEMINI_API_KEY;
-        if (geminiKeyForOnboard) {
-          log('Running: openclaw onboard --non-interactive (Gemini)');
-          try {
-            await execAsync(
-              `openclaw onboard --non-interactive --accept-risk --mode local --auth-choice gemini-api-key --gemini-api-key "${geminiKeyForOnboard}"`,
-              { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
-            );
-          } catch (e: any) {
-            const out = (e.stdout || e.stderr || '').trim();
-            const succeeded = out.includes('openclaw.json') || out.includes('Telegram: ok');
-            if (!succeeded) log(`onboard failed (non-fatal): ${out.slice(0, 300)}`);
-          }
-        }
+        await runOnboardGemini(cleanEnv, log);
 
         // ── 3. Run doctor --fix to ensure base health ──
-        try {
-          await execAsync('openclaw doctor --fix', { env: cleanEnv, timeout: 15_000, maxBuffer: 1024 * 1024 });
-        } catch {}
+        await runDoctorFix(cleanEnv, log);
 
         // ── 4. Install Kakao plugin ──
-        try {
-          const { app: electronApp } = require('electron');
-          const devResourcesPath = path.join(__dirname, '..', '..', 'resources');
-          const prodResourcesPath = process.resourcesPath || (electronApp ? path.join(electronApp.getAppPath(), '..', 'resources') : null);
-          const resourcesBase = fs.existsSync(path.join(devResourcesPath, 'openclaw-kakao-plugin')) ? devResourcesPath : (prodResourcesPath || devResourcesPath);
-          const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
-
-          if (fs.existsSync(pluginPath)) {
-            log(`Installing Kakao plugin from ${pluginPath}…`);
-            await execAsync(`openclaw plugins install --force "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
-          }
-        } catch (e: any) {
-          log(`Kakao plugin install (non-fatal): ${e?.message}`);
-        }
+        await installKakaoPlugin(cleanEnv, log);
 
         // ── 5. THE GOLDEN MERGE: One final write to rule them all ──
-        // We read the CLI-generated file and inject EVERY custom key we need.
-        // No CLI command runs after this to "banish" our settings.
-        try {
-          if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
-          
-          const currentCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
-          
-          const finalCfg = {
-            ...currentCfg,
-            gateway: {
-              ...(currentCfg.gateway ?? {}),
-              mode: 'local',
-            },
-            agents: {
-              ...(currentCfg.agents ?? {}),
-              defaults: {
-                ...(currentCfg.agents?.defaults ?? {}),
-                model: {
-                  ...(currentCfg.agents?.defaults?.model ?? {}),
-                  primary: 'google/gemini-3.1-pro-preview',
-                }
-              }
-            },
-            channels: {
-              ...(currentCfg.channels ?? {}),
-              telegram: {
-                enabled: true,
-                botToken: resolvedToken,
-                ...(currentCfg.channels?.telegram ?? {}),
-                botToken: resolvedToken, // ensure our token wins
-              },
-              kakao: {
-                enabled: true,
-                webhookPath: '/kakao/skill',
-                useCallback: true,
-                callbackTimeoutMs: 180000,
-                dmPolicy: 'open',
-                ...(currentCfg.channels?.kakao ?? {}),
-              }
-            },
-            mcp: {
-              ...(currentCfg.mcp ?? {}),
-              servers: {
-                ...(currentCfg.mcp?.servers ?? {}),
-                egdesk: { type: 'http', url: 'http://localhost:8080/mcp' }
-              }
-            },
-            plugins: {
-              ...(currentCfg.plugins ?? {}),
-              entries: {
-                ...(currentCfg.plugins?.entries ?? {}),
-                bonjour: { enabled: false } // prevent mDNS crash
-              }
-            }
-          };
-
-          // Clean up legacy/wrong keys
-          delete (finalCfg as any).mcpServers;
-          // delete (finalCfg as any).models; // DO NOT delete models, OpenClaw may need this root key
-
-          fs.writeFileSync(configPath, JSON.stringify(finalCfg, null, 2));
-          fs.writeFileSync(path.join(configDir, 'openclaw.json.last-good'), JSON.stringify(finalCfg, null, 2));
-          log('✅ openclaw.json finalized with Golden Merge (Telegram, Kakao, MCP, Gemini).');
-        } catch (e: any) {
-          log(`❌ Golden Merge failed: ${e?.message}`);
-          return { success: false, error: `Failed to finalize config: ${e.message}` };
-        }
+        await runGoldenMerge(configDir, configPath, resolvedToken, log);
 
         // ── 6. Install daemon ──
-        log('Running: openclaw onboard --install-daemon');
-        try {
-          await execAsync('openclaw onboard --install-daemon', { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
-        } catch {}
+        await installDaemon(cleanEnv, log);
 
         // ── 6b. RE-APPLY GOLDEN MERGE after daemon install ──
         // Some onboard commands rewrite the config and strip custom keys.
@@ -380,7 +457,6 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           // Poll until gateway reports reachable (up to 45s) instead of a fixed sleep
           let gatewayReachable = false;
           for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 3000));
             try {
               const { stdout: probe } = await execAsync('openclaw channels status', {
                 env: cleanEnv, timeout: 8_000, maxBuffer: 1024 * 1024,
@@ -392,6 +468,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
                 break;
               }
             } catch { /* not ready yet */ }
+            if (i < 14) await new Promise(r => setTimeout(r, 3000));
           }
 
           // Detach stdout/stderr before unreffing
@@ -411,8 +488,32 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         // ── 8. Telegram Pairing Automation ──
         let pairingCode = '';
         let pairingError = '';
+
+        // Helper to poll the CLI for a pairing code in the background
+        const pollCliForCode = async (maxAttempts = 20) => {
+          for (let i = 0; i < maxAttempts; i++) {
+            if (pairingCode) return; // Stop if browser already found it
+            try {
+              const rawOut: string = await new Promise(resolve => {
+                const { exec } = require('child_process');
+                exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
+                  (_err: any, stdout: string) => resolve(stdout || '')
+                );
+              });
+              const match = rawOut.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
+                            rawOut.match(/\b([A-Z0-9]{8})\b/);
+              if (match) {
+                pairingCode = match[1];
+                log(`Pairing code found via CLI: ${pairingCode}`);
+                return;
+              }
+            } catch { /* ignore CLI errors during polling */ }
+            if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, 3000));
+          }
+        };
+
         try {
-          // Check for existing code first
+          // 1. Check for existing code first (fast check)
           const existingCode: string = await new Promise(resolve => {
             const { exec } = require('child_process');
             exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
@@ -427,181 +528,99 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           }
 
           if (!pairingCode) {
-            // No existing code — open browser and send /start to trigger a new pairing request
-            log('Opening Chrome to send /start to bot…');
+            log('No existing code — starting parallel browser and CLI polling…');
+            
+            // Start CLI poller in background
+            const cliPoller = pollCliForCode();
 
-            const { chromium: chromiumExtra } = await import('playwright-extra');
-            const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-            chromiumExtra.use(StealthPlugin());
-
-            const context = await chromiumExtra.launchPersistentContext(setupProfileDir, {
-              headless: false,
-              channel: 'chrome',
-              viewport: null,
-              args: [
-                '--window-size=907,867',
-                '--no-default-browser-check',
-                '--disable-blink-features=AutomationControlled',
-                '--no-first-run',
-              ],
-              ignoreDefaultArgs: ['--enable-automation'],
-            });
-            log('Chrome context opened');
-
-            const pages = context.pages();
-            const page = pages.length > 0 ? pages[0] : await context.newPage();
-
+            // Start Browser flow to trigger the code
             try {
-              const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
-              log(`Navigating to ${tgUrl}`);
-              await page.goto(tgUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30_000,
+              const { chromium: chromiumExtra } = await import('playwright-extra');
+              const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+              chromiumExtra.use(StealthPlugin());
+
+              const context = await chromiumExtra.launchPersistentContext(setupProfileDir, {
+                headless: false,
+                channel: 'chrome',
+                viewport: null,
+                args: [
+                  '--window-size=907,867',
+                  '--no-default-browser-check',
+                  '--disable-blink-features=AutomationControlled',
+                  '--no-first-run',
+                ],
+                ignoreDefaultArgs: ['--enable-automation'],
               });
-              log(`Page loaded. Current URL: ${page.url()}`);
-
-              // Wait for the chats page to confirm we are logged in
-              const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
-              log(`loggedIn=${loggedIn}`);
-              if (!loggedIn) {
-                log('⚠️ Telegram session not found or page stuck — checking URL…');
-                if (page.url().includes('about:blank')) {
-                  log('🔄 URL is about:blank — attempting secondary navigation…');
-                  await page.goto(tgUrl, { waitUntil: 'load', timeout: 20_000 });
-                }
-                const retryLogin = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
-                if (!retryLogin) throw new Error('Telegram session not found — please run Telegram setup first.');
-              }
-
-              // Wait for the bot chat to fully render after navigation
-              await page.waitForTimeout(3000);
-
-              // Click the START button if present
-              const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
-              let startClicked = false;
+              
               try {
-                if (await startBtn.isVisible({ timeout: 5000 })) {
-                  log('START button found — clicking…');
-                  await startBtn.click({ force: true, timeout: 5000 });
-                  await page.waitForTimeout(2000);
-                  startClicked = true;
-                }
-              } catch (e: any) {
-                log(`START button click failed: ${e?.message?.split('\n')[0]}`);
-              }
-              if (!startClicked) log('No START button visible — bot chat already open');
+                const pages = context.pages();
+                const page = pages.length > 0 ? pages[0] : await context.newPage();
+                const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
+                
+                log(`Navigating to ${tgUrl}`);
+                await page.goto(tgUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+                
+                const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+                if (!loggedIn) throw new Error('Telegram session not found — please run Telegram setup first.');
 
-              // Send /start
-              log('Waiting for message input…');
-              await page.waitForSelector('.input-message-input', { timeout: 20_000 });
-              await page.locator('.input-message-input').first().click({ force: true, timeout: 5000 });
-              await page.waitForTimeout(500);
-
-              // Snapshot message count BEFORE sending /start
-              let msgCountBefore = 0;
-              try {
-                msgCountBefore = await page.locator('.message').count();
-              } catch { /* ignore */ }
-
-              log('Typing /start…');
-              await page.keyboard.type('/start');
-              await page.waitForTimeout(600);
-              await page.keyboard.press('Escape');
-              await page.waitForTimeout(300);
-              await page.keyboard.press('Enter');
-              log('/start sent — waiting up to 30s for bot to respond…');
-
-              // Poll every 2s for up to 30s — break as soon as bot replies with "Pairing code"
-              let waited = 0;
-              while (waited < 30000) {
                 await page.waitForTimeout(2000);
-                waited += 2000;
-                try {
+                const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
+                if (await startBtn.isVisible({ timeout: 5000 })) {
+                  log('Clicking START button…');
+                  await startBtn.click({ force: true });
+                  await page.waitForTimeout(2000);
+                }
+
+                await page.waitForSelector('.input-message-input', { timeout: 10_000 });
+                const msgCountBefore = await page.locator('.message').count().catch(() => 0);
+                
+                await page.locator('.input-message-input').first().click({ force: true });
+                await page.keyboard.type('/start');
+                await page.keyboard.press('Enter');
+                log('/start sent — polling browser chat for code…');
+
+                // Poll browser chat for 30s (CLI poller is also running in background)
+                for (let i = 0; i < 15 && !pairingCode; i++) {
+                  await page.waitForTimeout(2000);
                   const texts = await page.locator('.message').allTextContents();
                   const newContent = texts.slice(msgCountBefore).join('\n');
-                  if (newContent.includes('Pairing code') || newContent.includes('approve')) {
-                    log(`Bot responded with pairing code after ${waited / 1000}s.`);
+                  const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
+                  const match = newContent.match(codeRe);
+                  if (match) {
+                    pairingCode = match[1];
+                    log(`Pairing code found in browser chat: ${pairingCode}`);
                     break;
                   }
-                } catch { /* non-fatal */ }
-              }
-              if (waited >= 30000) log('Bot did not respond within 30s — reading current chat state.');
-
-              // Extract pairing code from the chat
-              const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/g;
-              try {
-                const texts = await page.locator('.message').allTextContents();
-                // Search last 20 messages — use the LAST match (most recent code)
-                const recent = texts.slice(-20).join('\n');
-                const matches = [...recent.matchAll(codeRe)];
-                if (matches.length > 0) {
-                  pairingCode = matches[matches.length - 1][1];
-                  log(`Pairing code found in chat history: ${pairingCode}`);
-                } else {
-                  log(`No pairing code found in chat — ${texts.length} total messages. Will try CLI fallback.`);
                 }
-              } catch { /* non-fatal */ }
-            } catch (innerErr) {
-              pairingError = innerErr instanceof Error ? innerErr.message : String(innerErr);
-              log(`Inner error: ${pairingError}`);
-            } finally {
-              await context.close().catch(() => {});
-              log('Chrome context closed');
+              } finally {
+                await context.close().catch(() => {});
+              }
+            } catch (browserErr: any) {
+              log(`Browser flow encountered an error (will rely on CLI): ${browserErr.message}`);
             }
-          } // end else if (!pairingCode)
-        } catch (outerErr) {
-          pairingError = outerErr instanceof Error ? outerErr.message : String(outerErr);
-          log(`Outer error: ${pairingError}`);
+
+            // Ensure CLI poller finishes or finds the code if browser didn't
+            await cliPoller;
+          }
+        } catch (outerErr: any) {
+          pairingError = outerErr.message;
+          log(`Pairing automation error: ${pairingError}`);
         }
 
-        log(`pairingError="${pairingError}"`);
-
-        // ── 6. Fetch pairing code via CLI fallback (if not already extracted from chat), then approve ──
-        if (!pairingError) {
-          // If we already extracted the code from the Telegram chat, skip CLI polling
-          if (pairingCode) {
-            log(`Using pairing code extracted from chat: ${pairingCode}`);
-          } else {
-            // Poll `openclaw pairing list telegram` — the request may take a moment to register
-            for (let attempt = 0; attempt < 4 && !pairingCode; attempt++) {
-              log(`Polling pairing list (attempt ${attempt + 1}/4)…`);
-              const rawOut: string = await new Promise(resolve => {
-                const { exec } = require('child_process');
-                exec('openclaw pairing list telegram', { env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024 },
-                  (err: any, stdout: string, stderr: string) => {
-                    log(`pairing list exit=${err?.code ?? 0} stdout="${stdout.trim()}" stderr="${stderr.trim()}"`);
-                    resolve(stdout || '');
-                  }
-                );
-              });
-              // Match the exact command format openclaw outputs (8 uppercase alphanumeric chars)
-              const match = rawOut.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
-                            rawOut.match(/\b([A-Z0-9]{8})\b/);
-              if (match) {
-                pairingCode = match[1];
-                log(`Pairing code found: ${pairingCode}`);
-              } else if (attempt < 3) {
-                log('No code yet — waiting 3s…');
-                await new Promise(r => setTimeout(r, 3000));
-              }
-            }
+        // ── 9. Final Approval ──
+        if (pairingCode) {
+          log(`Approving pairing code: ${pairingCode}…`);
+          try {
+            await execAsync(`openclaw pairing approve telegram ${pairingCode}`, {
+              env: cleanEnv,
+              timeout: 30_000,
+              maxBuffer: 1024 * 1024,
+            });
+          } catch (approveErr: any) {
+            log(`pairing approve error (non-fatal): ${approveErr?.message || approveErr}`);
           }
-
-          if (pairingCode) {
-            log(`Approving pairing code: ${pairingCode}`);
-            try {
-              await execAsync(`openclaw pairing approve telegram ${pairingCode}`, {
-                env: cleanEnv,
-                timeout: 30_000,
-                maxBuffer: 1024 * 1024,
-              });
-            } catch (approveErr: any) {
-              log(`pairing approve error: ${approveErr?.message || approveErr}`);
-            }
-          } else {
-            pairingError = 'No pending pairing request found after /start.';
-            log(pairingError);
-          }
+        } else if (!pairingError) {
+          pairingError = 'No pending pairing request found after /start.';
         }
 
         log(`Final: pairingCode="${pairingCode}" pairingError="${pairingError}"`);
@@ -778,7 +797,6 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         // Poll until gateway reports reachable (up to 45s) instead of a fixed sleep
         let gatewayReachable = false;
         for (let i = 0; i < 15; i++) {
-          await new Promise(r => setTimeout(r, 3000));
           if (gatewayStartError) break; // spawn itself failed — no point waiting
           try {
             const { stdout: probe } = await execAsync('openclaw channels status', {
@@ -791,6 +809,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               break;
             }
           } catch { /* not ready yet */ }
+          if (i < 14) await new Promise(r => setTimeout(r, 3000));
         }
 
         // Detach stdout/stderr before unreffing — otherwise the main process keeps reading
@@ -828,151 +847,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       let pairingCode = '';
       let pairingError = '';
 
-      if (alreadyConnectedEarly) {
-        // Jump straight to final status
-      } else
-
-      if (!fs.existsSync(profileDir)) {
-        pairingError = `Profile dir not found: ${profileDir}`;
-        log(`⚠️ ${pairingError}`);
-      } else {
-        log(`Opening Telegram Web → @${botUsername}`);
-        const { chromium: chromiumExtra } = await import('playwright-extra');
-        const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-        chromiumExtra.use(StealthPlugin());
-
-        const context = await chromiumExtra.launchPersistentContext(profileDir, {
-          headless: false,
-          channel: 'chrome',
-          viewport: null,
-          args: ['--window-size=907,867', '--no-default-browser-check', '--disable-blink-features=AutomationControlled', '--no-first-run'],
-          ignoreDefaultArgs: ['--enable-automation'],
-        });
-        log('Chrome context opened');
-
-        const pages = context.pages();
-        const page = pages.length > 0 ? pages[0] : await context.newPage();
-
-        try {
-          const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
-          log(`Navigating to ${tgUrl}`);
-          await page.goto(tgUrl, {
-            waitUntil: 'load',
-            timeout: 30_000,
-          });
-          log('Page loaded');
-
-          const loggedIn2 = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
-          if (!loggedIn2) throw new Error('Telegram session not found — please run Telegram setup first.');
-
-          // Wait for the bot chat to fully render after navigation
-          await page.waitForTimeout(3000);
-
-          // Click START button if present
-          let clickedStart = false;
-          // Use the exact same selectors and logic as openclaw:setup
-          const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
+      // Helper to poll the CLI for a pairing code in the background
+      const pollCliForCode = async (maxAttempts = 20) => {
+        for (let i = 0; i < maxAttempts; i++) {
+          if (pairingCode) return; // Stop if browser already found it
           try {
-            if (await startBtn.isVisible({ timeout: 5000 })) {
-              log('START button found — clicking…');
-              await startBtn.click({ force: true, timeout: 5000 });
-              await page.waitForTimeout(2000);
-              clickedStart = true;
-            }
-          } catch (e: any) {
-            log(`START button click failed: ${e?.message?.split('\n')[0]}`);
-          }
-          if (!clickedStart) log('No START button visible — bot chat already open');
-
-          await page.waitForSelector('.input-message-input', { timeout: 20_000 });
-          log('Input box ready — typing /start…');
-          // Use force:true to bypass the ripple overlay that intercepts pointer events
-          await page.locator('.input-message-input').first().click({ force: true, timeout: 5000 });
-          await page.waitForTimeout(500);
-          await page.keyboard.type('/start');
-          await page.waitForTimeout(600);
-          // Dismiss any autocomplete popup
-          await page.keyboard.press('Escape');
-          await page.waitForTimeout(300);
-
-          // Snapshot message count BEFORE pressing Enter so we don't miss the bot's reply
-          let msgCountBefore = 0;
-          try {
-            msgCountBefore = await page.locator('.message').count();
-          } catch { /* ignore */ }
-
-          await page.keyboard.press('Enter');
-          log('/start sent — waiting up to 30s for bot to respond…');
-
-          // Poll every 2s for up to 30s — break as soon as bot replies with "Pairing code"
-          let waited = 0;
-          while (waited < 30000) {
-            await page.waitForTimeout(2000);
-            waited += 2000;
-            try {
-              const texts = await page.locator('.message').allTextContents();
-              const newContent = texts.slice(msgCountBefore).join('\n');
-              if (newContent.includes('Pairing code') || newContent.includes('approve')) {
-                log(`Bot responded with pairing code after ${waited / 1000}s.`);
-                break;
-              }
-            } catch { /* non-fatal */ }
-          }
-          if (waited >= 30000) log('Bot did not respond within 30s — reading current chat state.');
-
-          // Extract pairing code from the chat — prefer a code from a new message,
-          // but fall back to the most recent code anywhere in the last 10 messages
-          // (the bot sometimes doesn't reply again if a code is still pending)
-          try {
-            const msgTexts = await page.locator('.message').allTextContents();
-            const last3 = msgTexts.slice(-3).map(t => t.trim());
-            if (last3.length) log(`Chat messages (last 3): ${JSON.stringify(last3)}`);
-
-            const newMsgs = msgTexts.slice(msgCountBefore).join('\n');
-            const last10 = msgTexts.slice(-10).join('\n');
-
-            // Pairing codes are exactly 8 uppercase alphanumeric chars (docs confirmed).
-            // Telegram Web concatenates the timestamp directly onto the code text
-            // (e.g. "T29BJMQ805:20 PM") so we must match exactly 8 chars.
-            const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/g;
-
-            // Search new messages first, then fall back to last 10
-            for (const searchIn of [newMsgs, last10]) {
-              const matches = [...searchIn.matchAll(codeRe)];
-              if (matches.length > 0) {
-                // Use the LAST match (most recent code)
-                pairingCode = matches[matches.length - 1][1];
-                log(`Extracted pairing code from chat: ${pairingCode}${searchIn === last10 ? ' (from history)' : ''}`);
-                break;
-              }
-            }
-
-            if (!pairingCode) {
-              if (newMsgs.toLowerCase().includes('already') || last10.toLowerCase().includes('authorized')) {
-                log('Bot indicates already paired — no new code needed.');
-              } else {
-                log(`No pairing code found in chat. New content (${newMsgs.length} chars): "${newMsgs.slice(0, 100)}"`);
-              }
-            }
-          } catch (e: any) {
-            log(`Could not read chat messages: ${e?.message || e}`);
-          }
-        } catch (err) {
-          pairingError = err instanceof Error ? err.message : String(err);
-          log(`⚠️ Browser error: ${pairingError}`);
-        } finally {
-          await context.close().catch(() => {});
-        }
-      }
-
-      // ── 3. Approve the pairing code ──
-      if (!pairingError) {
-        // Primary: extracted from chat above.
-        // Fallback: query the gateway CLI.
-        if (!pairingCode) {
-          log('Polling openclaw pairing list telegram (CLI fallback)…');
-          for (let i = 0; i < 4 && !pairingCode; i++) {
-            // Capture stdout/stderr even on non-zero exit (command exits 1 when no pending requests)
             const pairResult = await execAsync('openclaw pairing list telegram', {
               env: cleanEnv, timeout: 10_000, maxBuffer: 1024 * 1024,
             }).catch((e: any) => ({
@@ -980,40 +859,113 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
               stderr: e.stderr || e.message || '',
             }));
             const raw = (pairResult.stdout || '').trim();
-            const errOut = (pairResult.stderr || '').trim();
-            log(`pairing list (attempt ${i + 1}): stdout="${raw || '(empty)'}"${errOut ? ` stderr="${errOut.slice(0, 150)}"` : ''}`);
-            const m = raw.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
-                      raw.match(/\b([A-Z0-9]{8})\b/);
-            if (m) pairingCode = m[1];
-            else if (i < 3) await new Promise(r => setTimeout(r, 3000));
-          }
+            const match = raw.match(/openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/) ||
+                          raw.match(/\b([A-Z0-9]{8})\b/);
+            if (match) {
+              pairingCode = match[1];
+              log(`Pairing code found via CLI: ${pairingCode}`);
+              return;
+            }
+          } catch { /* ignore CLI errors during polling */ }
+          if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, 3000));
         }
+      };
 
-        if (pairingCode) {
-          log(`Approving pairing code: ${pairingCode}…`);
-          const approveResult = await execAsync(
-            `openclaw pairing approve telegram ${pairingCode}`,
-            { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
-          ).catch((e: any) => ({
-            stdout: (e.stdout || '') as string,
-            // e.stderr is the real process stderr; e.message is Node's "Command failed: ..." wrapper
-            stderr: (e.stderr || '') as string,
-            failed: true,
-          })) as { stdout: string; stderr: string; failed?: boolean };
-          const approveOut = approveResult.stdout.trim();
-          const approveErr = approveResult.stderr.trim();
-          // openclaw exits non-zero even on success — check stdout for the success string
-          const approveSucceeded = approveOut.toLowerCase().includes('approved');
-          if (approveSucceeded) {
-            log(`✅ ${approveOut.slice(0, 200)}`);
-          } else {
-            if (approveOut) log(`Approve stdout: ${approveOut.slice(0, 200)}`);
-            if (approveErr) log(`Approve stderr: ${approveErr.slice(0, 200)}`);
-            if (!approveOut && !approveErr) log('Approve returned no output (openclaw may have exited non-zero silently).');
-          }
+      if (!alreadyConnectedEarly) {
+        if (!fs.existsSync(profileDir)) {
+          pairingError = `Profile dir not found: ${profileDir}`;
+          log(`⚠️ ${pairingError}`);
         } else {
-          log('No new pairing code found — checking if already connected…');
+          log('Starting parallel browser and CLI polling…');
+          
+          // Start CLI poller in background
+          const cliPoller = pollCliForCode();
+
+          // Start Browser flow to trigger the code
+          try {
+            const { chromium: chromiumExtra } = await import('playwright-extra');
+            const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+            chromiumExtra.use(StealthPlugin());
+
+            const context = await chromiumExtra.launchPersistentContext(profileDir, {
+              headless: false,
+              channel: 'chrome',
+              viewport: null,
+              args: ['--window-size=907,867', '--no-default-browser-check', '--disable-blink-features=AutomationControlled', '--no-first-run'],
+              ignoreDefaultArgs: ['--enable-automation'],
+            });
+            
+            try {
+              const pages = context.pages();
+              const page = pages.length > 0 ? pages[0] : await context.newPage();
+              const tgUrl = `https://web.telegram.org/k/#@${botUsername}`;
+              
+              log(`Navigating to ${tgUrl}`);
+              await page.goto(tgUrl, { waitUntil: 'load', timeout: 30_000 });
+              
+              const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+              if (!loggedIn) throw new Error('Telegram session not found — please run Telegram setup first.');
+
+              await page.waitForTimeout(2000);
+              const startBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
+              if (await startBtn.isVisible({ timeout: 5000 })) {
+                log('Clicking START button…');
+                await startBtn.click({ force: true });
+                await page.waitForTimeout(2000);
+              }
+
+              await page.waitForSelector('.input-message-input', { timeout: 10_000 });
+              const msgCountBefore = await page.locator('.message').count().catch(() => 0);
+              
+              await page.locator('.input-message-input').first().click({ force: true });
+              await page.keyboard.type('/start');
+              await page.keyboard.press('Enter');
+              log('/start sent — polling browser chat for code…');
+
+              for (let i = 0; i < 15 && !pairingCode; i++) {
+                await page.waitForTimeout(2000);
+                const texts = await page.locator('.message').allTextContents();
+                const newContent = texts.slice(msgCountBefore).join('\n');
+                const codeRe = /openclaw\s+pairing\s+approve\s+telegram\s+([A-Z0-9]{8})/;
+                const match = newContent.match(codeRe);
+                if (match) {
+                  pairingCode = match[1];
+                  log(`Pairing code found in browser chat: ${pairingCode}`);
+                  break;
+                }
+              }
+            } finally {
+              await context.close().catch(() => {});
+            }
+          } catch (browserErr: any) {
+            log(`Browser flow encountered an error (will rely on CLI): ${browserErr.message}`);
+          }
+
+          // Ensure CLI poller finishes or finds the code if browser didn't
+          await cliPoller;
         }
+      }
+
+      // ── 3. Approve the pairing code ──
+      if (pairingCode) {
+        log(`Approving pairing code: ${pairingCode}…`);
+        const approveResult = await execAsync(
+          `openclaw pairing approve telegram ${pairingCode}`,
+          { env: cleanEnv, timeout: 30_000, maxBuffer: 1024 * 1024 }
+        ).catch((e: any) => ({
+          stdout: (e.stdout || '') as string,
+          stderr: (e.stderr || '') as string,
+          failed: true,
+        })) as { stdout: string; stderr: string; failed?: boolean };
+        
+        const approveOut = approveResult.stdout.trim();
+        if (approveOut.toLowerCase().includes('approved')) {
+          log(`✅ ${approveOut.slice(0, 200)}`);
+        } else {
+          log(`Approve output: ${approveOut || approveResult.stderr || 'unknown'}`);
+        }
+      } else if (!alreadyConnectedEarly && !pairingError) {
+        pairingError = 'No pairing code found after polling.';
       }
 
       // ── 4. Final status ──
@@ -1230,6 +1182,105 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Individual OpenClaw Setup Steps (for debugging)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle('openclaw:install-cli', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-cli]', msg); };
+    try {
+      await ensureCliInstalled(cleanEnv, log);
+      return { success: true, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:onboard-gemini', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:onboard-gemini]', msg); };
+    
+    // Inject Gemini API key
+    try {
+      const { getStore } = require('./storage');
+      const store = getStore();
+      const aiKeys = store ? store.get('ai-keys', []) : [];
+      const googleKey = aiKeys.find((k: any) => k?.providerId === 'google' && k?.isActive) || aiKeys.find((k: any) => k?.providerId === 'google');
+      if (googleKey?.fields?.apiKey) {
+        cleanEnv.GEMINI_API_KEY = googleKey.fields.apiKey;
+      } else {
+        return { success: false, error: 'No Gemini API key found.', logs };
+      }
+    } catch { /* ... */ }
+
+    try {
+      const ok = await runOnboardGemini(cleanEnv, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:doctor-fix', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:doctor-fix]', msg); };
+    try {
+      const ok = await runDoctorFix(cleanEnv, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:install-kakao-plugin', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-kakao-plugin]', msg); };
+    try {
+      const ok = await installKakaoPlugin(cleanEnv, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:golden-merge', async (_event, { profileName, botToken }: { profileName: string; botToken?: string }) => {
+    const homeDir = os.homedir();
+    const configDir = path.join(homeDir, '.openclaw');
+    const configPath = path.join(configDir, 'openclaw.json');
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:golden-merge]', msg); };
+
+    const { getStore } = require('./storage');
+    const store = getStore();
+    const profiles = store.get('googleProfiles') || {};
+    const savedProfile = profiles[profileName] || {};
+    const resolvedToken = botToken?.trim() || savedProfile.telegramBotToken || '';
+
+    try {
+      const ok = await runGoldenMerge(configDir, configPath, resolvedToken, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:install-daemon', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-daemon]', msg); };
+    try {
+      const ok = await installDaemon(cleanEnv, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
     }
   });
 }

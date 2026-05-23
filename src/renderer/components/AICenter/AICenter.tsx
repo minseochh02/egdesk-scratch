@@ -1,7 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import './AICenter.css';
 import { useWorkflows, WorkflowDef } from '../../hooks/useWorkflows';
 import { useDataSources, DataSource, getProcessingState } from '../../hooks/useDataSources';
+
+interface NotificationToast {
+  id: number;
+  recipientRole: string;
+  title: string;
+  body: string;
+  runId?: string;
+  at: string;
+}
 
 interface ActionDef {
   id: string;
@@ -331,6 +340,13 @@ export function AICenter() {
   const [tasksLoading, setTasksLoading]               = useState<boolean>(false);
   const [calendarLoading, setCalendarLoading]         = useState<boolean>(false);
 
+  // [테스트] 받을어음 시뮬레이션 상태
+  const [simulating, setSimulating]                   = useState(false);
+  const [simResult, setSimResult]                     = useState<{ ok: boolean; msg: string } | null>(null);
+  const [clearing, setClearing]                       = useState(false);
+  const [toasts, setToasts]                           = useState<NotificationToast[]>([]);
+  const toastId                                       = React.useRef(0);
+
   // [이중 저장소] 2. Tasks Fetcher
   const fetchActiveTasks = async () => {
     setTasksLoading(true);
@@ -360,6 +376,62 @@ export function AICenter() {
       setCalendarLoading(false);
     }
   };
+
+  // notification:push 수신 구독 (전역 — 탭과 무관하게 항상 활성)
+  useEffect(() => {
+    const unsub = (window as any).electron.onNotificationPush(
+      (data: { recipientRole: string; title: string; body: string; runId?: string }) => {
+        const id = ++toastId.current;
+        const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setToasts(prev => [{ id, at: now, ...data }, ...prev].slice(0, 20));
+        // 캘린더 탭이 열려 있으면 이벤트 목록 자동 갱신
+        setCalendarEvents(prev => prev); // trigger re-render hint; actual refresh below
+        fetchCalendarEvents();
+      }
+    );
+    return unsub;
+  }, []);
+
+  // 받을어음 수신 시뮬레이션 실행
+  const handleSimulateReceivable = useCallback(async () => {
+    setSimulating(true);
+    setSimResult(null);
+    try {
+      const res = await (window as any).electron.simulateReceivable();
+      if (res.success) {
+        setSimResult({ ok: true, msg: `Run 기동 완료 · noteId: ${res.noteId?.slice(0, 8)}…` });
+        // 캘린더 이벤트 목록 새로고침
+        await fetchCalendarEvents();
+      } else {
+        setSimResult({ ok: false, msg: res.error ?? 'Unknown error' });
+      }
+    } catch (err: any) {
+      setSimResult({ ok: false, msg: err?.message ?? String(err) });
+    } finally {
+      setSimulating(false);
+    }
+  }, []);
+
+  // 시뮬레이션 데이터 일괄 삭제
+  const handleClearSimData = useCallback(async () => {
+    setClearing(true);
+    setSimResult(null);
+    try {
+      const res = await (window as any).electron.clearSimData();
+      if (res.success) {
+        const { receivables = 0, runs = 0 } = res.deleted ?? {};
+        setSimResult({ ok: true, msg: `삭제 완료 · 받을어음 ${receivables}건, Run ${runs}건` });
+        setToasts([]);
+        await fetchCalendarEvents();
+      } else {
+        setSimResult({ ok: false, msg: res.error ?? 'Unknown error' });
+      }
+    } catch (err: any) {
+      setSimResult({ ok: false, msg: err?.message ?? String(err) });
+    } finally {
+      setClearing(false);
+    }
+  }, []);
 
   // 탭 기동 시 데이터 자동 Fetch
   React.useEffect(() => {
@@ -563,6 +635,67 @@ export function AICenter() {
               <h3>📅 전사 공유 비즈니스 데드라인 (Company Calendar — 인간용 뷰)</h3>
               <p>전사 공유 마일스톤과 데드라인을 시각화합니다. 상태(status) 필드가 없으며 엔진이 물리 처리에 읽지 않는 안전한 전사적 뷰입니다.</p>
             </div>
+
+            {/* ── 받을어음 수신 시뮬레이션 테스트 패널 ── */}
+            <div className="aic-sim-panel">
+              <div className="aic-sim-panel-title">
+                <span className="aic-sim-icon">⚡</span>
+                받을어음 수신 시뮬레이션
+                <span className="aic-sim-label-badge">Dev Test</span>
+              </div>
+              <p className="aic-sim-desc">
+                IBK B2B 받을어음 테이블에 가짜 INSERT를 실행합니다. updateHook → WorkflowTriggerEngine → company_calendar 적재 + 역할별 notification:push 흐름을 검증합니다.
+              </p>
+              <div className="aic-sim-actions-row">
+                <button
+                  className="aic-sim-btn"
+                  onClick={handleSimulateReceivable}
+                  disabled={simulating || clearing}
+                >
+                  {simulating ? (
+                    <><span className="aic-sim-spinner" /> 시뮬레이션 실행 중…</>
+                  ) : (
+                    '▶ 받을어음 수신 시뮬레이션'
+                  )}
+                </button>
+                <button
+                  className="aic-sim-btn clear"
+                  onClick={handleClearSimData}
+                  disabled={simulating || clearing}
+                >
+                  {clearing ? (
+                    <><span className="aic-sim-spinner" /> 삭제 중…</>
+                  ) : (
+                    '✕ 테스트 데이터 삭제'
+                  )}
+                </button>
+                {simResult && (
+                  <span className={`aic-sim-result-badge ${simResult.ok ? 'ok' : 'err'}`}>
+                    {simResult.ok ? '✓' : '✗'} {simResult.msg}
+                  </span>
+                )}
+              </div>
+
+              {toasts.length > 0 && (
+                <div className="aic-sim-toasts">
+                  <div className="aic-sim-toasts-title">수신된 notification:push ({toasts.length})</div>
+                  {toasts.map(t => (
+                    <div key={t.id} className="aic-sim-toast">
+                      <div className="aic-sim-toast-header">
+                        <span className="aic-sim-toast-role">{t.recipientRole}</span>
+                        <span className="aic-sim-toast-title-text">{t.title}</span>
+                        <span className="aic-sim-toast-time">{t.at}</span>
+                      </div>
+                      <div className="aic-sim-toast-body">{t.body}</div>
+                      {t.runId && (
+                        <div className="aic-sim-toast-run">Run: <span className="mono">{t.runId.slice(0, 8)}…</span></div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {calendarLoading ? (
               <div className="aic-sources-loading"><div className="aic-sources-spinner" /></div>
             ) : calendarEvents.length === 0 ? (

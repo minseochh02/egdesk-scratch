@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { randomUUID } from 'crypto';
 import { getSQLiteManager } from '../sqlite/manager';
 import { RunStatus, ApprovalDecision } from '../sqlite/workflow-db';
 import { TasksCalendarService } from '../sqlite/tasks-calendar-service';
@@ -212,6 +213,156 @@ export function registerWorkflowIPCHandlers(): void {
       return { success: true, data };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to get calendar events' };
+    }
+  });
+
+  // ── Test: 받을어음 수신 시뮬레이션 ────────────────────────────────────────
+  // 1) 트리거 워크플로(경리직원→과장→이사)가 없으면 자동 생성 후 active 전환
+  // 2) ibk_b2b_receivables에 가짜 행 INSERT → updateHook → WorkflowTriggerEngine 기동
+  ipcMain.handle('test:simulate-receivable', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const wfManager = manager.getWorkflowManager();
+
+      // ── 워크플로 준비 ───────────────────────────────────────────────────
+      const TRIGGER_TABLE = 'ibk_b2b_receivables';
+      const existing = wfManager
+        .getWorkflows()
+        .find(w => w.triggerTable === TRIGGER_TABLE && w.status === 'active');
+
+      const NOTIFY_ROLES = ['사원', '경리직원', '과장', '이사'];
+      let workflowId: string;
+      if (existing) {
+        workflowId = existing.id;
+        // Always re-apply notify roles so IPC push fires even on workflow reuse
+        wfManager.setNotifyRoles(workflowId, NOTIFY_ROLES);
+        console.log(`[Test] Reusing existing workflow: ${workflowId}`);
+      } else {
+        const created = wfManager.createWorkflow({
+          label: '받을어음 수신 결재',
+          status: 'active',
+          inputTypes: [],
+          hints: [],
+          outputTables: [],
+          triggerTable: TRIGGER_TABLE,
+          actions: [],
+        });
+        workflowId = created.id;
+        // 결재 라인: 경리직원 → 과장 → 이사
+        wfManager.setNotifyRoles(workflowId, NOTIFY_ROLES);
+        console.log(`[Test] Created workflow: ${workflowId}`);
+      }
+
+      // ── 가짜 받을어음 INSERT (메인 프로세스 DB 커넥션 경유 → updateHook 발화) ──
+      const financeHubDb = manager.getFinanceHubDatabase();
+      const noteId = randomUUID();
+      const maturityDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+
+      financeHubDb
+        .prepare(`
+          INSERT INTO ibk_b2b_receivables (
+            id, note_number, buyer_name, buyer_biz_no,
+            kind, status,
+            receivable_amount, original_note_amount,
+            registered_date, maturity_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          noteId,
+          `TEST-${Date.now()}`,
+          '(주)테스트거래처',
+          '123-45-67890',
+          '전자어음',
+          '정상',
+          50_000_000,
+          50_000_000,
+          new Date().toISOString().slice(0, 10),
+          maturityDate,
+        );
+
+      console.log(`[Test] Inserted fake receivable: ${noteId} (maturity: ${maturityDate})`);
+
+      // updateHook fires synchronously inside .run(), but the Electron IPC handler's
+      // async context can suppress hook-to-renderer propagation in some builds.
+      // Directly invoke the trigger engine so the test always exercises the full chain.
+      const { WorkflowTriggerEngine } = require('../workflow/workflow-trigger-engine');
+      await WorkflowTriggerEngine.getInstance()._handleInsertPublic(
+        'ibk_b2b_receivables',
+        noteId,
+        financeHubDb,
+      );
+
+      return { success: true, noteId, workflowId };
+    } catch (error) {
+      console.error('[Test] simulate-receivable failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ── Test: 시뮬레이션 데이터 일괄 삭제 ────────────────────────────────────────
+  // ibk_b2b_receivables의 TEST- 행, 연결된 workflow_runs, company_calendar 이벤트를 제거
+  ipcMain.handle('test:clear-sim-data', async () => {
+    try {
+      const manager = getSQLiteManager();
+      const financeHubDb = manager.getFinanceHubDatabase();
+      const neuronDb = manager.getNeuronDatabase();
+
+      // 1. 테스트 받을어음 ID 목록 수집 (note_number가 TEST- 로 시작하는 행)
+      const testRows = financeHubDb
+        .prepare(`SELECT id FROM ibk_b2b_receivables WHERE note_number LIKE 'TEST-%'`)
+        .all() as { id: string }[];
+
+      const testIds = testRows.map(r => r.id);
+      console.log(`[Test] Clearing ${testIds.length} test receivable(s)`);
+
+      // 2. 연결된 workflow_runs 수집 (source_table + source_row_id 기준)
+      let runIds: string[] = [];
+      if (testIds.length > 0) {
+        const placeholders = testIds.map(() => '?').join(', ');
+        const runs = neuronDb
+          .prepare(
+            `SELECT id FROM workflow_runs
+             WHERE source_table = 'ibk_b2b_receivables'
+               AND source_row_id IN (${placeholders})`,
+          )
+          .all(...testIds) as { id: string }[];
+        runIds = runs.map(r => r.id);
+      }
+
+      console.log(`[Test] Clearing ${runIds.length} workflow run(s)`);
+
+      // 3. company_calendar 이벤트 삭제 (run_id 연결)
+      if (runIds.length > 0) {
+        const placeholders = runIds.map(() => '?').join(', ');
+        const calResult = neuronDb
+          .prepare(`DELETE FROM company_calendar WHERE run_id IN (${placeholders})`)
+          .run(...runIds);
+        console.log(`[Test] Deleted ${calResult.changes} calendar event(s)`);
+      }
+
+      // 4. workflow_runs 삭제
+      if (runIds.length > 0) {
+        const placeholders = runIds.map(() => '?').join(', ');
+        neuronDb
+          .prepare(`DELETE FROM workflow_runs WHERE id IN (${placeholders})`)
+          .run(...runIds);
+      }
+
+      // 5. ibk_b2b_receivables TEST 행 삭제
+      const fhResult = financeHubDb
+        .prepare(`DELETE FROM ibk_b2b_receivables WHERE note_number LIKE 'TEST-%'`)
+        .run();
+      console.log(`[Test] Deleted ${fhResult.changes} test receivable(s)`);
+
+      return {
+        success: true,
+        deleted: { receivables: fhResult.changes, runs: runIds.length },
+      };
+    } catch (error) {
+      console.error('[Test] clear-sim-data failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

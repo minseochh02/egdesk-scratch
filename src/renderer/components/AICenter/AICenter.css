@@ -1005,3 +1005,195 @@
   color: #475569;
 }
 
+/* ⚡ 받을어음 수신 시뮬레이션 테스트 패널 */
+.aic-sim-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+
+.aic-sim-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.aic-sim-icon {
+  font-size: 14px;
+}
+
+.aic-sim-label-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.02em;
+}
+
+.aic-sim-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.aic-sim-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.aic-sim-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #1e293b;
+  color: #f1f5f9;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.aic-sim-btn:hover:not(:disabled) {
+  background: #334155;
+}
+
+.aic-sim-btn.clear {
+  background: #fff;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+}
+
+.aic-sim-btn.clear:hover:not(:disabled) {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.aic-sim-btn:disabled {
+  background: #94a3b8;
+  color: #fff;
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+.aic-sim-btn.clear:disabled {
+  background: #f1f5f9;
+  color: #cbd5e1;
+  border-color: #e2e8f0;
+}
+
+.aic-sim-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(241, 245, 249, 0.4);
+  border-top-color: #f1f5f9;
+  border-radius: 50%;
+  animation: sim-spin 0.7s linear infinite;
+}
+
+@keyframes sim-spin {
+  to { transform: rotate(360deg); }
+}
+
+.aic-sim-result-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+}
+
+.aic-sim-result-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.aic-sim-result-badge.err {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.aic-sim-toasts {
+  margin-top: 14px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aic-sim-toasts-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.aic-sim-toast {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #6366f1;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.aic-sim-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.aic-sim-toast-role {
+  font-size: 11px;
+  font-weight: 700;
+  color: #4f46e5;
+  background: #eef2ff;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.aic-sim-toast-title-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+}
+
+.aic-sim-toast-time {
+  font-size: 10.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.aic-sim-toast-body {
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.aic-sim-toast-run {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+

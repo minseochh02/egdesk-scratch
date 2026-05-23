@@ -4216,7 +4216,7 @@ test('recorded test', async ({ page }) => {
 
       // Wait for email rows to load — target the row containing a GitHub sender
       const githubRow = gmailPage.locator('tr.zA').filter({ hasText: /github/i }).first();
-      const rowVisible = await githubRow.isVisible({ timeout: 20_000 }).catch(() => false);
+      const rowVisible = await githubRow.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
       if (rowVisible) {
         await githubRow.click();
         await gmailPage.waitForTimeout(3000);
@@ -4397,7 +4397,7 @@ test('recorded test', async ({ page }) => {
 
     // Helper: check if a locator is visible without throwing
     const isVisible = async (loc: import('playwright-core').Locator) =>
-      loc.isVisible({ timeout: 500 }).catch(() => false);
+      loc.waitFor({ state: 'visible', timeout: 500 }).then(() => true).catch(() => false);
 
     // Helper: click the first visible locator from a list of candidates
     const tryClick = async (candidates: import('playwright-core').Locator[]) => {
@@ -4459,7 +4459,7 @@ test('recorded test', async ({ page }) => {
       // 3a. Check if we are on a Passkey/Biometric screen. 
       // If so, we MUST click "Try another way" (다른 방법 시도) to get to the password field.
       const pwdField = page.locator('input[type="password"], [name="Passwd"]').first();
-      const isPwdVisible = await pwdField.isVisible({ timeout: 2000 }).catch(() => false);
+      const isPwdVisible = await pwdField.waitFor({ state: 'visible', timeout: 2000 }).then(() => true).catch(() => false);
 
       if (!isPwdVisible) {
         const tryAnotherWay = [
@@ -5016,7 +5016,7 @@ test('recorded test', async ({ page }) => {
           let codeSubmitted = !codeScreenVisible;
           while (Date.now() < deadline) {
             // Success? Use the unique #page-chats ID to avoid strict mode violations
-            const loggedIn = await page.locator('#page-chats').isVisible({ timeout: 1000 }).catch(() => false);
+            const loggedIn = await page.locator('#page-chats').waitFor({ state: 'visible', timeout: 1000 }).then(() => true).catch(() => false);
             if (loggedIn) {
               tgStatus('logged-in', 'Logged in! Loading chats…');
               return;
@@ -5024,7 +5024,7 @@ test('recorded test', async ({ page }) => {
 
             // Detect code screen disappearing — user submitted the code, Telegram is processing
             if (!codeSubmitted) {
-              const codeScreenStillVisible = await page.locator('._wrap_87tyg_1, .input-wrapper ._input_87tyg_11, p.subtitle.sent-type').first().isVisible({ timeout: 500 }).catch(() => false);
+              const codeScreenStillVisible = await page.locator('._wrap_87tyg_1, .input-wrapper ._input_87tyg_11, p.subtitle.sent-type').first().waitFor({ state: 'visible', timeout: 500 }).then(() => true).catch(() => false);
               if (!codeScreenStillVisible) {
                 codeSubmitted = true;
                 tgStatus('verifying-code', 'Code submitted — waiting for Telegram to verify…');
@@ -5083,7 +5083,7 @@ test('recorded test', async ({ page }) => {
               await page.waitForTimeout(2000);
 
               // Wait for the code-entry screen to reappear, then notify UI
-              const codeScreenBack = await page.locator('._wrap_87tyg_1, p.subtitle.sent-type').first().isVisible({ timeout: 10_000 }).catch(() => false);
+              const codeScreenBack = await page.locator('._wrap_87tyg_1, p.subtitle.sent-type').first().waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
               if (codeScreenBack) {
                 let phoneOnScreen = phoneNumber;
                 try { phoneOnScreen = (await page.locator('h4.phone').textContent({ timeout: 2000 }))?.trim() ?? phoneNumber; } catch { /* ignore */ }
@@ -5247,7 +5247,7 @@ test('recorded test', async ({ page }) => {
         // The button is: <button class="chat-input-control-button ..."><span class="i18n">START</span></button>
         const chatStartBtn = page.locator('button.chat-input-control-button:has-text("START")').first();
         try {
-          if (await chatStartBtn.isVisible({ timeout: 5000 })) {
+          if (await chatStartBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             tgStatus('opening-botfather', 'Clicking START button in BotFather chat…');
             await chatStartBtn.click({ force: true, timeout: 5000 });
             await page.waitForTimeout(2000);
@@ -5580,16 +5580,24 @@ test('recorded test', async ({ page }) => {
           try {
             try {
               const locator = page.locator('span').filter({ hasText: 'Continue with Google' });
-              await locator.hover({ force: true });
-              await locator.click({ timeout: 8000 });
-              continueWithGoogleClicked = true;
+              if (await locator.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)) {
+                await locator.hover({ force: true });
+                await locator.click({ timeout: 8000 });
+                continueWithGoogleClicked = true;
+              }
             } catch {
               try {
-                await page.locator('.Button-content:nth-match(2)').click({ timeout: 5000 });
-                continueWithGoogleClicked = true;
+                const btn2 = page.locator('.Button-content:nth-match(2)');
+                if (await btn2.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
+                  await btn2.click({ timeout: 5000 });
+                  continueWithGoogleClicked = true;
+                }
               } catch {
-                await page.locator('xpath=/html/body/div[1]/div[4]/main/div/div[2]/webauthn-status/form[2]/button/span').click({ timeout: 5000 });
-                continueWithGoogleClicked = true;
+                const xpathBtn = page.locator('xpath=/html/body/div[1]/div[4]/main/div/div[2]/webauthn-status/form[2]/button/span');
+                if (await xpathBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
+                  await xpathBtn.click({ timeout: 5000 });
+                  continueWithGoogleClicked = true;
+                }
               }
             }
           } catch {
@@ -5604,8 +5612,10 @@ test('recorded test', async ({ page }) => {
           ghStatus('selecting-account', 'Selecting Google account…');
           try {
             const accountLocator = page.locator('.LbOduc').first();
-            await accountLocator.hover({ force: true });
-            await accountLocator.click({ timeout: 8000 });
+            if (await accountLocator.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)) {
+              await accountLocator.hover({ force: true });
+              await accountLocator.click({ timeout: 8000 });
+            }
           } catch {
             // Account may have been auto-selected or the selector changed; continue
           }
@@ -5616,7 +5626,7 @@ test('recorded test', async ({ page }) => {
         // This screen appears for new accounts or when re-authorizing.
         try {
           const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
-          if (await googleContinueBtn.isVisible()) {
+          if (await googleContinueBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             ghStatus('selecting-account', 'Confirming Google permissions…');
             await googleContinueBtn.click({ force: true });
             await page.waitForTimeout(3000);
@@ -5629,14 +5639,14 @@ test('recorded test', async ({ page }) => {
         // This appears if the email exists on GitHub but Google sign-in isn't linked yet.
         try {
           const linkAccountBtn = page.locator('button').filter({ hasText: /Link account|계정 연결/i }).first();
-          if (await linkAccountBtn.isVisible()) {
+          if (await linkAccountBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             ghStatus('selecting-account', 'Linking Google account to GitHub…');
             await linkAccountBtn.click({ force: true });
             await page.waitForTimeout(3000);
 
             // Check if a verification code is requested after linking
             const otpInput = page.locator('input[name="sudo_email_otp"], #otp, input[name="verification_code"]').first();
-            if (await otpInput.isVisible({ timeout: 5000 })) {
+            if (await otpInput.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
               ghStatus('selecting-account', 'Verification code required for linking…');
               const code = await extractVerificationCodeFromGmail(context, ghStatus);
               if (code) {
@@ -5662,7 +5672,7 @@ test('recorded test', async ({ page }) => {
           await page.waitForTimeout(2000);
         }
         const loginVisible = !isExistingAccount &&
-          await page.locator('[id="login"]').isVisible({ timeout: 4000 }).catch(() => false);
+          await page.locator('[id="login"]').waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false);
 
         if (loginVisible) {
           // New account: fill username and click Create account
@@ -5729,14 +5739,16 @@ test('recorded test', async ({ page }) => {
         store.set('googleProfiles', profiles);
         ghStatus('saving', `Saved @${finalUsername} to profile.`);
 
+        console.log(`[GitHub:success] Account created successfully: @${finalUsername}`);
         await context.close().catch(() => {});
         return { success: true, githubUsername: finalUsername, isExistingAccount };
       } catch (automationError) {
+        console.error(`[GitHub:error] Automation failed: ${automationError}`);
         await context.close().catch(() => {});
         return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
       }
     } catch (error) {
-      console.error('[GitHub Create Account] error:', error);
+      console.error('[GitHub Create Account] Fatal error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
@@ -5826,13 +5838,13 @@ test('recorded test', async ({ page }) => {
           ghStatus2('google-login', 'Not logged in — attempting Google login…');
           try {
             const continueWithGoogle = page.locator('button, span, a').filter({ hasText: /Continue with Google/i }).first();
-            if (await continueWithGoogle.isVisible({ timeout: 8000 })) {
+            if (await continueWithGoogle.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)) {
               await continueWithGoogle.click({ force: true });
               await page.waitForTimeout(3000);
 
               // Select account
               const accountLocator = page.locator('.LbOduc').first();
-              if (await accountLocator.isVisible({ timeout: 8000 })) {
+              if (await accountLocator.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)) {
                 await accountLocator.click({ force: true });
                 await page.waitForTimeout(3000);
               }
@@ -5840,7 +5852,7 @@ test('recorded test', async ({ page }) => {
               // Handle Google Permission screen ("Google will allow GitHub to access...")
               try {
                 const googleContinueBtn = page.locator('button').filter({ hasText: /^Continue$|^계속$/i }).first();
-                if (await googleContinueBtn.isVisible()) {
+                if (await googleContinueBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
                   await googleContinueBtn.click({ force: true });
                   await page.waitForTimeout(3000);
                 }
@@ -5851,13 +5863,13 @@ test('recorded test', async ({ page }) => {
               // Handle "Link account" screen
               try {
                 const linkAccountBtn = page.locator('button').filter({ hasText: /Link account|계정 연결/i }).first();
-                if (await linkAccountBtn.isVisible()) {
+                if (await linkAccountBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
                   await linkAccountBtn.click({ force: true });
                   await page.waitForTimeout(3000);
 
                   // Check if a verification code is requested after linking
                   const otpInput = page.locator('input[name="sudo_email_otp"], #otp, input[name="verification_code"]').first();
-                  if (await otpInput.isVisible({ timeout: 5000 })) {
+                  if (await otpInput.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
                     ghStatus2('google-login', 'Verification code required for linking…');
                     const code = await extractVerificationCodeFromGmail(context, ghStatus2);
                     if (code) {
@@ -5966,7 +5978,7 @@ test('recorded test', async ({ page }) => {
         await page.waitForTimeout(2000);
 
         // Verify we landed on the token creation form — may have been intercepted by sudo
-        const onForm = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
+        const onForm = await page.locator('[id="oauth_access_description"]').waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
         if (!onForm) {
           // Last resort: navigate directly
           await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'load', timeout: 15_000 });
@@ -5976,14 +5988,14 @@ test('recorded test', async ({ page }) => {
         // GitHub sudo ("Confirm access") check — triggered for new accounts on sensitive pages.
         // Detect by h1 text or the sudo-credential-options custom element.
         const sudoVisible = await page.locator('sudo-credential-options, h1, .auth-form-header').filter({ hasText: /Confirm access|Verify your identity/i })
-          .first().isVisible({ timeout: 5_000 }).catch(() => false);
+          .first().waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
 
         if (sudoVisible) {
           ghStatus2('sudo-required', 'GitHub needs to verify your identity…');
           
           // Check if we can verify via email
           const sendEmailBtn = page.locator('#sudo-send-email, button:has-text("Verify via email")').first();
-          if (await sendEmailBtn.isVisible({ timeout: 5000 })) {
+          if (await sendEmailBtn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             ghStatus2('sudo-required', 'Sending verification email…');
             await sendEmailBtn.click({ force: true });
             await page.waitForTimeout(2000);
@@ -5991,7 +6003,7 @@ test('recorded test', async ({ page }) => {
 
           // Check if we are on the password confirmation screen
           const sudoPwdInput = page.locator('input[name="password"], #sudo_password').first();
-          if (await sudoPwdInput.isVisible({ timeout: 5000 })) {
+          if (await sudoPwdInput.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             ghStatus2('sudo-required', 'Re-entering password for verification…');
             // We don't have the password here, so we might need to ask the user or fail gracefully
             // For now, we'll try to use the password passed to the login handler if we can store it, 
@@ -6002,7 +6014,7 @@ test('recorded test', async ({ page }) => {
 
           // Confirm the code input appeared before we go look for the email
           const otpInput = page.locator('input[name="sudo_email_otp"], #otp').first();
-          if (await otpInput.isVisible({ timeout: 5000 })) {
+          if (await otpInput.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
             const sudoCode = await extractVerificationCodeFromGmail(context, ghStatus2);
 
             if (sudoCode) {
@@ -6017,7 +6029,7 @@ test('recorded test', async ({ page }) => {
         }
 
         // After potential sudo redirect, confirm we're on the token form
-        const onFormAfterSudo = await page.locator('[id="oauth_access_description"]').isVisible({ timeout: 8000 }).catch(() => false);
+        const onFormAfterSudo = await page.locator('[id="oauth_access_description"]').waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
         if (!onFormAfterSudo) {
           // Navigate directly as last resort
           await page.goto('https://github.com/settings/tokens/new', { waitUntil: 'load', timeout: 15_000 });
@@ -6103,14 +6115,16 @@ test('recorded test', async ({ page }) => {
         
         store.set('googleProfiles', profiles);
 
+        console.log(`[GitHub:success] Token generated successfully for @${githubUsername}`);
         await context.close();
         return { success: true, token: token.trim(), githubUsername };
       } catch (automationError) {
+        console.error(`[GitHub:error] Automation failed: ${automationError}`);
         await context.close().catch(() => {});
         return { success: false, error: automationError instanceof Error ? automationError.message : String(automationError) };
       }
     } catch (error) {
-      console.error('[GitHub Create Token] error:', error);
+      console.error('[GitHub Create Token] Fatal error:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });

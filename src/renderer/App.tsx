@@ -76,6 +76,7 @@ import GmailPage from './components/Gmail/GmailPage';
 import openclawIcon from '../../assets/openclaw.svg';
 import ollamaIcon from '../../assets/ollama.svg';
 import ReauthRequiredNotification from './components/Auth/ReauthRequiredNotification';
+import { GlobalNotification } from './components/Notification/GlobalNotification';
 import { GOOGLE_OAUTH_SCOPES_STRING } from './constants/googleScopes';
 
 /** Ollama tag: Gemma 3 ~4B (e.g. gemma3:4b) */
@@ -313,7 +314,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.29</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.30</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -630,6 +631,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [githubProfileName, setGithubProfileName] = useState('openclaw-default');
   const [githubRunning, setGithubRunning] = useState(false);
   const [githubLog, setGithubLog] = useState('');
+  const [githubStatus, setGithubStatus] = useState<{ stage: string; message: string } | null>(null);
 
   // Telegram automation state
   const [telegramProfileName, setTelegramProfileName] = useState('openclaw-default');
@@ -646,6 +648,19 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [kakaoSkillUrl, setKakaoSkillUrl] = useState('');
   const [kakaoRunning, setKakaoRunning] = useState(false);
   const [kakaoReuseExisting, setKakaoReuseExisting] = useState(false);
+
+  // Load stored tunnel URL on mount
+  useEffect(() => {
+    const loadTunnelUrl = async () => {
+      try {
+        const store = await (window as any).electron.debug.openclaw.status();
+        // This is a bit of a hack, openclaw:status doesn't return the URL directly, 
+        // but we can add a new IPC to get the config.
+        // For now, the backend fallback I added will handle the empty case.
+      } catch (e) {}
+    };
+    loadTunnelUrl();
+  }, []);
 
 // Define addDebugLog function at the component level
   const addDebugLog = (message: string) => {
@@ -672,6 +687,16 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
       console.log('[DebugModal] telegram:status received:', data);
       telegramStatusRef.current = data;
       setTelegramStatus(data);
+    });
+    return () => { if (cleanup) cleanup(); };
+  }, []);
+
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer?.on) return;
+    const cleanup = window.electron.ipcRenderer.on('github:status', (data: { stage: string; message: string }) => {
+      console.log('[DebugModal] github:status received:', data);
+      setGithubStatus(data);
+      if (data.message) setGithubLog(data.message);
     });
     return () => { if (cleanup) cleanup(); };
   }, []);
@@ -2229,7 +2254,7 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             </div>
             {githubLog && (
               <div style={{ marginBottom: '10px', padding: '8px 12px', backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', color: '#aaa', fontSize: '12px', fontFamily: 'monospace' }}>
-                {githubLog}
+                {githubStatus?.stage ? `[${githubStatus.stage}] ${githubLog}` : githubLog}
               </div>
             )}
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -2475,16 +2500,21 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     return;
                   }
                   setKakaoRunning(true);
-                  addDebugLog(`💬 Creating KakaoTalk channel "@${kakaoSearchId}"…`);
+                  
+                  const suffix = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
+                  const finalSearchId = kakaoReuseExisting ? kakaoSearchId.trim() : `${kakaoSearchId.trim()}_${suffix}`;
+                  const finalChannelName = kakaoReuseExisting ? kakaoChannelName.trim() : `${kakaoChannelName.trim()} ${suffix}`;
+
+                  addDebugLog(`💬 Creating KakaoTalk channel "@${finalSearchId}"…`);
                   try {
                     const result = await (window as any).electron.debug.kakao.createChannel(
                       kakaoProfileName.trim() || 'openclaw-default',
-                      kakaoChannelName.trim(),
-                      kakaoSearchId.trim(),
+                      finalChannelName,
+                      finalSearchId,
                       kakaoReuseExisting
                     );
                     if (result?.success) {
-                      addDebugLog(`✅ KakaoTalk channel created: @${result.searchId || kakaoSearchId}`);
+                      addDebugLog(`✅ KakaoTalk channel created: @${result.searchId || finalSearchId}`);
                     } else {
                       addDebugLog(`❌ Channel creation failed: ${result?.error || 'Unknown error'}`);
                     }
@@ -2513,17 +2543,22 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     return;
                   }
                   setKakaoRunning(true);
-                  addDebugLog(`💬 Creating KakaoTalk bot "${kakaoBotName}" for @${kakaoSearchId}…`);
+                  
+                  const suffix = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
+                  const finalSearchId = kakaoReuseExisting ? kakaoSearchId.trim() : `${kakaoSearchId.trim()}_${suffix}`;
+                  const finalBotName = kakaoReuseExisting ? kakaoBotName.trim() : `${kakaoBotName.trim()} ${suffix}`;
+
+                  addDebugLog(`💬 Creating KakaoTalk bot "${finalBotName}" for @${finalSearchId}…`);
                   try {
                     const result = await (window as any).electron.debug.kakao.createBot(
                       kakaoProfileName.trim() || 'openclaw-default',
-                      kakaoBotName.trim(),
-                      `@${kakaoSearchId.trim()}`,
+                      finalBotName,
+                      finalSearchId.startsWith('@') ? finalSearchId : `@${finalSearchId}`,
                       kakaoSkillUrl.trim(),
                       kakaoReuseExisting
                     );
                     if (result?.success) {
-                      addDebugLog(`✅ KakaoTalk bot created and deployed: ${result.botName || kakaoBotName}`);
+                      addDebugLog(`✅ KakaoTalk bot created and deployed: ${result.botName || finalBotName}`);
                     } else {
                       addDebugLog(`❌ Bot creation failed: ${result?.error || 'Unknown error'}`);
                     }
@@ -2552,29 +2587,35 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     return;
                   }
                   setKakaoRunning(true);
-                  addDebugLog(`💬 Running full KakaoTalk setup (channel + bot)…`);
+                  
+                  const suffix = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
+                  const finalSearchId = kakaoReuseExisting ? kakaoSearchId.trim() : `${kakaoSearchId.trim()}_${suffix}`;
+                  const finalChannelName = kakaoReuseExisting ? kakaoChannelName.trim() : `${kakaoChannelName.trim()} ${suffix}`;
+                  const finalBotName = kakaoReuseExisting ? kakaoBotName.trim() : `${kakaoBotName.trim()} ${suffix}`;
+
+                  addDebugLog(`💬 Running full KakaoTalk setup (channel + bot) with suffix "${suffix}"…`);
                   try {
                     // Step A
-                    addDebugLog(`  → Creating channel "@${kakaoSearchId}"…`);
+                    addDebugLog(`  → Creating channel "@${finalSearchId}"…`);
                     const chResult = await (window as any).electron.debug.kakao.createChannel(
                       kakaoProfileName.trim() || 'openclaw-default',
-                      kakaoChannelName.trim(),
-                      kakaoSearchId.trim(),
+                      finalChannelName,
+                      finalSearchId,
                       kakaoReuseExisting
                     );
                     if (chResult?.success) {
-                      addDebugLog(`  ✅ Channel created: @${kakaoSearchId}`);
+                      addDebugLog(`  ✅ Channel created: @${finalSearchId}`);
                       // Step B
-                      addDebugLog(`  → Creating bot "${kakaoBotName}"…`);
+                      addDebugLog(`  → Creating bot "${finalBotName}"…`);
                       const botResult = await (window as any).electron.debug.kakao.createBot(
                         kakaoProfileName.trim() || 'openclaw-default',
-                        kakaoBotName.trim(),
-                        `@${kakaoSearchId.trim()}`,
+                        finalBotName,
+                        `@${finalSearchId.trim()}`,
                         kakaoSkillUrl.trim(),
                         kakaoReuseExisting
                       );
                       if (botResult?.success) {
-                        addDebugLog(`  ✅ Bot created and deployed: ${kakaoBotName}`);
+                        addDebugLog(`  ✅ Bot created and deployed: ${finalBotName}`);
                         addDebugLog('✅ Full KakaoTalk setup complete!');
                       } else {
                         addDebugLog(`  ❌ Bot creation failed: ${botResult?.error || 'Unknown error'}`);
@@ -2600,6 +2641,210 @@ function DebugModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               >
                 {kakaoRunning ? '⏳ Running…' : 'Run Full Setup (A + B)'}
               </button>
+            </div>
+          </div>
+
+          {/* OpenClaw Setup Debugging Section */}
+          <div style={{ border: '1px solid #444', borderRadius: '8px', padding: '15px', backgroundColor: '#1a1a1a' }}>
+            <h3 style={{ color: '#fcd34d', marginBottom: '15px', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🛠️ OpenClaw Setup Debugging
+            </h3>
+            <p style={{ color: '#888', fontSize: '12px', marginBottom: '15px' }}>
+              Trigger individual steps of the setup flow to debug specific failures without re-running everything.
+            </p>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              {/* GitHub Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#58a6ff', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>GitHub</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!githubProfileName.trim()) { alert('Enter a profile name'); return; }
+                      addDebugLog('🐙 Retrying GitHub Account Creation...');
+                      const result = await (window as any).electron.debug.github.createAccount(githubProfileName.trim());
+                      addDebugLog(result?.success ? '✅ GitHub Account OK' : `❌ GitHub Account Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#161b22', color: '#58a6ff', border: '1px solid #30363d', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Account
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!githubProfileName.trim()) { alert('Enter a profile name'); return; }
+                      addDebugLog('🐙 Retrying GitHub Token Generation...');
+                      const result = await (window as any).electron.debug.github.createToken(githubProfileName.trim());
+                      addDebugLog(result?.success ? '✅ GitHub Token OK' : `❌ GitHub Token Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #30363d', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Token
+                  </button>
+                </div>
+              </div>
+
+              {/* Telegram Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#29b6f6', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Telegram</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!telegramPhone.trim()) { alert('Enter a phone number'); return; }
+                      addDebugLog('✈️ Retrying Telegram Setup...');
+                      const result = await (window as any).electron.debug.telegram.setup(telegramProfileName.trim() || 'openclaw-default', telegramPhone.trim());
+                      addDebugLog(result?.success ? '✅ Telegram OK' : `❌ Telegram Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#0d2a3a', color: '#29b6f6', border: '1px solid #1a3a4a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Setup
+                  </button>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('✈️ Retrying Telegram Pairing...');
+                      const result = await (window as any).electron.debug.openclaw.pair(telegramProfileName.trim() || 'openclaw-default');
+                      addDebugLog(result?.success ? '✅ Pairing OK' : `❌ Pairing Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#0d2a3a', color: '#fcd34d', border: '1px solid #1a3a4a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Pairing
+                  </button>
+                </div>
+              </div>
+
+              {/* Kakao Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#fde047', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>KakaoTalk</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!kakaoChannelName.trim() || !kakaoSearchId.trim()) {
+                        alert('Enter channel name and search ID');
+                        return;
+                      }
+                      const suffix = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
+                      const finalSearchId = kakaoReuseExisting ? kakaoSearchId.trim() : `${kakaoSearchId.trim()}_${suffix}`;
+                      const finalChannelName = kakaoReuseExisting ? kakaoChannelName.trim() : `${kakaoChannelName.trim()} ${suffix}`;
+                      
+                      addDebugLog(`💬 Retrying Kakao Channel Creation ("${finalSearchId}")...`);
+                      const result = await (window as any).electron.debug.kakao.createChannel(
+                        kakaoProfileName.trim() || 'openclaw-default',
+                        finalChannelName,
+                        finalSearchId,
+                        kakaoReuseExisting
+                      );
+                      addDebugLog(result?.success ? '✅ Kakao Channel OK' : `❌ Kakao Channel Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#3a3a1a', color: '#fde047', border: '1px solid #4a4a1a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Channel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!kakaoBotName.trim() || !kakaoSearchId.trim()) {
+                        alert('Enter bot name and search ID');
+                        return;
+                      }
+                      const suffix = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
+                      const finalSearchId = kakaoReuseExisting ? kakaoSearchId.trim() : `${kakaoSearchId.trim()}_${suffix}`;
+                      const finalBotName = kakaoReuseExisting ? kakaoBotName.trim() : `${kakaoBotName.trim()} ${suffix}`;
+
+                      addDebugLog(`💬 Retrying Kakao Bot Creation ("${finalBotName}")...`);
+                      const result = await (window as any).electron.debug.kakao.createBot(
+                        kakaoProfileName.trim() || 'openclaw-default',
+                        finalBotName,
+                        finalSearchId.startsWith('@') ? finalSearchId : `@${finalSearchId}`,
+                        kakaoSkillUrl.trim(),
+                        kakaoReuseExisting
+                      );
+                      addDebugLog(result?.success ? '✅ Kakao Bot OK' : `❌ Kakao Bot Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#3a3a1a', color: '#fde047', border: '1px solid #4a4a1a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Retry Bot
+                  </button>
+                </div>
+              </div>
+
+              {/* OpenClaw CLI Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#fcd34d', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>OpenClaw CLI</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Installing OpenClaw CLI...');
+                      const result = await (window as any).electron.debug.openclaw.installCli();
+                      addDebugLog(result?.success ? '✅ CLI Install OK' : `❌ CLI Install Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#2a2a1a', color: '#aaa', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Install CLI
+                  </button>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Running OpenClaw Doctor...');
+                      const result = await (window as any).electron.debug.openclaw.doctorFix();
+                      addDebugLog(result?.success ? '✅ Doctor Fix OK' : `❌ Doctor Fix Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#2a2a1a', color: '#aaa', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Run Doctor
+                  </button>
+                </div>
+              </div>
+
+              {/* OpenClaw Config Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#fcd34d', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Config & Daemon</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Running Golden Merge...');
+                      const result = await (window as any).electron.debug.openclaw.goldenMerge(telegramProfileName.trim() || 'openclaw-default');
+                      addDebugLog(result?.success ? '✅ Golden Merge OK' : `❌ Golden Merge Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#2a2a1a', color: '#aaa', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Golden Merge
+                  </button>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Installing Daemon...');
+                      const result = await (window as any).electron.debug.openclaw.installDaemon();
+                      addDebugLog(result?.success ? '✅ Daemon Install OK' : `❌ Daemon Install Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#2a2a1a', color: '#aaa', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Install Daemon
+                  </button>
+                </div>
+              </div>
+
+              {/* Gateway Group */}
+              <div style={{ padding: '10px', backgroundColor: '#222', borderRadius: '6px' }}>
+                <div style={{ color: '#fcd34d', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Gateway</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Starting Gateway...');
+                      const result = await (window as any).electron.debug.openclaw.start();
+                      addDebugLog(result?.success ? '✅ Gateway Started' : `❌ Gateway Start Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#1a3a2a', color: '#4caf50', border: '1px solid #2a4a3a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Start Gateway
+                  </button>
+                  <button
+                    onClick={async () => {
+                      addDebugLog('🛠️ Stopping Gateway...');
+                      const result = await (window as any).electron.debug.openclaw.stop();
+                      addDebugLog(result?.success ? '✅ Gateway Stopped' : `❌ Gateway Stop Failed: ${result?.error}`);
+                    }}
+                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#3a1a1a', color: '#f44336', border: '1px solid #4a2a2a', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Stop Gateway
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2716,15 +2961,36 @@ function NavigationBar({
   const navigate = useNavigate();
   const [isNarrow, setIsNarrow] = useState(false);
   const { user } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await (window as any).electron.mcp.executeTool('ai-center-mcp-server', 'ai_center_get_notifications', { limit: 100 });
+      if (res && res.success) {
+        const data = res.result?.content?.[0]?.text ? JSON.parse(res.result.content[0].text) : [];
+        const unread = data.filter((n: any) => Number(n.is_read) === 0);
+        setUnreadCount(unread.length);
+      }
+    } catch (err) {
+      console.error('Failed to fetch notification status:', err);
+    }
+  };
 
   useEffect(() => {
-    const checkWidth = () => {
-      setIsNarrow(window.innerWidth < 800); // Increased threshold since we have more items but grouping helps
-    };
+    fetchStatus();
+    const timer = setInterval(fetchStatus, 60000);
     
-    checkWidth();
-    window.addEventListener('resize', checkWidth);
-    return () => window.removeEventListener('resize', checkWidth);
+    if ((window as any).electron?.onNotificationPush) {
+      const unsub = (window as any).electron.onNotificationPush(() => {
+        fetchStatus();
+      });
+      return () => {
+        clearInterval(timer);
+        unsub();
+      };
+    }
+
+    return () => clearInterval(timer);
   }, []);
 
   const isMarketingActive = [
@@ -2864,7 +3130,12 @@ function NavigationBar({
               <span>Neuron</span>
             </Link>
             <Link to="/ai-center" className={`nav-dropdown-item ${location.pathname.startsWith('/ai-center') ? 'active' : ''}`}>
-              <FontAwesomeIcon icon={faMicrochip} fixedWidth />
+              <div className="nav-icon-wrapper">
+                <FontAwesomeIcon icon={faMicrochip} fixedWidth />
+                {unreadCount > 0 && (
+                  <span className="nav-badge animate-in">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </div>
               <span>AI Center</span>
             </Link>
             <Link to="/lawyer" className={`nav-dropdown-item ${location.pathname === '/lawyer' ? 'active' : ''}`}>
@@ -3299,6 +3570,7 @@ function AppContent() {
     <>
       <RouteWindowBoundsManager />
       <ReauthRequiredNotification />
+      <GlobalNotification />
       <div className="app-container">
         {!hideNavigation && (
           <NavigationBar

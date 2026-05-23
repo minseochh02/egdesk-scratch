@@ -85,12 +85,13 @@ EGDesk 워크플로 엔진은 세 개의 논리적 DB 파일로 구성됩니다.
 egdesk/
 ├── workflow.db     — 워크플로 명세 + 런 기록 (엔진의 두뇌)
 ├── userdata.db     — 태스크 + 캘린더 + 사용자 테이블 데이터 (엔진의 실행 상태)
-└── conversations.db — 알림 로그 + 대화 이력 (UI 레이어)
+└── neuron.db       — AI Center DB (알림 로그 포함)
+└── conversations.db — 대화 이력 (UI 레이어)
 ```
 
 ---
 
-### 2.1. workflow.db
+### 2.1. workflow.db (Note: Currently merged into neuron.db in implementation)
 
 #### workflows 테이블 — 워크플로 명세 저장소
 
@@ -952,7 +953,7 @@ approval_1(과장) rejected  → 실무 태스크들 in_progress로 복원
 
 ## 10. 결론
 
-`workflows`와 `runs`는 `workflow.db`에서 엔진의 두뇌 역할을 합니다. `tasks`와 `company_calendar`는 `userdata.db`에서 실행 상태와 인간용 뷰를 담당합니다. `activity_logs`는 `conversations.db`에서 알림 이력을 관리합니다.
+`workflows`와 `runs`는 `neuron.db`에서 엔진의 두뇌 역할을 합니다. `tasks`와 `company_calendar`는 `neuron.db`에서 실행 상태와 인간용 뷰를 담당합니다. `activity_logs`는 `neuron.db`에서 알림 이력을 관리합니다. (conversations.db는 순수 대화 이력용으로 분리됨)
 
 이벤트 파이프라인은 `better-sqlite3`의 `update_hook` → `LocalDbEventDispatcher` → `WorkflowTriggerService` → `WorkflowLifecycleEngine` → `NotificationManager` → Electron IPC → Renderer 순서로 단방향 흐름을 유지합니다. `update_hook` 콜백 내부에서는 DB 쓰기를 하지 않으며, 모든 실제 쓰기는 비동기 핸들러에서 처리합니다.
 

@@ -33,11 +33,11 @@ export class NotificationManager {
   public async handleTaskEvent(taskId: string, message: string): Promise<void> {
     try {
       const sqliteManager = SQLiteManager.getInstance();
-      const userDataDb = sqliteManager.getUserDataDatabase();
+      const neuronDb = sqliteManager.getNeuronDatabase();
       const workflowDb = sqliteManager.getWorkflowManager();
 
       // 1. 태스크 레코드 조회
-      const task = userDataDb.prepare(
+      const task = neuronDb.prepare(
         'SELECT * FROM tasks WHERE id = ?'
       ).get(taskId) as { run_id: string; role: string; title: string; status: string } | undefined;
 
@@ -100,9 +100,9 @@ export class NotificationManager {
   /**
    * 실질적인 인앱 activity_logs 적재 및 Electron Renderer 창 Push 전송
    */
-  private async sendPushNotification(payload: NotificationPayload): Promise<void> {
+  public async sendPushNotification(payload: NotificationPayload): Promise<void> {
     try {
-      const db = SQLiteManager.getInstance().getConversationsDatabase();
+      const db = SQLiteManager.getInstance().getNeuronDatabase();
 
       // 인앱 활동 로그 테이블에 적재 (activity_logs)
       db.prepare(`
@@ -117,13 +117,40 @@ export class NotificationManager {
       );
 
       // Renderer UI로 실시간 IPC Push 전송
-      const { BrowserWindow } = require('electron');
+      const { BrowserWindow, Notification } = require('electron');
       const activeWindows = BrowserWindow.getAllWindows();
       activeWindows.forEach((win: any) => {
         if (!win.isDestroyed()) {
           win.webContents.send('notification:push', payload);
         }
       });
+
+      // OS 네이티브 알림 발송
+      if (Notification.isSupported()) {
+        const nativeNotif = new Notification({
+          title: payload.title,
+          body: payload.body,
+          silent: false,
+        });
+        nativeNotif.show();
+        nativeNotif.on('click', () => {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win) {
+            if (win.isMinimized()) win.restore();
+            win.focus();
+            win.webContents.send('navigate-to', '/ai-center');
+          }
+        });
+      }
+
+      // SSE MCP 클라이언트 (Cursor 등 직접 HTTP 연결)에도 브로드캐스트
+      try {
+        const { broadcastSSENotification } = require('../mcp/server-creator/sse-handler');
+        broadcastSSENotification('egdesk/notification', {
+          event: 'task_status_changed',
+          ...payload,
+        });
+      } catch (_) { /* non-critical */ }
     } catch (err) {
       console.error('❌ [Notification] Push 전송 실패:', err);
     }
