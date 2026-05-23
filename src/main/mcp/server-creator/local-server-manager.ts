@@ -2004,9 +2004,14 @@ export class LocalServerManager {
       body?.userRequest?.user?.id ||
       'unknown';
 
+    console.log(`[KakaoSkill] Incoming request: userKey=${userKey}, utterance="${utterance}"`);
+    console.log(`[KakaoSkill] Full userRequest: ${JSON.stringify(body?.userRequest || {})}`);
+
     // ── 'ㅇ' retrieval command ────────────────────────────────────────────────
-    if (utterance === 'ㅇ' || utterance === 'o') {
+    if (utterance === 'ㅇ' || utterance === 'o' || utterance === '어' || utterance === 'ㅇㅇ') {
+      console.log(`[KakaoSkill] Retrieval attempt for userKey="${userKey}". Available keys: ${Array.from(this.kakaoAnswerStore.keys()).join(', ')}`);
       const cached = this.kakaoAnswerStore.get(userKey);
+      console.log(`[KakaoSkill] Retrieval result: ${cached ? 'FOUND' : 'NOT FOUND'}`);
       if (cached) {
         this.kakaoAnswerStore.delete(userKey);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2099,6 +2104,27 @@ export class LocalServerManager {
 
     this.kakaoAnswerStore.set(pending.userKey, answerText);
     console.log(`[KakaoCallback] Stored answer for user ${pending.userKey} (${answerText.length} chars)`);
+
+    // Also store in Supabase via Tunnel Service for persistence and multi-instance support
+    try {
+      const { getStore } = require('./storage');
+      const mcpConfig = (getStore().get('mcpConfiguration') as any) ?? {};
+      const publicUrl = mcpConfig?.tunnel?.publicUrl;
+      
+      if (publicUrl) {
+        console.log(`[KakaoCallback] Syncing answer for ${pending.userKey} to Supabase...`);
+        fetch(`${publicUrl}/kakao/store-answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_key: pending.userKey,
+            answer_text: answerText
+          }),
+        }).catch(e => console.error('[KakaoCallback] Supabase sync failed:', e));
+      }
+    } catch (e) {
+      console.error('[KakaoCallback] Failed to sync to Supabase:', e);
+    }
   }
 
   /**
