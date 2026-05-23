@@ -2107,7 +2107,7 @@ export class LocalServerManager {
 
     // Also store in Supabase via Tunnel Service for persistence and multi-instance support
     try {
-      const { getStore } = require('./storage');
+      const { getStore } = require('../../storage');
       const mcpConfig = (getStore().get('mcpConfiguration') as any) ?? {};
       const publicUrl = mcpConfig?.tunnel?.publicUrl;
       
