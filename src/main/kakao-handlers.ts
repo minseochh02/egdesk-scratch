@@ -189,12 +189,30 @@ async function createKakaoChannel(
       await dismissKakaoPopups(page);
 
       console.log(`[kakao:createChannel] Clicking "새 채널 만들기" (attempt ${attempt})...`);
-      const createBtn = page.locator('button').filter({ hasText: '새 채널 만들기' }).first();
+      // Handle both the standard profiles page and the brand-new user landing page
+      const createBtn = page.locator('button').filter({ hasText: /새 채널\s?만들기/ }).first();
       try {
-        await createBtn.waitFor({ timeout: 15000 });
-        await createBtn.click();
+        await createBtn.waitFor({ state: 'visible', timeout: 15000 });
+        await createBtn.click({ force: true });
       } catch {
-        await page.click('.btn_rc_highlight').catch(() => {});
+        // Fallback selectors
+        const fallbacks = [
+          '.btn_rc_highlight',
+          '.new_info .btn_g2',
+          'button:has-text("새 채널만들기")'
+        ];
+        let clicked = false;
+        for (const sel of fallbacks) {
+          try {
+            const loc = page.locator(sel).first();
+            if (await loc.isVisible({ timeout: 3000 })) {
+              await loc.click({ force: true });
+              clicked = true;
+              break;
+            }
+          } catch {}
+        }
+        if (!clicked) console.log(`[kakao:createChannel] Could not find create button with primary or fallback selectors.`);
       }
 
       // Wait for wizard iframe — up to 45 s per attempt

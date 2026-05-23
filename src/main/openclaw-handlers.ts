@@ -128,7 +128,7 @@ async function ensureCliInstalled(cleanEnv: NodeJS.ProcessEnv, log: (msg: string
     await execAsync('npm install -g openclaw@latest', { env: cleanEnv, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
     log('npm install complete');
   }
-  return true;
+  return alreadyInstalled;
 }
 
 /**
@@ -397,7 +397,7 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
 
         // ── 1. Install openclaw if not on PATH or corrupted ──
-        await ensureCliInstalled(cleanEnv, log);
+        const alreadyInstalled = await ensureCliInstalled(cleanEnv, log);
 
         // ── 2. Run openclaw onboard FIRST to initialize the file ──
         await runOnboardGemini(cleanEnv, log);
