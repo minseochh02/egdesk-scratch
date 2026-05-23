@@ -247,7 +247,7 @@ export class LocalServerManager {
     try {
       // Check if server is already running
       if (this.isRunning) {
-        return { success: false, error: 'Server is already running' };
+        return { success: true, port: this.currentPort, protocol: this.useHTTPS ? 'https' : 'http' };
       }
 
       // Default to HTTPS if a certificate is available and not explicitly disabled
