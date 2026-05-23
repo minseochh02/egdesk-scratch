@@ -241,7 +241,7 @@ export async function startTunnel(
     const existingTunnel = activeTunnels.get(serverName);
     if (existingTunnel && existingTunnel.isConnected()) {
       return {
-        success: false,
+        success: true, // Return true since the target state (running tunnel) is already met
         message: 'Tunnel is already running for this server',
         publicUrl: existingTunnel.getPublicUrl() || undefined,
         _logs: logs,
