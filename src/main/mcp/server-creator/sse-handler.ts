@@ -39,6 +39,33 @@ const globalSSEConnections = new Map<string, http.ServerResponse>();
 // Track if we're already sending a response to avoid duplicate sends
 const responseSendLocks = new Map<string, boolean>();
 
+/**
+ * Push an unsolicited notification to ALL currently connected SSE clients.
+ * This is the server-push path for direct HTTP/SSE clients (e.g. Cursor).
+ * Stdio-proxy clients cannot receive push events; they must poll instead.
+ *
+ * @param method  JSON-RPC notification method, e.g. "egdesk/notification"
+ * @param params  Arbitrary payload — recipientRole, title, body, runId, etc.
+ */
+export function broadcastSSENotification(method: string, params: Record<string, any>): void {
+  const notification: JSONRPCNotification = { jsonrpc: '2.0', method, params };
+  const sseMessage = `event: message\ndata: ${JSON.stringify(notification)}\n\n`;
+
+  for (const [sessionId, res] of globalSSEConnections) {
+    try {
+      if (res.writable) {
+        res.write(sseMessage);
+        if ('flush' in res && typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+      }
+    } catch (err) {
+      console.warn(`[SSE] Failed to push notification to session ${sessionId}:`, err);
+      globalSSEConnections.delete(sessionId);
+    }
+  }
+}
+
 export class SSEMCPHandler {
   private service: IMCPService;
   private endpointPath: string;

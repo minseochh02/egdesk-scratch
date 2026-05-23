@@ -53,21 +53,41 @@ export class DBChangeDetector {
   public watchFinanceHub(db: Database.Database): void {
     try {
       db.updateHook((action, databaseName, tableName, rowId) => {
-        // 감시 핵심 테이블: 계좌 내역, 카드 승인 내역, 국세청 세금계산서 등
-        const watchedTables = ['bank_transactions', 'card_transactions', 'hometax_tax_invoices'];
+        // 감시 핵심 테이블: 계좌 내역, 카드 승인 내역, 국세청 세금계산서, 받을어음
+        const watchedTables = [
+          'bank_transactions',
+          'card_transactions',
+          'hometax_tax_invoices',
+          'ibk_b2b_receivables',
+        ];
 
         if (watchedTables.includes(tableName)) {
-          console.log(`[FinanceHub Detector] 💰 Financial data update: ${action} on ${tableName} (RowID: ${rowId})`);
+          const actionStr = action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE';
+          console.log(`[FinanceHub Detector] 💰 Financial data update: ${actionStr} on ${tableName} (RowID: ${rowId})`);
 
+          // 1. Renderer 브로드캐스트
           const windows = BrowserWindow.getAllWindows();
           for (const win of windows) {
             if (!win.isDestroyed()) {
               win.webContents.send('financehub:changed', {
                 tableName,
-                action: action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE',
+                action: actionStr,
                 rowId: rowId.toString()
               });
             }
+          }
+
+          // 2. 워크플로 자동 트리거 — INSERT 이벤트 시 trigger_table 매칭 워크플로 기동
+          try {
+            const { WorkflowTriggerEngine } = require('../workflow/workflow-trigger-engine');
+            WorkflowTriggerEngine.getInstance().onFinanceHubChange(
+              tableName,
+              actionStr,
+              rowId.toString(),
+              db,
+            );
+          } catch (triggerErr) {
+            console.error('[FinanceHub Detector] WorkflowTriggerEngine call failed:', triggerErr);
           }
         }
       });

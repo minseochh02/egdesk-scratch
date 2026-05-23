@@ -222,45 +222,11 @@ async function createKakaoChannel(
     // 3. Discovery loop — mirrors kakaotalk-discovery.js exactly
     const profileImagePath = getDefaultProfileImagePath();
     let wizardStep = 1;
+    let wizardFinished = false;
 
-    while (true) {
+    while (!wizardFinished) {
       console.log(`\n[kakao:createChannel] --- [STEP ${wizardStep}] ---`);
-      await page.waitForTimeout(3000);
-
-      // Check main page settings (appear after wizard completes)
-      const profileDirect = page.locator('#profileDirect');
-      const enableSearch = page.locator('#enableSearch');
-
-      // TODO: Enable these for public release — for now keep the channel private.
-      if (await profileDirect.count() > 0) {
-        console.log('[kakao:createChannel] Found "채널 공개" setting.');
-        if (!(await profileDirect.isChecked())) {
-          console.log('[kakao:createChannel] Toggling "채널 공개" ON...');
-          await profileDirect.click({ force: true });
-          await page.waitForTimeout(1000);
-          const confirmBtn = page.locator('button').filter({ hasText: '확인' }).first();
-          if (await confirmBtn.count() > 0) {
-            await confirmBtn.click();
-            await page.waitForTimeout(2000);
-          }
-        }
-      }
-
-      // TODO: Enable these for public release — for now keep the channel unsearchable.
-      // if (await enableSearch.count() > 0) {
-      //   console.log('[kakao:createChannel] Found "검색 허용" setting.');
-      //   if (!(await enableSearch.isChecked())) {
-      //     console.log('[kakao:createChannel] Toggling "검색 허용" ON...');
-      //     await enableSearch.click({ force: true });
-      //     await page.waitForTimeout(1000);
-      //     const confirmBtn = page.locator('button').filter({ hasText: '확인' }).first();
-      //     if (await confirmBtn.count() > 0) {
-      //       await confirmBtn.click();
-      //       await page.waitForTimeout(2000);
-      //     }
-      //   }
-      // }
-
+      
       // Re-find wizard iframe each iteration — the iframe navigates internally between steps
       // which detaches the saved reference. Search by URL pattern to get the current frame.
       const currentWizardFrame = page.frames().find((f: any) => f.url().includes('/wizard/export')) ?? null;
@@ -305,13 +271,10 @@ async function createKakaoChannel(
 
           // Profile image
           const fileInput = wizardFrame.locator('.field_photo input[type="file"]');
-          console.log(`[kakao:createChannel] Profile image path: ${profileImagePath} (exists: ${fs.existsSync(profileImagePath)})`);
           if (await fileInput.count() > 0 && fs.existsSync(profileImagePath)) {
             console.log(`[kakao:createChannel] Uploading profile image: ${profileImagePath}`);
             await fileInput.setInputFiles(profileImagePath);
             await page.waitForTimeout(1000);
-          } else if (await fileInput.count() > 0) {
-            console.warn(`[kakao:createChannel] Skipping image upload — file not found at: ${profileImagePath}`);
           }
 
           // Channel name
@@ -366,29 +329,50 @@ async function createKakaoChannel(
           console.log('[kakao:createChannel] Waiting for dashboard to load...');
           await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
           await page.waitForTimeout(5000);
-
-          console.log('[kakao:createChannel] Clicking "채널" in sidebar...');
-          const channelMenu = page.locator('a[data-menu-id="channel"], a.link_snb:has-text("채널")').first();
-          try {
-            await channelMenu.waitFor({ timeout: 20000 });
-            await channelMenu.click();
-            console.log('[kakao:createChannel] Clicked "채널". Waiting for settings page...');
-            await page.waitForTimeout(5000);
-            await dismissKakaoPopups(page);
-          } catch (e: any) {
-            console.error('[kakao:createChannel] Failed to click "채널" menu:', e.message);
-          }
+          wizardFinished = true;
+        } else {
+          await page.waitForTimeout(2000);
+          wizardStep++;
         }
-
-        wizardStep++;
       } else {
-        // No Next button — check if we're on the settings page (done)
-        if (await profileDirect.count() > 0) {
-          console.log('[kakao:createChannel] Settings applied. Done.');
-          break;
+        // No Next button — check if we're already on the dashboard
+        const dashboardCheck = page.locator('a[data-menu-id="channel"], a.link_snb:has-text("채널")').first();
+        if (await dashboardCheck.count() > 0) {
+          console.log('[kakao:createChannel] Already on dashboard.');
+          wizardFinished = true;
+        } else {
+          console.log('[kakao:createChannel] No Next button found and not on dashboard. Waiting...');
+          await page.waitForTimeout(3000);
+          if (wizardStep > 10) break; // Safety break
         }
-        console.log('[kakao:createChannel] No Next button found. Stopping.');
-        break;
+      }
+    }
+
+    // 4. Post-wizard configuration: Navigate to "채널" settings
+    console.log('[kakao:createChannel] Configuring channel settings...');
+    const channelMenu = page.locator('a[data-menu-id="channel"], a.link_snb:has-text("채널")').first();
+    try {
+      await channelMenu.waitFor({ state: 'visible', timeout: 20000 });
+      await channelMenu.click();
+      await page.waitForTimeout(3000);
+      await dismissKakaoPopups(page);
+    } catch (e: any) {
+      console.error('[kakao:createChannel] Failed to click "채널" menu:', e.message);
+    }
+
+    // Toggle "채널 공개" ON
+    const profileDirect = page.locator('#profileDirect');
+    if (await profileDirect.count() > 0) {
+      console.log('[kakao:createChannel] Found "채널 공개" setting.');
+      if (!(await profileDirect.isChecked())) {
+        console.log('[kakao:createChannel] Toggling "채널 공개" ON...');
+        await profileDirect.click({ force: true });
+        await page.waitForTimeout(1000);
+        const confirmBtn = page.locator('button').filter({ hasText: '확인' }).first();
+        if (await confirmBtn.count() > 0) {
+          await confirmBtn.click();
+          await page.waitForTimeout(2000);
+        }
       }
     }
 
@@ -419,12 +403,32 @@ async function createKakaoBot(
   channelSearchId: string,
   skillUrl: string,
   reuseExisting: boolean = false
-): Promise<{ success: true; botName: string } | { success: false; error: string }> {
+): Promise<{ success: true; botName: string; message?: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
 
+  // Capture and log any browser alerts/dialogs
+  page.on('dialog', async (dialog) => {
+    const msg = dialog.message();
+    console.log(`[kakao:createBot] BROWSER ALERT DETECTED: "${msg}" (type: ${dialog.type()})`);
+    
+    // If it's a confirmation (like "Leave page?"), accept it to proceed with navigation
+    // This is critical for bypassing the "Unsaved changes" alert.
+    if (dialog.type() === 'beforeunload' || dialog.type() === 'confirm' || msg.includes('저장하지 않은')) {
+      console.log(`[kakao:createBot] Automatically accepting dialog: "${msg}"`);
+      await dialog.accept().catch((e) => console.error('[kakao:createBot] Failed to accept dialog:', e.message));
+    } else {
+      await dialog.dismiss().catch(() => {});
+    }
+  });
+
   const skillName = 'openclawresponse';
   const fullSkillUrl = skillUrl ? `${skillUrl}/kakao/skill` : '';
+  
+  if (!fullSkillUrl) {
+    throw new Error('Skill URL is missing. Please ensure the tunnel is running or provide a Skill URL.');
+  }
+
   const apiKey: string = (getStore().get('mcpConfiguration') as any)?.kakaoCallbackApiKey ?? '';
 
   try {
@@ -481,40 +485,55 @@ async function createKakaoBot(
       console.log('[kakao:createBot] Checking for existing bots...');
       const existingBot = await detectExistingBot(page);
       if (existingBot.found) {
-        console.log(`[kakao:createBot] Reusing existing bot "${existingBot.botName}" — skipping creation.`);
-        return { success: true, botName: existingBot.botName };
+        console.log(`[kakao:createBot] Reusing existing bot "${existingBot.botName}" — entering dashboard.`);
+        
+        // Find and click the bot card to enter its dashboard
+        let botCard = page.locator('my-list-bot-item .item_botlist:not(.off_item)').first();
+        if (await botCard.count() === 0) {
+          botCard = page.locator('my-list-bot-item .item_botlist').first();
+        }
+        await botCard.click({ force: true });
+        await page.waitForTimeout(3000);
+        await dismissKakaoPopups(page);
+        
+        // Skip the creation step (Step 4) and go straight to configuration
+      } else {
+        console.log('[kakao:createBot] No existing bot found — running creation flow.');
+        await runCreationFlow(page, botName);
       }
-      console.log('[kakao:createBot] No existing bot found — running creation flow.');
     } else {
       console.log('[kakao:createBot] Skipping existing bot detection — proceeding with creation flow.');
+      await runCreationFlow(page, botName);
     }
 
-    // 4. Create bot
-    console.log('[kakao:createBot] Creating bot...');
-    const createBtn = page.locator('button').filter({ hasText: '채널 챗봇 만들기' }).first();
-    await createBtn.waitFor({ state: 'visible', timeout: 10000 });
-    await createBtn.click({ force: true });
-    await page.waitForTimeout(500);
+    // Helper for Step 4: Create bot
+    async function runCreationFlow(p: any, name: string) {
+      console.log('[kakao:createBot] Creating bot...');
+      const createBtn = p.locator('button').filter({ hasText: '채널 챗봇 만들기' }).first();
+      await createBtn.waitFor({ state: 'visible', timeout: 10000 });
+      await createBtn.click({ force: true });
+      await p.waitForTimeout(500);
 
-    const botTypeLink = page.locator('a, button').filter({ hasText: /카카오톡 챗봇|카카오톡 채널 기반 챗봇/ }).first();
-    await botTypeLink.waitFor({ timeout: 10000 });
-    await botTypeLink.click({ force: true });
-    await page.waitForTimeout(500);
+      const botTypeLink = p.locator('a, button').filter({ hasText: /카카오톡 챗봇|카카오톡 채널 기반 챗봇/ }).first();
+      await botTypeLink.waitFor({ timeout: 10000 });
+      await botTypeLink.click({ force: true });
+      await p.waitForTimeout(500);
 
-    await page.waitForSelector('#tf1');
-    await page.fill('#tf1', botName);
-    await page.waitForTimeout(500);
+      await p.waitForSelector('#tf1');
+      await p.fill('#tf1', name);
+      await p.waitForTimeout(500);
 
-    const confirmBtn = page.locator('.layer_newbot button').filter({ hasText: '확인' }).first();
-    await confirmBtn.click({ force: true });
+      const confirmBtn = p.locator('.layer_newbot button').filter({ hasText: '확인' }).first();
+      await confirmBtn.click({ force: true });
 
-    try {
-      await page.waitForSelector('.layer_newbot', { state: 'hidden', timeout: 10000 });
-    } catch {
-      await confirmBtn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(2000);
+      try {
+        await p.waitForSelector('.layer_newbot', { state: 'hidden', timeout: 10000 });
+      } catch {
+        await confirmBtn.click({ force: true }).catch(() => {});
+        await p.waitForTimeout(2000);
+      }
+      await p.waitForTimeout(500);
     }
-    await page.waitForTimeout(500);
 
     // 5. Settings → select development channel
     console.log('[kakao:createBot] Selecting development channel...');
@@ -528,52 +547,112 @@ async function createKakaoBot(
       await selectDevChannelBtn.click({ force: true });
       await page.waitForTimeout(2000);
 
-      const channelCell = page.locator('td').filter({ hasText: channelSearchId }).first();
+      // Try to find the channel by search ID (with or without @)
+      const cleanId = channelSearchId.startsWith('@') ? channelSearchId.slice(1) : channelSearchId;
+      const channelCell = page.locator('td').filter({ hasText: new RegExp(`${cleanId}|@${cleanId}`, 'i') }).first();
+      
       try {
-        await channelCell.waitFor({ state: 'visible', timeout: 10000 });
+        console.log(`[kakao:createBot] Looking for channel: ${cleanId}...`);
+        await channelCell.waitFor({ state: 'visible', timeout: 15000 });
         await channelCell.click({ force: true });
-        await page.waitForTimeout(500);
-        await page.waitForSelector('mat-dialog-container', { state: 'hidden', timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(1000);
+        
+        // Confirm selection if a secondary button appears
+        const confirmSelectionBtn = page.locator('mat-dialog-container button').filter({ hasText: /선택|확인/ }).first();
+        if (await confirmSelectionBtn.count() > 0) {
+          await confirmSelectionBtn.click({ force: true });
+        }
 
-        const saveBtn = page.locator('button.btn_save').filter({ hasText: '저장' }).first();
-        await saveBtn.click({ force: true });
-        console.log('[kakao:createBot] Channel selected and saved.');
-        await page.waitForTimeout(3000);
+        await page.waitForSelector('mat-dialog-container', { state: 'hidden', timeout: 10000 }).catch(() => {});
       } catch (e: any) {
-        console.warn(`[kakao:createBot] Could not select channel "${channelSearchId}":`, e.message);
-        await page.keyboard.press('Escape');
+        console.warn(`[kakao:createBot] Could not select channel "${channelSearchId}" automatically:`, e.message);
+        console.log('[kakao:createBot] Proceeding anyway (user might have selected manually)...');
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(1000);
       }
+
+      // ALWAYS try to click "저장" before leaving the settings page
+      const saveBtn = page.locator('button.btn_save').filter({ hasText: '저장' }).first();
+      try {
+        if (await saveBtn.isVisible({ timeout: 5000 })) {
+          console.log('[kakao:createBot] Clicking "저장" button...');
+          await saveBtn.click({ force: true });
+          await page.waitForTimeout(3000);
+          
+          if (await saveBtn.isEnabled().catch(() => false)) {
+            console.log('[kakao:createBot] Save button still enabled, retrying click...');
+            await saveBtn.click({ force: true });
+            await page.waitForTimeout(2000);
+          }
+        }
+      } catch (saveErr) {
+        console.warn('[kakao:createBot] Warning: Could not click "저장" button:', (saveErr as any).message);
+      }
+      
+      console.log('[kakao:createBot] Channel selection step complete.');
+      await page.waitForTimeout(2000);
     }
     await page.waitForTimeout(500);
 
     // 6. Apply for callback
-    console.log('[kakao:createBot] Applying for callback...');
-    let aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
-    const aiTabVisible = await aiChatbotLink.isVisible().catch(() => false);
-    if (!aiTabVisible) {
-      console.log('[kakao:createBot] AI 챗봇 관리 tab not visible — reloading page and retrying...');
-      await page.reload();
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(2000);
-      await dismissKakaoPopups(page);
-      aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
-    }
-    await aiChatbotLink.waitFor({ state: 'visible', timeout: 30000 });
+    console.log('[kakao:createBot] Navigating to AI Chatbot Management...');
+    // Ensure any leftover modals are closed
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(1000);
+
+    const aiChatbotLink = page.locator('a.link_tab').filter({ hasText: 'AI 챗봇 관리' }).first();
+    await aiChatbotLink.waitFor({ state: 'visible', timeout: 15000 });
+    
+    console.log('[kakao:createBot] Clicking AI Chatbot Management tab...');
     await aiChatbotLink.click({ force: true });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
-    const callbackBtn = page.getByRole('button', { name: '콜백 사용 신청' });
-    await callbackBtn.waitFor({ timeout: 10000 });
-    await callbackBtn.click({ force: true });
-    await page.waitForTimeout(500);
+    // Define the callback button locator with multiple fallbacks
+    const getCallbackBtn = () => {
+      return page.locator('button, .btn_g, .btn_comm, a').filter({ hasText: /콜백 사용 신청|콜백|Callback/ }).first();
+    };
 
-    await page.fill('#tfPurpose', 'OpenClaw AI 챗봇과 카카오톡 연동을 위한 비동기 응답 처리');
-    await page.waitForTimeout(500);
-    await page.fill('#tfReason', 'OpenClaw 기반 AI 챗봇을 카카오톡 채널에 연동하려 합니다. AI 모델의 응답 생성에 5초 이상 소요될 수 있어, 기본 스킬 타임아웃(5초) 내에 응답이 불가능합니다. 콜백 API를 통해 즉시 대기 메시지를 반환한 후, OpenClaw Gateway에서 AI 응답을 받아 callbackUrl로 전송하는 방식으로 구현할 예정입니다.');
-    await page.waitForTimeout(500);
-    await page.getByRole('button', { name: '신청' }).click({ force: true });
-    console.log('[kakao:createBot] Callback application submitted.');
-    await page.waitForTimeout(500);
+    let btnVisible = await getCallbackBtn().waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    
+    // If not visible, check for "already applied" status
+    if (!btnVisible) {
+      console.log('[kakao:createBot] Callback button not visible. Checking for "AI Chatbot" status...');
+      const pageText = await page.innerText('body').catch(() => '');
+      const alreadyApplied = /사용|콜백 사용 중|신청 완료|심사 중|일반 챗봇 전환/.test(pageText);
+
+      if (alreadyApplied) {
+        console.log('[kakao:createBot] Callback appears to be already applied or in use. Skipping.');
+        btnVisible = true;
+      }
+    }
+
+    if (!btnVisible) {
+      throw new Error(`Failed to navigate to AI Chatbot Management tab or find callback button. Final URL: ${page.url()}`);
+    }
+
+    // Only click if we found the button and it's not already applied
+    const callbackBtnToClick = getCallbackBtn();
+    if (await callbackBtnToClick.isVisible().catch(() => false)) {
+      console.log('[kakao:createBot] Applying for callback...');
+      await callbackBtnToClick.click({ force: true });
+      await page.waitForTimeout(2000);
+    } else {
+      console.log('[kakao:createBot] Callback button not visible for clicking (likely already applied).');
+    }
+
+    // Check if we are on the application form or if it was already submitted
+    const isFormVisible = await page.locator('#tfPurpose').isVisible({ timeout: 5000 }).catch(() => false);
+    if (isFormVisible) {
+      await page.fill('#tfPurpose', 'OpenClaw AI 챗봇과 카카오톡 연동을 위한 비동기 응답 처리');
+      await page.waitForTimeout(500);
+      await page.fill('#tfReason', 'OpenClaw 기반 AI 챗봇을 카카오톡 채널에 연동하려 합니다. AI 모델의 응답 생성에 5초 이상 소요될 수 있어, 기본 스킬 타임아웃(5초) 내에 응답이 불가능합니다. 콜백 API를 통해 즉시 대기 메시지를 반환한 후, OpenClaw Gateway에서 AI 응답을 받아 callbackUrl로 전송하는 방식으로 구현할 예정입니다.');
+      await page.waitForTimeout(500);
+      await page.getByRole('button', { name: '신청' }).click({ force: true });
+      console.log('[kakao:createBot] Callback application submitted.');
+      await page.waitForTimeout(1000);
+    } else {
+      console.log('[kakao:createBot] Application form not visible (likely already submitted or approved).');
+    }
 
     // 7. Create skill
     console.log(`[kakao:createBot] Creating skill "${skillName}"...`);
@@ -612,24 +691,26 @@ async function createKakaoBot(
     let approved = false;
     let attempts = 0;
 
+    // Navigate to Scenario → Fallback Block once
+    const scenarioLink = page.locator('a.link_snb').filter({ hasText: '시나리오' }).first();
+    await scenarioLink.waitFor({ state: 'visible', timeout: 15000 });
+    await scenarioLink.click({ force: true });
+    await page.waitForTimeout(2000);
+
+    const fallbackBtn = page.locator('button.link_item').filter({ hasText: '폴백 블록' }).first();
+    await fallbackBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await fallbackBtn.click({ force: true });
+    await page.waitForTimeout(2000);
+
     while (!approved) {
       attempts++;
       console.log(`[kakao:createBot] Attempt ${attempts}: checking callback approval...`);
 
-      const scenarioLink = page.locator('a.link_snb').filter({ hasText: '시나리오' }).first();
-      await scenarioLink.waitFor({ state: 'visible', timeout: 10000 });
-      await scenarioLink.click({ force: true });
-      await page.waitForTimeout(2000);
-
-      const fallbackBtn = page.locator('button.link_item').filter({ hasText: '폴백 블록' }).first();
-      await fallbackBtn.waitFor({ state: 'visible', timeout: 10000 });
-      await fallbackBtn.click({ force: true });
-      await page.waitForTimeout(2000);
-
+      // Click the settings icon to open the options list
       const settingsBtn = page.locator('button.btn_util.btn_modify').first();
       await settingsBtn.waitFor({ state: 'visible', timeout: 10000 });
       await settingsBtn.click({ force: true });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1500);
 
       const callbackLink = page.locator('a.link_modify').filter({ hasText: 'Callback 설정' });
       if (await callbackLink.count() > 0) {
@@ -637,20 +718,31 @@ async function createKakaoBot(
         await callbackLink.click({ force: true });
         approved = true;
       } else {
-        if (attempts > 20) {
+        if (attempts >= 20) {
           console.error('[kakao:createBot] Timeout: callback not approved within 10 minutes.');
           break;
         }
-        console.log('[kakao:createBot] Not approved yet. Waiting 30s...');
+        
+        console.log('[kakao:createBot] Not approved yet. Closing options and waiting 30s...');
+        // Press Escape to close the options list
+        await page.keyboard.press('Escape').catch(() => {});
         await page.waitForTimeout(30000);
-        await page.reload();
-        await page.waitForLoadState('domcontentloaded');
-        await dismissKakaoPopups(page);
 
-        // Close welcome popup after reload if present
-        const dlg = page.locator('bot-list-welcome-dialog');
-        if (await dlg.count() > 0) {
-          await dlg.locator('span.ico_bot').filter({ hasText: '닫기' }).first().click({ force: true }).catch(() => {});
+        // Every 5 attempts, do a full page reload to be safe
+        if (attempts % 5 === 0) {
+          console.log('[kakao:createBot] Periodic reload to refresh state...');
+          await page.reload();
+          await page.waitForLoadState('domcontentloaded');
+          await page.waitForTimeout(3000);
+          await dismissKakaoPopups(page);
+          
+          // Re-navigate
+          await scenarioLink.waitFor({ state: 'visible', timeout: 15000 });
+          await scenarioLink.click({ force: true });
+          await page.waitForTimeout(2000);
+          await fallbackBtn.waitFor({ state: 'visible', timeout: 15000 });
+          await fallbackBtn.click({ force: true });
+          await page.waitForTimeout(2000);
         }
       }
     }
@@ -710,9 +802,13 @@ async function createKakaoBot(
     await page.waitForTimeout(1000);
 
     const linkSaveBtn = page.locator('button').filter({ hasText: '저장' }).first();
-    await linkSaveBtn.click({ force: true });
+    if (await linkSaveBtn.isVisible()) {
+      console.log('[kakao:createBot] Clicking "저장" button for skill link...');
+      await linkSaveBtn.click({ force: true });
+      await page.waitForTimeout(3000);
+    }
     console.log('[kakao:createBot] Skill linked.');
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1000);
 
     // 11. Deploy
     console.log('[kakao:createBot] Deploying bot...');
@@ -764,7 +860,20 @@ export function registerKakaoHandlers(getGoogleProfilesDir: () => string): void 
     async (_event, { profileName, botName, channelSearchId, skillUrl, reuseExisting }: { profileName: string; botName: string; channelSearchId: string; skillUrl: string; reuseExisting?: boolean }) => {
       try {
         const profileDir = getProfileDir(getGoogleProfilesDir, profileName);
-        return await createKakaoBot(profileDir, botName, channelSearchId, skillUrl, reuseExisting ?? true);
+        
+        // Fallback to stored tunnel URL if skillUrl is empty
+        let finalSkillUrl = skillUrl?.trim();
+        if (!finalSkillUrl) {
+          const { getStore } = require('./storage');
+          const mcpConfig = (getStore().get('mcpConfiguration') as any) ?? {};
+          const publicUrl = mcpConfig?.tunnel?.publicUrl;
+          if (publicUrl) {
+            console.log(`[kakao:createBot] Using stored tunnel URL: ${publicUrl}`);
+            finalSkillUrl = publicUrl;
+          }
+        }
+
+        return await createKakaoBot(profileDir, botName, channelSearchId, finalSkillUrl, reuseExisting ?? true);
       } catch (err: any) {
         return { success: false, error: err?.message || String(err) };
       }

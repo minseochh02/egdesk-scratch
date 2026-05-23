@@ -2254,6 +2254,18 @@ const electronHandler = {
         ipcRenderer.invoke('openclaw:stop'),
       reset: (profileName: string) =>
         ipcRenderer.invoke('openclaw:reset', { profileName }),
+      installCli: () =>
+        ipcRenderer.invoke('openclaw:install-cli'),
+      onboardGemini: () =>
+        ipcRenderer.invoke('openclaw:onboard-gemini'),
+      doctorFix: () =>
+        ipcRenderer.invoke('openclaw:doctor-fix'),
+      installKakaoPlugin: () =>
+        ipcRenderer.invoke('openclaw:install-kakao-plugin'),
+      goldenMerge: (profileName: string, botToken?: string) =>
+        ipcRenderer.invoke('openclaw:golden-merge', { profileName, botToken }),
+      installDaemon: () =>
+        ipcRenderer.invoke('openclaw:install-daemon'),
     },
   },
 
@@ -2969,6 +2981,36 @@ auth: {
       ipcRenderer.removeListener('financehub:changed', listener);
     };
   },
+
+  /**
+   * 워크플로 알림 푸시 리스너 (notification:push)
+   * 태스크 상태 변이 또는 워크플로 런 기동 시 해당 역할 담당자에게 브로드캐스트
+   */
+  onNotificationPush: (callback: (data: { recipientRole: string; title: string; body: string; runId?: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('notification:push', listener);
+    return () => {
+      ipcRenderer.removeListener('notification:push', listener);
+    };
+  },
+
+  // ========================================================================
+  // TEST / SIMULATION HELPERS
+  // ========================================================================
+  /**
+   * 받을어음 수신 시뮬레이션 — 테스트용
+   * 1) 트리거 워크플로(경리직원→과장→이사)가 없으면 자동 생성
+   * 2) ibk_b2b_receivables에 가짜 행 INSERT → updateHook → WorkflowTriggerEngine 기동
+   */
+  simulateReceivable: (): Promise<{ success: boolean; noteId?: string; workflowId?: string; error?: string }> =>
+    ipcRenderer.invoke('test:simulate-receivable'),
+
+  /**
+   * 시뮬레이션 테스트 데이터 일괄 삭제
+   * ibk_b2b_receivables TEST 행 + 연결 workflow_runs + company_calendar 이벤트 제거
+   */
+  clearSimData: (): Promise<{ success: boolean; deleted?: { receivables: number; runs: number }; error?: string }> =>
+    ipcRenderer.invoke('test:clear-sim-data'),
 };
 
 // ============================================================================

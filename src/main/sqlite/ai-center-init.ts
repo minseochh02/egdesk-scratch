@@ -153,6 +153,20 @@ export function initializeNeuronSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_cal_date       ON company_calendar(date);
     CREATE INDEX IF NOT EXISTS idx_cal_assignee   ON company_calendar(assignee_role);
+
+    -- [AI Center] 3. Activity Logs 테이블 생성 (인앱 알림 및 활동 이력)
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id             TEXT PRIMARY KEY,
+      recipient_role TEXT NOT NULL,
+      title          TEXT NOT NULL,
+      body           TEXT NOT NULL,
+      run_id         TEXT,
+      is_read        INTEGER NOT NULL DEFAULT 0,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_logs_recipient ON activity_logs(recipient_role);
+    CREATE INDEX IF NOT EXISTS idx_logs_run_id    ON activity_logs(run_id);
+    CREATE INDEX IF NOT EXISTS idx_logs_is_read   ON activity_logs(recipient_role, is_read);
   `);
 
   // Migrate existing workflow_actions rows — add stage column if missing

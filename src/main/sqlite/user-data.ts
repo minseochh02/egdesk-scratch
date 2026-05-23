@@ -2124,6 +2124,10 @@ export class UserDataDbManager {
     const whereClause = whereClauses.join(' AND ');
     const sql = `UPDATE "${table.tableName}" SET ${setClause} WHERE ${whereClause}`;
 
+    console.log(`[UserDataDbManager] Executing update: ${sql}`);
+    console.log(`[UserDataDbManager] Set params:`, setParams);
+    console.log(`[UserDataDbManager] Where params:`, whereParams);
+
     const stmt = this.database.prepare(sql);
     const result = stmt.run(...setParams, ...whereParams);
 

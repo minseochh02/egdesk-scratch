@@ -351,6 +351,83 @@ export class AICenterMCPService implements IMCPService {
         },
       },
 
+      // ── Cross-system notification push ───────────────────────────────────────
+
+      {
+        name: 'ai_center_push_notification',
+        description: 'Push an in-app notification to all ExcelToDB users that have one of the specified roles. Queries the user table, inserts into the notification table, and pings the ExcelToDB SSE endpoint so browsers refresh immediately.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            roles:   { type: 'array', items: { type: 'string' }, description: 'Role names to notify, e.g. ["사원","과장","이사"]. ADMIN users are always included.' },
+            title:   { type: 'string', description: 'Notification title shown in the UI' },
+            message: { type: 'string', description: 'Optional body text' },
+            link:    { type: 'string', description: 'Optional URL the notification links to' },
+            type:    { type: 'string', enum: ['INFO', 'WARNING', 'ALERT'], description: 'Severity (default INFO)' },
+            excelToDbUrl: { type: 'string', description: 'Base URL of the ExcelToDB Next.js app (default http://localhost:3000)' },
+          },
+          required: ['roles', 'title'],
+        },
+      },
+
+      // ── Notifications (activity_logs) ─────────────────────────────────────────
+
+      {
+        name: 'ai_center_get_notifications',
+        description: 'Poll the EGDesk notification log for events (workflow triggers, approval requests, task state changes). Pass `since` as an ISO-8601 timestamp to fetch only events newer than your last check — store the latest `created_at` from each response as your cursor. Optionally filter by `role`.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            since: { type: 'string', description: 'ISO-8601 timestamp cursor. Only events created after this time are returned. Omit to get the most recent `limit` events.' },
+            role:  { type: 'string', description: 'Filter to notifications addressed to this role, e.g. "경리직원". Omit for all roles.' },
+            limit: { type: 'number', description: 'Maximum events to return (default 20, max 100).' },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'ai_center_mark_notifications_read',
+        description: 'Mark one or more notification log entries as read by their IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ids: { type: 'array', items: { type: 'string' }, description: 'Array of activity_log IDs to mark as read.' },
+          },
+          required: ['ids'],
+        },
+      },
+
+      // ── Tasks & Company Calendar ──────────────────────────────────────────────
+
+      {
+        name: 'ai_center_get_active_tasks',
+        description: 'List active operational tasks (오늘 할 일). Optionally filter by role. Returns tasks that are pending or in-progress — the engine\'s single source of truth for who needs to do what.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'Filter tasks assigned to this role, e.g. "경리직원". Omit to get all active tasks.' },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'ai_center_get_calendar_events',
+        description: 'List all company-wide shared business deadlines from the company calendar (company_calendar table). These are human-facing date anchors with no status field — use active tasks for operational status.',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'ai_center_complete_task',
+        description: 'Update the status of an operational task. Use "completed" for regular tasks, "approved" or "rejected" for approval tasks.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            taskId: { type: 'string', description: 'Task ID' },
+            status: { type: 'string', enum: ['completed', 'approved', 'rejected'], description: '"completed" for regular tasks; "approved" or "rejected" for approval-type tasks' },
+          },
+          required: ['taskId', 'status'],
+        },
+      },
+
       // ── Tags ─────────────────────────────────────────────────────────────────
 
       {
@@ -674,6 +751,109 @@ export class AICenterMCPService implements IMCPService {
         if (!args.id) throw new Error('Missing required: id');
         const deleted = neuron.deleteRelation(args.id);
         return ok({ deleted });
+      }
+
+      // ── Cross-system notification push ────────────────────────────────────
+
+      case 'ai_center_push_notification': {
+        const { roles, title, message, link, type: notifType = 'INFO', excelToDbUrl = 'http://localhost:3000' } = args;
+        if (!Array.isArray(roles) || !title) throw new Error('Missing required: roles, title');
+
+        // Use the raw DB connection directly to avoid the getTableByName ID-resolution bug
+        // where 'user' table_name lookup returns the notification table's UUID.
+        const db = getSQLiteManager().getUserDataDatabase();
+
+        // 1. Verify physical table names exist in user_tables
+        const userTblRow = db.prepare("SELECT table_name FROM user_tables WHERE table_name = 'user'").get() as { table_name: string } | null;
+        if (!userTblRow) throw new Error('user table not found in user_tables');
+        const notifTblRow = db.prepare("SELECT table_name FROM user_tables WHERE table_name = 'notification'").get() as { table_name: string } | null;
+        if (!notifTblRow) throw new Error('notification table not found in user_tables');
+
+        // 2. Query active users directly (no ID-based table resolution)
+        const allUsers = db.prepare(`SELECT id, role, isActive FROM "${userTblRow.table_name}" LIMIT 1000`).all() as Array<{ id: any; role: string; isActive: any }>;
+        const recipients = allUsers.filter(u =>
+          u.isActive !== 0 && u.isActive !== '0' && u.isActive !== false &&
+          (roles.includes(u.role) || u.role === 'ADMIN')
+        );
+
+        if (recipients.length === 0) {
+          return ok({ sent: 0, message: 'No matching users found' });
+        }
+
+        // 3. Insert notification rows directly into the notification table
+        const now = new Date().toISOString();
+        const insertStmt = db.prepare(
+          `INSERT INTO "${notifTblRow.table_name}" (userId, title, message, link, type, isRead, metadata, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        const insertMany = db.transaction((users: typeof recipients) => {
+          for (const u of users) {
+            insertStmt.run(String(u.id), title, message ?? null, link ?? null, notifType, '0', null, now);
+          }
+        });
+        insertMany(recipients);
+
+        // 4. Ping ExcelToDB SSE so browsers refresh immediately (fire-and-forget)
+        fetch(`${excelToDbUrl}/api/notifications/ping`, { method: 'POST' }).catch(() => { /* non-critical */ });
+
+        return ok({ sent: recipients.length });
+      }
+
+      // ── Notifications ─────────────────────────────────────────────────────
+
+      case 'ai_center_get_notifications': {
+        const db = getSQLiteManager().getNeuronDatabase();
+        const limit = Math.min(Number(args.limit ?? 20), 100);
+        const parts: string[] = [];
+        const params: any[] = [];
+
+        if (args.since) {
+          parts.push(`created_at > ?`);
+          params.push(args.since);
+        }
+        if (args.role) {
+          parts.push(`recipient_role = ?`);
+          params.push(args.role);
+        }
+
+        const where = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
+        params.push(limit);
+
+        const rows = db
+          .prepare(`SELECT * FROM activity_logs ${where} ORDER BY created_at DESC LIMIT ?`)
+          .all(...params);
+
+        return ok(rows);
+      }
+
+      case 'ai_center_mark_notifications_read': {
+        const { ids } = args;
+        if (!Array.isArray(ids) || ids.length === 0) throw new Error('Missing required: ids (non-empty array)');
+        const db = getSQLiteManager().getNeuronDatabase();
+        const placeholders = ids.map(() => '?').join(', ');
+        const result = db
+          .prepare(`UPDATE activity_logs SET is_read = 1 WHERE id IN (${placeholders})`)
+          .run(...ids) as { changes: number };
+        return ok({ updated: result.changes });
+      }
+
+      // ── Tasks & Company Calendar ──────────────────────────────────────────
+
+      case 'ai_center_get_active_tasks': {
+        const { TasksCalendarService } = await import('../../sqlite/tasks-calendar-service');
+        return ok(TasksCalendarService.getInstance().getActiveTasks(args.role));
+      }
+
+      case 'ai_center_get_calendar_events': {
+        const { TasksCalendarService } = await import('../../sqlite/tasks-calendar-service');
+        return ok(TasksCalendarService.getInstance().getCalendarEvents());
+      }
+
+      case 'ai_center_complete_task': {
+        const { taskId, status } = args;
+        if (!taskId || !status) throw new Error('Missing required: taskId, status');
+        const { TasksCalendarService } = await import('../../sqlite/tasks-calendar-service');
+        TasksCalendarService.getInstance().updateTaskStatus(taskId, status);
+        return ok({ updated: true });
       }
 
       // ── Tags ──────────────────────────────────────────────────────────────
