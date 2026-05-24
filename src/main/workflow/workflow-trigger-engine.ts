@@ -47,6 +47,125 @@ export class WorkflowTriggerEngine {
   }
 
   /**
+   * 태스크 완료 또는 승인 상태 변이가 발생할 때마다 호출됩니다.
+   * 실무 DAG 해소와 승인 격상을 담당합니다.
+   */
+  public async evaluateDependencies(runId: string): Promise<void> {
+    const { getSQLiteManager } = await import('../sqlite/manager');
+    const { TasksCalendarService } = await import('../sqlite/tasks-calendar-service');
+    const { NotificationManager } = await import('../notification/notification-manager');
+
+    const manager = getSQLiteManager();
+    const workflowManager = manager.getWorkflowManager();
+    const run = workflowManager.getRun(runId);
+    if (!run) return;
+
+    const workflow = workflowManager.getWorkflow(run.workflowId);
+    if (!workflow) return;
+
+    const tasks = TasksCalendarService.getInstance().getTasksForRun(runId);
+    const completedActionIds = new Set(
+      tasks.filter(t => t.status === 'completed' || t.status === 'approved').map(t => t.action_id)
+    );
+
+    // 1. [실무 DAG 해소]
+    const pendingActions = workflow.actions.filter(a => {
+      // 아직 tasks에 존재하지 않고
+      const alreadyCreated = tasks.some(t => t.action_id === a.rowId);
+      if (alreadyCreated) return false;
+
+      // dependsOn의 모든 항목이 completed인 액션
+      return a.dependsOn.every(depId => completedActionIds.has(depId));
+    });
+
+    for (const action of pendingActions) {
+      if (action.id === 'create_task') {
+        const taskTitle = action.params.title || `[${workflow.label}] ${workflow.label} 처리`;
+        const taskRole = action.params.role || (workflow.notify[0] ?? '사원');
+        
+        TasksCalendarService.getInstance().addTask({
+          action_id: action.rowId,
+          run_id: runId,
+          title: taskTitle,
+          role: taskRole,
+          task_type: 'work',
+          status: 'pending'
+        });
+        
+        // Use runId for notification context
+        await NotificationManager.getInstance().sendPushNotification({
+          recipientRole: taskRole,
+          title: `[${workflow.label}] 새 태스크 배정`,
+          body: taskTitle,
+          runId: runId
+        });
+        console.log(`[WorkflowTriggerEngine] ✅ Next task created: ${taskTitle} (Role: ${taskRole})`);
+      }
+    }
+
+    // 2. [승인 격상 조건 확인]
+    // 모든 task_type='work' 태스크가 completed인지 확인
+    const allWorkTasks = tasks.filter(t => t.task_type === 'work');
+    const allWorkCompleted = allWorkTasks.length > 0 && allWorkTasks.every(t => t.status === 'completed');
+
+    if (allWorkCompleted) {
+      // 3. [현재 승인 위치 추론]
+      const approvalTasks = tasks.filter(t => t.task_type === 'approval');
+      const approvedIndices = approvalTasks
+        .filter(t => t.status === 'approved')
+        .map(t => parseInt(t.action_id.replace('approval_', '')))
+        .sort((a, b) => b - a);
+      
+      const currentN = approvedIndices.length > 0 ? approvedIndices[0] : -1;
+      const nextN = currentN + 1;
+
+      // approvalChain = ["경리직원", "과장", "이사"]
+      // index 0 (기안자) -> index 1 (과장) -> index 2 (이사)
+      const approvalChain = workflow.notify; // Use notify roles as approval chain for now if not explicitly defined
+      
+      if (nextN < approvalChain.length) {
+        const nextRole = approvalChain[nextN];
+        const actionId = `approval_${nextN}`;
+        
+        // Check if next approval already exists
+        if (!approvalTasks.some(t => t.action_id === actionId)) {
+          TasksCalendarService.getInstance().addTask({
+            action_id: actionId,
+            run_id: runId,
+            title: `[승인] ${workflow.label} (${nextRole})`,
+            role: nextRole,
+            task_type: 'approval',
+            status: 'pending'
+          });
+          
+          await NotificationManager.getInstance().sendPushNotification({
+            recipientRole: nextRole,
+            title: `[${workflow.label}] 승인 대기`,
+            body: `실무 완료. ${nextRole} 승인 대기 중입니다.`,
+            runId: runId
+          });
+          console.log(`[WorkflowTriggerEngine] 🚀 Approval spawned for ${nextRole} (index ${nextN})`);
+        }
+      } else {
+        // 최종 완료
+        workflowManager.updateRunStatus(runId, '정상완료');
+        
+        // Notify all roles in the workflow about completion
+        const allRoles = new Set([...workflow.notify, ...workflow.actions.map(a => a.params.role).filter(Boolean)]);
+        for (const role of allRoles) {
+          await NotificationManager.getInstance().sendPushNotification({
+            recipientRole: role,
+            title: `[${workflow.label}] 완료`,
+            body: `워크플로가 최종 완료되었습니다.`,
+            runId: runId
+          });
+        }
+        console.log(`[WorkflowTriggerEngine] 🎉 Workflow Run ${runId} completed!`);
+      }
+    }
+  }
+
+  /**
    * 테스트/시뮬레이션용 직접 호출 진입점.
    * updateHook 경유 없이 test IPC 핸들러에서 직접 호출합니다.
    * rowId 대신 UUID id로 행을 조회합니다.
@@ -163,7 +282,26 @@ export class WorkflowTriggerEngine {
 
         console.log(`[WorkflowTriggerEngine] 🔔 Notifications dispatched and persisted for roles: ${notifyRoles.join(', ')}`);
 
-        // ── Step 4: Push to ExcelToDB via ai_center_push_notification ────────
+        // ── Step 4: 초기 태스크 자동 생성 (dependsOn = [] 인 액션들 활성화) ────────
+        const initialActions = workflow.actions.filter(a => a.dependsOn.length === 0);
+        for (const action of initialActions) {
+          if (action.id === 'create_task') {
+            const taskTitle = action.params.title || `[${workflow.label}] ${workflow.label} 처리`;
+            const taskRole = action.params.role || (notifyRoles[0] ?? '사원');
+            
+            TasksCalendarService.getInstance().addTask({
+              action_id: action.rowId,
+              run_id: run.id,
+              title: taskTitle,
+              role: taskRole,
+              task_type: 'work',
+              status: 'pending'
+            });
+            console.log(`[WorkflowTriggerEngine] ✅ Initial task created: ${taskTitle} (Role: ${taskRole})`);
+          }
+        }
+
+        // ── Step 5: Push to ExcelToDB via ai_center_push_notification ────────
         // Fire-and-forget — non-critical if ExcelToDB is not running
         fetch('http://localhost:8080/ai-center/tools/call', {
           method: 'POST',

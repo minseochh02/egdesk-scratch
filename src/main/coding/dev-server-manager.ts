@@ -1875,9 +1875,38 @@ console.log('🔍 DEBUG next.config.js: NODE_ENV =', process.env.NODE_ENV);
 const isDevelopment = process.env.NODE_ENV === 'development';
 const basePath = isDevelopment ? '' : (process.env.EGDESK_BASE_PATH || '');
 
+/**
+ * 🔍 Automatically detect local IPv4 addresses to allow LAN access.
+ */
+const getLocalIPs = () => {
+  try {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    const ips = ['localhost', '127.0.0.1'];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          ips.push(iface.address);
+          const parts = iface.address.split('.');
+          if (parts.length === 4) {
+            ips.push(\`\${parts[0]}.\${parts[1]}.\${parts[2]}.*\`);
+          }
+        }
+      }
+    }
+    return Array.from(new Set(ips));
+  } catch (e) {
+    return ['localhost', '127.0.0.1', '192.168.0.*', '192.168.1.*', '10.0.0.*'];
+  }
+};
+
 const nextConfig = {
   basePath: basePath,
   assetPrefix: basePath,
+
+  // Allow LAN/IP access to the dev server (Next.js 15+)
+  allowedDevOrigins: getLocalIPs(),
+
   // Always skip TypeScript and ESLint errors to prevent blocking on auto-generated files
   typescript: {
     ignoreBuildErrors: true,
@@ -1910,7 +1939,7 @@ console.log('🔍 DEBUG next.config.js: assetPrefix =', nextConfig.assetPrefix);
 export default nextConfig;
 `;
       await fs.promises.writeFile(configPath, this.normalizeLineEndings(newConfig), 'utf8');
-      console.log(`✅ Created next.config.js with dynamic basePath (disabled in dev mode) and allowedOrigins`);
+      console.log(`✅ Created next.config.js with dynamic basePath (disabled in dev mode), allowedDevOrigins, and allowedOrigins`);
       return;
     }
 
@@ -1926,33 +1955,67 @@ export default nextConfig;
 
     // Check if allowedOrigins already exist
     const hasAllowedOrigins = content.includes('allowedOrigins') && content.includes('loca.lt');
+    const hasAllowedDevOrigins = content.includes('allowedDevOrigins');
     const hasExperimental = content.includes('experimental:') || content.includes('experimental :');
 
     // If everything is already configured, skip
-    if (hasBasePath && hasIgnoreBuildErrors && hasIgnoreDuringBuilds && hasAllowedOrigins) {
-      console.log('✓ next.config already configured for dynamic basePath, error skipping, and allowedOrigins');
+    if (hasBasePath && hasIgnoreBuildErrors && hasIgnoreDuringBuilds && hasAllowedOrigins && hasAllowedDevOrigins) {
+      console.log('✓ next.config already configured for dynamic basePath, error skipping, allowedOrigins, and allowedDevOrigins');
       return;
     }
 
-    // Add debug logging before the config (only if not already present)
-    if (!hasBasePath) {
-      const debugLogging = `\nconsole.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);\n`;
+    // Add debug logging and getLocalIPs helper before the config
+    if (!hasBasePath || !hasAllowedDevOrigins) {
+      let preConfigInjection = '';
+      
+      if (!hasBasePath && !content.includes('EGDESK_BASE_PATH')) {
+        preConfigInjection += `\nconsole.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);\n`;
+      }
+      
+      if (!hasAllowedDevOrigins && !content.includes('getLocalIPs')) {
+        preConfigInjection += `
+/**
+ * 🔍 Automatically detect local IPv4 addresses to allow LAN access.
+ */
+const getLocalIPs = () => {
+  try {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    const ips = ['localhost', '127.0.0.1'];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          ips.push(iface.address);
+          const parts = iface.address.split('.');
+          if (parts.length === 4) {
+            ips.push(\`\${parts[0]}.\${parts[1]}.\${parts[2]}.*\`);
+          }
+        }
+      }
+    }
+    return Array.from(new Set(ips));
+  } catch (e) {
+    return ['localhost', '127.0.0.1', '192.168.0.*', '192.168.1.*', '10.0.0.*'];
+  }
+};\n`;
+      }
 
-      // Find import statement or beginning of file to insert debug
-      const firstImportMatch = content.match(/^import\s/m);
-      if (firstImportMatch && firstImportMatch.index !== undefined) {
-        // Insert after imports
-        const lastImportIndex = content.lastIndexOf('import');
-        const afterImportLine = content.indexOf('\n', lastImportIndex) + 1;
-        content = content.slice(0, afterImportLine) + debugLogging + content.slice(afterImportLine);
-      } else {
-        // Insert at beginning
-        content = debugLogging + content;
+      if (preConfigInjection) {
+        // Find import statement or beginning of file to insert
+        const firstImportMatch = content.match(/^import\s/m);
+        if (firstImportMatch && firstImportMatch.index !== undefined) {
+          // Insert after all imports
+          const lastImportIndex = content.lastIndexOf('import');
+          const afterImportLine = content.indexOf('\n', lastImportIndex) + 1;
+          content = content.slice(0, afterImportLine) + preConfigInjection + content.slice(afterImportLine);
+        } else {
+          // Insert at beginning
+          content = preConfigInjection + content;
+        }
       }
     }
 
-    // Simple injection: add to config object
-    // Match: const nextConfig = { or const nextConfig: NextConfig = {
+    // Re-scan for config object as content might have changed
     const configObjectMatch = content.match(/(const\s+\w+Config\s*:\s*\w+\s*=\s*\{)|(const\s+\w+Config\s*=\s*\{)/);
 
     if (configObjectMatch) {
@@ -1967,6 +2030,13 @@ export default nextConfig;
   // Only use basePath in production mode, not in dev mode
   basePath: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),
   assetPrefix: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),`;
+      }
+
+      // Add allowedDevOrigins for Next.js 15+ (LAN/IP access)
+      if (!hasAllowedDevOrigins) {
+        injection += `
+  // Allow LAN/IP access to the dev server (Next.js 15+)
+  allowedDevOrigins: getLocalIPs(),`;
       }
 
       // Add TypeScript and ESLint error skipping if not already present
@@ -2189,11 +2259,12 @@ export default nextConfig;
     if (projectInfo.type === 'nextjs') {
       await this.ensureNextApiPlugin(folderPath, projectInfo.packageManager);
 
-      // Configure basePath for tunnel support
+      // Always configure Next.js for EGDesk features (IP access, basePath, etc.)
+      console.log(`🔧 Configuring Next.js for EGDesk features...`);
+      await this.backupNextConfig(folderPath);
+      await this.configureNextJsBasePath(folderPath);
+      
       if (this.tunnelId) {
-        console.log(`🔧 Configuring Next.js for tunnel support...`);
-        await this.backupNextConfig(folderPath);
-        await this.configureNextJsBasePath(folderPath);
         this.writeEGDeskReadme(folderPath);
       }
     }
@@ -2208,10 +2279,7 @@ export default nextConfig;
 
     if (effectiveMode === 'dev') {
       // DEV MODE: Skip build, start immediately
-      if (projectInfo.type === 'nextjs' && this.tunnelId) {
-        await this.configureNextJsBasePath(folderPath);
-      }
-
+      
       // Dev mode doesn't use basePath - pass undefined
       serverProcess = await this.startDevModeServer(
         folderPath,

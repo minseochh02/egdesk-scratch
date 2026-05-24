@@ -1,6 +1,6 @@
 {
   "name": "egdesk",
-  "version": "1.3.36",
+  "version": "1.3.37",
   "description": "EGDesk - AI Server Desktop Application",
   "license": "MIT",
   "author": {
@@ -23,6 +23,7 @@
     "active-win": "^8.2.1",
     "better-sqlite3": "^12.4.1",
     "dockerode": "^4.0.9",
+    "ssh2": "^1.17.0",
     "jimp": "^0.22.12",
     "lighthouse": "^12.2.1",
     "mammoth": "^1.11.0",

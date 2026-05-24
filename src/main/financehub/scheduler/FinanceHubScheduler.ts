@@ -5,9 +5,10 @@ import { app } from 'electron';
 import { EventEmitter } from 'events';
 import AsyncDebugFileLogger from '../../scheduler/async-debug-file-logger';
 import { getSchedulerRecoveryService } from '../../scheduler/recovery-service';
-import { collectTaxInvoices } from '../../hometax-automation';
-import { parseHometaxExcel } from '../../hometax-excel-parser';
-import { importTaxInvoices } from '../../sqlite/hometax';
+import { collectTaxInvoices, downloadTaxBills } from '../../hometax-automation';
+import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } from '../../hometax-excel-parser';
+import { importTaxInvoices, importTaxExemptInvoices, importCashReceipts } from '../../sqlite/hometax';
+import { importTaxBillData } from '../../sqlite/tax-bills';
 import { getStore } from '../../storage';
 
 interface EntitySchedule {
@@ -1955,108 +1956,148 @@ export class FinanceHubScheduler extends EventEmitter {
     }
   }
 
-  private async syncTax(businessName: string): Promise<{ success: boolean; error?: string; salesInserted?: number; purchaseInserted?: number }> {
+  private async syncTax(businessName: string): Promise<{ 
+    success: boolean; 
+    error?: string; 
+    salesInserted?: number; 
+    purchaseInserted?: number;
+    exemptSalesInserted?: number;
+    exemptPurchaseInserted?: number;
+    cashReceiptsInserted?: number;
+    taxBillsInserted?: number;
+  }> {
     this.debugLog(`→→→ syncTax() called for: ${businessName}`);
-    console.log(`[FinanceHubScheduler] Syncing tax invoices for business: ${businessName}`);
+    console.log(`[FinanceHubScheduler] Syncing all Hometax data for business: ${businessName}`);
 
-    // CRITICAL: Add timeout to entire sync operation (15 minutes max for tax - it's slower)
+    // CRITICAL: Add timeout to entire sync operation (20 minutes max for all - it's slower)
     const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
-      setTimeout(() => reject(new Error('Tax sync timeout - operation took longer than 15 minutes')), 15 * 60 * 1000);
+      setTimeout(() => reject(new Error('Hometax sync timeout - operation took longer than 20 minutes')), 20 * 60 * 1000);
     });
 
     const syncPromise = (async () => {
       try {
-      const store = getStore();
-      const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
-      const savedCertificates = hometaxConfig.selectedCertificates || {};
+        const store = getStore();
+        const hometaxConfig = store.get('hometax') as any || { selectedCertificates: {} };
+        const savedCertificates = hometaxConfig.selectedCertificates || {};
 
-      this.debugLog(`Checking for certificate with key: "${businessName}"`);
-      this.debugLog(`Available certificate keys: ${Object.keys(savedCertificates).join(', ')}`);
+        this.debugLog(`Checking for certificate with key: "${businessName}"`);
+        const certData = savedCertificates[businessName];
 
-      const certData = savedCertificates[businessName];  // Use businessName as key
+        if (!certData) {
+          this.debugLog(`❌ Certificate not found for key: "${businessName}"`);
+          return { success: false, error: 'Certificate not found in saved data' };
+        }
 
-      if (!certData) {
-        this.debugLog(`❌ Certificate not found for key: "${businessName}"`);
-        return {
-          success: false,
-          error: 'Certificate not found in saved data'
+        if (!certData.certificatePassword) {
+          this.debugLog(`❌ Certificate password not saved for: "${businessName}"`);
+          return { success: false, error: 'Certificate password not saved' };
+        }
+
+        this.debugLog(`✓ Certificate found, proceeding with collection...`);
+
+        // 1. Collect invoices (Tax and Tax-Exempt) and Cash Receipts
+        const result = await collectTaxInvoices(certData, certData.certificatePassword);
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to collect tax invoices');
+        }
+
+        // Get database
+        const { getFinanceHubDatabase } = require('../../sqlite/init');
+        const db = getFinanceHubDatabase();
+
+        let salesInserted = 0;
+        let purchaseInserted = 0;
+        let exemptSalesInserted = 0;
+        let exemptPurchaseInserted = 0;
+        let cashReceiptsInserted = 0;
+        let taxBillsInserted = 0;
+
+        // Helper to import tax invoices
+        const importTaxFiles = (files: (string | undefined)[], type: 'sales' | 'purchase') => {
+          for (const file of files) {
+            if (!file) continue;
+            console.log(`[FinanceHubScheduler] Parsing ${type} tax invoices from ${file}`);
+            const parsed = parseHometaxExcel(file);
+            if (parsed.success && parsed.invoices && parsed.businessNumber) {
+              const res = importTaxInvoices(db, parsed.businessNumber, type, parsed.invoices, file);
+              if (res.success) {
+                if (type === 'sales') salesInserted += res.inserted;
+                else purchaseInserted += res.inserted;
+              }
+            }
+          }
         };
-      }
 
-      if (!certData.certificatePassword) {
-        this.debugLog(`❌ Certificate password not saved for: "${businessName}"`);
-        return {
-          success: false,
-          error: 'Certificate password not saved'
+        // Helper to import tax-exempt invoices
+        const importExemptFiles = (files: (string | undefined)[], type: 'sales' | 'purchase') => {
+          for (const file of files) {
+            if (!file) continue;
+            console.log(`[FinanceHubScheduler] Parsing ${type} tax-exempt invoices from ${file}`);
+            const parsed = parseTaxExemptExcel(file);
+            if (parsed.success && parsed.invoices && parsed.businessNumber) {
+              const res = importTaxExemptInvoices(db, parsed.businessNumber, type, parsed.invoices, file);
+              if (res.success) {
+                if (type === 'sales') exemptSalesInserted += res.inserted;
+                else exemptPurchaseInserted += res.inserted;
+              }
+            }
+          }
         };
-      }
 
-      this.debugLog(`✓ Certificate found with password, proceeding with collection...`);
+        // Import Tax Invoices (Current & Last Month)
+        importTaxFiles([result.thisMonthSalesFile, result.lastMonthSalesFile], 'sales');
+        importTaxFiles([result.thisMonthPurchaseFile, result.lastMonthPurchaseFile], 'purchase');
 
-      // Collect invoices (download Excel files)
-      const result = await collectTaxInvoices(certData, certData.certificatePassword);
+        // Import Tax-Exempt Invoices (Current & Last Month)
+        importExemptFiles([result.thisMonthTaxExemptSalesFile, result.lastMonthTaxExemptSalesFile], 'sales');
+        importExemptFiles([result.thisMonthTaxExemptPurchaseFile, result.lastMonthTaxExemptPurchaseFile], 'purchase');
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to collect tax invoices');
-      }
-
-      // Get database
-      const { getFinanceHubDatabase } = require('../../sqlite/init');
-      const db = getFinanceHubDatabase();
-
-      let salesInserted = 0;
-      let purchaseInserted = 0;
-
-      // Parse and import sales invoices
-      if (result.salesFile) {
-        console.log(`[FinanceHubScheduler] Parsing sales invoices from ${result.salesFile}`);
-        const salesParsed = parseHometaxExcel(result.salesFile);
-
-        if (salesParsed.success && salesParsed.invoices && salesParsed.businessNumber) {
-          const importResult = importTaxInvoices(
-            db,
-            salesParsed.businessNumber,
-            'sales',
-            salesParsed.invoices,
-            result.salesFile
-          );
-
-          if (importResult.success) {
-            salesInserted = importResult.inserted;
-            console.log(`[FinanceHubScheduler] Imported ${salesInserted} sales invoices`);
+        // Import Cash Receipts
+        if (result.cashReceiptFile) {
+          console.log(`[FinanceHubScheduler] Parsing cash receipts from ${result.cashReceiptFile}`);
+          const parsed = parseCashReceiptExcel(result.cashReceiptFile);
+          if (parsed.success && parsed.receipts && parsed.businessNumber) {
+            const res = importCashReceipts(db, parsed.businessNumber, parsed.receipts, result.cashReceiptFile);
+            if (res.success) cashReceiptsInserted = res.inserted;
           }
         }
-      }
 
-      // Parse and import purchase invoices
-      if (result.purchaseFile) {
-        console.log(`[FinanceHubScheduler] Parsing purchase invoices from ${result.purchaseFile}`);
-        const purchaseParsed = parseHometaxExcel(result.purchaseFile);
-
-        if (purchaseParsed.success && purchaseParsed.invoices && purchaseParsed.businessNumber) {
-          const importResult = importTaxInvoices(
-            db,
-            purchaseParsed.businessNumber,
-            'purchase',
-            purchaseParsed.invoices,
-            result.purchaseFile
-          );
-
-          if (importResult.success) {
-            purchaseInserted = importResult.inserted;
-            console.log(`[FinanceHubScheduler] Imported ${purchaseInserted} purchase invoices`);
-          }
+        // 2. Download and Import Tax Bills (Goji)
+        // Use same range as collectTaxInvoices (current and last month)
+        const now = new Date();
+        const thisYear = now.getFullYear();
+        const thisMonth = now.getMonth() + 1;
+        let lastYear = thisYear;
+        let lastMonth = thisMonth - 1;
+        if (lastMonth === 0) {
+          lastMonth = 12;
+          lastYear = thisYear - 1;
         }
-      }
 
-      return {
-        success: true,
-        salesInserted,
-        purchaseInserted
-      };
+        this.debugLog(`→ Starting tax bill collection for range: ${lastYear}-${lastMonth} to ${thisYear}-${thisMonth}`);
+        const billsResult = await downloadTaxBills(certData, certData.certificatePassword, lastYear, lastMonth, thisYear, thisMonth);
+        
+        if (billsResult.success) {
+          console.log(`[FinanceHubScheduler] Importing ${billsResult.cards?.length || 0} tax bills`);
+          const importRes = importTaxBillData(db, billsResult);
+          if (importRes.success) taxBillsInserted = importRes.inserted;
+        } else {
+          console.warn(`[FinanceHubScheduler] Failed to collect tax bills: ${billsResult.error}`);
+        }
+
+        return {
+          success: true,
+          salesInserted,
+          purchaseInserted,
+          exemptSalesInserted,
+          exemptPurchaseInserted,
+          cashReceiptsInserted,
+          taxBillsInserted
+        };
 
       } catch (error) {
-        console.error(`[FinanceHubScheduler] Failed to sync tax for ${businessName}:`, error);
+        console.error(`[FinanceHubScheduler] Failed to sync Hometax for ${businessName}:`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : String(error)
@@ -2068,11 +2109,10 @@ export class FinanceHubScheduler extends EventEmitter {
     try {
       return await Promise.race([syncPromise, timeoutPromise]);
     } catch (timeoutError: any) {
-      console.error(`[FinanceHubScheduler] Tax sync timeout for ${businessName}:`, timeoutError);
-
+      console.error(`[FinanceHubScheduler] Hometax sync timeout for ${businessName}:`, timeoutError);
       return {
         success: false,
-        error: timeoutError.message || 'Tax sync timeout'
+        error: timeoutError.message || 'Hometax sync timeout'
       };
     }
   }

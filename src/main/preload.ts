@@ -2565,6 +2565,7 @@ const electronHandler = {
     register: (name: string, password?: string) => ipcRenderer.invoke('mcp-register', name, password),
     testConnection: () => ipcRenderer.invoke('mcp-test-connection'),
     registerTunnel: (name: string, password?: string) => ipcRenderer.invoke('mcp-tunnel-register', name, password),
+    executeTool: (serverName: string, toolName: string, args: any) => ipcRenderer.invoke('mcp-tool-execute', serverName, toolName, args),
   },
 
   /**

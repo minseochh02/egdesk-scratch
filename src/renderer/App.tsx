@@ -314,7 +314,7 @@ function SupportModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
               color: '#ccc',
               fontSize: '14px'
             }}>
-              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.36</p>
+              <p style={{ margin: '4px 0' }}>EGDesk Version: 1.3.37</p>
               <p style={{ margin: '4px 0' }}>Build: 2025.10.30</p>
             </div>
           </div>
@@ -2965,7 +2965,7 @@ function NavigationBar({
 
   const fetchStatus = async () => {
     try {
-      const res = await (window as any).electron.mcp.executeTool('ai-center-mcp-server', 'ai_center_get_notifications', { limit: 100 });
+      const res = await window.electron.mcp.executeTool('ai-center-mcp-server', 'ai_center_get_notifications', { limit: 100 });
       if (res && res.success) {
         const data = res.result?.content?.[0]?.text ? JSON.parse(res.result.content[0].text) : [];
         const unread = data.filter((n: any) => Number(n.is_read) === 0);
@@ -2980,8 +2980,8 @@ function NavigationBar({
     fetchStatus();
     const timer = setInterval(fetchStatus, 60000);
     
-    if ((window as any).electron?.onNotificationPush) {
-      const unsub = (window as any).electron.onNotificationPush(() => {
+    if (window.electron?.onNotificationPush) {
+      const unsub = window.electron.onNotificationPush(() => {
         fetchStatus();
       });
       return () => {
