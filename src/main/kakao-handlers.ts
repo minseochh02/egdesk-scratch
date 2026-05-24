@@ -121,36 +121,38 @@ async function detectExistingChannel(page: any, targetSearchId?: string): Promis
   }
 
   // If we reached here, the exact match wasn't found on any page.
-  // Fall back to the first page and pick the first active channel.
+  // Fall back to the first page and pick the first channel that looks like an EGDesk channel.
   console.log('[kakao:detectChannel] Exact match not found. Returning to first page for fallback...');
   await page.goto('https://business.kakao.com/profiles').catch(() => {});
   await page.waitForTimeout(2000);
 
-  // Prefer active (non-deleted) channels first
-  let cardLocator = page.locator('.box_plus:not(.box_delete)').first();
-  if (await cardLocator.count() === 0) {
-    cardLocator = page.locator('.box_plus').first();
-  }
+  const channelCards = page.locator('.box_plus');
+  const count = await channelCards.count();
 
-  if (await cardLocator.count() === 0) {
+  if (count === 0) {
     console.log('[kakao:detectChannel] No channel cards found on first page');
     return { found: false };
   }
 
-  const rawSearchId = (await cardLocator.locator('p.desc_invite').first()
-    .textContent({ timeout: 3000 }).catch(() => ''))?.trim() ?? '';
-  const searchId = rawSearchId.replace(/^@/, '').trim();
-  const linkLocator = cardLocator.locator('a.link_plus').first();
-  const href = (await linkLocator.getAttribute('href').catch(() => '')) ?? '';
-  const channelCode = href.replace('/dashboard', '').trim();
-  const channelUrl = channelCode ? `https://pf.kakao.com${channelCode}` : '';
-
-  if (searchId || channelUrl) {
-    console.log(`[kakao:detectChannel] Falling back to first channel: searchId="${searchId}" url="${channelUrl}"`);
-    return { found: true, searchId, channelUrl };
+  // 1. Try to find any channel that contains "egdesk"
+  for (let i = 0; i < count; i++) {
+    const card = channelCards.nth(i);
+    const rawSearchId = (await card.locator('p.desc_invite').first()
+      .textContent({ timeout: 3000 }).catch(() => ''))?.trim() ?? '';
+    const searchId = rawSearchId.replace(/^@/, '').trim();
+    
+    if (searchId.toLowerCase().includes('egdesk')) {
+      const linkLocator = card.locator('a.link_plus').first();
+      const href = (await linkLocator.getAttribute('href').catch(() => '')) ?? '';
+      const channelCode = href.replace('/dashboard', '').trim();
+      const channelUrl = channelCode ? `https://pf.kakao.com${channelCode}` : '';
+      
+      console.log(`[kakao:detectChannel] Falling back to existing EGDesk channel: "${searchId}"`);
+      return { found: true, searchId, channelUrl };
+    }
   }
 
-  console.log('[kakao:detectChannel] Could not extract channel info — proceeding with creation.');
+  console.log('[kakao:detectChannel] No EGDesk-like channel found — proceeding with creation.');
   return { found: false };
 }
 
