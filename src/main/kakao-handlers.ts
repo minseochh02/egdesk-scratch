@@ -183,8 +183,11 @@ async function detectExistingBot(page: any, targetBotName?: string): Promise<
           const card = botCards.nth(i);
           const name = (await card.locator('span.txt_name span.inner_txt').first()
             .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
-          if (name === targetBotName) {
-            console.log(`[kakao:detectBot] Found exact match for bot: "${name}" at index ${i} on page ${pageNum}`);
+          
+          // Exact match or fuzzy match for EGClaw bots
+          const isEGFuzzy = name.includes('EGClaw Bot') && targetBotName.includes('EGClaw Bot');
+          if (name === targetBotName || isEGFuzzy) {
+            console.log(`[kakao:detectBot] Found match for bot: "${name}" at index ${i} on page ${pageNum}`);
             return { found: true, botName: name, index: i };
           }
         }
@@ -659,55 +662,63 @@ async function createKakaoBot(
     await settingsLink.click({ force: true });
     await page.waitForTimeout(2000);
 
-    const selectDevChannelBtn = page.getByRole('button', { name: '개발 채널 선택하기' });
-    if (await selectDevChannelBtn.count() > 0) {
-      await selectDevChannelBtn.click({ force: true });
-      await page.waitForTimeout(2000);
+    // Check if the correct channel is already selected
+    const cleanId = channelSearchId.startsWith('@') ? channelSearchId.slice(1) : channelSearchId;
+    const currentChannelText = await page.locator('.box_bizopt2 .link_selected, .box_bizopt2 .txt_selected, .box_bizopt2 span').first().textContent().catch(() => '');
+    console.log(`[kakao:createBot] Current selected channel text: "${currentChannelText?.trim()}" (looking for "${cleanId}")`);
+    
+    if (currentChannelText?.toLowerCase().includes(cleanId.toLowerCase())) {
+      console.log(`[kakao:createBot] Channel "${cleanId}" is already selected. Skipping selection.`);
+    } else {
+      const selectDevChannelBtn = page.getByRole('button', { name: '개발 채널 선택하기' });
+      if (await selectDevChannelBtn.count() > 0) {
+        await selectDevChannelBtn.click({ force: true });
+        await page.waitForTimeout(2000);
 
-      // Try to find the channel by search ID (with or without @)
-      const cleanId = channelSearchId.startsWith('@') ? channelSearchId.slice(1) : channelSearchId;
-      const channelCell = page.locator('td').filter({ hasText: new RegExp(`${cleanId}|@${cleanId}`, 'i') }).first();
-      
-      try {
-        console.log(`[kakao:createBot] Looking for channel: ${cleanId}...`);
-        await channelCell.waitFor({ state: 'visible', timeout: 15000 });
-        await channelCell.click({ force: true });
-        await page.waitForTimeout(1000);
+        // Try to find the channel by search ID (with or without @)
+        const channelCell = page.locator('td').filter({ hasText: new RegExp(`${cleanId}|@${cleanId}`, 'i') }).first();
         
-        // Confirm selection if a secondary button appears
-        const confirmSelectionBtn = page.locator('mat-dialog-container button').filter({ hasText: /선택|확인/ }).first();
-        if (await confirmSelectionBtn.count() > 0) {
-          await confirmSelectionBtn.click({ force: true });
-        }
-
-        await page.waitForSelector('mat-dialog-container', { state: 'hidden', timeout: 10000 }).catch(() => {});
-      } catch (e: any) {
-        console.warn(`[kakao:createBot] Could not select channel "${channelSearchId}" automatically:`, e.message);
-        console.log('[kakao:createBot] Proceeding anyway (user might have selected manually)...');
-        await page.keyboard.press('Escape').catch(() => {});
-        await page.waitForTimeout(1000);
-      }
-
-      // ALWAYS try to click "저장" before leaving the settings page
-      const saveBtn = page.locator('button.btn_save').filter({ hasText: '저장' }).first();
-      try {
-        if (await saveBtn.isVisible({ timeout: 5000 })) {
-          console.log('[kakao:createBot] Clicking "저장" button...');
-          await saveBtn.click({ force: true });
-          await page.waitForTimeout(3000);
+        try {
+          console.log(`[kakao:createBot] Looking for channel: ${cleanId}...`);
+          await channelCell.waitFor({ state: 'visible', timeout: 15000 });
+          await channelCell.click({ force: true });
+          await page.waitForTimeout(1000);
           
-          if (await saveBtn.isEnabled().catch(() => false)) {
-            console.log('[kakao:createBot] Save button still enabled, retrying click...');
-            await saveBtn.click({ force: true });
-            await page.waitForTimeout(2000);
+          // Confirm selection if a secondary button appears
+          const confirmSelectionBtn = page.locator('mat-dialog-container button').filter({ hasText: /선택|확인/ }).first();
+          if (await confirmSelectionBtn.count() > 0) {
+            await confirmSelectionBtn.click({ force: true });
           }
+
+          await page.waitForSelector('mat-dialog-container', { state: 'hidden', timeout: 10000 }).catch(() => {});
+        } catch (e: any) {
+          console.warn(`[kakao:createBot] Could not select channel "${channelSearchId}" automatically:`, e.message);
+          console.log('[kakao:createBot] Proceeding anyway (user might have selected manually)...');
+          await page.keyboard.press('Escape').catch(() => {});
+          await page.waitForTimeout(1000);
         }
-      } catch (saveErr) {
-        console.warn('[kakao:createBot] Warning: Could not click "저장" button:', (saveErr as any).message);
+
+        // ALWAYS try to click "저장" before leaving the settings page
+        const saveBtn = page.locator('button.btn_save').filter({ hasText: '저장' }).first();
+        try {
+          if (await saveBtn.isVisible({ timeout: 5000 })) {
+            console.log('[kakao:createBot] Clicking "저장" button...');
+            await saveBtn.click({ force: true });
+            await page.waitForTimeout(3000);
+            
+            if (await saveBtn.isEnabled().catch(() => false)) {
+              console.log('[kakao:createBot] Save button still enabled, retrying click...');
+              await saveBtn.click({ force: true });
+              await page.waitForTimeout(2000);
+            }
+          }
+        } catch (saveErr) {
+          console.warn('[kakao:createBot] Warning: Could not click "저장" button:', (saveErr as any).message);
+        }
+        
+        console.log('[kakao:createBot] Channel selection step complete.');
+        await page.waitForTimeout(2000);
       }
-      
-      console.log('[kakao:createBot] Channel selection step complete.');
-      await page.waitForTimeout(2000);
     }
     await page.waitForTimeout(500);
 
@@ -781,27 +792,55 @@ async function createKakaoBot(
     const skillListLink = page.locator('.link_sub').filter({ hasText: '스킬 목록' }).first();
     await skillListLink.waitFor({ state: 'visible', timeout: 10000 });
     await skillListLink.click({ force: true });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
+    await page.waitForSelector('table, .list_skill, .item_skill', { timeout: 10000 }).catch(() => {});
 
-    const createSkillBtn = page.getByRole('button', { name: '생성' });
-    await createSkillBtn.waitFor({ state: 'visible', timeout: 10000 });
-    await createSkillBtn.click({ force: true });
-    await page.waitForTimeout(500);
+    // Check if skill already exists with correct URL
+    const existingSkillRow = page.locator('tr, .item_skill').filter({ hasText: skillName }).first();
+    let skipSkillCreation = false;
+    if (await existingSkillRow.count() > 0) {
+      const existingUrl = await existingSkillRow.locator('td, .txt_url').filter({ hasText: /http/ }).first().textContent().catch(() => '');
+      const cleanExisting = existingUrl?.trim().replace(/\/$/, '') || '';
+      const cleanTarget = fullSkillUrl.trim().replace(/\/$/, '');
+      console.log(`[kakao:createBot] Found existing skill "${skillName}" with URL: "${cleanExisting}" (target: "${cleanTarget}")`);
+      
+      if (cleanExisting === cleanTarget) {
+        console.log(`[kakao:createBot] Skill "${skillName}" already exists with correct URL. Skipping creation.`);
+        skipSkillCreation = true;
+      } else {
+        console.log(`[kakao:createBot] Skill "${skillName}" exists but with different URL. Re-creating...`);
+        // Delete existing skill
+        await existingSkillRow.locator('button').filter({ hasText: '삭제' }).click({ force: true }).catch(() => {});
+        await page.waitForTimeout(1000);
+        const confirmDeleteBtn = page.locator('mat-dialog-container button').filter({ hasText: '확인' }).first();
+        if (await confirmDeleteBtn.count() > 0) {
+          await confirmDeleteBtn.click({ force: true });
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
 
-    await page.fill('#tfSet2', skillName);
-    await page.waitForTimeout(500);
-    console.log(`[kakao:createBot] Skill URL: "${fullSkillUrl || '(empty)'}"`);
-    await page.fill('#tfSet22', fullSkillUrl);
-    await page.waitForTimeout(500);
-    await page.fill('[id^="tfInpKey_"]', 'X-Api-Key');
-    await page.waitForTimeout(500);
-    await page.locator('xpath=/html/body/app-page/div[2]/div/bot-page/div/div/main/skill-page/div/div/div/skill-info/div/div[3]/div[1]/div[2]/div[2]/div[1]/div[2]/bee-input/div/input').fill(apiKey);
-    await page.waitForTimeout(500);
+    if (!skipSkillCreation) {
+      const createSkillBtn = page.getByRole('button', { name: '생성' });
+      await createSkillBtn.waitFor({ state: 'visible', timeout: 10000 });
+      await createSkillBtn.click({ force: true });
+      await page.waitForTimeout(500);
 
-    const skillSaveBtn = page.getByRole('button', { name: '저장' });
-    await skillSaveBtn.click({ force: true });
-    console.log('[kakao:createBot] Skill created.');
-    await page.waitForTimeout(3000);
+      await page.fill('#tfSet2', skillName);
+      await page.waitForTimeout(500);
+      console.log(`[kakao:createBot] Skill URL: "${fullSkillUrl || '(empty)'}"`);
+      await page.fill('#tfSet22', fullSkillUrl);
+      await page.waitForTimeout(500);
+      await page.fill('[id^="tfInpKey_"]', 'X-Api-Key');
+      await page.waitForTimeout(500);
+      await page.locator('xpath=/html/body/app-page/div[2]/div/bot-page/div/div/main/skill-page/div/div/div/skill-info/div/div[3]/div[1]/div[2]/div[2]/div[1]/div[2]/bee-input/div/input').fill(apiKey);
+      await page.waitForTimeout(500);
+
+      const skillSaveBtn = page.getByRole('button', { name: '저장' });
+      await skillSaveBtn.click({ force: true });
+      console.log('[kakao:createBot] Skill created.');
+      await page.waitForTimeout(3000);
+    }
 
     // 8. Wait for callback approval (up to 20 × 30s = 10 min)
     console.log('[kakao:createBot] Waiting for callback approval...');
@@ -819,7 +858,23 @@ async function createKakaoBot(
     await fallbackBtn.click({ force: true });
     await page.waitForTimeout(2000);
 
+    // Check if skill is already linked to fallback block
+    const skillBubble = page.locator('.bubble_response').first();
+    const currentSkillText = await skillBubble.locator('.txt_item, .txt_skill, span').first().textContent().catch(() => '');
+    console.log(`[kakao:createBot] Current linked skill text: "${currentSkillText?.trim()}" (looking for "${skillName}")`);
+    
+    let skipSkillLinking = false;
+    if (currentSkillText?.includes(skillName)) {
+      console.log(`[kakao:createBot] Skill "${skillName}" is already linked. Checking callback...`);
+      skipSkillLinking = true;
+    }
+
     while (!approved) {
+      if (skipSkillLinking) {
+        console.log('[kakao:createBot] Skill already linked, assuming callback is already approved.');
+        approved = true;
+        break;
+      }
       attempts++;
       console.log(`[kakao:createBot] Attempt ${attempts}: checking callback approval...`);
 
@@ -900,53 +955,57 @@ async function createKakaoBot(
     await page.waitForTimeout(1000);
 
     // 10. Link skill to fallback block
-    console.log('[kakao:createBot] Linking skill to fallback block...');
-    const skillSearchInput = page.locator('#optionSearch, .opt_search').first();
-    await skillSearchInput.waitFor({ state: 'visible', timeout: 15000 });
-    console.log('[kakao:createBot] Clicking skill search input...');
-    await skillSearchInput.click({ force: true });
-    await page.waitForTimeout(1500);
+    if (skipSkillLinking) {
+      console.log('[kakao:createBot] Skill already linked. Skipping linking step.');
+    } else {
+      console.log('[kakao:createBot] Linking skill to fallback block...');
+      const skillSearchInput = page.locator('#optionSearch, .opt_search').first();
+      await skillSearchInput.waitFor({ state: 'visible', timeout: 15000 });
+      console.log('[kakao:createBot] Clicking skill search input...');
+      await skillSearchInput.click({ force: true });
+      await page.waitForTimeout(1500);
 
-    console.log(`[kakao:createBot] Searching and selecting skill "${skillName}"...`);
-    let skillLinked = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const skillOption = page.locator('.list_opt .link_opt').filter({ hasText: skillName }).first();
-        if (await skillOption.count() > 0) {
-          await skillOption.click({ force: true });
-          await page.waitForTimeout(2000);
-          
-          const skillDataBubbleLink = page.locator('.bubble_response .link_util').filter({ hasText: '스킬데이터' }).first();
-          if (await skillDataBubbleLink.isVisible({ timeout: 5000 })) {
-            console.log('[kakao:createBot] Skill bubble detected, clicking "스킬데이터"...');
-            await skillDataBubbleLink.click({ force: true });
-            await page.waitForTimeout(1000);
-            skillLinked = true;
-            break;
+      console.log(`[kakao:createBot] Searching and selecting skill "${skillName}"...`);
+      let skillLinked = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const skillOption = page.locator('.list_opt .link_opt').filter({ hasText: skillName }).first();
+          if (await skillOption.count() > 0) {
+            await skillOption.click({ force: true });
+            await page.waitForTimeout(2000);
+            
+            const skillDataBubbleLink = page.locator('.bubble_response .link_util').filter({ hasText: '스킬데이터' }).first();
+            if (await skillDataBubbleLink.isVisible({ timeout: 5000 })) {
+              console.log('[kakao:createBot] Skill bubble detected, clicking "스킬데이터"...');
+              await skillDataBubbleLink.click({ force: true });
+              await page.waitForTimeout(1000);
+              skillLinked = true;
+              break;
+            }
           }
+          
+          // If not found or bubble didn't appear, try re-clicking search input
+          console.log(`[kakao:createBot] Skill link attempt ${attempt} failed, retrying...`);
+          await skillSearchInput.click({ force: true });
+          await page.waitForTimeout(1500);
+        } catch (e: any) {
+          console.warn(`[kakao:createBot] Skill link attempt ${attempt} error:`, e.message);
         }
-        
-        // If not found or bubble didn't appear, try re-clicking search input
-        console.log(`[kakao:createBot] Skill link attempt ${attempt} failed, retrying...`);
-        await skillSearchInput.click({ force: true });
-        await page.waitForTimeout(1500);
-      } catch (e: any) {
-        console.warn(`[kakao:createBot] Skill link attempt ${attempt} error:`, e.message);
       }
-    }
 
-    if (!skillLinked) {
-      throw new Error(`Failed to link skill "${skillName}" to fallback block after 3 attempts.`);
-    }
+      if (!skillLinked) {
+        throw new Error(`Failed to link skill "${skillName}" to fallback block after 3 attempts.`);
+      }
 
-    const linkSaveBtn = page.locator('button').filter({ hasText: '저장' }).first();
-    if (await linkSaveBtn.isVisible()) {
-      console.log('[kakao:createBot] Clicking "저장" button for skill link...');
-      await linkSaveBtn.click({ force: true });
-      await page.waitForTimeout(3000);
+      const linkSaveBtn = page.locator('button').filter({ hasText: '저장' }).first();
+      if (await linkSaveBtn.isVisible()) {
+        console.log('[kakao:createBot] Clicking "저장" button for skill link...');
+        await linkSaveBtn.click({ force: true });
+        await page.waitForTimeout(3000);
+      }
+      console.log('[kakao:createBot] Skill linked.');
+      await page.waitForTimeout(1000);
     }
-    console.log('[kakao:createBot] Skill linked.');
-    await page.waitForTimeout(1000);
 
     // 11. Deploy
     console.log('[kakao:createBot] Deploying bot...');
