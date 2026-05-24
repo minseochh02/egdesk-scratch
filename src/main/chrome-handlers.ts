@@ -5305,32 +5305,40 @@ test('recorded test', async ({ page }) => {
         tgStatus('extracting-token', 'Extracting bot token from BotFather response…');
 
         // Extract all bot tokens from BotFather's chat — tokens are always in <code class="monospace-text">
-        const allBotTokens: string[] = [];
-        try {
-          const codeEls = await page.locator('code.monospace-text').allTextContents();
-          for (const text of codeEls) {
-            const t = text.trim();
-            if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(t) && !allBotTokens.includes(t)) {
-              allBotTokens.push(t);
-            }
-          }
-        } catch {
-          // Token extraction failed — non-fatal
-        }
-        // Fallback: scan all message text if code element approach missed any
-        if (allBotTokens.length === 0) {
+        const extractTokens = async (): Promise<string[]> => {
+          const tokens: string[] = [];
           try {
-            const messageTexts = await page.locator('.message').allTextContents();
-            for (const text of messageTexts) {
-              const matches = text.matchAll(/(\d{8,12}:[A-Za-z0-9_-]{35,})/g);
-              for (const m of matches) {
-                if (!allBotTokens.includes(m[1])) allBotTokens.push(m[1]);
+            const codeEls = await page.locator('code.monospace-text').allTextContents();
+            for (const text of codeEls) {
+              const t = text.trim();
+              if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(t) && !tokens.includes(t)) {
+                tokens.push(t);
               }
             }
-          } catch {
-            // non-fatal
+          } catch { /* ignore */ }
+          
+          if (tokens.length === 0) {
+            try {
+              const messageTexts = await page.locator('.message').allTextContents();
+              for (const text of messageTexts) {
+                const matches = text.matchAll(/(\d{8,12}:[A-Za-z0-9_-]{35,})/g);
+                for (const m of matches) {
+                  if (!tokens.includes(m[1])) tokens.push(m[1]);
+                }
+              }
+            } catch { /* ignore */ }
           }
+          return tokens;
+        };
+
+        let allBotTokens: string[] = [];
+        // Poll for up to 15 seconds for the token to appear
+        for (let i = 0; i < 5; i++) {
+          allBotTokens = await extractTokens();
+          if (allBotTokens.length > 0) break;
+          await page.waitForTimeout(3000);
         }
+        
         botToken = allBotTokens[allBotTokens.length - 1] ?? null; // most recent token
 
         // Extract bot username from BotFather's success message (looks like "t.me/username")
