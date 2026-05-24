@@ -198,7 +198,18 @@ const OpenClawPage: React.FC = () => {
     setStep('kakao');
     addLog('Setting up KakaoTalk channel and bot...');
 
-    const rand = Math.floor(Math.random() * 9999);
+    // Use existing random suffix if we have one, to keep names stable during retries
+    let rand = Math.floor(Math.random() * 9999);
+    if (kakaoSearchId && kakaoSearchId.includes('_')) {
+      const parts = kakaoSearchId.split('_');
+      const last = parts[parts.length - 1];
+      if (!isNaN(parseInt(last))) rand = parseInt(last);
+    } else if (kakaoBotName && kakaoBotName.includes(' ')) {
+      const parts = kakaoBotName.split(' ');
+      const last = parts[parts.length - 1];
+      if (!isNaN(parseInt(last))) rand = parseInt(last);
+    }
+
     const channelName = 'EGDesk OpenClaw';
     const searchId = `egdesk_${rand}`;
     const botName = `EGClaw Bot ${rand}`;
@@ -483,8 +494,8 @@ const OpenClawPage: React.FC = () => {
   const refreshStatus = async () => {
     try {
       const result = await (window as any).electron.debug.openclaw.status();
-      setGatewayRunning(result?.running ?? false);
-      setTelegramConnected(result?.connected ?? false);
+      setGatewayRunning(result?.gatewayRunning ?? false);
+      setTelegramConnected(result?.telegramConnected ?? false);
       setGatewayStatusText(result?.statusOutput ?? '');
     } catch { /* non-fatal */ }
     try {
@@ -588,19 +599,21 @@ const OpenClawPage: React.FC = () => {
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 2000));
         const s = await (window as any).electron.debug.openclaw.status();
-        setGatewayRunning(s?.running ?? true);
-        setTelegramConnected(s?.connected ?? false);
+        setGatewayRunning(s?.gatewayRunning ?? true);
+        setTelegramConnected(s?.telegramConnected ?? false);
         setGatewayStatusText(s?.statusOutput ?? '');
-        if (s?.running) break;
+        if (s?.gatewayRunning) break;
       }
     } catch (e: any) {
       addLog(`⚠️ Start failed: ${e?.message || e}`);
+    } finally {
       await refreshStatus();
+      setIsTogglingGateway(false);
     }
-    setIsTogglingGateway(false);
   };
 
   const handleStopGateway = async () => {
+    if (isTogglingGateway) return;
     setIsTogglingGateway(true);
     addLog('Stopping OpenClaw gateway…');
     try {
@@ -608,22 +621,30 @@ const OpenClawPage: React.FC = () => {
       addLog('✅ Gateway stopped.');
     } catch (e: any) {
       addLog(`⚠️ Stop failed: ${e?.message || e}`);
+    } finally {
+      await refreshStatus();
+      setIsTogglingGateway(false);
     }
-    await refreshStatus();
-    setIsTogglingGateway(false);
   };
 
   const retryKakaoSetup = async () => {
+    if (isRunningKakao) return;
     setIsRunningKakao(true);
     setLogs([]);
-    await runKakaoSetup();
-    setStep('done'); // standalone retry — go to done after kakao finishes
-    setIsRunningKakao(false);
+    try {
+      await runKakaoSetup();
+      setStep('done'); // standalone retry — go to done after kakao finishes
+    } catch (e: any) {
+      addLog(`⚠️ KakaoTalk setup error: ${e?.message || e}`);
+    } finally {
+      setIsRunningKakao(false);
+    }
   };
 
   const [isRetryingSetup, setIsRetryingSetup] = useState(false);
 
   const retryOpenclawSetup = async () => {
+    if (isRetryingSetup) return;
     setIsRetryingSetup(true);
     setLogs([]);
     addLog('Re-running OpenClaw setup (config + gateway + pairing)…');
@@ -647,12 +668,14 @@ const OpenClawPage: React.FC = () => {
       }
     } catch (e: any) {
       addLog(`⚠️ Setup error: ${e?.message || e}`);
+    } finally {
+      await refreshStatus();
+      setIsRetryingSetup(false);
     }
-    await refreshStatus();
-    setIsRetryingSetup(false);
   };
 
   const runPairing = async () => {
+    if (isPairing) return;
     setIsPairing(true);
     setLogs([]);
     addLog('Retrying Telegram pairing…');
@@ -681,8 +704,10 @@ const OpenClawPage: React.FC = () => {
       }
     } catch (e: any) {
       addLog(`⚠️ Pairing error: ${e?.message || e}`);
+    } finally {
+      await refreshStatus();
+      setIsPairing(false);
     }
-    setIsPairing(false);
   };
 
   const handleReset = async () => {
