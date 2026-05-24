@@ -902,21 +902,42 @@ async function createKakaoBot(
     // 10. Link skill to fallback block
     console.log('[kakao:createBot] Linking skill to fallback block...');
     const skillSearchInput = page.locator('#optionSearch, .opt_search').first();
-    await skillSearchInput.waitFor({ state: 'visible', timeout: 10000 });
+    await skillSearchInput.waitFor({ state: 'visible', timeout: 15000 });
     console.log('[kakao:createBot] Clicking skill search input...');
     await skillSearchInput.click({ force: true });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
-    console.log(`[kakao:createBot] Waiting for skill option "${skillName}" in dropdown...`);
-    const skillOption = page.locator('.list_opt .link_opt').filter({ hasText: skillName }).first();
-    await skillOption.waitFor({ state: 'visible', timeout: 10000 });
-    await skillOption.click({ force: true });
-    await page.waitForTimeout(1000);
+    console.log(`[kakao:createBot] Searching and selecting skill "${skillName}"...`);
+    let skillLinked = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const skillOption = page.locator('.list_opt .link_opt').filter({ hasText: skillName }).first();
+        if (await skillOption.count() > 0) {
+          await skillOption.click({ force: true });
+          await page.waitForTimeout(2000);
+          
+          const skillDataBubbleLink = page.locator('.bubble_response .link_util').filter({ hasText: '스킬데이터' }).first();
+          if (await skillDataBubbleLink.isVisible({ timeout: 5000 })) {
+            console.log('[kakao:createBot] Skill bubble detected, clicking "스킬데이터"...');
+            await skillDataBubbleLink.click({ force: true });
+            await page.waitForTimeout(1000);
+            skillLinked = true;
+            break;
+          }
+        }
+        
+        // If not found or bubble didn't appear, try re-clicking search input
+        console.log(`[kakao:createBot] Skill link attempt ${attempt} failed, retrying...`);
+        await skillSearchInput.click({ force: true });
+        await page.waitForTimeout(1500);
+      } catch (e: any) {
+        console.warn(`[kakao:createBot] Skill link attempt ${attempt} error:`, e.message);
+      }
+    }
 
-    const skillDataBubbleLink = page.locator('.bubble_response .link_util').filter({ hasText: '스킬데이터' }).first();
-    await skillDataBubbleLink.waitFor({ state: 'visible', timeout: 10000 });
-    await skillDataBubbleLink.click({ force: true });
-    await page.waitForTimeout(1000);
+    if (!skillLinked) {
+      throw new Error(`Failed to link skill "${skillName}" to fallback block after 3 attempts.`);
+    }
 
     const linkSaveBtn = page.locator('button').filter({ hasText: '저장' }).first();
     if (await linkSaveBtn.isVisible()) {

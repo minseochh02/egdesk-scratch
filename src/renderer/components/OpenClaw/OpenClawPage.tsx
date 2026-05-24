@@ -212,7 +212,7 @@ const OpenClawPage: React.FC = () => {
 
     const channelName = 'EGDesk OpenClaw';
     const searchId = `egdesk_${rand}`;
-    const botName = `EGClaw Bot ${rand}`;
+    let botName = `EGClaw Bot ${rand}`;
 
     // Get tunnel URL — prefer already-populated tunnelUrl state
     let skillUrl = tunnelUrl;
@@ -313,6 +313,20 @@ const OpenClawPage: React.FC = () => {
           resolvedSearchId = finalSearchId;
           resolvedChannelUrl = channelResult.channelUrl ?? '';
           setKakaoSearchId(finalSearchId);
+          
+          // If the search ID changed (e.g. reused an existing one), update the bot name to match
+          if (finalSearchId.includes('_')) {
+            const parts = finalSearchId.split('_');
+            const last = parts[parts.length - 1];
+            if (!isNaN(parseInt(last))) {
+              const newBotName = `EGClaw Bot ${last}`;
+              if (newBotName !== botName) {
+                addLog(`Updating bot name to match channel: "${newBotName}"`);
+                botName = newBotName;
+              }
+            }
+          }
+
           if (channelResult.channelUrl) {
             setKakaoChannelUrl(channelResult.channelUrl);
             addLog(`채널 URL: ${channelResult.channelUrl}`);
