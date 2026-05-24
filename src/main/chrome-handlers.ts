@@ -5305,8 +5305,18 @@ test('recorded test', async ({ page }) => {
         tgStatus('extracting-token', 'Extracting bot token from BotFather response…');
 
         // Extract all bot tokens from BotFather's chat — tokens are always in <code class="monospace-text">
-        const extractTokens = async (): Promise<string[]> => {
+        const extractTokens = async (scrollUp = false): Promise<string[]> => {
           const tokens: string[] = [];
+          
+          if (scrollUp) {
+            // Scroll up to load more history if needed
+            await page.evaluate(() => {
+              const container = document.querySelector('.messages-container, .MessageList, .scrollable-alist');
+              if (container) container.scrollTop -= 1000;
+            }).catch(() => {});
+            await page.waitForTimeout(1000);
+          }
+
           try {
             const codeEls = await page.locator('code.monospace-text').allTextContents();
             for (const text of codeEls) {
@@ -5332,10 +5342,28 @@ test('recorded test', async ({ page }) => {
         };
 
         let allBotTokens: string[] = [];
-        // Poll for up to 15 seconds for the token to appear
-        for (let i = 0; i < 5; i++) {
-          allBotTokens = await extractTokens();
+        // Poll for up to 20 seconds for the token to appear, scrolling up if not found
+        for (let i = 0; i < 7; i++) {
+          allBotTokens = await extractTokens(i > 3); // Start scrolling up after 4th attempt
           if (allBotTokens.length > 0) break;
+          
+          // Check for "already taken" error to trigger /token fallback
+          const lastMessages = await page.locator('.message').allTextContents().catch(() => []);
+          const lastText = lastMessages.slice(-3).join(' ');
+          if (lastText.includes('already taken') || lastText.includes('already have')) {
+            tgStatus('newbot-failed', 'Bot username already taken. Requesting existing token…');
+            await page.keyboard.type('/token');
+            await page.keyboard.press('Enter');
+            await page.waitForTimeout(3000);
+            
+            // Click the button for our bot username if it appears
+            const botBtn = page.locator('button, .reply-markup-button').filter({ hasText: botUsernameToType }).first();
+            if (await botBtn.count() > 0) {
+              await botBtn.click();
+              await page.waitForTimeout(3000);
+            }
+          }
+
           await page.waitForTimeout(3000);
         }
         

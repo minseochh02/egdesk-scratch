@@ -48,7 +48,7 @@ const OpenClawPage: React.FC = () => {
   // Listen for Telegram status events from the backend during setup
   useEffect(() => {
     if (!window.electron?.ipcRenderer?.on) return;
-    const cleanup = window.electron.ipcRenderer.on('telegram:status', (data: { stage: string; message: string; action?: string }) => {
+    const cleanup = window.electron.ipcRenderer.on('telegram:status', (data: any) => {
       setTelegramStatus(data);
     });
     return () => { if (cleanup) cleanup(); };
@@ -57,7 +57,7 @@ const OpenClawPage: React.FC = () => {
   // Listen for GitHub status events (account creation + token generation)
   useEffect(() => {
     if (!window.electron?.ipcRenderer?.on) return;
-    const cleanup = window.electron.ipcRenderer.on('github:status', (data: { stage: string; message: string }) => {
+    const cleanup = window.electron.ipcRenderer.on('github:status', (data: any) => {
       setGithubStatus(data);
     });
     return () => { if (cleanup) cleanup(); };
@@ -66,7 +66,7 @@ const OpenClawPage: React.FC = () => {
   // Listen for Google login status events
   useEffect(() => {
     if (!window.electron?.ipcRenderer?.on) return;
-    const cleanup = window.electron.ipcRenderer.on('google:status', (data: { stage: string; message: string }) => {
+    const cleanup = window.electron.ipcRenderer.on('google:status', (data: any) => {
       setGoogleStatus(data);
     });
     return () => { if (cleanup) cleanup(); };
@@ -285,7 +285,9 @@ const OpenClawPage: React.FC = () => {
 
     // Hard gate — if still no tunnel URL or API key, skip Kakao entirely
     if (!skillUrl || !kakaoApiKey) {
-      addLog('⚠️ Skipping KakaoTalk setup — tunnel could not be established and Kakao channel IDs are a finite resource.');
+      if (!skillUrl) addLog('⚠️ Skipping KakaoTalk setup — no tunnel URL found.');
+      if (!kakaoApiKey) addLog('⚠️ Skipping KakaoTalk setup — no Kakao API key found.');
+      addLog('⚠️ Kakao channel IDs are a finite resource; setup cannot proceed without a stable tunnel.');
       return;
     }
 
@@ -322,6 +324,16 @@ const OpenClawPage: React.FC = () => {
               const newBotName = `EGClaw Bot ${last}`;
               if (newBotName !== botName) {
                 addLog(`Updating bot name to match channel: "${newBotName}"`);
+                botName = newBotName;
+              }
+            }
+          } else {
+            // Fallback for channels without underscores - just use the searchId suffix if it looks like a number
+            const match = finalSearchId.match(/\d+$/);
+            if (match) {
+              const newBotName = `EGClaw Bot ${match[0]}`;
+              if (newBotName !== botName) {
+                addLog(`Updating bot name to match channel suffix: "${newBotName}"`);
                 botName = newBotName;
               }
             }
@@ -376,6 +388,7 @@ const OpenClawPage: React.FC = () => {
 
     // Don't call setStep('done') here — let the caller decide what comes next
     // (main flow continues to OpenClaw; retry flow sets done itself via retryKakaoSetup)
+    addLog('✅ KakaoTalk setup step complete.');
   };
 
   const runTelegramSetup = async () => {
@@ -387,6 +400,8 @@ const OpenClawPage: React.FC = () => {
       const phone = googlePhoneRef.current;
       if (!phone) {
         addLog('⚠️ No phone number detected — skipping Telegram setup.');
+        // Still run Kakao and OpenClaw
+        await runKakaoSetup();
         await runOpenclawSetup('');
         return;
       }
