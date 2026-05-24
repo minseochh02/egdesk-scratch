@@ -114,30 +114,52 @@ async function detectExistingChannel(page: any): Promise<
  * After chatbot.kakao.com has loaded, check whether existing bots are already
  * listed. If so, return the name of the first one so we can skip creation.
  */
-async function detectExistingBot(page: any): Promise<
-  { found: false } | { found: true; botName: string }
+async function detectExistingBot(page: any, targetBotName?: string): Promise<
+  { found: false } | { found: true; botName: string; index: number }
 > {
   // chatbot.kakao.com lists bots as my-list-bot-item elements inside div.botlist_body.
   // Active bots:          my-list-bot-item div.item_botlist          (no .off_item)
   // Pending-deletion bots: my-list-bot-item div.item_botlist.off_item (has span.txt_status.status_del)
   // Bot name is in span.txt_name > span.inner_txt.
 
-  // Prefer active (non-deleted) bots first
-  let botCard = page.locator('my-list-bot-item .item_botlist:not(.off_item)').first();
-  if (await botCard.count() === 0) {
-    // Fall back to any bot (even one pending deletion — better than creating a duplicate)
-    botCard = page.locator('my-list-bot-item .item_botlist').first();
-  }
-
-  if (await botCard.count() === 0) {
+  const botCards = page.locator('my-list-bot-item .item_botlist');
+  const count = await botCards.count();
+  
+  if (count === 0) {
     console.log('[kakao:detectBot] No bot cards found');
     return { found: false };
   }
 
-  const rawName = (await botCard.locator('span.txt_name span.inner_txt').first()
+  // 1. Try to find by name if provided
+  if (targetBotName) {
+    for (let i = 0; i < count; i++) {
+      const card = botCards.nth(i);
+      const name = (await card.locator('span.txt_name span.inner_txt').first()
+        .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
+      if (name === targetBotName) {
+        console.log(`[kakao:detectBot] Found exact match for bot: "${name}" at index ${i}`);
+        return { found: true, botName: name, index: i };
+      }
+    }
+  }
+
+  // 2. Fall back to the first active (non-deleted) bot
+  for (let i = 0; i < count; i++) {
+    const card = botCards.nth(i);
+    const isOff = await card.evaluate((el: HTMLElement) => el.classList.contains('off_item'));
+    if (!isOff) {
+      const name = (await card.locator('span.txt_name span.inner_txt').first()
+        .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
+      console.log(`[kakao:detectBot] Reusing first active bot: "${name}" at index ${i}`);
+      return { found: true, botName: name, index: i };
+    }
+  }
+
+  // 3. Last resort: just the first card
+  const firstCardName = (await botCards.first().locator('span.txt_name span.inner_txt').first()
     .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
-  console.log(`[kakao:detectBot] Found existing bot: "${rawName}"`);
-  return { found: true, botName: rawName || '(existing bot)' };
+  console.log(`[kakao:detectBot] Falling back to first bot card: "${firstCardName}"`);
+  return { found: true, botName: firstCardName || '(existing bot)', index: 0 };
 }
 
 // ── kakao:createChannel ──────────────────────────────────────────────────────
@@ -501,15 +523,12 @@ async function createKakaoBot(
     await page.waitForTimeout(1000);
     if (reuseExisting) {
       console.log('[kakao:createBot] Checking for existing bots...');
-      const existingBot = await detectExistingBot(page);
+      const existingBot = await detectExistingBot(page, botName);
       if (existingBot.found) {
         console.log(`[kakao:createBot] Reusing existing bot "${existingBot.botName}" — entering dashboard.`);
         
         // Find and click the bot card to enter its dashboard
-        let botCard = page.locator('my-list-bot-item .item_botlist:not(.off_item)').first();
-        if (await botCard.count() === 0) {
-          botCard = page.locator('my-list-bot-item .item_botlist').first();
-        }
+        const botCard = page.locator('my-list-bot-item .item_botlist').nth(existingBot.index);
         await botCard.click({ force: true });
         await page.waitForTimeout(3000);
         await dismissKakaoPopups(page);

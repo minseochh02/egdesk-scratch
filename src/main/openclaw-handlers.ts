@@ -322,7 +322,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         return { success: false, error: 'No bot token found — run Telegram setup first.' };
       }
 
-      const log = (msg: string) => console.log(`[openclaw:setup] ${msg}`);
+      const log = (msg: string) => {
+        console.log(`[openclaw:setup] ${msg}`);
+        // Also log to electron-log for persistence in main.log
+        const electronLog = require('electron-log');
+        electronLog.info(`[openclaw:setup] ${msg}`);
+      };
 
       // ── 0. Ensure local MCP server + tunnel are running ──
       try {
@@ -451,8 +456,21 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
             : { env: cleanEnv, detached: true,  stdio: ['ignore', 'pipe', 'pipe'] as const });
 
           const gatewayOutput: string[] = [];
-          gatewayProc.stdout?.on('data', (d: Buffer) => gatewayOutput.push(d.toString()));
-          gatewayProc.stderr?.on('data', (d: Buffer) => gatewayOutput.push(d.toString()));
+          
+          // Pipe gateway output to our log and UI
+          gatewayProc.stdout?.on('data', (d: Buffer) => {
+            const msg = d.toString();
+            gatewayOutput.push(msg);
+            // Only log meaningful lines to avoid flooding
+            if (msg.includes('[') || msg.includes('Error')) {
+              log(`[gateway:stdout] ${msg.trim()}`);
+            }
+          });
+          gatewayProc.stderr?.on('data', (d: Buffer) => {
+            const msg = d.toString();
+            gatewayOutput.push(msg);
+            log(`[gateway:stderr] ${msg.trim()}`);
+          });
 
           // Poll until gateway reports reachable (up to 45s) instead of a fixed sleep
           let gatewayReachable = false;
@@ -472,12 +490,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
           }
 
           // Detach stdout/stderr before unreffing
-          gatewayProc.stdout?.destroy();
-          gatewayProc.stderr?.destroy();
+          // gatewayProc.stdout?.destroy();
+          // gatewayProc.stderr?.destroy();
           gatewayProc.unref();
 
           if (!gatewayReachable) {
-            log(`⚠️ Gateway did not become reachable within 45s. Output: ${gatewayOutput.join('').slice(0, 300) || '(none)'}`);
+            log(`⚠️ Gateway did not become reachable within 45s. Output: ${gatewayOutput.join('').slice(-1000) || '(none)'}`);
           } else {
             log('Gateway is reachable — proceeding to Telegram pairing.');
           }
@@ -685,7 +703,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     } catch { /* non-fatal */ }
 
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:pair]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:pair]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:pair] ${msg}`);
+    };
 
     // Read bot username from Electron Store
     const { getStore } = require('./storage');
@@ -1192,7 +1215,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:install-cli', async () => {
     const cleanEnv = makeCleanEnv(os.homedir());
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-cli]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:install-cli]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:install-cli] ${msg}`);
+    };
     try {
       await ensureCliInstalled(cleanEnv, log);
       return { success: true, logs };
@@ -1204,7 +1232,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:onboard-gemini', async () => {
     const cleanEnv = makeCleanEnv(os.homedir());
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:onboard-gemini]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:onboard-gemini]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:onboard-gemini] ${msg}`);
+    };
     
     // Inject Gemini API key
     try {
@@ -1230,7 +1263,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:doctor-fix', async () => {
     const cleanEnv = makeCleanEnv(os.homedir());
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:doctor-fix]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:doctor-fix]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:doctor-fix] ${msg}`);
+    };
     try {
       const ok = await runDoctorFix(cleanEnv, log);
       return { success: ok, logs };
@@ -1242,7 +1280,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:install-kakao-plugin', async () => {
     const cleanEnv = makeCleanEnv(os.homedir());
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-kakao-plugin]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:install-kakao-plugin]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:install-kakao-plugin] ${msg}`);
+    };
     try {
       const ok = await installKakaoPlugin(cleanEnv, log);
       return { success: ok, logs };
@@ -1256,7 +1299,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     const configDir = path.join(homeDir, '.openclaw');
     const configPath = path.join(configDir, 'openclaw.json');
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:golden-merge]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:golden-merge]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:golden-merge] ${msg}`);
+    };
 
     const { getStore } = require('./storage');
     const store = getStore();
@@ -1275,7 +1323,12 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
   ipcMain.handle('openclaw:install-daemon', async () => {
     const cleanEnv = makeCleanEnv(os.homedir());
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); console.log('[openclaw:install-daemon]', msg); };
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:install-daemon]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:install-daemon] ${msg}`);
+    };
     try {
       const ok = await installDaemon(cleanEnv, log);
       return { success: ok, logs };
