@@ -308,10 +308,11 @@ const OpenClawPage: React.FC = () => {
           PROFILE_NAME, channelName, searchId, reuseKakao
         );
         if (channelResult?.success) {
-          addLog(`✅ KakaoTalk channel created: @${searchId}`);
-          resolvedSearchId = searchId;
+          const finalSearchId = channelResult.searchId || searchId;
+          addLog(`✅ KakaoTalk channel created: @${finalSearchId}`);
+          resolvedSearchId = finalSearchId;
           resolvedChannelUrl = channelResult.channelUrl ?? '';
-          setKakaoSearchId(searchId);
+          setKakaoSearchId(finalSearchId);
           if (channelResult.channelUrl) {
             setKakaoChannelUrl(channelResult.channelUrl);
             addLog(`채널 URL: ${channelResult.channelUrl}`);
@@ -337,8 +338,9 @@ const OpenClawPage: React.FC = () => {
           PROFILE_NAME, botName, `@${resolvedSearchId}`, skillUrl, reuseKakao
         );
         if (botResult?.success) {
-          addLog(`✅ KakaoTalk bot created and deployed: ${botName}`);
-          setKakaoBotName(botName);
+          const finalBotName = botResult.botName || botName;
+          addLog(`✅ KakaoTalk bot created and deployed: ${finalBotName}`);
+          setKakaoBotName(finalBotName);
           setKakaoSetup(true);
           // Persist Kakao config so it survives app restart
           try {
@@ -346,7 +348,7 @@ const OpenClawPage: React.FC = () => {
               kakaoSetup: true,
               kakaoSearchId: resolvedSearchId,
               kakaoChannelUrl: resolvedChannelUrl,
-              kakaoBotName: botName,
+              kakaoBotName: finalBotName,
             });
           } catch { /* non-fatal */ }
         } else {
