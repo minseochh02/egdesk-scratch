@@ -5342,16 +5342,20 @@ test('recorded test', async ({ page }) => {
         };
 
         let allBotTokens: string[] = [];
-        // Poll for up to 20 seconds for the token to appear, scrolling up if not found
-        for (let i = 0; i < 7; i++) {
+        let tokenFallbackAttempted = false;
+        // Poll for up to 25 seconds for the token to appear, scrolling up if not found
+        for (let i = 0; i < 8; i++) {
           allBotTokens = await extractTokens(i > 3); // Start scrolling up after 4th attempt
           if (allBotTokens.length > 0) break;
           
-          // Check for "already taken" error to trigger /token fallback
+          // Check for "already taken" error OR if we've waited 12 seconds without success
           const lastMessages = await page.locator('.message').allTextContents().catch(() => []);
           const lastText = lastMessages.slice(-3).join(' ');
-          if (lastText.includes('already taken') || lastText.includes('already have')) {
-            tgStatus('newbot-failed', 'Bot username already taken. Requesting existing token…');
+          const isError = lastText.includes('already taken') || lastText.includes('already have');
+          
+          if ((isError || i === 3) && !tokenFallbackAttempted) {
+            tokenFallbackAttempted = true;
+            tgStatus('newbot-failed', isError ? 'Bot username already taken. Requesting existing token…' : 'Token not found. Retrying with /token command…');
             await page.keyboard.type('/token');
             await page.keyboard.press('Enter');
             await page.waitForTimeout(3000);
@@ -5360,6 +5364,12 @@ test('recorded test', async ({ page }) => {
             const botBtn = page.locator('button, .reply-markup-button').filter({ hasText: botUsernameToType }).first();
             if (await botBtn.count() > 0) {
               await botBtn.click();
+              await page.waitForTimeout(3000);
+            } else {
+              // Fallback: if no button, type the username manually with @
+              console.log(`[Telegram] Bot button not found for ${botUsernameToType}. Typing manually...`);
+              await page.keyboard.type(`@${botUsernameToType}`);
+              await page.keyboard.press('Enter');
               await page.waitForTimeout(3000);
             }
           }

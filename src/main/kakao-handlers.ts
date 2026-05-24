@@ -276,7 +276,7 @@ async function createKakaoChannel(
       const existingChannel = await detectExistingChannel(page, searchId);
       if (existingChannel.found) {
         console.log(`[kakao:createChannel] Reusing existing channel — skipping wizard.`);
-        return { success: true, searchId: existingChannel.searchId, channelUrl: existingChannel.channelUrl };
+        return { success: true, searchId: existingChannel.searchId, channelUrl: existingChannel.channelUrl, reused: true };
       }
       console.log('[kakao:createChannel] No existing channel found — running creation wizard.');
     } else {
@@ -512,7 +512,7 @@ async function createKakaoChannel(
       console.warn('[kakao:createChannel] Could not extract channel URL:', e.message);
     }
 
-    return { success: true, searchId, channelUrl };
+    return { success: true, searchId, channelUrl, reused: false };
   } finally {
     await context.close().catch(() => {});
   }

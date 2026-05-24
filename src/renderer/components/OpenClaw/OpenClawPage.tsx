@@ -354,7 +354,20 @@ const OpenClawPage: React.FC = () => {
 
     // Step B: Create Bot — skip if channel and bot are already done
     if (channelOk) {
-      if (kakaoSetup && kakaoBotName && reuseKakao) {
+      const reusedChannel = (channelResult as any)?.reused === true;
+      if (reusedChannel && reuseKakao) {
+        addLog(`✅ Existing KakaoTalk channel found — assuming bot is also ready.`);
+        setKakaoSetup(true);
+        // Persist Kakao config so it survives app restart
+        try {
+          await (window as any).electron.debug.googleProfile.update(PROFILE_NAME, {
+            kakaoSetup: true,
+            kakaoSearchId: resolvedSearchId,
+            kakaoChannelUrl: resolvedChannelUrl,
+            kakaoBotName: botName, // use the adopted bot name
+          });
+        } catch { /* non-fatal */ }
+      } else if (kakaoSetup && kakaoBotName && reuseKakao) {
         addLog(`✅ KakaoTalk bot already set up (${kakaoBotName}) — skipping creation.`);
         setKakaoSetup(true);
       } else {
