@@ -320,7 +320,7 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                   if (!confirmed) return;
                   
                   try {
-                    const result = await (window as any).electron.mcpServer.configureClaude();
+                    const result = await window.electron.mcpServer.configureClaude();
                     
                     if (result.success) {
                       alert(

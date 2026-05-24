@@ -524,6 +524,7 @@ interface McpAPI {
   register: (name: string, password?: string) => Promise<{ success: boolean; status?: 'registered' | 'name_taken' | 'error'; message?: string; name?: string; ip?: string; timestamp?: string; id?: string; existing_record?: any; }>;
     testConnection: () => Promise<{ success: boolean; connected?: boolean; error?: string }>;
   registerTunnel: (name: string, password?: string) => Promise<{ success: boolean; status?: 'registered' | 'name_taken' | 'error'; message?: string; name?: string; ip?: string; timestamp?: string; id?: string; existing_record?: any; }>;
+  executeTool: (serverName: string, toolName: string, args: any) => Promise<any>;
 }
 
 /**
@@ -945,6 +946,7 @@ export interface IElectronAPI {
   autoStart: AutoStartAPI;
   schedulerRecovery: SchedulerRecoveryAPI;
   devServer: DevServerAPI;
+  onNotificationPush: (callback: (data: { recipientRole: string; title: string; body: string; runId?: string }) => void) => () => void;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }
 

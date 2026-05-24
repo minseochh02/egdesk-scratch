@@ -226,6 +226,72 @@ export class LocalServerManager {
       return await this.getMCPServerStatus(serverName);
     });
 
+    ipcMain.handle('mcp-tool-execute', async (event, serverName: string, toolName: string, args: any) => {
+      try {
+        let service: IMCPService | null = null;
+        switch (serverName) {
+          case 'ai-center-mcp-server':
+          case 'ai-center':
+            service = this.getAICenterMCPService();
+            break;
+          case 'user-data-mcp-server':
+          case 'user-data':
+            service = this.getUserDataMCPService();
+            break;
+          case 'financehub-mcp-server':
+          case 'financehub':
+            service = this.getFinanceHubMCPService();
+            break;
+          case 'gmail-mcp-server':
+          case 'gmail':
+            service = this.getGmailMCPService();
+            break;
+          case 'filesystem-mcp-server':
+          case 'filesystem':
+            service = this.getFilesystemMCPService();
+            break;
+          case 'sheets-mcp-server':
+          case 'sheets':
+            service = this.getSheetsMCPService();
+            break;
+          case 'conversations-mcp-server':
+          case 'conversations':
+            service = this.getConversationsMCPService();
+            break;
+          case 'apps-script-mcp-server':
+          case 'apps-script':
+            service = this.getAppsScriptMCPService();
+            break;
+          case 'internal-knowledge-mcp-server':
+          case 'internal-knowledge':
+            service = this.getInternalKnowledgeMCPService();
+            break;
+          case 'browser-recording-mcp-server':
+          case 'browser-recording':
+            service = this.getBrowserRecordingMCPService();
+            break;
+          case 'korean-law-mcp-server':
+          case 'korean-law':
+            service = this.getKoreanLawMCPService();
+            break;
+          case 'pageindex-mcp-server':
+          case 'pageindex':
+            service = this.getPageIndexMCPService();
+            break;
+        }
+
+        if (!service) {
+          throw new Error(`Unknown MCP server: ${serverName}`);
+        }
+
+        const result = await service.executeTool(toolName, args || {});
+        return { success: true, result };
+      } catch (error: any) {
+        console.error(`Error executing MCP tool ${toolName} on ${serverName}:`, error);
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle('https-server-set-enabled', async (event, enabled: boolean) => {
       try {
         this.store.set('https-enabled', enabled);

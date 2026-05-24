@@ -71,6 +71,25 @@ export class TasksCalendarService {
   }
 
   /**
+   * 특정 런에 속한 모든 태스크 조회
+   */
+  public getTasksForRun(runId: string): TaskRow[] {
+    const db = SQLiteManager.getInstance().getNeuronDatabase();
+    const rows = db.prepare("SELECT * FROM tasks WHERE run_id = ?").all(runId) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      action_id: r.action_id,
+      run_id: r.run_id,
+      title: r.title,
+      role: r.role,
+      task_type: r.task_type as 'work' | 'approval',
+      status: r.status as any,
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    }));
+  }
+
+  /**
    * 전사 공유 비즈니스 데드라인 일정 조회 (인간용 뷰 - 상태 없음!)
    */
   public getCalendarEvents(): CalendarRow[] {
@@ -85,6 +104,38 @@ export class TasksCalendarService {
       run_id: r.run_id,
       created_at: r.created_at
     }));
+  }
+
+  /**
+   * 새 물리 태스크 적재 (엔진 실행용)
+   */
+  public addTask(task: {
+    action_id: string;
+    run_id: string;
+    title: string;
+    role: string;
+    task_type: 'work' | 'approval';
+    status?: string;
+  }): string {
+    const db = SQLiteManager.getInstance().getNeuronDatabase();
+    const id = crypto.randomUUID ? crypto.randomUUID() : require('crypto').randomUUID();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO tasks (id, action_id, run_id, title, role, task_type, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      task.action_id,
+      task.run_id,
+      task.title,
+      task.role,
+      task.task_type,
+      task.status || 'pending',
+      now,
+      now
+    );
+    return id;
   }
 
   /**

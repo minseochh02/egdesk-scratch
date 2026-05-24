@@ -169,9 +169,14 @@ export function initializeNeuronSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_logs_is_read   ON activity_logs(recipient_role, is_read);
   `);
 
-  // Migrate existing workflow_actions rows — add stage column if missing
+  // Migrate existing workflow_actions rows — add stage and depends_on columns if missing
   try {
     db.exec(`ALTER TABLE workflow_actions ADD COLUMN stage INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // Column already exists
+  }
+  try {
+    db.exec(`ALTER TABLE workflow_actions ADD COLUMN depends_on TEXT DEFAULT '[]'`);
   } catch {
     // Column already exists
   }

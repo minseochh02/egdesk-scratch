@@ -23,6 +23,7 @@ export interface WorkflowActionRow {
   position: number;       // ordering within a stage
   action_id: string;      // action type: 'create_task' | 'approve' | 'update_status'
   params: string;         // JSON blob — full action definition (title, role, dueDays, approvalChain, …)
+  depends_on: string;     // JSON array — IDs of actions this action depends on
   created_at: string;
 }
 
@@ -67,6 +68,7 @@ export interface WorkflowAction {
   params: Record<string, any>;
   stage: number;
   position: number;
+  dependsOn: string[];
 }
 
 export interface WorkflowStage {
@@ -246,6 +248,7 @@ export class WorkflowDbManager {
       params: JSON.parse(a.params),
       stage: a.stage,
       position: a.position,
+      dependsOn: JSON.parse(a.depends_on || '[]'),
     }));
 
     // Group by stage, preserving stage order
@@ -358,8 +361,8 @@ export class WorkflowDbManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertAction = this.db.prepare(`
-      INSERT INTO workflow_actions (id, workflow_id, stage, position, action_id, params, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflow_actions (id, workflow_id, stage, position, action_id, params, depends_on, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertNotify = this.db.prepare(`
       INSERT INTO workflow_notify (id, workflow_id, role) VALUES (?, ?, ?)
@@ -376,11 +379,14 @@ export class WorkflowDbManager {
         now, now,
       );
       data.actions.forEach((a, i) => {
+        const dependsOn = (a as any).dependsOn ?? a.params?.dependsOn ?? [];
         insertAction.run(
           randomUUID(), id,
           a.stage ?? 0,
           a.position ?? i,
-          a.actionId, JSON.stringify(a.params), now,
+          a.actionId, JSON.stringify(a.params), 
+          JSON.stringify(dependsOn),
+          now,
         );
       });
       for (const role of data.notify ?? []) {
@@ -452,13 +458,14 @@ export class WorkflowDbManager {
     params: Record<string, any>,
     stage: number,
     position: number,
+    dependsOn: string[] = [],
   ): WorkflowActionRow {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO workflow_actions (id, workflow_id, stage, position, action_id, params, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workflowId, stage, position, actionId, JSON.stringify(params), now);
+      INSERT INTO workflow_actions (id, workflow_id, stage, position, action_id, params, depends_on, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workflowId, stage, position, actionId, JSON.stringify(params), JSON.stringify(dependsOn), now);
     return this.db
       .prepare('SELECT * FROM workflow_actions WHERE id = ?')
       .get(id) as WorkflowActionRow;
@@ -591,7 +598,13 @@ export class WorkflowDbManager {
         }
         w.stages.forEach((stage, stageIdx) => {
           stage.actions.forEach((a, pos) => {
-            insertAction.run(randomUUID(), w.id, stageIdx, pos, a.actionId, JSON.stringify(a.params), now);
+            insertAction.run(
+              randomUUID(), id, 
+              stageIdx, pos, 
+              a.actionId, JSON.stringify(a.params), 
+              JSON.stringify((a as any).dependsOn ?? []),
+              now
+            );
           });
         });
       }

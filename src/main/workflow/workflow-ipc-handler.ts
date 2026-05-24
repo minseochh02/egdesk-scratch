@@ -245,7 +245,28 @@ export function registerWorkflowIPCHandlers(): void {
           hints: [],
           outputTables: [],
           triggerTable: TRIGGER_TABLE,
-          actions: [],
+          actions: [
+            {
+              actionId: 'create_task',
+              stage: 0,
+              position: 0,
+              params: {
+                title: '신규 어음 정보 확인 및 기안',
+                role: '경리직원',
+                dependsOn: []
+              }
+            },
+            {
+              actionId: 'create_task',
+              stage: 0,
+              position: 1,
+              params: {
+                title: '발행처 한도 및 신용 상태 조회',
+                role: '경리직원',
+                dependsOn: ['verify_note'] // Example dependency
+              }
+            }
+          ],
         });
         workflowId = created.id;
         // 결재 라인: 경리직원 → 과장 → 이사
@@ -374,11 +395,17 @@ export function registerWorkflowIPCHandlers(): void {
     approveStatus: 'completed' | 'approved' | 'rejected'
   ) => {
     try {
-      TasksCalendarService.getInstance().updateTaskStatus(taskId, approveStatus);
+      const tasksService = TasksCalendarService.getInstance();
+      tasksService.updateTaskStatus(taskId, approveStatus);
       
-      // 태스크의 상태 변이가 발생하였으므로, 알림 브로드캐스트가 유기적으로 작동하도록 유도
-      const { NotificationManager } = require('../notification/notification-manager');
-      await NotificationManager.getInstance().handleTaskEvent(taskId, `업무가 ${approveStatus} 상태로 변경되었습니다.`);
+      // Get the runId for this task to evaluate dependencies
+      const db = getSQLiteManager().getNeuronDatabase();
+      const task = db.prepare('SELECT run_id FROM tasks WHERE id = ?').get(taskId) as { run_id: string } | undefined;
+      
+      if (task?.run_id) {
+        const { WorkflowTriggerEngine } = require('./workflow-trigger-engine');
+        await WorkflowTriggerEngine.getInstance().evaluateDependencies(task.run_id);
+      }
       
       return { success: true };
     } catch (error) {

@@ -1030,6 +1030,16 @@ export async function createTag(data: {
 export async function deleteTag(id: string) {
   return callAICenterTool('ai_center_delete_tag', { id });
 }
+
+/** List all company-wide shared business deadlines from the company calendar (company_calendar table). */
+export async function getCalendarEventsFromAICenter() {
+  return callAICenterTool('ai_center_get_calendar_events', {});
+}
+
+/** Update the status of an operational task. */
+export async function completeTask(taskId: string, status: 'completed' | 'approved' | 'rejected') {
+  return callAICenterTool('ai_center_complete_task', { taskId, status });
+}
 `;
 
   fs.writeFileSync(helperPath, helperContent.replace(/\r?\n/g, os.EOL), 'utf-8');
