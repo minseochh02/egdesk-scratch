@@ -61,7 +61,7 @@ async function dismissKakaoPopups(page: any): Promise<void> {
  * Multiple selector fallbacks because Kakao's frontend framework varies between
  * releases — having several attempts makes this more resilient to UI updates.
  */
-async function detectExistingChannel(page: any): Promise<
+async function detectExistingChannel(page: any, targetSearchId?: string): Promise<
   { found: false } | { found: true; searchId: string; channelUrl: string }
 > {
   // business.kakao.com/profiles shows .box_plus cards for each channel alongside
@@ -70,37 +70,83 @@ async function detectExistingChannel(page: any): Promise<
   // with "N일후 완전 삭제" text.  Active channel links point to /_CODE/dashboard;
   // the public URL is https://pf.kakao.com/_CODE.
   // The search ID is shown in p.desc_invite as "@egdesk_363".
+  
   await page.goto('https://business.kakao.com/profiles');
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(2000);
   await dismissKakaoPopups(page);
 
+  // Loop through pages if pagination exists
+  for (let pageNum = 1; pageNum <= 5; pageNum++) {
+    console.log(`[kakao:detectChannel] Checking page ${pageNum}...`);
+    const channelCards = page.locator('.box_plus');
+    const count = await channelCards.count();
+
+    if (count > 0) {
+      // 1. Try to find by search ID if provided
+      if (targetSearchId) {
+        const cleanTargetId = targetSearchId.replace(/^@/, '').trim().toLowerCase();
+        for (let i = 0; i < count; i++) {
+          const card = channelCards.nth(i);
+          const rawSearchId = (await card.locator('p.desc_invite').first()
+            .textContent({ timeout: 3000 }).catch(() => ''))?.trim() ?? '';
+          const searchId = rawSearchId.replace(/^@/, '').trim();
+          
+          if (searchId.toLowerCase() === cleanTargetId) {
+            const linkLocator = card.locator('a.link_plus').first();
+            const href = (await linkLocator.getAttribute('href').catch(() => '')) ?? '';
+            const channelCode = href.replace('/dashboard', '').trim();
+            const channelUrl = channelCode ? `https://pf.kakao.com${channelCode}` : '';
+            
+            console.log(`[kakao:detectChannel] Found exact match for channel: "${searchId}" on page ${pageNum}`);
+            return { found: true, searchId, channelUrl };
+          }
+        }
+      }
+    }
+
+    // Check for "Next" button in pagination
+    const nextBtn = page.locator('.paging_comm .btn_next, button:has-text("다음")').first();
+    if (await nextBtn.count() > 0 && await nextBtn.isVisible()) {
+      const isDisabled = await nextBtn.evaluate((el: HTMLButtonElement) => el.disabled || el.classList.contains('disabled'));
+      if (!isDisabled) {
+        console.log(`[kakao:detectChannel] Navigating to next page...`);
+        await nextBtn.click();
+        await page.waitForTimeout(2000);
+        await dismissKakaoPopups(page);
+        continue;
+      }
+    }
+    break;
+  }
+
+  // If we reached here, the exact match wasn't found on any page.
+  // Fall back to the first page and pick the first active channel.
+  console.log('[kakao:detectChannel] Exact match not found. Returning to first page for fallback...');
+  await page.goto('https://business.kakao.com/profiles').catch(() => {});
+  await page.waitForTimeout(2000);
+
   // Prefer active (non-deleted) channels first
   let cardLocator = page.locator('.box_plus:not(.box_delete)').first();
   if (await cardLocator.count() === 0) {
-    // Fall back to any channel card (even one pending deletion — better than creating a duplicate)
     cardLocator = page.locator('.box_plus').first();
   }
 
   if (await cardLocator.count() === 0) {
-    console.log('[kakao:detectChannel] No channel cards found on business.kakao.com/profiles');
+    console.log('[kakao:detectChannel] No channel cards found on first page');
     return { found: false };
   }
 
-  // Extract search ID from "p.desc_invite" — text is like "@egdesk_363"
   const rawSearchId = (await cardLocator.locator('p.desc_invite').first()
     .textContent({ timeout: 3000 }).catch(() => ''))?.trim() ?? '';
   const searchId = rawSearchId.replace(/^@/, '').trim();
-
-  // Build the public channel URL from the dashboard link href.
-  // href is like "/_BEiKX/dashboard" → public URL is "https://pf.kakao.com/_BEiKX"
   const linkLocator = cardLocator.locator('a.link_plus').first();
   const href = (await linkLocator.getAttribute('href').catch(() => '')) ?? '';
-  const channelCode = href.replace('/dashboard', '').trim(); // e.g. "/_BEiKX"
+  const channelCode = href.replace('/dashboard', '').trim();
   const channelUrl = channelCode ? `https://pf.kakao.com${channelCode}` : '';
 
   if (searchId || channelUrl) {
-    console.log(`[kakao:detectChannel] Found existing channel: searchId="${searchId}" url="${channelUrl}"`);
+    console.log(`[kakao:detectChannel] Falling back to first channel: searchId="${searchId}" url="${channelUrl}"`);
     return { found: true, searchId, channelUrl };
   }
 
@@ -122,43 +168,75 @@ async function detectExistingBot(page: any, targetBotName?: string): Promise<
   // Pending-deletion bots: my-list-bot-item div.item_botlist.off_item (has span.txt_status.status_del)
   // Bot name is in span.txt_name > span.inner_txt.
 
+  // Loop through pages if pagination exists
+  for (let pageNum = 1; pageNum <= 5; pageNum++) { // Check up to 5 pages
+    console.log(`[kakao:detectBot] Checking page ${pageNum}...`);
+    const botCards = page.locator('my-list-bot-item .item_botlist');
+    const count = await botCards.count();
+    
+    if (count > 0) {
+      // 1. Try to find by name if provided
+      if (targetBotName) {
+        for (let i = 0; i < count; i++) {
+          const card = botCards.nth(i);
+          const name = (await card.locator('span.txt_name span.inner_txt').first()
+            .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
+          if (name === targetBotName) {
+            console.log(`[kakao:detectBot] Found exact match for bot: "${name}" at index ${i} on page ${pageNum}`);
+            return { found: true, botName: name, index: i };
+          }
+        }
+      }
+
+      // 2. If it's the first page and no exact match, we might want to remember the first active bot
+      // but we should still keep looking through pages for an exact match.
+    }
+
+    // Check for "Next" button in pagination
+    const nextBtn = page.locator('.paging_comm .btn_next, .pagination .next, button:has-text("다음")').first();
+    if (await nextBtn.count() > 0 && await nextBtn.isVisible()) {
+      const isDisabled = await nextBtn.evaluate((el: HTMLButtonElement) => el.disabled || el.classList.contains('disabled'));
+      if (!isDisabled) {
+        console.log(`[kakao:detectBot] Navigating to next page...`);
+        await nextBtn.click();
+        await page.waitForTimeout(2000);
+        await dismissKakaoPopups(page);
+        continue;
+      }
+    }
+    
+    // No more pages or target not found
+    break;
+  }
+
+  // If we reached here, the exact match wasn't found on any page.
+  // Fall back to the first page and pick the first active bot.
+  console.log('[kakao:detectBot] Exact match not found. Returning to first page for fallback...');
+  await page.goto('https://chatbot.kakao.com/').catch(() => {});
+  await page.waitForTimeout(2000);
+  
   const botCards = page.locator('my-list-bot-item .item_botlist');
   const count = await botCards.count();
-  
+
   if (count === 0) {
-    console.log('[kakao:detectBot] No bot cards found');
+    console.log('[kakao:detectBot] No bot cards found on first page');
     return { found: false };
   }
 
-  // 1. Try to find by name if provided
-  if (targetBotName) {
-    for (let i = 0; i < count; i++) {
-      const card = botCards.nth(i);
-      const name = (await card.locator('span.txt_name span.inner_txt').first()
-        .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
-      if (name === targetBotName) {
-        console.log(`[kakao:detectBot] Found exact match for bot: "${name}" at index ${i}`);
-        return { found: true, botName: name, index: i };
-      }
-    }
-  }
-
-  // 2. Fall back to the first active (non-deleted) bot
   for (let i = 0; i < count; i++) {
     const card = botCards.nth(i);
     const isOff = await card.evaluate((el: HTMLElement) => el.classList.contains('off_item'));
     if (!isOff) {
       const name = (await card.locator('span.txt_name span.inner_txt').first()
         .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
-      console.log(`[kakao:detectBot] Reusing first active bot: "${name}" at index ${i}`);
+      console.log(`[kakao:detectBot] Reusing first active bot on first page: "${name}" at index ${i}`);
       return { found: true, botName: name, index: i };
     }
   }
 
-  // 3. Last resort: just the first card
   const firstCardName = (await botCards.first().locator('span.txt_name span.inner_txt').first()
     .textContent({ timeout: 2000 }).catch(() => ''))?.trim() ?? '';
-  console.log(`[kakao:detectBot] Falling back to first bot card: "${firstCardName}"`);
+  console.log(`[kakao:detectBot] Falling back to first bot card on first page: "${firstCardName}"`);
   return { found: true, botName: firstCardName || '(existing bot)', index: 0 };
 }
 
@@ -190,7 +268,7 @@ async function createKakaoChannel(
     // 2. Check for an existing channel before running the creation wizard
     if (reuseExisting) {
       console.log('[kakao:createChannel] Checking for existing channels on business.kakao.com/profiles...');
-      const existingChannel = await detectExistingChannel(page);
+      const existingChannel = await detectExistingChannel(page, searchId);
       if (existingChannel.found) {
         console.log(`[kakao:createChannel] Reusing existing channel — skipping wizard.`);
         return { success: true, searchId: existingChannel.searchId, channelUrl: existingChannel.channelUrl };
@@ -448,7 +526,7 @@ async function createKakaoBot(
   const page = context.pages()[0];
 
   // Capture and log any browser alerts/dialogs
-  page.on('dialog', async (dialog) => {
+  page.on('dialog', async (dialog: any) => {
     const msg = dialog.message();
     console.log(`[kakao:createBot] BROWSER ALERT DETECTED: "${msg}" (type: ${dialog.type()})`);
     
@@ -456,7 +534,7 @@ async function createKakaoBot(
     // This is critical for bypassing the "Unsaved changes" alert.
     if (dialog.type() === 'beforeunload' || dialog.type() === 'confirm' || msg.includes('저장하지 않은')) {
       console.log(`[kakao:createBot] Automatically accepting dialog: "${msg}"`);
-      await dialog.accept().catch((e) => console.error('[kakao:createBot] Failed to accept dialog:', e.message));
+      await dialog.accept().catch((e: any) => console.error('[kakao:createBot] Failed to accept dialog:', e.message));
     } else {
       await dialog.dismiss().catch(() => {});
     }
