@@ -2266,6 +2266,8 @@ const electronHandler = {
         ipcRenderer.invoke('openclaw:golden-merge', { profileName, botToken }),
       installDaemon: () =>
         ipcRenderer.invoke('openclaw:install-daemon'),
+      installGateway: () =>
+        ipcRenderer.invoke('openclaw:install-gateway'),
     },
   },
 
