@@ -195,6 +195,16 @@ async function installKakaoPlugin(cleanEnv: NodeJS.ProcessEnv, log: (msg: string
     if (fs.existsSync(pluginPath)) {
       log(`Installing Kakao plugin from ${pluginPath}…`);
       await execAsync(`openclaw plugins install --force "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+
+      // 번들에 node_modules가 빠져 있을 수 있으므로 (.gitignore 등)
+      // 설치된 확장 폴더에서 npm install --production을 실행하여 누락된 의존성(zod 등)을 보장
+      const extensionDir = path.join(os.homedir(), '.openclaw', 'extensions', 'kakao');
+      if (fs.existsSync(path.join(extensionDir, 'package.json'))) {
+        log('Installing Kakao plugin dependencies…');
+        await execAsync('npm install --production', { cwd: extensionDir, env: cleanEnv, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 });
+        log('Kakao plugin dependencies installed.');
+      }
+
       return true;
     } else {
       log(`⚠️ Kakao plugin path not found: ${pluginPath}`);
