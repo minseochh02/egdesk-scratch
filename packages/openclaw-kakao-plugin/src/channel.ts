@@ -430,14 +430,15 @@ export const kakaoPlugin: ChannelPlugin<ResolvedKakaoAccount> = {
       ctx.log?.info?.(`[${account.accountId}] Webhook path: ${account.webhookPath}`);
       ctx.log?.info?.(`[${account.accountId}] Callback mode: ${account.useCallback ? "enabled" : "disabled"}`);
 
-      // Store the current config so the HTTP handler in registerFull can access it
       setKakaoCfg(ctx.cfg);
 
-      return {
-        cleanup: async () => {
-          ctx.log?.info?.(`[${account.accountId}] Stopping Kakao channel provider`);
-        },
-      };
+      // Stay alive until openclaw signals a stop via abortSignal
+      await new Promise<void>((resolve) => {
+        if (ctx.abortSignal?.aborted) { resolve(); return; }
+        ctx.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+
+      ctx.log?.info?.(`[${account.accountId}] Kakao channel provider stopped`);
     },
     logoutAccount: async ({ accountId, cfg }: any) => {
       const kakaoConfig = ((cfg.channels as any)?.kakao ?? {}) as KakaoConfig;
