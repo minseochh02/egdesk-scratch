@@ -288,6 +288,24 @@ async function runGoldenMerge(configDir: string, configPath: string, resolvedTok
 }
 
 /**
+ * Helper: install OpenClaw gateway binary.
+ */
+async function installGateway(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  log('Running: openclaw gateway install');
+  try {
+    await execAsync('openclaw gateway install', { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
+    return true;
+  } catch (e: any) {
+    log(`gateway install failed: ${e?.message}`);
+    return false;
+  }
+}
+
+/**
  * Helper: install OpenClaw daemon.
  */
 async function installDaemon(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => void): Promise<boolean> {
@@ -428,6 +446,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
         // ── 6. Install daemon ──
         await installDaemon(cleanEnv, log);
+
+        // ── 6a. Install gateway binary ──
+        await installGateway(cleanEnv, log);
 
         // ── 6b. RE-APPLY GOLDEN MERGE after daemon install ──
         // Some onboard commands rewrite the config and strip custom keys.
@@ -1140,6 +1161,11 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
         }
       } catch { /* non-fatal — plugin may already be installed */ }
 
+      // 2c. Ensure gateway binary is installed
+      try {
+        await installGateway(cleanEnv, (msg) => console.log('[openclaw:start]', msg));
+      } catch { /* non-fatal */ }
+
       // 3. Spawn and capture initial output for debugging
       const spawnOpts = IS_WIN
         ? { env: cleanEnv, detached: false, stdio: ['ignore', 'pipe', 'pipe'] as const, shell: true }
@@ -1341,6 +1367,23 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     };
     try {
       const ok = await installDaemon(cleanEnv, log);
+      return { success: ok, logs };
+    } catch (e: any) {
+      return { success: false, error: e.message, logs };
+    }
+  });
+
+  ipcMain.handle('openclaw:install-gateway', async () => {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const logs: string[] = [];
+    const log = (msg: string) => {
+      logs.push(msg);
+      console.log('[openclaw:install-gateway]', msg);
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:install-gateway] ${msg}`);
+    };
+    try {
+      const ok = await installGateway(cleanEnv, log);
       return { success: ok, logs };
     } catch (e: any) {
       return { success: false, error: e.message, logs };
