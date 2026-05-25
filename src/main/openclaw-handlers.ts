@@ -1080,7 +1080,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     const running = statusOutput.includes('Gateway reachable') || statusOutput.includes('running');
 
     return {
-      running,
+      gatewayRunning: running,
+      telegramConnected: connected,
+      running,   // keep legacy aliases
       connected,
       statusOutput: statusError ? `[CLI Error] ${statusError}\n${statusOutput}`.trim() : statusOutput,
     };
