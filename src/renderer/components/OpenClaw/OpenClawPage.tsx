@@ -297,16 +297,19 @@ const OpenClawPage: React.FC = () => {
     let channelOk = false;
     let resolvedSearchId = searchId;
     let resolvedChannelUrl = '';
+    let channelResult: any = null;
 
     if (kakaoSetup && kakaoSearchId && reuseKakao) {
       addLog(`✅ KakaoTalk channel already set up (@${kakaoSearchId}) — skipping creation.`);
       resolvedSearchId = kakaoSearchId;
       resolvedChannelUrl = kakaoChannelUrl;
       channelOk = true;
+      // When already set up, we treat it as reused
+      channelResult = { success: true, reused: true, searchId: kakaoSearchId, channelUrl: kakaoChannelUrl };
     } else {
       addLog(`Creating KakaoTalk channel "@${searchId}"...`);
       try {
-        const channelResult = await (window as any).electron.debug.kakao.createChannel(
+        channelResult = await (window as any).electron.debug.kakao.createChannel(
           PROFILE_NAME, channelName, searchId, reuseKakao
         );
         if (channelResult?.success) {
@@ -724,9 +727,31 @@ const OpenClawPage: React.FC = () => {
     setLogs([]);
     addLog('Retrying Telegram pairing…');
     try {
-      const result = await (window as any).electron.debug.openclaw.pair(PROFILE_NAME);
+      // 1. First attempt: standard pairing (checks for existing code/token)
+      let result = await (window as any).electron.debug.openclaw.pair(PROFILE_NAME);
 
-      // Display all backend logs first so the user sees step-by-step what happened
+      // 2. If standard pairing failed to find a token, redo the full browser-based setup
+      const tokenMissing = result?.logs?.some((l: string) => l.includes('Bot token not found')) || 
+                           result?.error?.includes('token not found');
+      
+      if (tokenMissing) {
+        addLog('⚠️ Bot token not found via CLI. Redoing full browser-based Telegram setup…');
+        const phone = googlePhoneRef.current;
+        if (phone) {
+          const setupResult = await (window as any).electron.debug.telegram.setup(PROFILE_NAME, phone);
+          if (setupResult?.success) {
+            addLog('✅ Full Telegram setup finished. Re-attempting pairing…');
+            // Try pairing one last time now that we have a fresh token in the store
+            result = await (window as any).electron.debug.openclaw.pair(PROFILE_NAME);
+          } else {
+            addLog(`⚠️ Full Telegram setup failed: ${setupResult?.error || 'Unknown error'}`);
+          }
+        } else {
+          addLog('⚠️ Cannot redo full setup: No phone number detected.');
+        }
+      }
+
+      // Display all backend logs
       if (result?.logs?.length) {
         for (const l of result.logs) addLog(`  ${l}`);
       }
