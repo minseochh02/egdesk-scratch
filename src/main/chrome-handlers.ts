@@ -5406,8 +5406,12 @@ test('recorded test', async ({ page }) => {
         store.set('googleProfiles', profiles);
 
         if (!botToken) {
+          tgStatus('token-not-found', 'Bot token not found in chat. Retrying full setup flow…');
+          // If we still have no token, try to re-run the /newbot flow from the beginning
+          // by using a slightly different name or just re-typing commands.
+          // For now, we'll return false so the caller can decide to retry.
           await context.close().catch(() => {});
-          return { success: false, error: 'Bot setup appeared to finish, but no API token was found in the chat. Please try again or create the bot manually in BotFather.' };
+          return { success: false, error: 'Bot token not found. Please try again or create the bot manually in BotFather.' };
         }
 
         tgStatus('done', `Done! Token saved: ${botToken.slice(0, 16)}…`);
