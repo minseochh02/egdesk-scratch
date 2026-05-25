@@ -1392,3 +1392,22 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
     }
   });
 }
+
+/**
+ * Silently re-install the Kakao plugin on every app launch so the daemon
+ * (which bypasses openclaw:start) always runs the latest bundled version.
+ * Errors are non-fatal — logged but never surface to the user.
+ */
+export async function silentlyUpdateKakaoPlugin(): Promise<void> {
+  try {
+    const cleanEnv = makeCleanEnv(os.homedir());
+    const log = (msg: string) => {
+      const electronLog = require('electron-log');
+      electronLog.info(`[openclaw:auto-update-plugin] ${msg}`);
+    };
+    await installKakaoPlugin(cleanEnv, log);
+  } catch (e: any) {
+    const electronLog = require('electron-log');
+    electronLog.warn(`[openclaw:auto-update-plugin] non-fatal error: ${e?.message}`);
+  }
+}
