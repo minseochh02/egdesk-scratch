@@ -5645,6 +5645,18 @@ app
       }
     }, 1500); // Run after credential migration (1.5 seconds after startup)
 
+    // Silently re-install the Kakao plugin so the openclaw daemon always runs
+    // the latest bundled version (the daemon bypasses openclaw:start, which is
+    // the only other place that runs `openclaw plugins install --force`).
+    setTimeout(async () => {
+      try {
+        const { silentlyUpdateKakaoPlugin } = await import('./openclaw-handlers');
+        await silentlyUpdateKakaoPlugin();
+      } catch (e: any) {
+        console.warn('[openclaw:auto-update-plugin] non-fatal startup error:', e?.message);
+      }
+    }, 5000); // Run 5s after startup — low priority, after migrations settle
+
     // Auto-detect Arduino port on startup (especially important on macOS)
     setTimeout(async () => {
       try {
