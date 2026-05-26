@@ -280,6 +280,8 @@ const FinanceHub: React.FC = () => {
   // ============================================
 
   const totalAccounts = connectedBanks.reduce((sum, bank) => sum + (bank.accounts?.length || 0), 0);
+  const totalBalance = connectedBanks.reduce((sum, bank) => 
+    sum + (bank.accounts?.reduce((accSum, acc) => accSum + (acc.balance || 0), 0) || 0), 0);
   const totalCards = connectedCards.reduce((sum, cardCompany) => sum + (cardCompany.cards?.length || 0), 0);
 
   const filteredBanks = KOREAN_BANKS.filter((bank) => {
@@ -3139,6 +3141,10 @@ const FinanceHub: React.FC = () => {
             <span className="finance-hub__stat-label">연결된 카드</span>
           </div>
           <div className="finance-hub__stat">
+            <span className="finance-hub__stat-value">{formatCurrency(totalBalance)}</span>
+            <span className="finance-hub__stat-label">총 잔액</span>
+          </div>
+          <div className="finance-hub__stat">
             <span className="finance-hub__stat-value">{totalAccounts}</span>
             <span className="finance-hub__stat-label">계좌 수</span>
           </div>
@@ -3319,7 +3325,7 @@ const FinanceHub: React.FC = () => {
                                     )}
                                   </div>
                                   <div className="finance-hub__account-actions">
-                                    {account.balance > 0 && <span className="finance-hub__account-balance">{formatCurrency(account.balance)}</span>}
+                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(account.balance || 0)}</span>
                                     {isActive ? (
                                       <>
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleOpenLimitModal(connection.bankId, account.accountNumber, fullAccount)} title="계좌 한도 설정">
@@ -3560,8 +3566,8 @@ const FinanceHub: React.FC = () => {
                                   <span className="finance-hub__account-name">{cardItem.cardName || '카드'}</span>
                                 </div>
                                 <div className="finance-hub__account-actions">
-                                  {cardItem.balance && cardItem.balance > 0 && (
-                                    <span className="finance-hub__account-balance">{formatCurrency(cardItem.balance)}</span>
+                                  {cardItem.balance !== undefined && (
+                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(cardItem.balance)}</span>
                                   )}
                                   {connection.cardCompanyId !== 'bc-card' && connection.cardCompanyId !== 'shinhan-card' && connection.cardCompanyId !== 'hana-card' && (
                                     <div className="finance-hub__sync-dropdown">

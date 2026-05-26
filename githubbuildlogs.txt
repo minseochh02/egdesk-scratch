@@ -1,0 +1,46 @@
+> egdesk@1.3.48 prebuild
+> npm run bundle:kakao-plugin
+
+
+> egdesk@1.3.48 bundle:kakao-plugin
+> node scripts/build/bundle-kakao-plugin.js
+
+Compiling kakao plugin…
+Installing dependencies in plugin directory…
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 446 packages, and audited 447 packages in 33s
+
+91 packages are looking for funding
+  run `npm fund` for details
+
+3 moderate severity vulnerabilities
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+Running npm run build…
+
+> @openclaw/kakao@0.1.0 build
+> tsc
+
+Compiled.
+Pruning plugin node_modules for production…
+npm warn config production Use `--omit=dev` instead.
+
+up to date, audited 2 packages in 6s
+
+1 package is looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+Copying to D:\a\egdesk-scratch\egdesk-scratch\resources\openclaw-kakao-plugin…
+Done. resources/openclaw-kakao-plugin/ is ready.
+
+> egdesk@1.3.48 build
+> concurrently "npm run build:main" "npm run build:renderer"
+
+[0] 
+[0] > egdesk@1.3.48 build:main
+[0] > cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS="-r ts-node/register --no-warnings --max-old-space-size=4096" webpack --config ./.erb/configs/webpack.config.main.prod.ts

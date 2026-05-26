@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { TransactionFilters as Filters, BankInfo, BankAccount } from '../types';
-import { formatAccountNumber, getDateRangeForPeriod, getBankInfo } from '../utils';
+import { formatAccountNumber, formatCurrency, getDateRangeForPeriod, getBankInfo } from '../utils';
 import './TransactionFilters.css';
 
 // ============================================
@@ -103,7 +103,7 @@ const TransactionFilters: React.FC<TransactionFiltersProps> = ({
             <option value="all">{transactionType === 'card' ? '전체 카드' : '전체 계좌'}</option>
             {filteredAccounts.map(account => (
               <option key={account.id} value={account.id}>
-                {formatAccountNumber(account.accountNumber)}
+                {formatAccountNumber(account.accountNumber)} ({formatCurrency(account.balance || 0)})
               </option>
             ))}
           </select>

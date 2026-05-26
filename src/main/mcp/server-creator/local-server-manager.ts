@@ -2110,8 +2110,9 @@ export class LocalServerManager {
 
     // Return the holding message immediately (no useCallback — this IS the response)
     const now = new Date();
-    const minute = now.getMinutes();
-    const holdText = `처리 중이에요! 잠시 후 'ㅇ'를 입력하면 답변을 드릴게요 😊\n(약 ${minute}분 ${now.getSeconds()}초에 접수됨)`;
+    const ampm = now.getHours() < 12 ? '오전' : '오후';
+    const hour12 = now.getHours() % 12 || 12;
+    const holdText = `처리 중이에요! 잠시 후 'ㅇ'를 입력하면 답변을 드릴게요 😊\n(${ampm} ${hour12}시 ${now.getMinutes()}분 접수)`;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       version: '2.0',

@@ -622,9 +622,15 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
                 await page.waitForSelector('.input-message-input', { timeout: 10_000 });
                 const msgCountBefore = await page.locator('.message').count().catch(() => 0);
-                
+
                 await page.locator('.input-message-input').first().click({ force: true });
+                // Clear any existing input before typing, so autocomplete can't redirect us
+                await page.keyboard.press('Control+A');
+                await page.keyboard.press('Backspace');
                 await page.keyboard.type('/start');
+                // Dismiss any bot command autocomplete popup before pressing Enter
+                await page.keyboard.press('Escape');
+                await page.waitForTimeout(300);
                 await page.keyboard.press('Enter');
                 log('/start sent — polling browser chat for code…');
 
@@ -970,9 +976,15 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
               await page.waitForSelector('.input-message-input', { timeout: 10_000 });
               const msgCountBefore = await page.locator('.message').count().catch(() => 0);
-              
+
               await page.locator('.input-message-input').first().click({ force: true });
+              // Clear any existing input before typing, so autocomplete can't redirect us
+              await page.keyboard.press('Control+A');
+              await page.keyboard.press('Backspace');
               await page.keyboard.type('/start');
+              // Dismiss any bot command autocomplete popup before pressing Enter
+              await page.keyboard.press('Escape');
+              await page.waitForTimeout(300);
               await page.keyboard.press('Enter');
               log('/start sent — polling browser chat for code…');
 
