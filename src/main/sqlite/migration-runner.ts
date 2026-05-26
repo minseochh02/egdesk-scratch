@@ -171,7 +171,7 @@ export async function runSqliteMigrations({
   }
 
   try {
-    await runOnceMigration(financeHubDb, '035-create-banking-product-tables', async () => {
+    await runOnceMigration(financeHubDb, '035-create-banking-product-tables-v3', async () => {
       const { migrate035CreateBankingProductTables } = await import(
         './migrations/035-create-banking-product-tables'
       );
