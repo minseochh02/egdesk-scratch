@@ -3321,6 +3321,18 @@ export class FinanceHubDbManager {
         for (const r of rows) {
           const id = this.stablePromissoryNoteId('ibk', r.noteNumber);
           const m = r.metadata || {};
+
+          // Ensure account exists in accounts table
+          const depositAcc = str(m.depositAccountNumber);
+          if (depositAcc) {
+            this.upsertAccount({
+              bankId: 'ibk',
+              accountNumber: depositAcc,
+              accountName: 'IBK 외상매출채권 입금계좌',
+              accountType: 'b2b_receivable',
+            });
+          }
+
           upsert.run({
             id,
             note_number: r.noteNumber,
@@ -3527,6 +3539,25 @@ export class FinanceHubDbManager {
         let n = 0;
         for (const r of rows) {
           const id = this.stableEndorsementId('ibk', r.noteNumber, r.splitNumber || '00', r.endorsementNumber || '01');
+          
+          // Ensure account exists in accounts table
+          if (r.endorserDepositAccount) {
+            this.upsertAccount({
+              bankId: 'ibk',
+              accountNumber: r.endorserDepositAccount,
+              accountName: `${r.endorserName || ''} (배서인)`,
+              accountType: 'endorsement',
+            });
+          }
+          if (r.endorseeDepositAccount) {
+            this.upsertAccount({
+              bankId: 'ibk',
+              accountNumber: r.endorseeDepositAccount,
+              accountName: `${r.endorseeName || ''} (피배서인)`,
+              accountType: 'endorsement',
+            });
+          }
+
           upsert.run({
             id,
             note_number: r.noteNumber,
@@ -3704,6 +3735,11 @@ export class FinanceHubDbManager {
             r.amount || 0,
             r.balance || 0,
           );
+
+          // Note: IBK loan history Excel doesn't have the account number in the rows,
+          // but we can't easily get it here unless it's passed in.
+          // For now, we skip upsertAccount here.
+
           upsert.run({
             id,
             transaction_date: r.transactionDate,
@@ -3872,6 +3908,17 @@ export class FinanceHubDbManager {
             r.balance || 0,
             accountNumber || '',
           );
+
+          // Ensure account exists in accounts table
+          if (accountNumber) {
+            this.upsertAccount({
+              bankId: 'hana',
+              accountNumber: accountNumber,
+              accountName: '하나 대출계좌',
+              accountType: 'loan',
+            });
+          }
+
           upsert.run({
             id,
             account_number: accountNumber || 'UNKNOWN',
@@ -4455,6 +4502,14 @@ export class FinanceHubDbManager {
       const run = this.db.transaction(() => {
         let n = 0;
         for (const r of rows) {
+          // Ensure account exists in accounts table
+          this.upsertAccount({
+            bankId: 'ibk',
+            accountNumber: acct,
+            accountName: 'IBK 대출계좌',
+            accountType: 'loan',
+          });
+
           upsert.run({
             id: idFor(acct, r),
             account_number: acct,
