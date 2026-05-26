@@ -87,6 +87,7 @@ const ALL_TABLES = [
   'ibk_b2b_receivables',
   'woori_b2b_loan_executions',
   'ibk_loan_transactions',
+  'ibk_endorsements',
 ];
 
 // Tables to exclude by default (credentials)
@@ -528,6 +529,10 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
       'cash_receipts',
       'hometax_sync_operations',
       'financehub_scheduler_executions',
+      'ibk_b2b_receivables',
+      'woori_b2b_loan_executions',
+      'ibk_loan_transactions',
+      'ibk_endorsements',
     ];
 
     let totalImported = 0;

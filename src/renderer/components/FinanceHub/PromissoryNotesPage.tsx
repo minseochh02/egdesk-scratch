@@ -5,7 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSync, faSpinner, faRotateRight } from '@fortawesome/free-solid-svg-icons';
+import { faSync, faSpinner, faRotateRight, faFileUpload } from '@fortawesome/free-solid-svg-icons';
 import './PromissoryNotesPage.css';
 import { formatCurrency } from './utils';
 
@@ -32,6 +32,8 @@ interface TableSection {
   bankId: string;
   /** Whether this section's sync needs a user-supplied date range. */
   acceptsDateRange?: boolean;
+  /** Whether this section allows manual Excel upload. */
+  canImportExcel?: boolean;
   /** Default date range when acceptsDateRange is true. */
   defaultDateRange?: () => { startDate: string; endDate: string };
   load: LoadFn;
@@ -96,6 +98,34 @@ const IBK_LOAN_TRANSACTIONS_COLS: ColumnDef[] = [
   { key: 'startDate', sql: 'start_date' },
   { key: 'endDate', sql: 'end_date' },
   { key: 'status', sql: 'status' },
+  { key: 'syncedAt', sql: 'synced_at' },
+];
+
+const IBK_ENDORSEMENTS_COLS: ColumnDef[] = [
+  { key: 'noteNumber', sql: 'note_number' },
+  { key: 'issuerName', sql: 'issuer_name' },
+  { key: 'issuerBizNo', sql: 'issuer_biz_no' },
+  { key: 'issueDate', sql: 'issue_date' },
+  { key: 'maturityDate', sql: 'maturity_date' },
+  { key: 'endorserName', sql: 'endorser_name' },
+  { key: 'endorserIdNo', sql: 'endorser_id_no' },
+  { key: 'status', sql: 'status' },
+  { key: 'endorsementDate', sql: 'endorsement_date' },
+  { key: 'unsecuredEndorsement', sql: 'unsecured_endorsement' },
+  { key: 'endorsementProhibited', sql: 'endorsement_prohibited' },
+  { key: 'guaranteed', sql: 'guaranteed' },
+  { key: 'defaultDate', sql: 'default_date' },
+  { key: 'finalPaymentDate', sql: 'final_payment_date' },
+  { key: 'paymentBankBranchCode', sql: 'payment_bank_branch_code' },
+  { key: 'paymentBankBranchName', sql: 'payment_bank_branch_name' },
+  { key: 'issuerCheckingAccount', sql: 'issuer_checking_account' },
+  { key: 'endorserDepositAccount', sql: 'endorser_deposit_account' },
+  { key: 'splitNumber', sql: 'split_number' },
+  { key: 'endorsementNumber', sql: 'endorsement_number' },
+  { key: 'endorsementAmount', sql: 'endorsement_amount', align: 'right', format: 'currency' },
+  { key: 'endorseeName', sql: 'endorsee_name' },
+  { key: 'endorseeIdNo', sql: 'endorsee_id_no' },
+  { key: 'endorseeDepositAccount', sql: 'endorsee_deposit_account' },
   { key: 'syncedAt', sql: 'synced_at' },
 ];
 
@@ -167,6 +197,19 @@ const TABLE_SECTIONS: TableSection[] = [
       return await window.electron.financeHub.syncIbkLoanTransactions(opts);
     },
     columns: IBK_LOAN_TRANSACTIONS_COLS,
+  },
+  {
+    slug: 'ibk_endorsements',
+    title: 'IBK 배서내역',
+    subtitle: 'B2B → 판매기업 → 배서내역조회',
+    bankId: 'ibk',
+    canImportExcel: true,
+    load: () => window.electron.financeHubDb.getIbkEndorsements(),
+    sync: async () => {
+      // No automation yet, but we can allow manual Excel upload
+      return { success: true };
+    },
+    columns: IBK_ENDORSEMENTS_COLS,
   },
 ];
 
@@ -249,6 +292,41 @@ function Section({ section, connectedBankIds }: SectionProps) {
     }
   }, [section, load, startDate, endDate]);
 
+  const handleFileUpload = useCallback(async () => {
+    setError(null);
+    try {
+      const { filePaths, canceled } = await window.electron.dialog.showOpenDialog({
+        title: 'IBK 배서내역 Excel 파일 선택',
+        filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }],
+        properties: ['openFile'],
+      });
+
+      if (canceled || !filePaths || filePaths.length === 0) return;
+      const filePath = filePaths[0];
+
+      setLoading(true);
+      let res: any;
+      if (section.slug === 'ibk_endorsements') {
+        res = await window.electron.financeHub.importIbkEndorsementsExcel(filePath);
+      } else {
+        // Fallback or other tables if needed
+        setError('이 테이블은 수동 업로드를 지원하지 않습니다.');
+        return;
+      }
+
+      if (res?.success) {
+        alert(`성공적으로 업로드되었습니다. (가져옴: ${res.imported}, 건너뜀: ${res.skipped})`);
+        await load();
+      } else {
+        setError(res?.error || '업로드 중 오류가 발생했습니다.');
+      }
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [section, load]);
+
   return (
     <div className="ibkrec-section">
       <div className="ibkrec-toolbar">
@@ -280,6 +358,18 @@ function Section({ section, connectedBankIds }: SectionProps) {
                 title="조회 종료일 (YYYYMMDD)"
               />
             </>
+          )}
+          {section.canImportExcel && (
+            <button
+              type="button"
+              className="ibkrec-btn"
+              onClick={() => void handleFileUpload()}
+              disabled={loading}
+              title="Excel 파일 업로드"
+            >
+              <FontAwesomeIcon icon={faFileUpload} />
+              <span>Excel 업로드</span>
+            </button>
           )}
           <button
             type="button"

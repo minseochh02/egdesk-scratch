@@ -63,6 +63,31 @@ export interface OllamaModelCheckResult {
   error?: string;
 }
 
+export interface BankCredentials {
+  userId?: string;
+  password?: string;
+  bizNo?: string;
+  residentNo?: string;
+  [key: string]: any;
+}
+
+export interface CardCredentials {
+  userId?: string;
+  password?: string;
+  [key: string]: any;
+}
+
+export interface PHPInstallerAPI {
+  checkDownloaded: () => Promise<any>;
+  download: () => Promise<any>;
+  ensure: () => Promise<any>;
+  cancelDownload: () => Promise<any>;
+  isDownloading: () => Promise<any>;
+  onDownloadProgress: (callback: (progress: any) => void) => () => void;
+  onDownloadComplete: (callback: (result: any) => void) => () => void;
+  onDownloadError: (callback: (error: any) => void) => () => void;
+}
+
 /**
  * Ollama management API exposed to the renderer
  */
@@ -1714,8 +1739,6 @@ const electronHandler = {
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
     updateSnsPlanConnection: (planId: string, connectionId: string | null, connectionName: string | null, connectionType: string | null) =>
       ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-connection', planId, connectionId, connectionName, connectionType),
-    updateSnsPlanAIKey: (planId: string, aiKeyId: string | null) =>
-      ipcRenderer.invoke('sqlite-business-identity-update-sns-plan-ai-key', planId, aiKeyId),
     loadDetailedCompanyData: () => ipcRenderer.invoke('sqlite-business-identity-load-detailed-company-data'),
     loadProductsWithImages: () => ipcRenderer.invoke('sqlite-business-identity-load-products-with-images'),
   } as BusinessIdentityAPI,
@@ -2329,6 +2352,8 @@ const electronHandler = {
     /** IBK 대출 → 대출조회 → 대출계좌조회 → 거래내역조회 (all loan accounts). */
     syncIbkLoanTransactions: (opts?: { startDate?: string; endDate?: string }) =>
       ipcRenderer.invoke('finance-hub:sync-ibk-loan-transactions', opts || {}),
+    importIbkEndorsementsExcel: (filePath: string) =>
+      ipcRenderer.invoke('finance-hub:import-ibk-endorsements-excel', { filePath }),
     bank: {
       importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
         ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),
@@ -2475,6 +2500,7 @@ const electronHandler = {
     getIbkB2bReceivables: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-b2b-receivables'),
     getWooriB2bLoanExecutions: () => ipcRenderer.invoke('sqlite-financehub-get-woori-b2b-loan-executions'),
     getIbkLoanTransactions: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-loan-transactions'),
+    getIbkEndorsements: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-endorsements'),
     queryTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-query-transactions', options),
     getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
     getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),

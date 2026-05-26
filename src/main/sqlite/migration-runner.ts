@@ -170,6 +170,17 @@ export async function runSqliteMigrations({
     console.error('⚠️ Migration 034 error:', migration034Error.message);
   }
 
+  try {
+    await runOnceMigration(financeHubDb, '035-create-ibk-endorsements', async () => {
+      const { migrate035CreateIbkEndorsements } = await import(
+        './migrations/035-create-ibk-endorsements'
+      );
+      migrate035CreateIbkEndorsements(financeHubDb);
+    });
+  } catch (migration035Error: any) {
+    console.error('⚠️ Migration 035 error:', migration035Error.message);
+  }
+
   // =============================================
   // Migration 009: Add vector embeddings support
   // =============================================

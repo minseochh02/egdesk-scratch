@@ -865,6 +865,25 @@ const createWindow = async () => {
         },
       );
 
+      ipcMain.handle(
+        'finance-hub:import-ibk-endorsements-excel',
+        async (_event, { filePath }: { filePath: string }) => {
+          try {
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const result = financeHubManager.importIbkEndorsementsFromExcel(filePath);
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] import-ibk-endorsements-excel failed:', error);
+            return {
+              success: false,
+              imported: 0,
+              skipped: 0,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance

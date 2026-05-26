@@ -119,6 +119,43 @@ export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
     },
     defaultOrderBy: 'account_number ASC, transaction_date DESC',
   },
+  ibk_endorsements: {
+    slug: 'ibk_endorsements',
+    displayName: 'IBK 배서내역',
+    bankId: 'ibk',
+    productLabel: '배서내역',
+    columns: {
+      id: 'TEXT',
+      note_number: 'TEXT',
+      issuer_name: 'TEXT',
+      issuer_biz_no: 'TEXT',
+      issue_date: 'TEXT',
+      maturity_date: 'TEXT',
+      endorser_name: 'TEXT',
+      endorser_id_no: 'TEXT',
+      status: 'TEXT',
+      endorsement_date: 'TEXT',
+      unsecured_endorsement: 'TEXT',
+      endorsement_prohibited: 'TEXT',
+      guaranteed: 'TEXT',
+      default_date: 'TEXT',
+      final_payment_date: 'TEXT',
+      payment_bank_branch_code: 'TEXT',
+      payment_bank_branch_name: 'TEXT',
+      issuer_checking_account: 'TEXT',
+      endorser_deposit_account: 'TEXT',
+      split_number: 'TEXT',
+      endorsement_number: 'TEXT',
+      endorsement_amount: 'INTEGER',
+      endorsee_name: 'TEXT',
+      endorsee_id_no: 'TEXT',
+      endorsee_deposit_account: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'endorsement_date DESC, created_at DESC',
+  },
 };
 
 // ============================================
@@ -2870,6 +2907,18 @@ export class FinanceHubDbManager {
     return `pn_${h.slice(0, 40)}`;
   }
 
+  private stableEndorsementId(
+    bankId: string,
+    noteNumber: string,
+    splitNumber: string,
+    endorsementNumber: string,
+  ): string {
+    const h = createHash('sha256')
+      .update(`${bankId}\n${noteNumber}\n${splitNumber}\n${endorsementNumber}`)
+      .digest('hex');
+    return `ed_${h.slice(0, 40)}`;
+  }
+
   /**
    * Parse IBK 외상매출채권 Excel (header row 3) and upsert into `promissory_notes`.
    * Uses first active IBK account for `account_id` and `customer_name` / `account_name` for `payee_name`.
@@ -3248,6 +3297,215 @@ export class FinanceHubDbManager {
       };
     } catch (error: any) {
       console.error('[FinanceHubDb] importIbkB2bReceivablesFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
+  // IBK 배서내역 (`ibk_endorsements`)
+  // ============================================================================
+
+  /**
+   * Read all rows from `ibk_endorsements`.
+   */
+  getIbkEndorsements(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_endorsements' LIMIT 1`)
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, note_number, issuer_name, issuer_biz_no, issue_date, maturity_date,
+            endorser_name, endorser_id_no, status, endorsement_date,
+            unsecured_endorsement, endorsement_prohibited, guaranteed,
+            default_date, final_payment_date, payment_bank_branch_code,
+            payment_bank_branch_name, issuer_checking_account, endorser_deposit_account,
+            split_number, endorsement_number, endorsement_amount,
+            endorsee_name, endorsee_id_no, endorsee_deposit_account,
+            synced_at, created_at, updated_at
+          FROM ibk_endorsements
+          ORDER BY endorsement_date DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        noteNumber: row.note_number,
+        issuerName: row.issuer_name,
+        issuerBizNo: row.issuer_biz_no,
+        issueDate: row.issue_date,
+        maturityDate: row.maturity_date,
+        endorserName: row.endorser_name,
+        endorserIdNo: row.endorser_id_no,
+        status: row.status,
+        endorsementDate: row.endorsement_date,
+        unsecuredEndorsement: row.unsecured_endorsement,
+        endorsementProhibited: row.endorsement_prohibited,
+        guaranteed: row.guaranteed,
+        defaultDate: row.default_date,
+        finalPaymentDate: row.final_payment_date,
+        paymentBankBranchCode: row.payment_bank_branch_code,
+        paymentBankBranchName: row.payment_bank_branch_name,
+        issuerCheckingAccount: row.issuer_checking_account,
+        endorserDepositAccount: row.endorser_deposit_account,
+        splitNumber: row.split_number,
+        endorsementNumber: row.endorsement_number,
+        endorsementAmount: row.endorsement_amount,
+        endorseeName: row.endorsee_name,
+        endorseeIdNo: row.endorsee_id_no,
+        endorseeDepositAccount: row.endorsee_deposit_account,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getIbkEndorsements:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Parse IBK 배서내역 Excel and upsert into `ibk_endorsements`.
+   */
+  importIbkEndorsementsFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkEndorsementsExcel } = require('../financehub/utils/ibk-endorsements-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_endorsements'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'ibk_endorsements 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { rows, warnings } = parseIbkEndorsementsExcel(filePath) as {
+        rows: any[];
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO ibk_endorsements (
+          id, note_number, issuer_name, issuer_biz_no, issue_date, maturity_date,
+          endorser_name, endorser_id_no, status, endorsement_date,
+          unsecured_endorsement, endorsement_prohibited, guaranteed,
+          default_date, final_payment_date, payment_bank_branch_code,
+          payment_bank_branch_name, issuer_checking_account, endorser_deposit_account,
+          split_number, endorsement_number, endorsement_amount,
+          endorsee_name, endorsee_id_no, endorsee_deposit_account,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @note_number, @issuer_name, @issuer_biz_no, @issue_date, @maturity_date,
+          @endorser_name, @endorser_id_no, @status, @endorsement_date,
+          @unsecured_endorsement, @endorsement_prohibited, @guaranteed,
+          @default_date, @final_payment_date, @payment_bank_branch_code,
+          @payment_bank_branch_name, @issuer_checking_account, @endorser_deposit_account,
+          @split_number, @endorsement_number, @endorsement_amount,
+          @endorsee_name, @endorsee_id_no, @endorsee_deposit_account,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(note_number, split_number, endorsement_number) DO UPDATE SET
+          issuer_name = excluded.issuer_name,
+          issuer_biz_no = excluded.issuer_biz_no,
+          issue_date = excluded.issue_date,
+          maturity_date = excluded.maturity_date,
+          endorser_name = excluded.endorser_name,
+          endorser_id_no = excluded.endorser_id_no,
+          status = excluded.status,
+          endorsement_date = excluded.endorsement_date,
+          unsecured_endorsement = excluded.unsecured_endorsement,
+          endorsement_prohibited = excluded.endorsement_prohibited,
+          guaranteed = excluded.guaranteed,
+          default_date = excluded.default_date,
+          final_payment_date = excluded.final_payment_date,
+          payment_bank_branch_code = excluded.payment_bank_branch_code,
+          payment_bank_branch_name = excluded.payment_bank_branch_name,
+          issuer_checking_account = excluded.issuer_checking_account,
+          endorser_deposit_account = excluded.endorser_deposit_account,
+          endorsement_amount = excluded.endorsement_amount,
+          endorsee_name = excluded.endorsee_name,
+          endorsee_id_no = excluded.endorsee_id_no,
+          endorsee_deposit_account = excluded.endorsee_deposit_account,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stableEndorsementId('ibk', r.noteNumber, r.splitNumber || '00', r.endorsementNumber || '01');
+          upsert.run({
+            id,
+            note_number: r.noteNumber,
+            issuer_name: r.issuerName,
+            issuer_biz_no: r.issuerBizNo,
+            issue_date: r.issueDate,
+            maturity_date: r.maturityDate,
+            endorser_name: r.endorserName,
+            endorser_id_no: r.endorserIdNo,
+            status: r.status,
+            endorsement_date: r.endorsementDate,
+            unsecured_endorsement: r.unsecuredEndorsement,
+            endorsement_prohibited: r.endorsementProhibited,
+            guaranteed: r.guaranteed,
+            default_date: r.defaultDate,
+            final_payment_date: r.finalPaymentDate,
+            payment_bank_branch_code: r.paymentBankBranchCode,
+            payment_bank_branch_name: r.paymentBankBranchName,
+            issuer_checking_account: r.issuerCheckingAccount,
+            endorser_deposit_account: r.endorserDepositAccount,
+            split_number: r.splitNumber || '00',
+            endorsement_number: r.endorsementNumber || '01',
+            endorsement_amount: r.endorsementAmount,
+            endorsee_name: r.endorseeName,
+            endorsee_id_no: r.endorseeIdNo,
+            endorsee_deposit_account: r.endorseeDepositAccount,
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkEndorsementsFromExcel: ${imported} rows from ${filePath}`);
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkEndorsementsFromExcel failed:', error);
       return {
         success: false,
         imported: 0,
