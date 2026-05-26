@@ -97,5 +97,44 @@ export function migrate035CreateBankingProductTables(db: Database.Database): voi
     console.log('  ✅ hana_loan_history table created');
   }
 
+  // 3. ibk_loan_history
+  const existsIbkLoan = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_loan_history'`)
+    .get() as { name: string } | undefined;
+
+  if (!existsIbkLoan) {
+    db.exec(`
+      CREATE TABLE ibk_loan_history (
+        id TEXT PRIMARY KEY,
+        account_number TEXT,
+        transaction_date TEXT NOT NULL,
+        description TEXT,
+        currency TEXT,
+        amount INTEGER,
+        interest INTEGER,
+        fee INTEGER,
+        balance INTEGER,
+        interest_start_date TEXT,
+        interest_end_date TEXT,
+        interest_rate REAL,
+        branch TEXT,
+        synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    db.exec(`
+      CREATE INDEX idx_ibk_loan_history_account ON ibk_loan_history(account_number);
+      CREATE INDEX idx_ibk_loan_history_date ON ibk_loan_history(transaction_date);
+      CREATE INDEX idx_ibk_loan_history_description ON ibk_loan_history(description);
+      CREATE TRIGGER ibk_loan_history_updated_at
+      AFTER UPDATE ON ibk_loan_history
+      BEGIN
+        UPDATE ibk_loan_history SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+    `);
+    console.log('  ✅ ibk_loan_history table created');
+  }
+
   console.log('[Migration 035] Banking product tables setup complete');
 }

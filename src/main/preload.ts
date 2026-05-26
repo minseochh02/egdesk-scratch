@@ -2358,6 +2358,8 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:import-ibk-loan-history-excel', { filePath }),
     importHanaLoanHistoryExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-hana-loan-history-excel', { filePath }),
+    importIbkLoanTransactionsExcel: (filePath: string) =>
+      ipcRenderer.invoke('finance-hub:import-ibk-loan-transactions-excel', { filePath }),
     bank: {
       importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
         ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),

@@ -89,25 +89,29 @@ function cellByHeader(colMap, row, headerKo) {
 
 /**
  * @param {string} filePath
- * @returns {{ rows: Array<{
- *   transactionDate: string|null;
- *   transactionType: string|null;
- *   currency: string|null;
- *   transactionAmount: number|null;
- *   principalAmount: number|null;
- *   interestAmount: number|null;
- *   loanBalance: number|null;
- *   interestRate: number|null;
- *   startDate: string|null;
- *   endDate: string|null;
- *   status: string|null;
- * }>, warnings: string[] }}
+ * @returns {{
+ *   accountNumber: string|null;
+ *   rows: Array<{
+ *     transactionDate: string|null;
+ *     transactionType: string|null;
+ *     currency: string|null;
+ *     transactionAmount: number|null;
+ *     principalAmount: number|null;
+ *     interestAmount: number|null;
+ *     loanBalance: number|null;
+ *     interestRate: number|null;
+ *     startDate: string|null;
+ *     endDate: string|null;
+ *     status: string|null;
+ *   }>;
+ *   warnings: string[];
+ * }}
  */
 function parseIbkLoanTransactionsExcel(filePath) {
   const warnings = [];
   if (!filePath || !fs.existsSync(filePath)) {
     warnings.push(`File not found: ${filePath}`);
-    return { rows: [], warnings };
+    return { accountNumber: null, rows: [], warnings };
   }
 
   const buf = fs.readFileSync(filePath);
@@ -115,15 +119,26 @@ function parseIbkLoanTransactionsExcel(filePath) {
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     warnings.push('No sheets in workbook');
-    return { rows: [], warnings };
+    return { accountNumber: null, rows: [], warnings };
   }
 
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+
+  // Extract account number from Row 2 (0-indexed index 1)
+  let accountNumber = null;
+  const metadataRow = data[1];
+  if (metadataRow && metadataRow[0]) {
+    const match = String(metadataRow[0]).match(/대출계좌번호\s*:\s*([\d-]+)/);
+    if (match) {
+      accountNumber = match[1];
+    }
+  }
+
   const headerRowIdx = HEADER_ROW_1BASED - 1;
   if (!data[headerRowIdx]) {
     warnings.push(`Header row ${HEADER_ROW_1BASED} missing`);
-    return { rows: [], warnings };
+    return { accountNumber, rows: [], warnings };
   }
 
   const colMap = buildColMap(data[headerRowIdx]);
@@ -143,6 +158,11 @@ function parseIbkLoanTransactionsExcel(filePath) {
   for (let r = headerRowIdx + 1; r < data.length; r++) {
     const row = data[r];
     if (!row || !Array.isArray(row)) continue;
+
+    // Stop if we hit '합계' in Column B (index 1)
+    if (normalizeHeader(row[1]) === '합계') {
+      break;
+    }
 
     // Skip rows with no transaction_date — totals/footer rows often have empty
     // first column or summary labels.
@@ -164,7 +184,7 @@ function parseIbkLoanTransactionsExcel(filePath) {
     });
   }
 
-  return { rows, warnings };
+  return { accountNumber, rows, warnings };
 }
 
 module.exports = {

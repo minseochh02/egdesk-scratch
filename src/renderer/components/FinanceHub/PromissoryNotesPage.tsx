@@ -130,6 +130,7 @@ const IBK_ENDORSEMENTS_COLS: ColumnDef[] = [
 ];
 
 const IBK_LOAN_HISTORY_COLS: ColumnDef[] = [
+  { key: 'accountNumber', sql: 'account_number' },
   { key: 'transactionDate', sql: 'transaction_date' },
   { key: 'description', sql: 'description' },
   { key: 'currency', sql: 'currency' },
@@ -222,6 +223,7 @@ const TABLE_SECTIONS: TableSection[] = [
     subtitle: '대출 → 대출조회 → 대출계좌조회 → (계좌별) 거래내역조회',
     bankId: 'ibk',
     acceptsDateRange: true,
+    canImportExcel: true,
     defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getIbkLoanTransactions(),
     sync: async (opts) => {
@@ -367,6 +369,8 @@ function Section({ section, connectedBankIds }: SectionProps) {
         res = await window.electron.financeHub.importIbkLoanHistoryExcel(filePath);
       } else if (section.slug === 'hana_loan_history') {
         res = await window.electron.financeHub.importHanaLoanHistoryExcel(filePath);
+      } else if (section.slug === 'ibk_loan_transactions') {
+        res = await window.electron.financeHub.importIbkLoanTransactionsExcel(filePath);
       } else {
         // Fallback or other tables if needed
         setError('이 테이블은 수동 업로드를 지원하지 않습니다.');

@@ -163,6 +163,7 @@ export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
     productLabel: '대출상세내역',
     columns: {
       id: 'TEXT',
+      account_number: 'TEXT',
       transaction_date: 'TEXT',
       description: 'TEXT',
       currency: 'TEXT',
@@ -3627,7 +3628,7 @@ export class FinanceHubDbManager {
         .prepare(
           `
           SELECT
-            id, transaction_date, description, currency, amount, interest, fee,
+            id, account_number, transaction_date, description, currency, amount, interest, fee,
             balance, interest_start_date, interest_end_date, interest_rate, branch,
             synced_at, created_at, updated_at
           FROM ibk_loan_history
@@ -3638,6 +3639,7 @@ export class FinanceHubDbManager {
 
       return rows.map((row) => ({
         id: row.id,
+        accountNumber: row.account_number,
         transactionDate: row.transaction_date,
         description: row.description,
         currency: row.currency,
@@ -3685,7 +3687,8 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
+      const { accountNumber, rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
+        accountNumber: string | null;
         rows: any[];
         warnings: string[];
       };
@@ -3701,15 +3704,16 @@ export class FinanceHubDbManager {
 
       const upsert = this.db.prepare(`
         INSERT INTO ibk_loan_history (
-          id, transaction_date, description, currency, amount, interest, fee,
+          id, account_number, transaction_date, description, currency, amount, interest, fee,
           balance, interest_start_date, interest_end_date, interest_rate, branch,
           synced_at, created_at, updated_at
         ) VALUES (
-          @id, @transaction_date, @description, @currency, @amount, @interest, @fee,
+          @id, @account_number, @transaction_date, @description, @currency, @amount, @interest, @fee,
           @balance, @interest_start_date, @interest_end_date, @interest_rate, @branch,
           datetime('now'), datetime('now'), datetime('now')
         )
         ON CONFLICT(id) DO UPDATE SET
+          account_number = excluded.account_number,
           transaction_date = excluded.transaction_date,
           description = excluded.description,
           currency = excluded.currency,
@@ -3734,14 +3738,22 @@ export class FinanceHubDbManager {
             r.description || '',
             r.amount || 0,
             r.balance || 0,
+            accountNumber || '',
           );
 
-          // Note: IBK loan history Excel doesn't have the account number in the rows,
-          // but we can't easily get it here unless it's passed in.
-          // For now, we skip upsertAccount here.
+          // Ensure account exists in accounts table
+          if (accountNumber) {
+            this.upsertAccount({
+              bankId: 'ibk',
+              accountNumber: accountNumber,
+              accountName: 'IBK 대출계좌',
+              accountType: 'loan',
+            });
+          }
 
           upsert.run({
             id,
+            account_number: accountNumber || 'UNKNOWN',
             transaction_date: r.transactionDate,
             description: r.description,
             currency: r.currency,
@@ -4398,7 +4410,7 @@ export class FinanceHubDbManager {
    */
   importIbkLoanTransactionsFromExcel(
     filePath: string,
-    accountNumber: string,
+    accountNumber?: string,
   ): {
     success: boolean;
     imported: number;
@@ -4408,10 +4420,6 @@ export class FinanceHubDbManager {
   } {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { parseIbkLoanTransactionsExcel } = require('../financehub/utils/ibk-loan-transactions-excel.js');
-
-    if (!accountNumber || !String(accountNumber).trim()) {
-      return { success: false, imported: 0, skipped: 0, error: 'accountNumber is required' };
-    }
 
     try {
       const table = this.db
@@ -4426,7 +4434,8 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
+      const { accountNumber: extractedAcc, rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
+        accountNumber: string | null;
         rows: Array<{
           transactionDate: string | null;
           transactionType: string | null;
@@ -4442,6 +4451,11 @@ export class FinanceHubDbManager {
         }>;
         warnings: string[];
       };
+
+      const finalAcc = (accountNumber || extractedAcc || '').trim();
+      if (!finalAcc) {
+        return { success: false, imported: 0, skipped: 0, error: 'accountNumber is required (none provided or extracted)' };
+      }
 
       if (!rows.length) {
         return {
@@ -4498,21 +4512,20 @@ export class FinanceHubDbManager {
         return `iblt_${h.slice(0, 40)}`;
       };
 
-      const acct = String(accountNumber).trim();
       const run = this.db.transaction(() => {
         let n = 0;
         for (const r of rows) {
           // Ensure account exists in accounts table
           this.upsertAccount({
             bankId: 'ibk',
-            accountNumber: acct,
+            accountNumber: finalAcc,
             accountName: 'IBK 대출계좌',
             accountType: 'loan',
           });
 
           upsert.run({
-            id: idFor(acct, r),
-            account_number: acct,
+            id: idFor(finalAcc, r),
+            account_number: finalAcc,
             transaction_date: r.transactionDate,
             transaction_type: r.transactionType,
             currency: r.currency,
@@ -4532,7 +4545,7 @@ export class FinanceHubDbManager {
 
       const imported = run();
       console.log(
-        `[FinanceHubDb] importIbkLoanTransactionsFromExcel: ${imported} rows for account ${acct} from ${filePath}`,
+        `[FinanceHubDb] importIbkLoanTransactionsFromExcel: ${imported} rows for account ${finalAcc} from ${filePath}`,
       );
       return {
         success: true,

@@ -1,30 +1,15 @@
 /**
  * IBK 기업뱅킹 — 대출거래내역조회 Excel parser.
- * Filename pattern: `_대출거래내역조회YYYYMMDD.xlsx`. Header row is row 2 (1-based).
+ * Supports multiple formats of IBK loan history.
+ *
+ * Format 1 (New): Header row 3, columns: 거래일자, 거래구분, 통화구분, 거래금액, 원금, 이자금액, 대출잔액, 이율(%), 시작일, 종료일, 상태구분
+ * Format 2 (Old): Header row 2, columns: 거래일, 거래내용, 통화코드, 실행/상환금액, 이자, 수수료, 대출금잔액, 부리시작일, 부리종료일, 이율, 거래점
  *
  * @module ibk-loan-history-excel
  */
 
 const XLSX = require('xlsx');
 const fs = require('fs');
-
-/** 1-based row index of header row */
-const HEADER_ROW_1BASED = 2;
-
-/** Expected Korean headers (normalized: no whitespace). */
-const HEADER_KEYS = [
-  '거래일',
-  '거래내용',
-  '통화코드',
-  '실행/상환금액',
-  '이자',
-  '수수료',
-  '대출금잔액',
-  '부리시작일',
-  '부리종료일',
-  '이율',
-  '거래점',
-];
 
 function normalizeHeader(cell) {
   return String(cell ?? '')
@@ -33,7 +18,6 @@ function normalizeHeader(cell) {
     .trim();
 }
 
-/** YYYY-MM-DD or null. Accepts Date, Excel serial, or various string forms. */
 function parseDateCell(val) {
   if (val == null || val === '' || val === '0000-00-00') return null;
   if (val instanceof Date && !Number.isNaN(val.getTime())) {
@@ -59,7 +43,6 @@ function parseDateCell(val) {
   return null;
 }
 
-/** Integer KRW won, stripping commas / 원 / spaces. */
 function parseAmount(val) {
   if (val == null || val === '') return null;
   if (typeof val === 'number' && !Number.isNaN(val)) return Math.round(val);
@@ -67,7 +50,6 @@ function parseAmount(val) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Decimal rate (e.g. "5.25" or "5.25%" → 5.25). */
 function parseRate(val) {
   if (val == null || val === '') return null;
   if (typeof val === 'number' && !Number.isNaN(val)) return val;
@@ -92,31 +74,13 @@ function cellByHeader(colMap, row, headerKo) {
 }
 
 /**
- * Parse IBK 대출거래내역조회 workbook.
- *
- * @param {string} filePath - .xls / .xlsx
- * @returns {{
- *   rows: Array<{
- *     transactionDate: string;
- *     description: string | null;
- *     currency: string | null;
- *     amount: number | null;
- *     interest: number | null;
- *     fee: number | null;
- *     balance: number | null;
- *     interestStartDate: string | null;
- *     interestEndDate: string | null;
- *     interestRate: number | null;
- *     branch: string | null;
- *   }>;
- *   warnings: string[];
- * }}
+ * @param {string} filePath
  */
 function parseIbkLoanHistoryExcel(filePath) {
   const warnings = [];
   if (!filePath || !fs.existsSync(filePath)) {
     warnings.push(`File not found: ${filePath}`);
-    return { rows: [], warnings };
+    return { accountNumber: null, rows: [], warnings };
   }
 
   const buf = fs.readFileSync(filePath);
@@ -124,54 +88,98 @@ function parseIbkLoanHistoryExcel(filePath) {
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     warnings.push('No sheets in workbook');
-    return { rows: [], warnings };
+    return { accountNumber: null, rows: [], warnings };
   }
 
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
-  const headerRowIdx = HEADER_ROW_1BASED - 1;
-  if (!data[headerRowIdx]) {
-    warnings.push(`Header row ${HEADER_ROW_1BASED} missing`);
-    return { rows: [], warnings };
-  }
 
-  const colMap = buildColMap(data[headerRowIdx]);
-  for (const hk of HEADER_KEYS) {
-    if (colMap[normalizeHeader(hk)] === undefined) {
-      warnings.push(`Missing expected column: ${hk}`);
+  // 1. Detect format and header row
+  let headerRowIdx = -1;
+  let format = null;
+  let accountNumber = null;
+
+  for (let i = 0; i < Math.min(data.length, 10); i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    const rowStr = JSON.stringify(row);
+    
+    // Check for account number in metadata rows
+    const accMatch = rowStr.match(/대출계좌번호\s*:\s*([\d-]+)/);
+    if (accMatch) {
+      accountNumber = accMatch[1];
+    }
+
+    if (row.some(c => normalizeHeader(c) === '거래일자')) {
+      headerRowIdx = i;
+      format = 'new';
+      break;
+    }
+    if (row.some(c => normalizeHeader(c) === '거래일')) {
+      headerRowIdx = i;
+      format = 'old';
+      break;
     }
   }
 
+  if (headerRowIdx === -1) {
+    warnings.push('Could not find header row (expected "거래일자" or "거래일")');
+    return { accountNumber, rows: [], warnings };
+  }
+
+  const colMap = buildColMap(data[headerRowIdx]);
   const rows = [];
+
   for (let r = headerRowIdx + 1; r < data.length; r++) {
     const row = data[r];
     if (!row || !Array.isArray(row)) continue;
 
-    const transactionDate = parseDateCell(cellByHeader(colMap, row, '거래일'));
+    // Stop if we hit '합계'
+    if (row.some(c => normalizeHeader(c) === '합계')) {
+      break;
+    }
+
+    const dateKey = format === 'new' ? '거래일자' : '거래일';
+    const transactionDate = parseDateCell(cellByHeader(colMap, row, dateKey));
     if (!transactionDate) continue;
 
-    rows.push({
-      transactionDate,
-      description: String(cellByHeader(colMap, row, '거래내용') ?? '').trim() || null,
-      currency: String(cellByHeader(colMap, row, '통화코드') ?? '').trim() || null,
-      amount: parseAmount(cellByHeader(colMap, row, '실행/상환금액')),
-      interest: parseAmount(cellByHeader(colMap, row, '이자')),
-      fee: parseAmount(cellByHeader(colMap, row, '수수료')),
-      balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
-      interestStartDate: parseDateCell(cellByHeader(colMap, row, '부리시작일')),
-      interestEndDate: parseDateCell(cellByHeader(colMap, row, '부리종료일')),
-      interestRate: parseRate(cellByHeader(colMap, row, '이율')),
-      branch: String(cellByHeader(colMap, row, '거래점') ?? '').trim() || null,
-    });
+    if (format === 'new') {
+      rows.push({
+        transactionDate,
+        description: String(cellByHeader(colMap, row, '거래구분') ?? '').trim() || null,
+        currency: String(cellByHeader(colMap, row, '통화구분') ?? '').trim() || null,
+        amount: parseAmount(cellByHeader(colMap, row, '거래금액')),
+        interest: parseAmount(cellByHeader(colMap, row, '이자금액')),
+        fee: 0, // Not in new format
+        balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
+        interestStartDate: parseDateCell(cellByHeader(colMap, row, '시작일')),
+        interestEndDate: parseDateCell(cellByHeader(colMap, row, '종료일')),
+        interestRate: parseRate(cellByHeader(colMap, row, '이율(%)')),
+        branch: null, // Not in new format
+      });
+    } else {
+      rows.push({
+        transactionDate,
+        description: String(cellByHeader(colMap, row, '거래내용') ?? '').trim() || null,
+        currency: String(cellByHeader(colMap, row, '통화코드') ?? '').trim() || null,
+        amount: parseAmount(cellByHeader(colMap, row, '실행/상환금액')),
+        interest: parseAmount(cellByHeader(colMap, row, '이자')),
+        fee: parseAmount(cellByHeader(colMap, row, '수수료')),
+        balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
+        interestStartDate: parseDateCell(cellByHeader(colMap, row, '부리시작일')),
+        interestEndDate: parseDateCell(cellByHeader(colMap, row, '부리종료일')),
+        interestRate: parseRate(cellByHeader(colMap, row, '이율')),
+        branch: String(cellByHeader(colMap, row, '거래점') ?? '').trim() || null,
+      });
+    }
   }
 
-  return { rows, warnings };
+  return { accountNumber, rows, warnings };
 }
 
 module.exports = {
   parseIbkLoanHistoryExcel,
-  HEADER_ROW_1BASED,
-  HEADER_KEYS,
   parseDateCell,
   parseAmount,
   parseRate,
