@@ -865,7 +865,16 @@ export class FinanceHubDbManager {
   }
 
   getAccount(id: string): BankAccount | null {
-    const stmt = this.db.prepare(`SELECT * FROM accounts WHERE id = ?`);
+    const stmt = this.db.prepare(`
+      SELECT a.*,
+             COALESCE(
+               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               a.balance
+             ) as latest_balance
+      FROM accounts a
+      WHERE a.id = ?
+    `);
     const row = stmt.get(id) as any;
     if (!row) return null;
     return this.mapRowToAccount(row);
@@ -879,13 +888,19 @@ export class FinanceHubDbManager {
     
     // DB의 account_number에 하이픈이 포함되어 있거나 공백이 포함된 경우, 혹은 완전히 정규화된 경우 모두 매칭되도록 함
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts 
-      WHERE bank_id = ? 
+      SELECT a.*,
+             COALESCE(
+               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               a.balance
+             ) as latest_balance
+      FROM accounts a
+      WHERE a.bank_id = ? 
         AND (
-          account_number = ? 
-          OR account_number = ? 
-          OR account_number = ?
-          OR REPLACE(account_number, '-', '') = ?
+          a.account_number = ? 
+          OR a.account_number = ? 
+          OR a.account_number = ?
+          OR REPLACE(a.account_number, '-', '') = ?
         )
       LIMIT 1
     `);
@@ -896,16 +911,29 @@ export class FinanceHubDbManager {
 
   getAccountsByBank(bankId: string): BankAccount[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts WHERE bank_id = ? AND is_active = 1
-      ORDER BY account_number
+      SELECT a.*,
+             COALESCE(
+               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               a.balance
+             ) as latest_balance
+      FROM accounts a
+      WHERE a.bank_id = ? AND a.is_active = 1
+      ORDER BY a.account_number
     `);
     return stmt.all(bankId).map((row: any) => this.mapRowToAccount(row));
   }
 
   getAllAccounts(): BankAccount[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM accounts
-      ORDER BY bank_id, account_number
+      SELECT a.*,
+             COALESCE(
+               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               a.balance
+             ) as latest_balance
+      FROM accounts a
+      ORDER BY a.bank_id, a.account_number
     `);
     return stmt.all().map((row: any) => this.mapRowToAccount(row));
   }
@@ -2719,8 +2747,8 @@ export class FinanceHubDbManager {
       accountNumber: row.account_number,
       accountName: row.account_name,
       customerName: row.customer_name,
-      balance: row.balance,
-      availableBalance: row.available_balance,
+      balance: row.latest_balance !== undefined ? row.latest_balance : row.balance,
+      availableBalance: row.latest_balance !== undefined ? row.latest_balance : row.available_balance,
       currency: row.currency,
       accountType: row.account_type,
       openDate: row.open_date,

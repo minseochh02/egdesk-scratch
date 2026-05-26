@@ -279,9 +279,8 @@ const FinanceHub: React.FC = () => {
   // Computed Values
   // ============================================
 
-  const totalAccounts = connectedBanks.reduce((sum, bank) => sum + (bank.accounts?.length || 0), 0);
-  const totalBalance = connectedBanks.reduce((sum, bank) => 
-    sum + (bank.accounts?.reduce((accSum, acc) => accSum + (acc.balance || 0), 0) || 0), 0);
+  const totalAccounts = accounts.length;
+  const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
   const totalCards = connectedCards.reduce((sum, cardCompany) => sum + (cardCompany.cards?.length || 0), 0);
 
   const filteredBanks = KOREAN_BANKS.filter((bank) => {
@@ -3325,7 +3324,7 @@ const FinanceHub: React.FC = () => {
                                     )}
                                   </div>
                                   <div className="finance-hub__account-actions">
-                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(account.balance || 0)}</span>
+                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(fullAccount?.balance ?? account.balance ?? 0)}</span>
                                     {isActive ? (
                                       <>
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleOpenLimitModal(connection.bankId, account.accountNumber, fullAccount)} title="계좌 한도 설정">
