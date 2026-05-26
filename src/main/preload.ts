@@ -2728,6 +2728,7 @@ auth: {
   handleCallback: (url: string) => ipcRenderer.invoke('auth:handle-callback', url),
     getGoogleWorkspaceToken: () => ipcRenderer.invoke('auth:get-google-workspace-token'),
     getGoogleWorkspaceTokenWithScopes: (requiredScopes: string[]) => ipcRenderer.invoke('auth:get-google-workspace-token-with-scopes', requiredScopes),
+    setTokenLock: (locked: boolean) => ipcRenderer.invoke('auth:set-token-lock', locked),
   debugForceRefreshToken: () => ipcRenderer.invoke('auth:debug-force-refresh-token'),
   saveSession: (session: any) => ipcRenderer.invoke('auth:save-session', session),
   callEdgeFunction: (options: { url: string; method?: string; body?: any; headers?: Record<string, string> }) =>

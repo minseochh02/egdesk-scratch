@@ -23,6 +23,7 @@ export interface GoogleWorkspaceToken {
   expires_at: number; // Unix timestamp (seconds)
   scopes: string[];
   saved_at: number; // Unix timestamp (milliseconds)
+  locked?: boolean; // If true, token should not be recycled/refreshed automatically
 }
 
 /**
@@ -124,6 +125,7 @@ export class SupabaseTokenStorage implements TokenStorage {
           expires_at: new Date(token.expires_at * 1000).toISOString(),
           scopes: token.scopes,
           is_active: true,
+          is_locked: token.locked || false,
         }, {
           onConflict: 'user_id,provider',
         });
@@ -182,6 +184,7 @@ export class SupabaseTokenStorage implements TokenStorage {
         expires_at: Math.floor(new Date(data.expires_at).getTime() / 1000),
         scopes: data.scopes || [],
         saved_at: Math.floor(new Date(data.created_at).getTime() / 1000),
+        locked: data.is_locked || false,
       };
 
       // Update cache

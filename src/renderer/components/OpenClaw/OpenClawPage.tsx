@@ -508,6 +508,8 @@ const OpenClawPage: React.FC = () => {
 
   const [isPairing, setIsPairing] = useState(false);
   const [isRunningKakao, setIsRunningKakao] = useState(false);
+  const [activeDebugStep, setActiveDebugStep] = useState<string | null>(null);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
 
   // ── Tunnel URL (for Kakao skill endpoint) ──
   const [tunnelUrl, setTunnelUrl] = useState('');
@@ -776,6 +778,53 @@ const OpenClawPage: React.FC = () => {
     } finally {
       await refreshStatus();
       setIsPairing(false);
+    }
+  };
+
+  const runDebugStep = async (stepId: string) => {
+    if (activeDebugStep) return;
+    setActiveDebugStep(stepId);
+    addLog(`▶ ${stepId}…`);
+    try {
+      let result: any;
+      switch (stepId) {
+        case 'install-cli':
+          result = await (window as any).electron.debug.openclaw.installCli();
+          break;
+        case 'onboard-gemini':
+          result = await (window as any).electron.debug.openclaw.onboardGemini();
+          break;
+        case 'doctor-fix':
+          result = await (window as any).electron.debug.openclaw.doctorFix();
+          break;
+        case 'install-kakao-plugin':
+          result = await (window as any).electron.debug.openclaw.installKakaoPlugin();
+          break;
+        case 'golden-merge':
+          result = await (window as any).electron.debug.openclaw.goldenMerge(PROFILE_NAME);
+          break;
+        case 'install-daemon':
+          result = await (window as any).electron.debug.openclaw.installDaemon();
+          break;
+        case 'install-gateway':
+          result = await (window as any).electron.debug.openclaw.installGateway();
+          break;
+        default:
+          addLog(`❌ Unknown step: ${stepId}`);
+          return;
+      }
+      if (result?.logs?.length) {
+        for (const l of result.logs) addLog(`  ${l}`);
+      }
+      if (result?.success) {
+        addLog(`✅ ${stepId} done.`);
+      } else {
+        addLog(`❌ ${stepId} failed: ${result?.error || 'unknown'}`);
+      }
+    } catch (e: any) {
+      addLog(`❌ ${stepId} error: ${e?.message || e}`);
+    } finally {
+      setActiveDebugStep(null);
     }
   };
 
@@ -1653,6 +1702,76 @@ const OpenClawPage: React.FC = () => {
           >
             🔄 Reset & Start Over
           </button>
+
+          {/* ── Debug Steps Panel ── */}
+          <div style={{ marginBottom: '10px', width: '100%' }}>
+            <button
+              onClick={() => setDebugPanelOpen(v => !v)}
+              style={{
+                background: 'none',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#555',
+                fontSize: '12px',
+                cursor: 'pointer',
+                padding: '6px 12px',
+                width: '100%',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span>{debugPanelOpen ? '▾' : '▸'}</span>
+              <span>🔧 Debug Steps</span>
+            </button>
+            {debugPanelOpen && (
+              <div style={{
+                marginTop: '8px',
+                padding: '12px',
+                backgroundColor: '#0d1117',
+                border: '1px solid #21262d',
+                borderRadius: '6px',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+              }}>
+                {([
+                  { id: 'install-cli',         label: '🔧 Install CLI' },
+                  { id: 'onboard-gemini',       label: '💎 Onboard Gemini' },
+                  { id: 'doctor-fix',           label: '🩺 Doctor Fix' },
+                  { id: 'install-kakao-plugin', label: '📦 Kakao Plugin' },
+                  { id: 'golden-merge',         label: '⚙️ Golden Merge' },
+                  { id: 'install-daemon',       label: '🔄 Install Daemon' },
+                  { id: 'install-gateway',      label: '🛡️ Install Gateway' },
+                ] as { id: string; label: string }[]).map(({ id, label }) => {
+                  const isRunning = activeDebugStep === id;
+                  const isDisabled = !!activeDebugStep;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => runDebugStep(id)}
+                      disabled={isDisabled}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: isRunning ? '#1a2a3a' : '#161b22',
+                        color: isDisabled ? '#444' : '#bbb',
+                        border: `1px solid ${isRunning ? '#1e4a6a' : '#30363d'}`,
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                        textAlign: 'left',
+                        transition: 'border-color 0.15s',
+                      }}
+                    >
+                      {isRunning ? `⏳ Running…` : label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <Console logs={logs} onClear={() => setLogs([])} />
         </div>

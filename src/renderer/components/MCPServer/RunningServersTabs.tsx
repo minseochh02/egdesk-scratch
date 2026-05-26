@@ -5,9 +5,11 @@ import {
   faCloud,
   faSpinner,
   faCopy,
-  faCode
+  faCode,
+  faLock,
+  faShieldAlt
 } from '../../utils/fontAwesomeIcons';
-import { faPlus, faSync, faTrash, faCog } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faSync, faTrash, faCog, faUnlock } from '@fortawesome/free-solid-svg-icons';
 import RunningServersSection, { 
   RunningMCPServer,
   AccessLevelConfig 
@@ -128,6 +130,35 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
   const [creatingCopyId, setCreatingCopyId] = useState<string | null>(null);
   const [showDevConfig, setShowDevConfig] = useState<boolean>(false);
+  const [isTokenLocked, setIsTokenLocked] = useState<boolean>(false);
+
+  // Check token lock status
+  const checkTokenLockStatus = async () => {
+    try {
+      const result = await window.electron.auth.getGoogleWorkspaceToken();
+      if (result.success && result.token) {
+        setIsTokenLocked(result.token.locked || false);
+      }
+    } catch (error) {
+      console.error('Error checking token lock status:', error);
+    }
+  };
+
+  // Handle toggle token lock
+  const handleToggleTokenLock = async () => {
+    try {
+      const newLockedStatus = !isTokenLocked;
+      const result = await window.electron.auth.setTokenLock(newLockedStatus);
+      if (result.success) {
+        setIsTokenLocked(newLockedStatus);
+        console.log('✅ Token lock status updated:', newLockedStatus);
+      } else {
+        alert(`Failed to update token lock: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error toggling token lock:', error);
+    }
+  };
 
   // Load existing copies from electron-store and database
   const loadExistingCopies = async () => {
@@ -431,6 +462,7 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   useEffect(() => {
     if (activeTab === 'cloud') {
       loadExistingCopies();
+      checkTokenLockStatus();
     }
   }, [activeTab]);
 
@@ -586,6 +618,21 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
               {!checkingOAuthToken && hasValidOAuthToken && (
                 <>
                   <div className="cloud-oauth-actions" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <button
+                      onClick={handleToggleTokenLock}
+                      className="btn btn-secondary"
+                      style={{ 
+                        padding: '0.5rem 1rem', 
+                        fontSize: '0.875rem',
+                        background: isTokenLocked ? 'rgba(239, 68, 68, 0.2)' : undefined,
+                        borderColor: isTokenLocked ? 'rgba(239, 68, 68, 0.4)' : undefined,
+                        color: isTokenLocked ? '#f87171' : undefined
+                      }}
+                      title={isTokenLocked ? "Token is locked and will not be refreshed" : "Lock token to prevent automatic recycling"}
+                    >
+                      <FontAwesomeIcon icon={isTokenLocked ? faLock : faShieldAlt} style={{ marginRight: '0.5rem' }} />
+                      {isTokenLocked ? 'Token Locked' : 'Lock Token'}
+                    </button>
                     <button
                       onClick={() => setShowDevConfig(!showDevConfig)}
                       className="btn btn-secondary"

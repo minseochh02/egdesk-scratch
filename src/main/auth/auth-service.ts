@@ -1255,6 +1255,13 @@ export class AuthService {
     // 3. Token exists but is expired (within 5 minute buffer)
     const bufferSeconds = 5 * 60; // 5 minutes buffer before actual expiry
     const isExpired = token?.expires_at && (token.expires_at - bufferSeconds) < Math.floor(Date.now() / 1000);
+    
+    // Check if token is locked - if so, never refresh it
+    if (token?.locked) {
+      console.log('🔒 Google OAuth token is LOCKED - skipping refresh even if expired');
+      return token;
+    }
+
     const needsRefresh = !token?.access_token || isExpired;
 
     if (!needsRefresh && token) {
@@ -1488,6 +1495,35 @@ export class AuthService {
         success: true,
         token,
       };
+    });
+
+    // Set Google Workspace token lock status
+    ipcMain.handle('auth:set-token-lock', async (_, locked: boolean) => {
+      try {
+        const { session } = await this.getSession();
+        const userId = session?.user?.id;
+
+        if (!userId) {
+          return { success: false, error: 'No active session' };
+        }
+
+        const token = await this.tokenStorage.getGoogleToken(userId);
+        if (!token) {
+          return { success: false, error: 'No token found to lock' };
+        }
+
+        token.locked = locked;
+        await this.tokenStorage.saveGoogleToken(userId, token);
+        
+        // Also update electron-store for consistency
+        this.store.set('google_workspace_token', token);
+
+        console.log(`🔒 Token lock status updated to: ${locked}`);
+        return { success: true, locked };
+      } catch (error: any) {
+        console.error('Error setting token lock:', error);
+        return { success: false, error: error.message };
+      }
     });
 
     // DEBUG: Force refresh Google Workspace token
