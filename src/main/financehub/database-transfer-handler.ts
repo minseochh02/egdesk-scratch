@@ -88,6 +88,8 @@ const ALL_TABLES = [
   'woori_b2b_loan_executions',
   'ibk_loan_transactions',
   'ibk_endorsements',
+  'ibk_loan_history',
+  'hana_loan_history',
 ];
 
 // Tables to exclude by default (credentials)
@@ -533,6 +535,8 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
       'woori_b2b_loan_executions',
       'ibk_loan_transactions',
       'ibk_endorsements',
+      'ibk_loan_history',
+      'hana_loan_history',
     ];
 
     let totalImported = 0;

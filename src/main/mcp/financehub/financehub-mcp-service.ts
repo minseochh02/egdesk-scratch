@@ -435,7 +435,7 @@ export class FinanceHubMCPService implements IMCPService {
             tableSlug: {
               type: 'string',
               description:
-                'Required. Table slug from financehub_list_bank_product_tables (e.g. "ibk_b2b_receivables", "ibk_loan_transactions", "woori_b2b_loan_executions", "ibk_endorsements").'
+                'Required. Table slug from financehub_list_bank_product_tables (e.g. "ibk_b2b_receivables", "ibk_loan_transactions", "woori_b2b_loan_executions", "ibk_endorsements", "ibk_loan_history", "hana_loan_history").'
             },
             filters: {
               type: 'array',

@@ -2354,6 +2354,10 @@ const electronHandler = {
       ipcRenderer.invoke('finance-hub:sync-ibk-loan-transactions', opts || {}),
     importIbkEndorsementsExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-ibk-endorsements-excel', { filePath }),
+    importIbkLoanHistoryExcel: (filePath: string) =>
+      ipcRenderer.invoke('finance-hub:import-ibk-loan-history-excel', { filePath }),
+    importHanaLoanHistoryExcel: (filePath: string) =>
+      ipcRenderer.invoke('finance-hub:import-hana-loan-history-excel', { filePath }),
     bank: {
       importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
         ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),
@@ -2501,6 +2505,8 @@ const electronHandler = {
     getWooriB2bLoanExecutions: () => ipcRenderer.invoke('sqlite-financehub-get-woori-b2b-loan-executions'),
     getIbkLoanTransactions: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-loan-transactions'),
     getIbkEndorsements: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-endorsements'),
+    getIbkLoanHistory: () => ipcRenderer.invoke('sqlite-financehub-get-ibk-loan-history'),
+    getHanaLoanHistory: () => ipcRenderer.invoke('sqlite-financehub-get-hana-loan-history'),
     queryTransactions: (options: any) => ipcRenderer.invoke('sqlite-financehub-query-transactions', options),
     getTransactionStats: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-transaction-stats', options),
     getMonthlySummary: (options: any) => ipcRenderer.invoke('sqlite-financehub-get-monthly-summary', options),

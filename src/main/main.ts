@@ -884,6 +884,44 @@ const createWindow = async () => {
         },
       );
 
+      ipcMain.handle(
+        'finance-hub:import-ibk-loan-history-excel',
+        async (_event, { filePath }: { filePath: string }) => {
+          try {
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const result = financeHubManager.importIbkLoanHistoryFromExcel(filePath);
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] import-ibk-loan-history-excel failed:', error);
+            return {
+              success: false,
+              imported: 0,
+              skipped: 0,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
+      ipcMain.handle(
+        'finance-hub:import-hana-loan-history-excel',
+        async (_event, { filePath }: { filePath: string }) => {
+          try {
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const result = financeHubManager.importHanaLoanHistoryFromExcel(filePath);
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] import-hana-loan-history-excel failed:', error);
+            return {
+              success: false,
+              imported: 0,
+              skipped: 0,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance

@@ -156,6 +156,55 @@ export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
     },
     defaultOrderBy: 'endorsement_date DESC, created_at DESC',
   },
+  ibk_loan_history: {
+    slug: 'ibk_loan_history',
+    displayName: 'IBK 대출상세내역',
+    bankId: 'ibk',
+    productLabel: '대출상세내역',
+    columns: {
+      id: 'TEXT',
+      transaction_date: 'TEXT',
+      description: 'TEXT',
+      currency: 'TEXT',
+      amount: 'INTEGER',
+      interest: 'INTEGER',
+      fee: 'INTEGER',
+      balance: 'INTEGER',
+      interest_start_date: 'TEXT',
+      interest_end_date: 'TEXT',
+      interest_rate: 'REAL',
+      branch: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'transaction_date DESC, created_at DESC',
+  },
+  hana_loan_history: {
+    slug: 'hana_loan_history',
+    displayName: '하나 대출상세내역',
+    bankId: 'hana',
+    productLabel: '대출상세내역',
+    columns: {
+      id: 'TEXT',
+      account_number: 'TEXT',
+      transaction_date: 'TEXT',
+      description: 'TEXT',
+      currency: 'TEXT',
+      amount: 'INTEGER',
+      interest: 'INTEGER',
+      fee: 'INTEGER',
+      balance: 'INTEGER',
+      interest_start_date: 'TEXT',
+      interest_end_date: 'TEXT',
+      interest_rate: 'REAL',
+      branch: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'transaction_date DESC, created_at DESC',
+  },
 };
 
 // ============================================
@@ -2919,6 +2968,20 @@ export class FinanceHubDbManager {
     return `ed_${h.slice(0, 40)}`;
   }
 
+  private stableLoanHistoryId(
+    bankId: string,
+    date: string,
+    description: string,
+    amount: number,
+    balance: number,
+    accountNumber?: string,
+  ): string {
+    const h = createHash('sha256')
+      .update(`${bankId}\n${accountNumber || ''}\n${date}\n${description}\n${amount}\n${balance}`)
+      .digest('hex');
+    return `lh_${h.slice(0, 40)}`;
+  }
+
   /**
    * Parse IBK 외상매출채권 Excel (header row 3) and upsert into `promissory_notes`.
    * Uses first active IBK account for `account_id` and `customer_name` / `account_name` for `payee_name`.
@@ -3506,6 +3569,339 @@ export class FinanceHubDbManager {
       };
     } catch (error: any) {
       console.error('[FinanceHubDb] importIbkEndorsementsFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
+  // IBK 대출상세내역 (`ibk_loan_history`)
+  // ============================================================================
+
+  /**
+   * Read all rows from `ibk_loan_history`.
+   */
+  getIbkLoanHistory(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_loan_history' LIMIT 1`)
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, transaction_date, description, currency, amount, interest, fee,
+            balance, interest_start_date, interest_end_date, interest_rate, branch,
+            synced_at, created_at, updated_at
+          FROM ibk_loan_history
+          ORDER BY transaction_date DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        transactionDate: row.transaction_date,
+        description: row.description,
+        currency: row.currency,
+        amount: row.amount,
+        interest: row.interest,
+        fee: row.fee,
+        balance: row.balance,
+        interestStartDate: row.interest_start_date,
+        interestEndDate: row.interest_end_date,
+        interestRate: row.interest_rate,
+        branch: row.branch,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getIbkLoanHistory:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Parse IBK 대출상세내역 Excel and upsert into `ibk_loan_history`.
+   */
+  importIbkLoanHistoryFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkLoanHistoryExcel } = require('../financehub/utils/ibk-loan-history-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_loan_history'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'ibk_loan_history 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
+        rows: any[];
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO ibk_loan_history (
+          id, transaction_date, description, currency, amount, interest, fee,
+          balance, interest_start_date, interest_end_date, interest_rate, branch,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @transaction_date, @description, @currency, @amount, @interest, @fee,
+          @balance, @interest_start_date, @interest_end_date, @interest_rate, @branch,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          transaction_date = excluded.transaction_date,
+          description = excluded.description,
+          currency = excluded.currency,
+          amount = excluded.amount,
+          interest = excluded.interest,
+          fee = excluded.fee,
+          balance = excluded.balance,
+          interest_start_date = excluded.interest_start_date,
+          interest_end_date = excluded.interest_end_date,
+          interest_rate = excluded.interest_rate,
+          branch = excluded.branch,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stableLoanHistoryId(
+            'ibk',
+            r.transactionDate,
+            r.description || '',
+            r.amount || 0,
+            r.balance || 0,
+          );
+          upsert.run({
+            id,
+            transaction_date: r.transactionDate,
+            description: r.description,
+            currency: r.currency,
+            amount: r.amount,
+            interest: r.interest,
+            fee: r.fee,
+            balance: r.balance,
+            interest_start_date: r.interestStartDate,
+            interest_end_date: r.interestEndDate,
+            interest_rate: r.interestRate,
+            branch: r.branch,
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkLoanHistoryFromExcel: ${imported} rows from ${filePath}`);
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkLoanHistoryFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
+  // Hana 대출상세내역 (`hana_loan_history`)
+  // ============================================================================
+
+  /**
+   * Read all rows from `hana_loan_history`.
+   */
+  getHanaLoanHistory(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='hana_loan_history' LIMIT 1`)
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, account_number, transaction_date, description, currency, amount, interest, fee,
+            balance, interest_start_date, interest_end_date, interest_rate, branch,
+            synced_at, created_at, updated_at
+          FROM hana_loan_history
+          ORDER BY transaction_date DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        accountNumber: row.account_number,
+        transactionDate: row.transaction_date,
+        description: row.description,
+        currency: row.currency,
+        amount: row.amount,
+        interest: row.interest,
+        fee: row.fee,
+        balance: row.balance,
+        interestStartDate: row.interest_start_date,
+        interestEndDate: row.interest_end_date,
+        interestRate: row.interest_rate,
+        branch: row.branch,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getHanaLoanHistory:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Parse Hana 대출상세내역 Excel and upsert into `hana_loan_history`.
+   */
+  importHanaLoanHistoryFromExcel(filePath: string): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseHanaLoanHistoryExcel } = require('../financehub/utils/hana-loan-history-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='hana_loan_history'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'hana_loan_history 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { accountNumber, rows, warnings } = parseHanaLoanHistoryExcel(filePath) as {
+        accountNumber: string | null;
+        rows: any[];
+        warnings: string[];
+      };
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO hana_loan_history (
+          id, account_number, transaction_date, description, currency, amount, interest, fee,
+          balance, interest_start_date, interest_end_date, interest_rate, branch,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @account_number, @transaction_date, @description, @currency, @amount, @interest, @fee,
+          @balance, @interest_start_date, @interest_end_date, @interest_rate, @branch,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          account_number = excluded.account_number,
+          transaction_date = excluded.transaction_date,
+          description = excluded.description,
+          currency = excluded.currency,
+          amount = excluded.amount,
+          interest = excluded.interest,
+          fee = excluded.fee,
+          balance = excluded.balance,
+          interest_start_date = excluded.interest_start_date,
+          interest_end_date = excluded.interest_end_date,
+          interest_rate = excluded.interest_rate,
+          branch = excluded.branch,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stableLoanHistoryId(
+            'hana',
+            r.transactionDate,
+            r.description || '',
+            r.amount || 0,
+            r.balance || 0,
+            accountNumber || '',
+          );
+          upsert.run({
+            id,
+            account_number: accountNumber || 'UNKNOWN',
+            transaction_date: r.transactionDate,
+            description: r.description,
+            currency: r.currency,
+            amount: r.amount,
+            interest: r.interest,
+            fee: r.fee,
+            balance: r.balance,
+            interest_start_date: r.interestStartDate,
+            interest_end_date: r.interestEndDate,
+            interest_rate: r.interestRate,
+            branch: r.branch,
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importHanaLoanHistoryFromExcel: ${imported} rows from ${filePath}`);
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importHanaLoanHistoryFromExcel failed:', error);
       return {
         success: false,
         imported: 0,

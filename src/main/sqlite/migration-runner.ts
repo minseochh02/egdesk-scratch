@@ -171,11 +171,11 @@ export async function runSqliteMigrations({
   }
 
   try {
-    await runOnceMigration(financeHubDb, '035-create-ibk-endorsements', async () => {
-      const { migrate035CreateIbkEndorsements } = await import(
-        './migrations/035-create-ibk-endorsements'
+    await runOnceMigration(financeHubDb, '035-create-banking-product-tables', async () => {
+      const { migrate035CreateBankingProductTables } = await import(
+        './migrations/035-create-banking-product-tables'
       );
-      migrate035CreateIbkEndorsements(financeHubDb);
+      migrate035CreateBankingProductTables(financeHubDb);
     });
   } catch (migration035Error: any) {
     console.error('⚠️ Migration 035 error:', migration035Error.message);

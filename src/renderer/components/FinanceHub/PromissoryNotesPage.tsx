@@ -129,6 +129,37 @@ const IBK_ENDORSEMENTS_COLS: ColumnDef[] = [
   { key: 'syncedAt', sql: 'synced_at' },
 ];
 
+const IBK_LOAN_HISTORY_COLS: ColumnDef[] = [
+  { key: 'transactionDate', sql: 'transaction_date' },
+  { key: 'description', sql: 'description' },
+  { key: 'currency', sql: 'currency' },
+  { key: 'amount', sql: 'amount', align: 'right', format: 'currency' },
+  { key: 'interest', sql: 'interest', align: 'right', format: 'currency' },
+  { key: 'fee', sql: 'fee', align: 'right', format: 'currency' },
+  { key: 'balance', sql: 'balance', align: 'right', format: 'currency' },
+  { key: 'interestStartDate', sql: 'interest_start_date' },
+  { key: 'interestEndDate', sql: 'interest_end_date' },
+  { key: 'interestRate', sql: 'interest_rate', align: 'right', format: 'rate' },
+  { key: 'branch', sql: 'branch' },
+  { key: 'syncedAt', sql: 'synced_at' },
+];
+
+const HANA_LOAN_HISTORY_COLS: ColumnDef[] = [
+  { key: 'accountNumber', sql: 'account_number' },
+  { key: 'transactionDate', sql: 'transaction_date' },
+  { key: 'description', sql: 'description' },
+  { key: 'currency', sql: 'currency' },
+  { key: 'amount', sql: 'amount', align: 'right', format: 'currency' },
+  { key: 'interest', sql: 'interest', align: 'right', format: 'currency' },
+  { key: 'fee', sql: 'fee', align: 'right', format: 'currency' },
+  { key: 'balance', sql: 'balance', align: 'right', format: 'currency' },
+  { key: 'interestStartDate', sql: 'interest_start_date' },
+  { key: 'interestEndDate', sql: 'interest_end_date' },
+  { key: 'interestRate', sql: 'interest_rate', align: 'right', format: 'rate' },
+  { key: 'branch', sql: 'branch' },
+  { key: 'syncedAt', sql: 'synced_at' },
+];
+
 // ------- Helpers -------
 
 function todayYmd(): string {
@@ -210,6 +241,30 @@ const TABLE_SECTIONS: TableSection[] = [
       return { success: true };
     },
     columns: IBK_ENDORSEMENTS_COLS,
+  },
+  {
+    slug: 'ibk_loan_history',
+    title: 'IBK 대출상세내역',
+    subtitle: '대출 → 대출조회 → 대출계좌조회 → 거래내역조회',
+    bankId: 'ibk',
+    canImportExcel: true,
+    load: () => window.electron.financeHubDb.getIbkLoanHistory(),
+    sync: async () => {
+      return { success: true };
+    },
+    columns: IBK_LOAN_HISTORY_COLS,
+  },
+  {
+    slug: 'hana_loan_history',
+    title: '하나 대출상세내역',
+    subtitle: '대출 → 대출조회 → 대출계좌조회 → 거래내역조회',
+    bankId: 'hana',
+    canImportExcel: true,
+    load: () => window.electron.financeHubDb.getHanaLoanHistory(),
+    sync: async () => {
+      return { success: true };
+    },
+    columns: HANA_LOAN_HISTORY_COLS,
   },
 ];
 
@@ -308,6 +363,10 @@ function Section({ section, connectedBankIds }: SectionProps) {
       let res: any;
       if (section.slug === 'ibk_endorsements') {
         res = await window.electron.financeHub.importIbkEndorsementsExcel(filePath);
+      } else if (section.slug === 'ibk_loan_history') {
+        res = await window.electron.financeHub.importIbkLoanHistoryExcel(filePath);
+      } else if (section.slug === 'hana_loan_history') {
+        res = await window.electron.financeHub.importHanaLoanHistoryExcel(filePath);
       } else {
         // Fallback or other tables if needed
         setError('이 테이블은 수동 업로드를 지원하지 않습니다.');

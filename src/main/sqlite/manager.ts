@@ -862,6 +862,24 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-financehub-get-ibk-loan-history', async () => {
+      try {
+        const rows = this.getFinanceHubManager().getIbkLoanHistory();
+        return { success: true, data: rows };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
+      }
+    });
+
+    ipcMain.handle('sqlite-financehub-get-hana-loan-history', async () => {
+      try {
+        const rows = this.getFinanceHubManager().getHanaLoanHistory();
+        return { success: true, data: rows };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
+      }
+    });
+
     // Query transactions
     ipcMain.handle('sqlite-financehub-query-transactions', async (event, options) => {
       try {
