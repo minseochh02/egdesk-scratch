@@ -516,6 +516,7 @@ export async function queryBankProductTable(options: {
   orderBy?: { column: string; direction?: 'ASC' | 'DESC' };
   limit?: number;
   offset?: number;
+  latestOnly?: boolean;
 }) {
   return callFinanceHubTool('financehub_query_bank_product_table', options);
 }
