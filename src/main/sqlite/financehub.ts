@@ -955,12 +955,23 @@ export class FinanceHubDbManager {
     const stmt = this.db.prepare(`
       SELECT a.*,
              COALESCE(
-               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+               (
+                 SELECT balance FROM (
+                   SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                   UNION ALL
+                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                   UNION ALL
+                   SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                 )
+                 ORDER BY dt DESC, created_at DESC
+                 LIMIT 1
+               ),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -981,12 +992,23 @@ export class FinanceHubDbManager {
     const stmt = this.db.prepare(`
       SELECT a.*,
              COALESCE(
-               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+               (
+                 SELECT balance FROM (
+                   SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                   UNION ALL
+                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                   UNION ALL
+                   SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                 )
+                 ORDER BY dt DESC, created_at DESC
+                 LIMIT 1
+               ),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -1008,12 +1030,23 @@ export class FinanceHubDbManager {
     const stmt = this.db.prepare(`
       SELECT a.*,
              COALESCE(
-               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+               (
+                 SELECT balance FROM (
+                   SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                   UNION ALL
+                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                   UNION ALL
+                   SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                 )
+                 ORDER BY dt DESC, created_at DESC
+                 LIMIT 1
+               ),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -1027,12 +1060,23 @@ export class FinanceHubDbManager {
     const stmt = this.db.prepare(`
       SELECT a.*,
              COALESCE(
-               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+               (
+                 SELECT balance FROM (
+                   SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                   UNION ALL
+                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                   UNION ALL
+                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                   UNION ALL
+                   SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                 )
+                 ORDER BY dt DESC, created_at DESC
+                 LIMIT 1
+               ),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -2291,12 +2335,23 @@ export class FinanceHubDbManager {
           COUNT(DISTINCT a.id) as account_count,
           COALESCE(SUM(
             COALESCE(
-              (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-              (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-              (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-              (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+              (
+                SELECT balance FROM (
+                  SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                  UNION ALL
+                  SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                  UNION ALL
+                  SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                  UNION ALL
+                  SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                  UNION ALL
+                  SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                  UNION ALL
+                  SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                )
+                ORDER BY dt DESC, created_at DESC
+                LIMIT 1
+              ),
               a.balance
             )
           ), 0) as total_balance
@@ -2349,12 +2404,23 @@ export class FinanceHubDbManager {
           COUNT(t.id) as transaction_count,
           COALESCE(SUM(
             COALESCE(
-              (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
-              (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
-              (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
-              (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+              (
+                SELECT balance FROM (
+                  SELECT balance, transaction_datetime as dt, created_at FROM bank_transactions bt WHERE bt.account_id = a.id
+                  UNION ALL
+                  SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
+                  UNION ALL
+                  SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
+                  UNION ALL
+                  SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
+                  UNION ALL
+                  SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
+                  UNION ALL
+                  SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
+                )
+                ORDER BY dt DESC, created_at DESC
+                LIMIT 1
+              ),
               a.balance
             )
           ), 0) as total_balance
