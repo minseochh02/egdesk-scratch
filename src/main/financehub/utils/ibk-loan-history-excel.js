@@ -157,7 +157,7 @@ function parseIbkLoanHistoryExcel(filePath) {
     }
 
     if (format === 'new') {
-      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액');
+      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액') ?? cellByHeader(colMap, row, '잔액');
       rows.push({
         transactionDate,
         description: String(cellByHeader(colMap, row, '거래구분') ?? '').trim() || null,
@@ -172,7 +172,7 @@ function parseIbkLoanHistoryExcel(filePath) {
         branch: null, // Not in new format
       });
     } else {
-      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액');
+      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액') ?? cellByHeader(colMap, row, '잔액');
       rows.push({
         transactionDate,
         description: String(cellByHeader(colMap, row, '거래내용') ?? '').trim() || null,

@@ -184,6 +184,8 @@ function parseHanaLoanHistoryExcel(filePath) {
     const transactionDate = parseDateCell(cellByHeader(colMap, row, '거래일'));
     if (!transactionDate) continue;
 
+    const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액') ?? cellByHeader(colMap, row, '잔액');
+
     rows.push({
       transactionDate,
       description: String(cellByHeader(colMap, row, '거래내용') ?? '').trim() || null,
@@ -191,7 +193,7 @@ function parseHanaLoanHistoryExcel(filePath) {
       amount: parseAmount(cellByHeader(colMap, row, '실행/상환금액')),
       interest: parseAmount(cellByHeader(colMap, row, '이자')),
       fee: parseAmount(cellByHeader(colMap, row, '수수료')),
-      balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
+      balance: parseAmount(balanceVal),
       interestStartDate: parseDateCell(cellByHeader(colMap, row, '부리시작일')),
       interestEndDate: parseDateCell(cellByHeader(colMap, row, '부리종료일')),
       interestRate: parseRate(cellByHeader(colMap, row, '이율')),
