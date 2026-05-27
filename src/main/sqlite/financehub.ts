@@ -957,9 +957,9 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
                (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
                (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
@@ -983,9 +983,9 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
                (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
                (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
@@ -1010,9 +1010,9 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
                (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
                (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
@@ -1029,9 +1029,9 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
                (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
                (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
@@ -2293,9 +2293,9 @@ export class FinanceHubDbManager {
             COALESCE(
               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
               a.balance
             )
@@ -2351,9 +2351,9 @@ export class FinanceHubDbManager {
             COALESCE(
               (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
               (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
-              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장' ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
-              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장' ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
               a.balance
             )

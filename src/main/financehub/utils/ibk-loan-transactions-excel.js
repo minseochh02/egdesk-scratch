@@ -176,9 +176,14 @@ function parseIbkLoanTransactionsExcel(filePath) {
     const transactionDate = parseDateCell(cellByHeader(colMap, row, '거래일자'));
     if (!transactionDate) continue;
 
+    const transactionType = str(cellByHeader(colMap, row, '거래구분'));
+    if (transactionType === '기간연장') {
+      continue;
+    }
+
     rows.push({
       transactionDate,
-      transactionType: str(cellByHeader(colMap, row, '거래구분')),
+      transactionType,
       currency: str(cellByHeader(colMap, row, '통화구분')),
       transactionAmount: parseAmount(cellByHeader(colMap, row, '거래금액')),
       principalAmount: parseAmount(cellByHeader(colMap, row, '원금')),

@@ -151,6 +151,11 @@ function parseIbkLoanHistoryExcel(filePath) {
     const transactionDate = parseDateCell(cellByHeader(colMap, row, dateKey));
     if (!transactionDate) continue;
 
+    const description = String(cellByHeader(colMap, row, format === 'new' ? '거래구분' : '거래내용') ?? '').trim();
+    if (description === '기간연장') {
+      continue;
+    }
+
     if (format === 'new') {
       const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액');
       rows.push({
