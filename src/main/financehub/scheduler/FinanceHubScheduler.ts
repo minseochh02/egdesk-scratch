@@ -1904,17 +1904,31 @@ export class FinanceHubScheduler extends EventEmitter {
           }
 
           // Parse transactions
-          const transactionsData = (result.transactions || []).map((tx: any) => ({
-            date: tx.date ? tx.date.replace(/[-.]/g, '') : '',
-            time: tx.time || '',
-            transaction_datetime: tx.transaction_datetime || (tx.date && tx.time ? tx.date.replace(/[-.]/g, '/') + ' ' + tx.time : ''),
-            type: tx.type || '',
-            withdrawal: tx.withdrawal || 0,
-            deposit: tx.deposit || 0,
-            description: tx.description || '',
-            balance: tx.balance || 0,
-            branch: tx.branch || '',
-          }));
+          const transactionsData = (result.transactions || []).map((tx: any) => {
+            // YYYY-MM-DD 형식으로 변환하거나 유지합니다. (대시 없는 YYYYMMDD는 YYYY-MM-DD로 변환)
+            const cleanDate = tx.date
+              ? (tx.date.includes('-')
+                  ? tx.date
+                  : tx.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
+              : '';
+            
+            // transaction_datetime도 YYYY/MM/DD HH:MM:SS 형태로 포맷팅합니다.
+            const cleanDatetime = tx.transaction_datetime || (tx.date && tx.time 
+              ? (tx.date.includes('-') ? tx.date.replace(/-/g, '/') : tx.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1/$2/$3')) + ' ' + tx.time 
+              : '');
+
+            return {
+              date: cleanDate,
+              time: tx.time || '',
+              transaction_datetime: cleanDatetime,
+              type: tx.type || '',
+              withdrawal: tx.withdrawal || 0,
+              deposit: tx.deposit || 0,
+              description: tx.description || '',
+              balance: tx.balance || 0,
+              branch: tx.branch || '',
+            };
+          });
 
           if (transactionsData.length > 0) {
             const accountData = {
