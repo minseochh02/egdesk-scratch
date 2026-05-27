@@ -54,3 +54,5 @@ playwright-downloads/
 
 # CSV files (potentially contain sensitive data)
 *.csv
+*.xlsx
+*.xls
