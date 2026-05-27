@@ -49,6 +49,7 @@ import { generateExecutiveSummary, ExecutiveSummary } from './company-research/c
 import { exportReport } from './company-research/company-research-stage4';
 import { processFullCompanyResearch } from './company-research/company-research-workflow';
 import { migrateTokensToSupabase, hasTokenMigrationRun } from './auth/migrate-tokens-to-supabase';
+import { activeAutomators } from './financehub/active-sessions';
 
 function ensureGeminiApiKey(): string | null {
   const existing = process.env.GEMINI_API_KEY;
@@ -582,8 +583,8 @@ const createWindow = async () => {
         // Note: ROBOFLOW_API_KEY should be set in environment variables
         return await runShinhanAutomation(undefined, opts?.password, opts?.id, opts?.proxy);
       });
-      // Store active automator instances by bankId
-      const activeAutomators = new Map();
+      // activeAutomators is imported from './financehub/active-sessions'
+      // (shared with FinanceHubScheduler so it can reuse logged-in sessions)
 
       ipcMain.handle('finance-hub:open-browser', async (_event, { bankId, proxyUrl }) => {
         try {

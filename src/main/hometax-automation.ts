@@ -23,6 +23,7 @@ interface HometaxConnectionResult {
 
 let globalContext: BrowserContext | null = null;
 let globalPage: Page | null = null;
+let currentProfileDir: string | null = null;
 const pageStack: Page[] = [];
 let downloadedFiles: { sales?: string; purchase?: string } = {};
 let noDataDetected = false;
@@ -43,6 +44,7 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
 
     // Create temporary profile directory
     const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hometax-profile-'));
+    currentProfileDir = profileDir;
     console.log('📁 Using profile directory:', profileDir);
 
     // Launch browser
@@ -98,13 +100,17 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
       }
     });
 
+    // Prepare listener for initial popup BEFORE navigation to avoid race conditions
+    console.log('[Hometax] Preparing initial popup listener...');
+    const initialPopupPromise = context.waitForEvent('page', { timeout: 30000 }).catch(() => null);
+
     // Navigate to Hometax
-    await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3');
-    await page.waitForTimeout(3000);
+    await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3', {
+      timeout: 60000,
+      waitUntil: 'domcontentloaded'
+    });
 
     // Handle initial popup that appears on page load
-    console.log('[Hometax] Waiting for initial popup...');
-    const initialPopupPromise = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
     const initialPopup = await initialPopupPromise;
 
     if (initialPopup) {
@@ -348,6 +354,7 @@ export async function connectToHometax(
 
       // Create temporary profile directory
       const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hometax-profile-'));
+      currentProfileDir = profileDir;
       console.log('📁 Using profile directory:', profileDir);
 
       // Launch browser
@@ -403,13 +410,17 @@ export async function connectToHometax(
         }
       });
 
+      // Prepare listener for initial popup BEFORE navigation to avoid race conditions
+      console.log('[Hometax] Preparing initial popup listener...');
+      const initialPopupPromise = context.waitForEvent('page', { timeout: 30000 }).catch(() => null);
+
       // Navigate to Hometax
-      await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3');
-      await page.waitForTimeout(3000);
+      await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3', {
+        timeout: 60000,
+        waitUntil: 'domcontentloaded'
+      });
 
       // Handle initial popup that appears on page load
-      console.log('[Hometax] Waiting for initial popup...');
-      const initialPopupPromise = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
       const initialPopup = await initialPopupPromise;
 
       if (initialPopup) {
@@ -1992,6 +2003,19 @@ export async function disconnectFromHometax(): Promise<void> {
       globalPage = null;
       pageStack.length = 0;
       console.log('[Hometax] Browser context closed');
+
+      // Clean up profile directory if it exists
+      if (currentProfileDir && fs.existsSync(currentProfileDir)) {
+        try {
+          // Add a small delay to ensure all file handles are released
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          fs.rmSync(currentProfileDir, { recursive: true, force: true });
+          console.log('🧹 Cleaned up profile directory:', currentProfileDir);
+          currentProfileDir = null;
+        } catch (cleanupErr) {
+          console.warn('[Hometax] Failed to clean up profile directory:', cleanupErr);
+        }
+      }
     }
   } catch (error) {
     console.error('[Hometax] Error closing browser:', error);

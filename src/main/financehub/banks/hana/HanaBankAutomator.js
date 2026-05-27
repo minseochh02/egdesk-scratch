@@ -47,9 +47,11 @@ class HanaBankAutomator extends BaseBankAutomator {
    * Match scripts/bank-excel-download-automation/hana.spec.js `closePopups()` (text buttons + layer close).
    */
   async _closeHanaPopups() {
+    let totalClicked = 0;
     for (const target of [this.page, this._hanaFrame()].filter(Boolean)) {
       try {
-        await target.evaluate(() => {
+        const clicked = await target.evaluate(() => {
+          let count = 0;
           const btns = document.querySelectorAll('button, a, span, div');
           for (const b of btns) {
             const text = b.textContent?.trim() || '';
@@ -58,31 +60,48 @@ class HanaBankAutomator extends BaseBankAutomator {
               b.offsetParent !== null
             ) {
               const rect = b.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) b.click();
+              if (rect.width > 0 && rect.height > 0) {
+                b.click();
+                count++;
+              }
             }
           }
           const layers = document.querySelectorAll('.layer_popup, .popup_wrap, .pop_wrap, [class*="popup"]');
           for (const l of layers) {
             const closeBtn = l.querySelector('.btn_close, .close, [class*="close"]');
-            if (closeBtn) closeBtn.click();
+            if (closeBtn) {
+              closeBtn.click();
+              count++;
+            }
           }
+          return count;
         });
+        totalClicked += clicked;
       } catch (e) {}
     }
+    return totalClicked;
   }
 
   /**
    * Wait for hanaMainframe — close popups on main document between attempts (overlay can block frame).
    */
-  async _waitForHanaMainframe({ maxWaitMs = 40000 } = {}) {
-    const deadline = Date.now() + maxWaitMs;
+  async _waitForHanaMainframe({ maxWaitMs = 40000, minWaitMs = 5000 } = {}) {
+    const start = Date.now();
+    const deadline = start + maxWaitMs;
+    let frame = null;
+    
     while (Date.now() < deadline) {
       await this._closeHanaPopups();
-      const frame = this._hanaFrame();
-      if (frame) return frame;
+      frame = this._hanaFrame();
+      
+      const elapsed = Date.now() - start;
+      if (frame && elapsed >= minWaitMs) {
+        return frame;
+      }
+      
       await this.page.waitForTimeout(1000);
     }
-    return this._hanaFrame();
+    return frame || this._hanaFrame();
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
@@ -102,8 +121,14 @@ class HanaBankAutomator extends BaseBankAutomator {
             if (currentUrl.includes('hanabank.com')) {
               this.log('Hana: Reusing existing browser session...');
               await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-              await this._closeHanaPopups();
-              const frame = await this._waitForHanaMainframe({ maxWaitMs: 5000 });
+              
+              // [개선] 재사용 시에도 초기 팝업 처리 강화
+              for (let i = 0; i < 2; i++) {
+                await this._closeHanaPopups();
+                await this.page.waitForTimeout(1000);
+              }
+
+              const frame = await this._waitForHanaMainframe({ maxWaitMs: 10000, minWaitMs: 3000 });
               if (frame) {
                 // Check if already logged in by looking for logout button or similar
                 const isLoggedIn = await frame.evaluate(() => {
@@ -159,14 +184,16 @@ class HanaBankAutomator extends BaseBankAutomator {
       });
 
       await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' });
-      await this.page.waitForTimeout(3000);
+      
+      // [개선] 초기 팝업 닫기 루프 강화: 팝업이 뜨는 시간을 충분히 기다리며 여러 번 시도
+      this.log('Hana: Starting robust initial popup closing sequence...');
+      for (let i = 0; i < 3; i++) {
+        const clicked = await this._closeHanaPopups();
+        if (clicked > 0) this.log(`Hana: Initial loop closed ${clicked} popups (iteration ${i+1})`);
+        await this.page.waitForTimeout(1500);
+      }
 
-      // Close main-page overlays before requiring frame (spec closes after frame exists; we also clear
-      // top-level popups first so they don't block or delay hanaMainframe — user reported login ran too soon).
-      await this._closeHanaPopups();
-      await this.page.waitForTimeout(500);
-
-      const frame = await this._waitForHanaMainframe({ maxWaitMs: 40000 });
+      const frame = await this._waitForHanaMainframe({ maxWaitMs: 40000, minWaitMs: 5000 });
       if (!frame) {
         this._hanaCorporateCertPhase = 'idle';
         return { success: false, error: 'hanaMainframe not found' };

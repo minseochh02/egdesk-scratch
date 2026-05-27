@@ -23,7 +23,8 @@ import {
   faSpinner,
   faTrash,
   faFileInvoice,
-  faCog
+  faCog,
+  faCertificate
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hooks
@@ -3380,6 +3381,9 @@ const FinanceHub: React.FC = () => {
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
+                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => alert(`${getBankConfigById(connection.bankId)?.nameKo || connection.bankId} 공인인증서 갱신 기능은 준비 중입니다.`)}>
+                              <FontAwesomeIcon icon={faCertificate} /> 갱신
+                            </button>
                             {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}><FontAwesomeIcon icon={faSync} /> 재연결</button>}
                             {connection.status === 'connected' && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleFetchAccounts(connection.bankId)} disabled={isFetchingAccounts === connection.bankId}>{isFetchingAccounts === connection.bankId ? '조회 중...' : '계좌 조회'}</button>}
                             {connection.status === 'connected' && (
@@ -3646,6 +3650,9 @@ const FinanceHub: React.FC = () => {
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
+                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => alert(`${getCardConfigById(connection.cardCompanyId)?.nameKo || connection.cardCompanyId} 공인인증서 갱신 기능은 준비 중입니다.`)}>
+                              <FontAwesomeIcon icon={faCertificate} /> 갱신
+                            </button>
                             {(connection.status === 'disconnected' || connection.status === 'error') && (
                               <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnectCard(connection.cardCompanyId)}>
                                 <FontAwesomeIcon icon={faSync} /> 재연결
@@ -3862,6 +3869,12 @@ const FinanceHub: React.FC = () => {
                             </span>
                           </div>
                           <div className="finance-hub__business-actions">
+                            <button
+                              className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
+                              onClick={() => alert(`${business.businessName} 공인인증서 갱신 기능은 준비 중입니다.`)}
+                            >
+                              <FontAwesomeIcon icon={faCertificate} /> 갱신
+                            </button>
                             <button
                               className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
                               onClick={() => handleCollectTaxInvoices(business.businessNumber)}

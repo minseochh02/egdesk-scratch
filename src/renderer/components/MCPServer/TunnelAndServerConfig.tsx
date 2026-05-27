@@ -16,7 +16,9 @@ import {
   faTimes,
   faSpinner,
   faExclamationTriangle,
-  faSync
+  faSync,
+  faLock,
+  faShieldAlt
 } from '../../utils/fontAwesomeIcons';
 import InviteManager from './InviteManager';
 
@@ -87,6 +89,8 @@ interface TunnelAndServerConfigProps {
   // OAuth Props
   tokenNeedsRefresh?: boolean;
   handleReSignIn?: () => Promise<void>;
+  isTokenLocked?: boolean;
+  handleToggleTokenLock?: () => Promise<void>;
   // HTTPS Props
   httpsEnabled?: boolean;
   toggleHttps?: () => void;
@@ -121,6 +125,8 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
   toggleAutoStartTunnel,
   tokenNeedsRefresh = false,
   handleReSignIn,
+  isTokenLocked = false,
+  handleToggleTokenLock,
   httpsEnabled = false,
   toggleHttps
 }) => {
@@ -741,10 +747,35 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
             padding: '20px',
             border: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
-            <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FontAwesomeIcon icon={faCog} />
-              MCP Services
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FontAwesomeIcon icon={faCog} />
+                MCP Services
+              </h3>
+              {handleToggleTokenLock && (
+                <button
+                  onClick={handleToggleTokenLock}
+                  style={{
+                    background: isTokenLocked ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    color: isTokenLocked ? '#f87171' : 'white',
+                    border: `1px solid ${isTokenLocked ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={isTokenLocked ? "Token is locked and will not be refreshed" : "Lock Google OAuth token to prevent automatic recycling"}
+                >
+                  <FontAwesomeIcon icon={isTokenLocked ? faLock : faShieldAlt} />
+                  {isTokenLocked ? 'Token Locked' : 'Lock Token'}
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {sortedMcpServers.map(server => {
                 const isCloud = isCloudService(server.name);

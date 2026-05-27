@@ -253,6 +253,35 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [hasValidOAuthToken, setHasValidOAuthToken] = useState<boolean>(false);
   const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
   const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false); // Token exists but access_token is missing/expired
+  const [isTokenLocked, setIsTokenLocked] = useState<boolean>(false);
+
+  // Check token lock status
+  const checkTokenLockStatus = useCallback(async () => {
+    try {
+      const result = await window.electron.auth.getGoogleWorkspaceToken();
+      if (result.success && result.token) {
+        setIsTokenLocked(result.token.locked || false);
+      }
+    } catch (error) {
+      console.error('[MCPServer:checkTokenLockStatus] Error checking token lock status:', error);
+    }
+  }, []);
+
+  // Handle toggle token lock
+  const handleToggleTokenLock = async () => {
+    try {
+      const newLockedStatus = !isTokenLocked;
+      const result = await window.electron.auth.setTokenLock(newLockedStatus);
+      if (result.success) {
+        setIsTokenLocked(newLockedStatus);
+        console.log('[MCPServer:handleToggleTokenLock] ✅ Token lock status updated:', newLockedStatus);
+      } else {
+        alert(`Failed to update token lock: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('[MCPServer:handleToggleTokenLock] Error toggling token lock:', error);
+    }
+  };
 
   // Required OAuth scopes for cloud MCP servers
   const REQUIRED_OAUTH_SCOPES = GOOGLE_OAUTH_SCOPES;
@@ -263,6 +292,9 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       setCheckingOAuthToken(true);
       setTokenNeedsRefresh(false); // Reset on each check
       console.log('[MCPServer:checkOAuthToken] 🔍 Starting OAuth token check...');
+      
+      // Also check lock status
+      await checkTokenLockStatus();
       
       // Use the new scoped token validation method
       const tokenResponse = await window.electron.auth.getGoogleWorkspaceTokenWithScopes(REQUIRED_OAUTH_SCOPES);
@@ -2331,6 +2363,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         toggleAutoStartTunnel={toggleAutoStartTunnel}
         tokenNeedsRefresh={tokenNeedsRefresh}
         handleReSignIn={handleReSignIn}
+        isTokenLocked={isTokenLocked}
+        handleToggleTokenLock={handleToggleTokenLock}
         httpsEnabled={httpsEnabled}
         toggleHttps={toggleHttps}
       />
@@ -2389,6 +2423,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
           checkingOAuthToken={checkingOAuthToken}
           tokenNeedsRefresh={tokenNeedsRefresh}
           handleReSignIn={handleReSignIn}
+          isTokenLocked={isTokenLocked}
+          handleToggleTokenLock={handleToggleTokenLock}
         />
       )}
 

@@ -1684,6 +1684,7 @@ export class FinanceHubScheduler extends EventEmitter {
     this.logBrowserState();
 
     let automator: any = null;
+    let borrowedSession = false;
 
     // CRITICAL: Add timeout to entire sync operation (10 minutes max)
     const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
@@ -1692,130 +1693,150 @@ export class FinanceHubScheduler extends EventEmitter {
 
     const syncPromise = (async () => {
       try {
-      const store = getStore();
-      
-      // NEW: Get credentials from DATABASE
+      // Reuse active FinanceHub session if available (avoids fresh login for banks
+      // like IBK/Hana/Woori whose login() returns failure immediately)
+      const { activeAutomators } = await import('../active-sessions');
+      const existingAutomator = activeAutomators.get(bankId);
+      if (existingAutomator?.page && !existingAutomator.page.isClosed?.()) {
+        automator = existingAutomator;
+        borrowedSession = true;
+        console.log(`[FinanceHubScheduler] ✅ Reusing active FinanceHub session for ${bankId}`);
+      }
+
+      // Always set up SQLite (needed for import step below)
       const { getSQLiteManager } = await import('../../sqlite/manager');
       const sqliteManager = getSQLiteManager();
       const financeHubDb = sqliteManager.getFinanceHubManager();
-      const dbCredentials = financeHubDb.getCredentials(bankId);
+      let loginUserName = '';
+      let certLoginAccounts: any[] = [];
 
-      if (!dbCredentials) {
-        console.log(`[FinanceHubScheduler] ❌ No credentials in DATABASE for ${bankId}`);
-        return {
-          success: false,
-          error: 'No saved credentials found in database for this bank'
-        };
-      }
+      if (!borrowedSession) {
+        const store = getStore();
 
-      // Reconstruct credentials object from database
-      const savedCredentials = {
-        userId: dbCredentials.userId,
-        password: dbCredentials.password,
-        ...dbCredentials.metadata
-      };
+        // Get credentials from DATABASE
+        const dbCredentials = financeHubDb.getCredentials(bankId);
 
-      console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${bankId}`);
-
-      // CRITICAL FIX: Check for and cleanup any existing browser before creating new one
-      const entityKey = `bank:${bankId}`;
-      if (this.activeBrowsers.has(entityKey)) {
-        console.log(`[FinanceHubScheduler] Found existing browser for ${entityKey}, cleaning up before creating new one...`);
-        const oldAutomator = this.activeBrowsers.get(entityKey);
-        try {
-          await this.safeCleanupBrowser(oldAutomator, entityKey, 10000); // 10s timeout
-        } catch (cleanupError) {
-          console.error(`[FinanceHubScheduler] Failed to cleanup existing browser for ${entityKey}:`, cleanupError);
-          // Continue anyway - the old browser might be hung but we need to proceed
+        if (!dbCredentials) {
+          console.log(`[FinanceHubScheduler] ❌ No credentials in DATABASE for ${bankId}`);
+          return {
+            success: false,
+            error: 'No saved credentials found in database for this bank'
+          };
         }
-      }
 
-      const certPw = String(savedCredentials.certificatePassword ?? '').trim();
-      const authMethod = (savedCredentials as { bankAuthMethod?: string }).bankAuthMethod;
-      const useCorporateNativeCert =
-        FinanceHubScheduler.CORPORATE_NATIVE_CERT_BANK_IDS.has(bankId) &&
-        savedCredentials.accountType === 'corporate' &&
-        certPw.length > 0 &&
-        (authMethod == null || authMethod === 'certificate');
+        // Reconstruct credentials object from database
+        const savedCredentials = {
+          userId: dbCredentials.userId,
+          password: dbCredentials.password,
+          ...dbCredentials.metadata
+        };
 
-      const { createAutomator } = require('../index');
+        console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${bankId}`);
 
-      const safeCancelCorporateCert = async () => {
-        if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+        // CRITICAL FIX: Check for and cleanup any existing browser before creating new one
+        const entityKey = `bank:${bankId}`;
+        if (this.activeBrowsers.has(entityKey)) {
+          console.log(`[FinanceHubScheduler] Found existing browser for ${entityKey}, cleaning up before creating new one...`);
+          const oldAutomator = this.activeBrowsers.get(entityKey);
           try {
-            await automator.cancelCorporateCertificateLogin(true);
-          } catch (e) {
-            console.warn(`[FinanceHubScheduler] cancelCorporateCertificateLogin:`, e);
+            await this.safeCleanupBrowser(oldAutomator, entityKey, 10000); // 10s timeout
+          } catch (cleanupError) {
+            console.error(`[FinanceHubScheduler] Failed to cleanup existing browser for ${entityKey}:`, cleanupError);
+            // Continue anyway - the old browser might be hung but we need to proceed
           }
         }
-      };
 
-      let loginUserName = '';
+        const certPw = String(savedCredentials.certificatePassword ?? '').trim();
+        const authMethod = (savedCredentials as { bankAuthMethod?: string }).bankAuthMethod;
+        const useCorporateNativeCert =
+          FinanceHubScheduler.CORPORATE_NATIVE_CERT_BANK_IDS.has(bankId) &&
+          savedCredentials.accountType === 'corporate' &&
+          certPw.length > 0 &&
+          (authMethod == null || authMethod === 'certificate');
 
-      if (useCorporateNativeCert) {
-        console.log(`[FinanceHubScheduler] Corporate certificate flow for ${bankId} (prepare → complete, matches UI)`);
-        const arduinoPort = await this.resolveArduinoPortForBankSync();
-        automator = createAutomator(bankId, {
-          headless: false,
-          arduinoPort,
-        });
-        this.activeBrowsers.set(entityKey, automator);
+        const { createAutomator } = require('../index');
 
-        if (
-          typeof automator.prepareCorporateCertificateLogin !== 'function' ||
-          typeof automator.completeCorporateCertificateLogin !== 'function'
-        ) {
-          return {
-            success: false,
-            error: 'Corporate certificate login is not implemented for this bank automator',
-          };
+        const safeCancelCorporateCert = async () => {
+          if (automator && typeof automator.cancelCorporateCertificateLogin === 'function') {
+            try {
+              await automator.cancelCorporateCertificateLogin(true);
+            } catch (e) {
+              console.warn(`[FinanceHubScheduler] cancelCorporateCertificateLogin:`, e);
+            }
+          }
+        };
+
+        if (useCorporateNativeCert) {
+          console.log(`[FinanceHubScheduler] Corporate certificate flow for ${bankId} (prepare → complete, matches UI)`);
+          const arduinoPort = await this.resolveArduinoPortForBankSync();
+          automator = createAutomator(bankId, {
+            headless: false,
+            arduinoPort,
+          });
+          this.activeBrowsers.set(entityKey, automator);
+
+          if (
+            typeof automator.prepareCorporateCertificateLogin !== 'function' ||
+            typeof automator.completeCorporateCertificateLogin !== 'function'
+          ) {
+            return {
+              success: false,
+              error: 'Corporate certificate login is not implemented for this bank automator',
+            };
+          }
+
+          const prep = await automator.prepareCorporateCertificateLogin(undefined);
+          if (!prep?.success) {
+            await safeCancelCorporateCert();
+            return {
+              success: false,
+              error: prep?.error || 'Corporate certificate prepare failed',
+            };
+          }
+
+          const complete = await automator.completeCorporateCertificateLogin({
+            certificatePassword: certPw,
+          });
+
+          if (!complete?.success || !complete.isLoggedIn) {
+            await safeCancelCorporateCert();
+            return {
+              success: false,
+              error: complete?.error || 'Corporate certificate login failed',
+            };
+          }
+
+          loginUserName = (complete.userName as string) || '';
+          // Use accounts returned by completeCorporateCertificateLogin directly —
+          // same as FinanceHub UI. Do NOT call getAccounts() separately; that
+          // navigates to a different page and gets the session booted.
+          certLoginAccounts = Array.isArray(complete.accounts) ? complete.accounts : [];
+        } else {
+          automator = createAutomator(bankId, {
+            headless: false, // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
+          });
+
+          this.activeBrowsers.set(entityKey, automator);
+
+          console.log(`[FinanceHubScheduler] ID/password login to ${bankId}...`);
+          const loginResult = await automator.login(savedCredentials);
+
+          if (!loginResult.success) {
+            return {
+              success: false,
+              error: `Login failed: ${loginResult.error || 'Unknown error'}`,
+            };
+          }
+
+          loginUserName = loginResult.userName || '';
         }
+      } // end !borrowedSession
 
-        const prep = await automator.prepareCorporateCertificateLogin(undefined);
-        if (!prep?.success) {
-          await safeCancelCorporateCert();
-          return {
-            success: false,
-            error: prep?.error || 'Corporate certificate prepare failed',
-          };
-        }
-
-        const complete = await automator.completeCorporateCertificateLogin({
-          certificatePassword: certPw,
-        });
-
-        if (!complete?.success || !complete.isLoggedIn) {
-          await safeCancelCorporateCert();
-          return {
-            success: false,
-            error: complete?.error || 'Corporate certificate login failed',
-          };
-        }
-
-        loginUserName = (complete.userName as string) || '';
-      } else {
-        automator = createAutomator(bankId, {
-          headless: false, // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
-        });
-
-        this.activeBrowsers.set(entityKey, automator);
-
-        console.log(`[FinanceHubScheduler] ID/password login to ${bankId}...`);
-        const loginResult = await automator.login(savedCredentials);
-
-        if (!loginResult.success) {
-          return {
-            success: false,
-            error: `Login failed: ${loginResult.error || 'Unknown error'}`,
-          };
-        }
-
-        loginUserName = loginResult.userName || '';
-      }
-
-      // Get accounts
-      let accounts = [];
-      if (typeof automator.getAccounts === 'function') {
+      // Get accounts — prefer accounts returned by completeCorporateCertificateLogin (same
+      // as FinanceHub UI) to avoid an extra navigation that boots the session on Hana/IBK/Woori.
+      // Only call getAccounts() for non-cert paths or if the cert flow returned none.
+      let accounts: any[] = certLoginAccounts;
+      if (accounts.length === 0 && typeof automator.getAccounts === 'function') {
         accounts = await automator.getAccounts();
       }
 
@@ -1855,7 +1876,27 @@ export class FinanceHubScheduler extends EventEmitter {
         console.log(`[FinanceHubScheduler] Fetching transactions for account ${accountNumber}...`);
 
         try {
-          const result = await automator.getTransactions(accountNumber, startDate, endDate);
+          let result: any;
+          if (typeof automator.getTransactionsWithParsing === 'function') {
+            result = await automator.getTransactionsWithParsing(accountNumber, startDate, endDate);
+          } else {
+            const raw = await automator.getTransactions(accountNumber, startDate, endDate);
+            // getTransactions returns a raw array [{status, filename, path, extractedData}]
+            // wrap it the same way the main.ts IPC handler does
+            if (Array.isArray(raw) && raw.length > 0) {
+              const item = raw[0];
+              result = {
+                success: item.status === 'downloaded',
+                file: item.path,
+                filename: item.filename,
+                metadata: item.extractedData?.metadata,
+                summary: item.extractedData?.summary,
+                transactions: item.extractedData?.transactions || [],
+              };
+            } else {
+              result = { success: false, transactions: [] };
+            }
+          }
 
           if (!result.success) {
             console.warn(`[FinanceHubScheduler] Failed to get transactions for account ${accountNumber}`);
@@ -1929,8 +1970,8 @@ export class FinanceHubScheduler extends EventEmitter {
           error: error instanceof Error ? error.message : String(error)
         };
       } finally {
-        // CRITICAL: Always cleanup browser, even on errors
-        if (automator) {
+        // Only cleanup if we own this session (don't close FinanceHub's active session)
+        if (automator && !borrowedSession) {
           const entityKey = `bank:${bankId}`;
           await this.safeCleanupBrowser(automator, entityKey);
         }
@@ -1943,8 +1984,8 @@ export class FinanceHubScheduler extends EventEmitter {
     } catch (timeoutError: any) {
       console.error(`[FinanceHubScheduler] Bank sync timeout for ${bankId}:`, timeoutError);
 
-      // Cleanup browser on timeout
-      if (automator) {
+      // Only cleanup if we own this session
+      if (automator && !borrowedSession) {
         const entityKey = `bank:${bankId}`;
         await this.safeCleanupBrowser(automator, entityKey);
       }

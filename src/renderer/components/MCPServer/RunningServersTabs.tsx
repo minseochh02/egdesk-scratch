@@ -80,6 +80,8 @@ interface RunningServersTabsProps {
   checkingOAuthToken: boolean;
   tokenNeedsRefresh: boolean;
   handleReSignIn: () => Promise<void>;
+  isTokenLocked?: boolean;
+  handleToggleTokenLock?: () => Promise<void>;
 }
 
 type TabType = 'local' | 'cloud';
@@ -122,7 +124,9 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   hasValidOAuthToken,
   checkingOAuthToken,
   tokenNeedsRefresh,
-  handleReSignIn
+  handleReSignIn,
+  isTokenLocked = false,
+  handleToggleTokenLock
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('local');
   const [existingCopies, setExistingCopies] = useState<Map<string, string>>(new Map()); // templateId -> copyId
@@ -130,35 +134,6 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   const [copiesWithScript, setCopiesWithScript] = useState<Map<string, string>>(new Map()); // templateId -> copyId (only copies with script content)
   const [creatingCopyId, setCreatingCopyId] = useState<string | null>(null);
   const [showDevConfig, setShowDevConfig] = useState<boolean>(false);
-  const [isTokenLocked, setIsTokenLocked] = useState<boolean>(false);
-
-  // Check token lock status
-  const checkTokenLockStatus = async () => {
-    try {
-      const result = await window.electron.auth.getGoogleWorkspaceToken();
-      if (result.success && result.token) {
-        setIsTokenLocked(result.token.locked || false);
-      }
-    } catch (error) {
-      console.error('Error checking token lock status:', error);
-    }
-  };
-
-  // Handle toggle token lock
-  const handleToggleTokenLock = async () => {
-    try {
-      const newLockedStatus = !isTokenLocked;
-      const result = await window.electron.auth.setTokenLock(newLockedStatus);
-      if (result.success) {
-        setIsTokenLocked(newLockedStatus);
-        console.log('✅ Token lock status updated:', newLockedStatus);
-      } else {
-        alert(`Failed to update token lock: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Error toggling token lock:', error);
-    }
-  };
 
   // Load existing copies from electron-store and database
   const loadExistingCopies = async () => {
@@ -462,7 +437,6 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
   useEffect(() => {
     if (activeTab === 'cloud') {
       loadExistingCopies();
-      checkTokenLockStatus();
     }
   }, [activeTab]);
 
