@@ -1,0 +1,98 @@
+[1] ❌ Failed to bind AI Center update_hook: TypeError: db.updateHook is not a function
+[1]     at DBChangeDetector.watchNeuron (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1398573:16)
+[1]     at initializeSQLiteDatabase (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1403952:44)
+[1]     at async C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404531:32
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42)
+[1]   ✅ Created user_data_embeddings table
+[1]   ✅ Created user_data_embedding_metadata table
+[1]   ✅ Created indexes for vector search
+[1] Migration 010 completed successfully
+[1] ✅ User Data vector embeddings enabled
+[1] 🔔 DB Real-time Change Detectors active for AI Center & FinanceHub
+[1] 🎉 SQLite Database fully initialized
+[1] ❌ Failed to bind FinanceHub update_hook: TypeError: db.updateHook is not a function
+[1]     at DBChangeDetector.watchFinanceHub (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1398599:16)
+[1]     at initializeSQLiteDatabase (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1403953:44)
+[1]     at async C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404531:32
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42)
+[1] 🔍 SSL: autoInitialize checking certificates (count: 0)
+[1] 🚀 No SSL certificates found. Auto-generating trusted local certificate...
+[1] 🔐 Generating trusted local certificate for egdesk.local using mkcert...
+[1] 'mkcert'��(��) ���� �Ǵ� �ܺ� ����, ������ �� �ִ� ���α׷�, �Ǵ�
+[1] ��ġ ������ �ƴմϴ�.
+[1] missing mkcert, attempting to install via brew using native prompt...
+[1] 'osascript'��(��) ���� �Ǵ� �ܺ� ����, ������ �� �ִ� ���α׷�, �Ǵ�
+[1] ��ġ ������ �ƴմϴ�.
+[1] Failed to install mkcert via brew: Command failed: osascript -e 'do shell script "brew install mkcert" with administrator privileges'
+[1] 'osascript'��(��) ���� �Ǵ� �ܺ� ����, ������ �� �ִ� ���α׷�, �Ǵ�
+[1] ��ġ ������ �ƴմϴ�.
+[1]
+[1] ❌ Failed to generate trusted local certificate: Error: mkcert not found and brew install failed
+[1]     at SSLCertificateService.generateTrustedLocal (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413370:27)
+[1]     at SSLCertificateService.autoInitialize (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413470:28)
+[1]     at C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404564:63
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42)
+[1] 🔐 Generating self-signed certificate for egdesk.local...
+[1] ❌ Failed to auto-initialize SSL with mkcert, falling back to self-signed: Error: mkcert not found and brew install failed
+[1]     at SSLCertificateService.generateTrustedLocal (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413370:27)
+[1]     at SSLCertificateService.autoInitialize (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413470:28)
+[1]     at C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404564:63
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42)
+[1] 'openssl'��(��) ���� �Ǵ� �ܺ� ����, ������ �� �ִ� ���α׷�, �Ǵ�
+[1] ��ġ ������ �ƴմϴ�.
+[1] ❌ Failed to generate self-signed certificate: Error: Command failed: openssl req -x509 -newkey rsa:2048 -keyout "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\server.key" -out "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\server.crt" -days 365 -nodes -config "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\openssl.conf"
+[1]     at genericNodeError (node:internal/errors:983:15)
+[1]     at wrappedFn (node:internal/errors:537:14)
+[1]     at checkExecSyncError (node:child_process:897:11)
+[1]     at execSync (node:child_process:969:15)
+[1]     at node:electron/js2c/node_init:2:17371
+[1]     at SSLCertificateService.generateSelfSigned (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413308:13)
+[1]     at async SSLCertificateService.autoInitialize (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413477:21)
+[1]     at async C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404564:21
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42) {
+[1]   status: 1,
+[1]   signal: null,
+[1]   output: [ null, null, null ],
+[1]   pid: 74932,
+[1]   stdout: null,
+[1]   stderr: null
+[1] }
+[1] ❌ CRITICAL: Failed fallback auto-initialization: Error: Command failed: openssl req -x509 -newkey rsa:2048 -keyout "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\server.key" -out "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\server.crt" -days 365 -nodes -config "C:\Users\user\AppData\Local\Temp\egdesk-ssl-gen\openssl.conf"
+[1]     at genericNodeError (node:internal/errors:983:15)
+[1]     at wrappedFn (node:internal/errors:537:14)
+[1]     at checkExecSyncError (node:child_process:897:11)
+[1]     at execSync (node:child_process:969:15)
+[1]     at node:electron/js2c/node_init:2:17371
+[1]     at SSLCertificateService.generateSelfSigned (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413308:13)
+[1]     at async SSLCertificateService.autoInitialize (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1413477:21)
+[1]     at async C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1404564:21
+[1]     at async createWindow (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1353127:42) {
+[1]   status: 1,
+[1]   signal: null,
+[1]   output: [ null, null, null ],
+[1]   pid: 74932,
+[1]   stdout: null,
+[1]   stderr: null
+[1] }
+[1] [Supabase] Error saving token: Error: Failed to save token to Supabase: Could not find the 'is_locked' column of 'user_google_tokens' in the schema cache
+[1]     at SupabaseTokenStorage.saveGoogleToken (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1292036:23)
+[1]     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[1]     at async AuthService.saveSession (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1290332:21)
+[1]     at async AuthService.handleOAuthCallback (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1290854:21)
+[1] ❌ Failed to save Google token via token storage: Error: Failed to save token to Supabase: Could not find the 'is_locked' column of 'user_google_tokens' in the schema cache
+[1]     at SupabaseTokenStorage.saveGoogleToken (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1292036:23)
+[1]     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[1]     at async AuthService.saveSession (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1290332:21)
+[1]     at async AuthService.handleOAuthCallback (C:\Users\user\Desktop\egdesk-scratch\.erb\dll\main.bundle.dev.js:1290854:21)
+[1] 💾 Saved Google Workspace OAuth token to electron-sto
+
+1] 🔄 Calling Edge Function to refresh token: https://cbptgzaubhcclkmvkiua.supabase.co/functions/v1/refresh-google-token
+[1] ❌ Edge Function token refresh failed: 404 {
+[1]   success: false,
+[1]   error: 'No refresh token found',
+[1]   code: 'NO_REFRESH_TOKEN',
+[1]   details: 'User needs to re-authenticate with Google'
+[1] }
+[1] ❌ Refresh token issue - cleaning up and requiring re-authentication: NO_REFRESH_TOKEN
+[1] [Supabase] Deactivated Google Workspace token
+

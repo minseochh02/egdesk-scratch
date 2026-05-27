@@ -2134,12 +2134,22 @@ class IbkBankAutomator extends BaseBankAutomator {
       this.log('   [IBK] 다운로드 완료 대기 중 (Event + Polling)...');
       
       const pollForFile = async (startTime) => {
+        let prevPath = null;
+        let prevSize = -1;
         for (let i = 0; i < 30; i++) { // 최대 30초 폴링
           const found = this.findRecentDownloadFile(
             [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
             startTime
           );
-          if (found) return { type: 'polling', data: found };
+          if (found) {
+            // Wait for two consecutive reads with the same size before returning —
+            // ensures the browser has finished writing the file (prevents corrupt XLS).
+            if (found.path === prevPath && found.size === prevSize && found.size > 0) {
+              return { type: 'polling', data: found };
+            }
+            prevPath = found.path;
+            prevSize = found.size;
+          }
           await new Promise(r => setTimeout(r, 1000));
         }
         throw new Error('polling timeout');
