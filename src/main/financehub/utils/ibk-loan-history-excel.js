@@ -98,6 +98,7 @@ function parseIbkLoanHistoryExcel(filePath) {
   let headerRowIdx = -1;
   let format = null;
   let accountNumber = null;
+  let headerBalance = null;
 
   for (let i = 0; i < Math.min(data.length, 10); i++) {
     const row = data[i];
@@ -106,9 +107,15 @@ function parseIbkLoanHistoryExcel(filePath) {
     const rowStr = JSON.stringify(row);
     
     // Check for account number in metadata rows
-    const accMatch = rowStr.match(/대출계좌번호\s*:\s*([\d-]+)/);
+    const accMatch = rowStr.match(/대출계좌번호\s*[:：]\s*([\d-]+)/);
     if (accMatch) {
       accountNumber = accMatch[1];
+    }
+
+    // Check for balance in metadata rows (merged cells often contain this)
+    const balMatch = rowStr.match(/대출잔액\s*[:：]\s*([\d,]+)/);
+    if (balMatch) {
+      headerBalance = parseAmount(balMatch[1]);
     }
 
     if (row.some(c => normalizeHeader(c) === '거래일자')) {
@@ -125,7 +132,7 @@ function parseIbkLoanHistoryExcel(filePath) {
 
   if (headerRowIdx === -1) {
     warnings.push('Could not find header row (expected "거래일자" or "거래일")');
-    return { accountNumber, rows: [], warnings };
+    return { accountNumber, headerBalance, rows: [], warnings };
   }
 
   const colMap = buildColMap(data[headerRowIdx]);
@@ -145,6 +152,7 @@ function parseIbkLoanHistoryExcel(filePath) {
     if (!transactionDate) continue;
 
     if (format === 'new') {
+      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액');
       rows.push({
         transactionDate,
         description: String(cellByHeader(colMap, row, '거래구분') ?? '').trim() || null,
@@ -152,13 +160,14 @@ function parseIbkLoanHistoryExcel(filePath) {
         amount: parseAmount(cellByHeader(colMap, row, '거래금액')),
         interest: parseAmount(cellByHeader(colMap, row, '이자금액')),
         fee: 0, // Not in new format
-        balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
+        balance: parseAmount(balanceVal),
         interestStartDate: parseDateCell(cellByHeader(colMap, row, '시작일')),
         interestEndDate: parseDateCell(cellByHeader(colMap, row, '종료일')),
         interestRate: parseRate(cellByHeader(colMap, row, '이율(%)')),
         branch: null, // Not in new format
       });
     } else {
+      const balanceVal = cellByHeader(colMap, row, '대출금잔액') ?? cellByHeader(colMap, row, '대출잔액');
       rows.push({
         transactionDate,
         description: String(cellByHeader(colMap, row, '거래내용') ?? '').trim() || null,
@@ -166,7 +175,7 @@ function parseIbkLoanHistoryExcel(filePath) {
         amount: parseAmount(cellByHeader(colMap, row, '실행/상환금액')),
         interest: parseAmount(cellByHeader(colMap, row, '이자')),
         fee: parseAmount(cellByHeader(colMap, row, '수수료')),
-        balance: parseAmount(cellByHeader(colMap, row, '대출금잔액')),
+        balance: parseAmount(balanceVal),
         interestStartDate: parseDateCell(cellByHeader(colMap, row, '부리시작일')),
         interestEndDate: parseDateCell(cellByHeader(colMap, row, '부리종료일')),
         interestRate: parseRate(cellByHeader(colMap, row, '이율')),
@@ -175,7 +184,7 @@ function parseIbkLoanHistoryExcel(filePath) {
     }
   }
 
-  return { accountNumber, rows, warnings };
+  return { accountNumber, headerBalance, rows, warnings };
 }
 
 module.exports = {

@@ -139,13 +139,19 @@ function parseHanaLoanHistoryExcel(filePath) {
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
 
-  // Extract account number from Row 4 (0-indexed)
+  // Extract account number and balance from Row 4 (0-indexed)
   let accountNumber = null;
+  let headerBalance = null;
   const accountRow = data[ACCOUNT_ROW_IDX];
-  if (accountRow && accountRow[0]) {
-    const match = String(accountRow[0]).match(/계좌번호\s*:\s*([\d-]+)/);
-    if (match) {
-      accountNumber = match[1];
+  if (accountRow) {
+    const rowStr = JSON.stringify(accountRow);
+    const accMatch = rowStr.match(/계좌번호\s*[:：]\s*([\d-]+)/);
+    if (accMatch) {
+      accountNumber = accMatch[1];
+    }
+    const balMatch = rowStr.match(/대출잔액\s*[:：]\s*([\d,]+)/);
+    if (balMatch) {
+      headerBalance = parseAmount(balMatch[1]);
     }
   }
 
@@ -155,7 +161,7 @@ function parseHanaLoanHistoryExcel(filePath) {
 
   if (!data[HEADER_ROW_IDX]) {
     warnings.push(`Header row ${HEADER_ROW_IDX + 1} missing`);
-    return { accountNumber, rows: [], warnings };
+    return { accountNumber, headerBalance, rows: [], warnings };
   }
 
   const colMap = buildColMap(data[HEADER_ROW_IDX]);
@@ -193,7 +199,7 @@ function parseHanaLoanHistoryExcel(filePath) {
     });
   }
 
-  return { accountNumber, rows, warnings };
+  return { accountNumber, headerBalance, rows, warnings };
 }
 
 module.exports = {

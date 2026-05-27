@@ -957,6 +957,10 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -979,6 +983,10 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -1002,6 +1010,10 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -1017,6 +1029,10 @@ export class FinanceHubDbManager {
              COALESCE(
                (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
                (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+               (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+               (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+               (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+               (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
                a.balance
              ) as latest_balance
       FROM accounts a
@@ -2273,7 +2289,17 @@ export class FinanceHubDbManager {
           b.id as bank_id,
           b.name_ko as bank_name,
           COUNT(DISTINCT a.id) as account_count,
-          COALESCE(SUM(DISTINCT a.balance), 0) as total_balance
+          COALESCE(SUM(
+            COALESCE(
+              (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+              (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+              (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+              (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+              a.balance
+            )
+          ), 0) as total_balance
         FROM banks b
         LEFT JOIN accounts a ON b.id = a.bank_id AND a.is_active = 1
         GROUP BY b.id
@@ -2321,7 +2347,17 @@ export class FinanceHubDbManager {
           b.name_ko as bank_name,
           COUNT(DISTINCT a.id) as account_count,
           COUNT(t.id) as transaction_count,
-          COALESCE(SUM(DISTINCT a.balance), 0) as total_balance
+          COALESCE(SUM(
+            COALESCE(
+              (SELECT balance FROM bank_transactions bt WHERE bt.account_id = a.id ORDER BY bt.transaction_datetime DESC, bt.id DESC LIMIT 1),
+              (SELECT balance FROM transactions t WHERE t.account_id = a.id ORDER BY t.transaction_datetime DESC, t.id DESC LIMIT 1),
+              (SELECT balance FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilh.transaction_date DESC, ilh.id DESC LIMIT 1),
+              (SELECT balance FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY hlh.transaction_date DESC, hlh.id DESC LIMIT 1),
+              (SELECT loan_balance FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY ilt.transaction_date DESC, ilt.id DESC LIMIT 1),
+              (SELECT loan_balance FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '') ORDER BY wble.deposit_date DESC, wble.id DESC LIMIT 1),
+              a.balance
+            )
+          ), 0) as total_balance
         FROM banks b
         LEFT JOIN accounts a ON b.id = a.bank_id AND a.is_active = 1
         LEFT JOIN transactions t ON a.id = t.account_id
@@ -3687,13 +3723,14 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { accountNumber, rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
+      const { accountNumber, headerBalance, rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
         accountNumber: string | null;
+        headerBalance: number | null;
         rows: any[];
         warnings: string[];
       };
 
-      if (!rows.length) {
+      if (!rows.length && !headerBalance) {
         return {
           success: true,
           imported: 0,
@@ -3731,6 +3768,18 @@ export class FinanceHubDbManager {
 
       const run = this.db.transaction(() => {
         let n = 0;
+
+        // Ensure account exists in accounts table
+        if (accountNumber) {
+          this.upsertAccount({
+            bankId: 'ibk',
+            accountNumber: accountNumber,
+            accountName: 'IBK 대출계좌',
+            accountType: 'loan',
+            balance: headerBalance ?? undefined,
+          });
+        }
+
         for (const r of rows) {
           const id = this.stableLoanHistoryId(
             'ibk',
@@ -3740,16 +3789,6 @@ export class FinanceHubDbManager {
             r.balance || 0,
             accountNumber || '',
           );
-
-          // Ensure account exists in accounts table
-          if (accountNumber) {
-            this.upsertAccount({
-              bankId: 'ibk',
-              accountNumber: accountNumber,
-              accountName: 'IBK 대출계좌',
-              accountType: 'loan',
-            });
-          }
 
           upsert.run({
             id,
@@ -3867,13 +3906,14 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { accountNumber, rows, warnings } = parseHanaLoanHistoryExcel(filePath) as {
+      const { accountNumber, headerBalance, rows, warnings } = parseHanaLoanHistoryExcel(filePath) as {
         accountNumber: string | null;
+        headerBalance: number | null;
         rows: any[];
         warnings: string[];
       };
 
-      if (!rows.length) {
+      if (!rows.length && !headerBalance) {
         return {
           success: true,
           imported: 0,
@@ -3911,6 +3951,18 @@ export class FinanceHubDbManager {
 
       const run = this.db.transaction(() => {
         let n = 0;
+
+        // Ensure account exists in accounts table
+        if (accountNumber) {
+          this.upsertAccount({
+            bankId: 'hana',
+            accountNumber: accountNumber,
+            accountName: '하나 대출계좌',
+            accountType: 'loan',
+            balance: headerBalance ?? undefined,
+          });
+        }
+
         for (const r of rows) {
           const id = this.stableLoanHistoryId(
             'hana',
@@ -3920,16 +3972,6 @@ export class FinanceHubDbManager {
             r.balance || 0,
             accountNumber || '',
           );
-
-          // Ensure account exists in accounts table
-          if (accountNumber) {
-            this.upsertAccount({
-              bankId: 'hana',
-              accountNumber: accountNumber,
-              accountName: '하나 대출계좌',
-              accountType: 'loan',
-            });
-          }
 
           upsert.run({
             id,
@@ -4452,8 +4494,9 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { accountNumber: extractedAcc, rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
+      const { accountNumber: extractedAcc, headerBalance, rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
         accountNumber: string | null;
+        headerBalance: number | null;
         rows: Array<{
           transactionDate: string | null;
           transactionType: string | null;
@@ -4475,7 +4518,7 @@ export class FinanceHubDbManager {
         return { success: false, imported: 0, skipped: 0, error: 'accountNumber is required (none provided or extracted)' };
       }
 
-      if (!rows.length) {
+      if (!rows.length && !headerBalance) {
         return {
           success: true,
           imported: 0,
@@ -4532,14 +4575,17 @@ export class FinanceHubDbManager {
 
       const run = this.db.transaction(() => {
         let n = 0;
+
+        // Ensure account exists in accounts table
+        this.upsertAccount({
+          bankId: 'ibk',
+          accountNumber: finalAcc,
+          accountName: 'IBK 대출계좌',
+          accountType: 'loan',
+          balance: headerBalance ?? undefined,
+        });
+
         for (const r of rows) {
-          // Ensure account exists in accounts table
-          this.upsertAccount({
-            bankId: 'ibk',
-            accountNumber: finalAcc,
-            accountName: 'IBK 대출계좌',
-            accountType: 'loan',
-          });
 
           upsert.run({
             id: idFor(finalAcc, r),

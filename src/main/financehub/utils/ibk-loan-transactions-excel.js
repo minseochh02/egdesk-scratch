@@ -91,6 +91,7 @@ function cellByHeader(colMap, row, headerKo) {
  * @param {string} filePath
  * @returns {{
  *   accountNumber: string|null;
+ *   headerBalance: number|null;
  *   rows: Array<{
  *     transactionDate: string|null;
  *     transactionType: string|null;
@@ -125,20 +126,26 @@ function parseIbkLoanTransactionsExcel(filePath) {
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
 
-  // Extract account number from Row 2 (0-indexed index 1)
+  // Extract account number and balance from Row 2 (0-indexed index 1)
   let accountNumber = null;
+  let headerBalance = null;
   const metadataRow = data[1];
-  if (metadataRow && metadataRow[0]) {
-    const match = String(metadataRow[0]).match(/대출계좌번호\s*:\s*([\d-]+)/);
-    if (match) {
-      accountNumber = match[1];
+  if (metadataRow) {
+    const rowStr = JSON.stringify(metadataRow);
+    const accMatch = rowStr.match(/대출계좌번호\s*[:：]\s*([\d-]+)/);
+    if (accMatch) {
+      accountNumber = accMatch[1];
+    }
+    const balMatch = rowStr.match(/대출잔액\s*[:：]\s*([\d,]+)/);
+    if (balMatch) {
+      headerBalance = parseAmount(balMatch[1]);
     }
   }
 
   const headerRowIdx = HEADER_ROW_1BASED - 1;
   if (!data[headerRowIdx]) {
     warnings.push(`Header row ${HEADER_ROW_1BASED} missing`);
-    return { accountNumber, rows: [], warnings };
+    return { accountNumber, headerBalance, rows: [], warnings };
   }
 
   const colMap = buildColMap(data[headerRowIdx]);
