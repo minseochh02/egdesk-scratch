@@ -25,23 +25,20 @@ export class DBChangeDetector {
    */
   public watchNeuron(db: Database.Database): void {
     try {
-      db.updateHook((action, databaseName, tableName, rowId) => {
-        if (tableName === 'tasks' || tableName === 'company_calendar') {
-          console.log(`[DB Event Detector] 🔔 AI Center change: ${action} on ${tableName} (RowID: ${rowId})`);
-          
-          const windows = BrowserWindow.getAllWindows();
-          for (const win of windows) {
-            if (!win.isDestroyed()) {
-              win.webContents.send('db:changed', {
-                tableName,
-                action: action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE',
-                rowId: rowId.toString()
-              });
-            }
+      // better-sqlite3 버전이나 환경에 따라 updateHook이 없을 수 있으므로 체크
+      if (typeof (db as any).updateHook === 'function') {
+        (db as any).updateHook((action: number, databaseName: string, tableName: string, rowId: any) => {
+          if (tableName === 'tasks' || tableName === 'company_calendar') {
+            console.log(`[DB Event Detector] 🔔 AI Center change: ${action} on ${tableName} (RowID: ${rowId})`);
+            this.broadcastChange('db:changed', tableName, action, rowId);
           }
-        }
-      });
-      console.log('✅ SQLite update_hook: AI Center Detector connected');
+        });
+        console.log('✅ SQLite update_hook: AI Center Detector connected');
+      } else {
+        console.warn('⚠️ SQLite updateHook not found. Falling back to trigger-based detection for Neuron DB.');
+        this.setupTriggerFallback(db, ['tasks', 'company_calendar'], 'db:changed');
+        console.log('✅ SQLite Triggers: AI Center Detector connected (Fallback)');
+      }
     } catch (err) {
       console.error('❌ Failed to bind AI Center update_hook:', err);
     }
@@ -52,48 +49,99 @@ export class DBChangeDetector {
    */
   public watchFinanceHub(db: Database.Database): void {
     try {
-      db.updateHook((action, databaseName, tableName, rowId) => {
-        // 감시 핵심 테이블: 계좌 내역, 카드 승인 내역, 국세청 세금계산서, 받을어음
-        const watchedTables = [
-          'bank_transactions',
-          'card_transactions',
-          'hometax_tax_invoices',
-          'ibk_b2b_receivables',
-        ];
+      const watchedTables = [
+        'bank_transactions',
+        'card_transactions',
+        'hometax_tax_invoices',
+        'ibk_b2b_receivables',
+      ];
 
-        if (watchedTables.includes(tableName)) {
-          const actionStr = action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE';
-          console.log(`[FinanceHub Detector] 💰 Financial data update: ${actionStr} on ${tableName} (RowID: ${rowId})`);
-
-          // 1. Renderer 브로드캐스트
-          const windows = BrowserWindow.getAllWindows();
-          for (const win of windows) {
-            if (!win.isDestroyed()) {
-              win.webContents.send('financehub:changed', {
-                tableName,
-                action: actionStr,
-                rowId: rowId.toString()
-              });
-            }
+      if (typeof (db as any).updateHook === 'function') {
+        (db as any).updateHook((action: number, databaseName: string, tableName: string, rowId: any) => {
+          if (watchedTables.includes(tableName)) {
+            const actionStr = action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE';
+            console.log(`[FinanceHub Detector] 💰 Financial data update: ${actionStr} on ${tableName} (RowID: ${rowId})`);
+            this.broadcastChange('financehub:changed', tableName, action, rowId);
+            this.triggerWorkflow(tableName, actionStr, rowId, db);
           }
-
-          // 2. 워크플로 자동 트리거 — INSERT 이벤트 시 trigger_table 매칭 워크플로 기동
-          try {
-            const { WorkflowTriggerEngine } = require('../workflow/workflow-trigger-engine');
-            WorkflowTriggerEngine.getInstance().onFinanceHubChange(
-              tableName,
-              actionStr,
-              rowId.toString(),
-              db,
-            );
-          } catch (triggerErr) {
-            console.error('[FinanceHub Detector] WorkflowTriggerEngine call failed:', triggerErr);
-          }
-        }
-      });
-      console.log('✅ SQLite update_hook: FinanceHub Detector connected');
+        });
+        console.log('✅ SQLite update_hook: FinanceHub Detector connected');
+      } else {
+        console.warn('⚠️ SQLite updateHook not found. Falling back to trigger-based detection for FinanceHub DB.');
+        this.setupTriggerFallback(db, watchedTables, 'financehub:changed');
+        console.log('✅ SQLite Triggers: FinanceHub Detector connected (Fallback)');
+      }
     } catch (err) {
       console.error('❌ Failed to bind FinanceHub update_hook:', err);
+    }
+  }
+
+  /**
+   * 공통 브로드캐스트 로직
+   */
+  private broadcastChange(eventName: string, tableName: string, action: number, rowId: any): void {
+    const actionStr = action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE';
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(eventName, {
+          tableName,
+          action: actionStr,
+          rowId: rowId.toString()
+        });
+      }
+    }
+  }
+
+  /**
+   * 워크플로 트리거 로직
+   */
+  private triggerWorkflow(tableName: string, actionStr: string, rowId: any, db: Database.Database): void {
+    try {
+      const { WorkflowTriggerEngine } = require('../workflow/workflow-trigger-engine');
+      WorkflowTriggerEngine.getInstance().onFinanceHubChange(
+        tableName,
+        actionStr,
+        rowId.toString(),
+        db,
+      );
+    } catch (triggerErr) {
+      console.error('[FinanceHub Detector] WorkflowTriggerEngine call failed:', triggerErr);
+    }
+  }
+
+  /**
+   * updateHook 미지원 시 트리거 기반 감지 설정 (Fallback)
+   */
+  private setupTriggerFallback(db: Database.Database, tables: string[], eventName: string): void {
+    // JS 함수 등록
+    const functionName = `notify_change_${eventName.replace(':', '_')}`;
+    db.function(functionName, (action: number, tableName: string, rowId: any) => {
+      const actionStr = action === 1 ? 'INSERT' : action === 3 ? 'UPDATE' : 'DELETE';
+      
+      this.broadcastChange(eventName, tableName, action, rowId);
+      
+      if (eventName === 'financehub:changed') {
+        this.triggerWorkflow(tableName, actionStr, rowId, db);
+      }
+    });
+
+    // 각 테이블에 트리거 생성
+    for (const table of tables) {
+      try {
+        db.exec(`
+          CREATE TRIGGER IF NOT EXISTS trg_${table}_ai_insert AFTER INSERT ON ${table}
+          BEGIN SELECT ${functionName}(1, '${table}', NEW.rowid); END;
+          
+          CREATE TRIGGER IF NOT EXISTS trg_${table}_ai_update AFTER UPDATE ON ${table}
+          BEGIN SELECT ${functionName}(3, '${table}', NEW.rowid); END;
+          
+          CREATE TRIGGER IF NOT EXISTS trg_${table}_ai_delete AFTER DELETE ON ${table}
+          BEGIN SELECT ${functionName}(2, '${table}', OLD.rowid); END;
+        `);
+      } catch (err) {
+        console.error(`[DB Trigger Fallback] Failed to create triggers for ${table}:`, err);
+      }
     }
   }
 }

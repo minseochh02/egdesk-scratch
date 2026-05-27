@@ -477,6 +477,11 @@ export class FinanceHubMCPService implements IMCPService {
               type: 'number',
               description: 'Pagination offset',
               default: 0
+            },
+            latestOnly: {
+              type: 'boolean',
+              description: 'If true, only return the latest record for each unique identifier (e.g., receivable_number for woori_b2b_loan_executions).',
+              default: false
             }
           },
           required: ['tableSlug']
@@ -913,7 +918,7 @@ export class FinanceHubMCPService implements IMCPService {
         }
 
         case 'financehub_query_bank_product_table': {
-          const { tableSlug, filters, orderBy, limit, offset } = args;
+          const { tableSlug, filters, orderBy, limit, offset, latestOnly } = args;
           if (!tableSlug || typeof tableSlug !== 'string') {
             throw new Error('tableSlug is required (string). Use financehub_list_bank_product_tables to discover.');
           }
@@ -922,7 +927,8 @@ export class FinanceHubMCPService implements IMCPService {
             filters,
             orderBy,
             limit,
-            offset
+            offset,
+            latestOnly
           });
           if (q.error) {
             throw new Error(q.error);

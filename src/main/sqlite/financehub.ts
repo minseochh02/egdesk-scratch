@@ -4228,6 +4228,7 @@ export class FinanceHubDbManager {
     orderBy?: { column: string; direction?: 'ASC' | 'DESC' };
     limit?: number;
     offset?: number;
+    latestOnly?: boolean;
   }): {
     tableSlug: string;
     total: number;
@@ -4330,12 +4331,29 @@ export class FinanceHubDbManager {
     }
 
     try {
-      const totalRow = this.db
-        .prepare(`SELECT COUNT(*) AS c FROM "${meta.slug}" ${where}`)
-        .get(...params) as { c: number };
-      const rows = this.db
-        .prepare(`SELECT * FROM "${meta.slug}" ${where} ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
-        .all(...params, limit, offset) as Array<Record<string, unknown>>;
+      let totalRowQuery = `SELECT COUNT(*) AS c FROM "${meta.slug}" ${where}`;
+      let rowsQuery = `SELECT * FROM "${meta.slug}" ${where} ORDER BY ${orderClause} LIMIT ? OFFSET ?`;
+
+      // Special deduplication logic for Woori B2B loan executions if requested.
+      // If there are multiple rows with the same receivable_number, only return the one with the latest synced_at.
+      if (args.latestOnly && args.tableSlug === 'woori_b2b_loan_executions') {
+        totalRowQuery = `
+          SELECT COUNT(*) AS c FROM (
+            SELECT 1 FROM "${meta.slug}" ${where} GROUP BY receivable_number
+          )
+        `;
+        rowsQuery = `
+          SELECT * FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY receivable_number ORDER BY synced_at DESC) as rn
+            FROM "${meta.slug}" ${where}
+          ) WHERE rn = 1
+          ORDER BY ${orderClause}
+          LIMIT ? OFFSET ?
+        `;
+      }
+
+      const totalRow = this.db.prepare(totalRowQuery).get(...params) as { c: number };
+      const rows = this.db.prepare(rowsQuery).all(...params, limit, offset) as Array<Record<string, unknown>>;
       return { tableSlug: args.tableSlug, total: totalRow.c, limit, offset, rows };
     } catch (e: any) {
       return {
