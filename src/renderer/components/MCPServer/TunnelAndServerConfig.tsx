@@ -769,10 +769,10 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                     gap: '6px',
                     transition: 'all 0.2s ease'
                   }}
-                  title={isTokenLocked ? "Token is locked and will not be refreshed" : "Lock Google OAuth token to prevent automatic recycling"}
+                  title={isTokenLocked ? "API Key is locked and will not be recycled" : "Lock MCP Server API Key to prevent automatic recycling"}
                 >
                   <FontAwesomeIcon icon={isTokenLocked ? faLock : faShieldAlt} />
-                  {isTokenLocked ? 'Token Locked' : 'Lock Token'}
+                  {isTokenLocked ? 'API Key Locked' : 'Lock API Key'}
                 </button>
               )}
             </div>

@@ -1868,7 +1868,7 @@ export class FinanceHubScheduler extends EventEmitter {
       let totalSkipped = 0;
 
       // Get database reference (reuse sqliteManager from above)
-      const financeHubDbTransactions = sqliteManager.getFinanceHubDatabase();
+      const financeHubDbTransactions = sqliteManager.getFinanceHubManager();
 
       // Fetch transactions for each account
       for (const account of accounts) {

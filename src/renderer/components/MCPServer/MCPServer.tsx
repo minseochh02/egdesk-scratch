@@ -254,6 +254,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
   const [checkingOAuthToken, setCheckingOAuthToken] = useState<boolean>(true);
   const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false); // Token exists but access_token is missing/expired
   const [isTokenLocked, setIsTokenLocked] = useState<boolean>(false);
+  const [isTunnelKeyLocked, setIsTunnelKeyLocked] = useState<boolean>(false);
 
   // Check token lock status
   const checkTokenLockStatus = useCallback(async () => {
@@ -262,6 +263,10 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       if (result.success && result.token) {
         setIsTokenLocked(result.token.locked || false);
       }
+      
+      // Also check tunnel key lock status
+      const mcpConfig = await window.electron.store.get('mcpConfiguration');
+      setIsTunnelKeyLocked(mcpConfig?.tunnel?.apiKeyLocked === true);
     } catch (error) {
       console.error('[MCPServer:checkTokenLockStatus] Error checking token lock status:', error);
     }
@@ -280,6 +285,22 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       }
     } catch (error) {
       console.error('[MCPServer:handleToggleTokenLock] Error toggling token lock:', error);
+    }
+  };
+
+  // Handle toggle tunnel key lock
+  const handleToggleTunnelKeyLock = async () => {
+    try {
+      const newLockedStatus = !isTunnelKeyLocked;
+      const result = await window.electron.auth.setTunnelKeyLock(newLockedStatus);
+      if (result.success) {
+        setIsTunnelKeyLocked(newLockedStatus);
+        console.log('[MCPServer:handleToggleTunnelKeyLock] ✅ Tunnel key lock status updated:', newLockedStatus);
+      } else {
+        alert(`Failed to update tunnel key lock: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('[MCPServer:handleToggleTunnelKeyLock] Error toggling tunnel key lock:', error);
     }
   };
 
@@ -2363,8 +2384,8 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         toggleAutoStartTunnel={toggleAutoStartTunnel}
         tokenNeedsRefresh={tokenNeedsRefresh}
         handleReSignIn={handleReSignIn}
-        isTokenLocked={isTokenLocked}
-        handleToggleTokenLock={handleToggleTokenLock}
+        isTokenLocked={isTunnelKeyLocked}
+        handleToggleTokenLock={handleToggleTunnelKeyLock}
         httpsEnabled={httpsEnabled}
         toggleHttps={toggleHttps}
       />

@@ -3288,9 +3288,20 @@ const createWindow = async () => {
           captureLog(`   Environment: SUPABASE_URL=${process.env.SUPABASE_URL ? 'set' : 'NOT SET'}, TUNNEL_SERVER_URL=${process.env.TUNNEL_SERVER_URL || 'default'}`);
 
           // Generate or preserve the static API key for Apps Script access
-          const existingMcpConfig = store.get('mcpConfiguration');
-          const existingApiKey = (existingMcpConfig?.tunnel?.apiKey as string) || randomUUID();
-          captureLog(`🔑 API key: ${existingApiKey.substring(0, 8)}... (${existingMcpConfig?.tunnel?.apiKey ? 'preserved' : 'new'})`);
+          const existingMcpConfig = store.get('mcpConfiguration') as any;
+          const isLocked = existingMcpConfig?.tunnel?.apiKeyLocked === true;
+          let existingApiKey = existingMcpConfig?.tunnel?.apiKey as string;
+          
+          if (!existingApiKey) {
+            if (isLocked) {
+              captureLog(`⚠️ API key is LOCKED but missing! This should not happen.`);
+              // If locked but missing, we still need one to function, but this is a warning state
+            }
+            existingApiKey = randomUUID();
+            captureLog(`🔑 Generated new API key: ${existingApiKey.substring(0, 8)}...`);
+          } else {
+            captureLog(`🔑 Preserving existing API key: ${existingApiKey.substring(0, 8)}... ${isLocked ? '(LOCKED)' : ''}`);
+          }
 
           const result = await startTunnel(serverName, localServerUrl, existingApiKey);
           
@@ -3306,8 +3317,10 @@ const createWindow = async () => {
           // Auto-save tunnel configuration to electron store if successful
           if (result.success && result.publicUrl) {
             try {
-              const mcpConfig = store.get('mcpConfiguration');
+              const mcpConfig = store.get('mcpConfiguration') as any;
+              const existingTunnel = mcpConfig.tunnel || {};
               mcpConfig.tunnel = {
+                ...existingTunnel,
                 registered: true,
                 registrationId: result.registrationId || '',
                 serverName: serverName,
@@ -3367,7 +3380,7 @@ const createWindow = async () => {
           // Mark tunnel as disconnected but KEEP serverName, publicUrl, and apiKey so reconnect works
           // and so openclaw:setup / runKakaoSetup can still read the last known URL
           try {
-            const mcpConfig = store.get('mcpConfiguration');
+            const mcpConfig = store.get('mcpConfiguration') as any;
             const existing = mcpConfig.tunnel ?? {};
             mcpConfig.tunnel = {
               ...existing,
@@ -3387,7 +3400,7 @@ const createWindow = async () => {
 
           // Still mark as disconnected, keep serverName/publicUrl/apiKey for future reconnect
           try {
-            const mcpConfig = store.get('mcpConfiguration');
+            const mcpConfig = store.get('mcpConfiguration') as any;
             const existing = mcpConfig.tunnel ?? {};
             mcpConfig.tunnel = {
               ...existing,
@@ -3455,6 +3468,23 @@ const createWindow = async () => {
             success: false,
             error: error.message || 'Unknown error'
           };
+        }
+      });
+
+      // Set tunnel API key lock status
+      ipcMain.handle('mcp-tunnel-set-key-lock', async (_event, locked: boolean) => {
+        try {
+          const mcpConfig = store.get('mcpConfiguration') as any;
+          if (!mcpConfig.tunnel) {
+            mcpConfig.tunnel = {};
+          }
+          mcpConfig.tunnel.apiKeyLocked = locked;
+          store.set('mcpConfiguration', mcpConfig);
+          console.log(`🔒 Tunnel API key lock status updated to: ${locked}`);
+          return { success: true, locked };
+        } catch (error: any) {
+          console.error('Error setting tunnel key lock:', error);
+          return { success: false, error: error.message };
         }
       });
 

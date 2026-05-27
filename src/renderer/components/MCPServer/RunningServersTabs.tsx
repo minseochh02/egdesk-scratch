@@ -602,10 +602,10 @@ const RunningServersTabs: React.FC<RunningServersTabsProps> = ({
                         borderColor: isTokenLocked ? 'rgba(239, 68, 68, 0.4)' : undefined,
                         color: isTokenLocked ? '#f87171' : undefined
                       }}
-                      title={isTokenLocked ? "Token is locked and will not be refreshed" : "Lock token to prevent automatic recycling"}
+                      title={isTokenLocked ? "Google OAuth Token is locked and will not be refreshed" : "Lock Google OAuth token to prevent automatic recycling"}
                     >
                       <FontAwesomeIcon icon={isTokenLocked ? faLock : faShieldAlt} style={{ marginRight: '0.5rem' }} />
-                      {isTokenLocked ? 'Token Locked' : 'Lock Token'}
+                      {isTokenLocked ? 'OAuth Token Locked' : 'Lock OAuth Token'}
                     </button>
                     <button
                       onClick={() => setShowDevConfig(!showDevConfig)}
