@@ -192,6 +192,17 @@ export async function runSqliteMigrations({
     console.error('⚠️ Migration 036 error:', migration036Error.message);
   }
 
+  try {
+    await runOnceMigration(financeHubDb, '037-create-ibk-foreign-currency-history', async () => {
+      const { migrate037CreateIbkForeignCurrencyHistory } = await import(
+        './migrations/037-create-ibk-foreign-currency-history'
+      );
+      migrate037CreateIbkForeignCurrencyHistory(financeHubDb);
+    });
+  } catch (migration037Error: any) {
+    console.error('⚠️ Migration 037 error:', migration037Error.message);
+  }
+
   // =============================================
   // Migration 009: Add vector embeddings support
   // =============================================

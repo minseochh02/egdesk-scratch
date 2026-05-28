@@ -3868,6 +3868,137 @@ export class FinanceHubDbManager {
   }
 
   // ============================================================================
+  // IBK 외화거래내역 (`ibk_foreign_currency_history`)
+  // ============================================================================
+
+  private stableForeignCurrencyHistoryId(
+    accountNumber: string,
+    transactionDatetime: string,
+    credit: number | null,
+    debit: number | null,
+  ): string {
+    const h = createHash('sha256')
+      .update(`ibk\n${accountNumber}\n${transactionDatetime}\n${credit ?? ''}\n${debit ?? ''}`)
+      .digest('hex');
+    return `fxh_${h.slice(0, 40)}`;
+  }
+
+  /**
+   * Parse IBK 외화거래내역조회 Excel and upsert into `ibk_foreign_currency_history`.
+   */
+  importIbkForeignCurrencyFromExcel(
+    filePath: string,
+    accountNumberOverride?: string,
+  ): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkForeignCurrencyExcel } = require('../financehub/utils/ibk-foreign-currency-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_foreign_currency_history'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'ibk_foreign_currency_history 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { accountNumber: extractedAcc, rows, warnings } = parseIbkForeignCurrencyExcel(filePath) as {
+        accountNumber: string | null;
+        rows: any[];
+        warnings: string[];
+      };
+
+      const finalAcc = (accountNumberOverride || extractedAcc || '').trim();
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO ibk_foreign_currency_history (
+          id, account_number, transaction_datetime, currency,
+          credit, debit, balance, memo, export_account_number, foreign_buyer,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @account_number, @transaction_datetime, @currency,
+          @credit, @debit, @balance, @memo, @export_account_number, @foreign_buyer,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          account_number = excluded.account_number,
+          transaction_datetime = excluded.transaction_datetime,
+          currency = excluded.currency,
+          credit = excluded.credit,
+          debit = excluded.debit,
+          balance = excluded.balance,
+          memo = excluded.memo,
+          export_account_number = excluded.export_account_number,
+          foreign_buyer = excluded.foreign_buyer,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+        for (const r of rows) {
+          const id = this.stableForeignCurrencyHistoryId(
+            finalAcc || 'UNKNOWN',
+            r.transactionDatetime || '',
+            r.credit ?? null,
+            r.debit ?? null,
+          );
+          upsert.run({
+            id,
+            account_number: finalAcc || 'UNKNOWN',
+            transaction_datetime: r.transactionDatetime,
+            currency: r.currency,
+            credit: r.credit,
+            debit: r.debit,
+            balance: r.balance,
+            memo: r.memo,
+            export_account_number: r.exportAccountNumber,
+            foreign_buyer: r.foreignBuyer,
+          });
+          n += 1;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkForeignCurrencyFromExcel: ${imported} rows for account ${finalAcc} from ${filePath}`);
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkForeignCurrencyFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
   // Hana 대출상세내역 (`hana_loan_history`)
   // ============================================================================
 

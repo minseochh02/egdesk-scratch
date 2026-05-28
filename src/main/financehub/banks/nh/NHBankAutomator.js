@@ -187,6 +187,7 @@ class NHBankAutomator extends BaseBankAutomator {
           '--no-default-browser-check',
           '--disable-blink-features=AutomationControlled',
           '--no-first-run',
+          '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks',
           '--allow-running-insecure-content',
           '--safebrowsing-disable-download-protection',

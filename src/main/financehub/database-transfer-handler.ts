@@ -88,6 +88,7 @@ const ALL_TABLES = [
   'woori_b2b_loan_executions',
   'ibk_endorsements',
   'ibk_loan_history',
+  'ibk_foreign_currency_history',
   'hana_loan_history',
 ];
 
@@ -534,6 +535,7 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
       'woori_b2b_loan_executions',
           'ibk_endorsements',
       'ibk_loan_history',
+      'ibk_foreign_currency_history',
       'hana_loan_history',
     ];
 
