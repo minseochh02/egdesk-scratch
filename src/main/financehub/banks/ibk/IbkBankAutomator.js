@@ -1816,16 +1816,21 @@ class IbkBankAutomator extends BaseBankAutomator {
       try {
         let trustTabClicked = false;
         try {
-          await this.page.getByRole('link', { name: '신탁' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '신탁' }).first().click({ force: true, timeout: 5000 });
           trustTabClicked = true;
         } catch (_te0) {
           try {
-            await this.page.locator('a:nth-match(1100)').click({ force: true, timeout: 5000 });
+            await this.page.getByRole('link', { name: '신탁' }).first().click({ force: true, timeout: 5000 });
             trustTabClicked = true;
           } catch (_te1) {
-            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[2]/ul/li[2]/a')
-              .click({ force: true, timeout: 5000 });
-            trustTabClicked = true;
+            try {
+              await this.page.locator('a:nth-match(1100)').click({ force: true, timeout: 5000 });
+              trustTabClicked = true;
+            } catch (_te2) {
+              await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[2]/ul/li[2]/a')
+                .click({ force: true, timeout: 5000 });
+              trustTabClicked = true;
+            }
           }
         }
         // Secondary click inside mainframe (spec: every tab needs page-level + mainframe click)
@@ -2054,16 +2059,21 @@ class IbkBankAutomator extends BaseBankAutomator {
       try {
         let fundTabClicked = false;
         try {
-          await this.page.getByRole('link', { name: '펀드' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '펀드' }).first().click({ force: true, timeout: 5000 });
           fundTabClicked = true;
         } catch (_ffe0) {
           try {
-            await this.page.locator('a:nth-match(1093)').click({ force: true, timeout: 5000 });
+            await this.page.getByRole('link', { name: '펀드' }).first().click({ force: true, timeout: 5000 });
             fundTabClicked = true;
           } catch (_ffe1) {
-            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form[2]/div[2]/ul/li[3]/a')
-              .click({ force: true, timeout: 5000 });
-            fundTabClicked = true;
+            try {
+              await this.page.locator('a:nth-match(1093)').click({ force: true, timeout: 5000 });
+              fundTabClicked = true;
+            } catch (_ffe2) {
+              await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form[2]/div[2]/ul/li[3]/a')
+                .click({ force: true, timeout: 5000 });
+              fundTabClicked = true;
+            }
           }
         }
         await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("펀드")').click({ force: true, timeout: 3000 }).catch(() => {});
@@ -2271,21 +2281,25 @@ class IbkBankAutomator extends BaseBankAutomator {
         this.error('[IBK 펀드] 펀드 tab sync failed:', fundErr.message);
       }
 
-      // Click the 대출 tab on the already-open 거래내역조회 page
-      // (ibkbettermethod.spec.js — same page as deposit transactions, no re-nav needed).
-      // Cascade: semantic → css → xpath (div[N] can shift based on overlay count)
+      // Click the 대출 tab on the already-open 거래내역조회 page.
+      // Cascade: uf_menuLink attr → semantic → css → xpath
       let loanTabClicked = false;
       try {
-        await this.page.getByRole('link', { name: '대출' }).first().click({ force: true, timeout: 5000 });
+        await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '대출' }).first().click({ force: true, timeout: 5000 });
         loanTabClicked = true;
       } catch (_e0) {
         try {
-          await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+          await this.page.getByRole('link', { name: '대출' }).first().click({ force: true, timeout: 5000 });
           loanTabClicked = true;
         } catch (_e1) {
-          await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[4]/a')
-            .click({ force: true, timeout: 5000 });
-          loanTabClicked = true;
+          try {
+            await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+            loanTabClicked = true;
+          } catch (_e2) {
+            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[4]/a')
+              .click({ force: true, timeout: 5000 });
+            loanTabClicked = true;
+          }
         }
       }
       // Secondary click inside mainframe (spec: every tab needs page-level + mainframe click)
@@ -2596,15 +2610,19 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const foreignPerAccount = [];
       try {
-        // Cascade: semantic → css → xpath (div[N] can shift based on overlay count)
+        // Cascade: uf_menuLink attr → semantic → css → xpath
         try {
-          await this.page.getByRole('link', { name: '외화' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '외화' }).first().click({ force: true, timeout: 5000 });
         } catch (_fe0) {
           try {
-            await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+            await this.page.getByRole('link', { name: '외화' }).first().click({ force: true, timeout: 5000 });
           } catch (_fe1) {
-            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[5]/a')
-              .click({ force: true, timeout: 5000 });
+            try {
+              await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+            } catch (_fe2) {
+              await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[5]/a')
+                .click({ force: true, timeout: 5000 });
+            }
           }
         }
         await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("외화")').click({ force: true, timeout: 3000 }).catch(() => {});
