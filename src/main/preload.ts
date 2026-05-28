@@ -2350,16 +2350,14 @@ const electronHandler = {
     syncWooriB2bLoanExecutions: (opts?: { startDate?: string; endDate?: string }) =>
       ipcRenderer.invoke('finance-hub:sync-woori-b2b-loan-executions', opts || {}),
     /** IBK 대출 → 대출조회 → 대출계좌조회 → 거래내역조회 (all loan accounts). */
-    syncIbkLoanTransactions: (opts?: { startDate?: string; endDate?: string }) =>
-      ipcRenderer.invoke('finance-hub:sync-ibk-loan-transactions', opts || {}),
+    syncIbkLoanHistory: (opts?: { startDate?: string; endDate?: string }) =>
+      ipcRenderer.invoke('finance-hub:sync-ibk-loan-history', opts || {}),
     importIbkEndorsementsExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-ibk-endorsements-excel', { filePath }),
     importIbkLoanHistoryExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-ibk-loan-history-excel', { filePath }),
     importHanaLoanHistoryExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-hana-loan-history-excel', { filePath }),
-    importIbkLoanTransactionsExcel: (filePath: string) =>
-      ipcRenderer.invoke('finance-hub:import-ibk-loan-transactions-excel', { filePath }),
     bank: {
       importExcel: (filePath: string, bankId: string, accountNumber?: string) =>
         ipcRenderer.invoke('finance-hub:bank:import-excel', { filePath, bankId, accountNumber }),

@@ -54,6 +54,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     this._arduinoHid = null;
     /** @type {'idle'|'awaiting_password'|'completed'} */
     this._shinhanCorporateCertPhase = 'idle';
+    this._shinhanCertAttempt = 0;
 
     try {
       if (!fs.existsSync(this.downloadDir)) {
@@ -604,6 +605,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       const _shinhanScreenCheck = ensureCertWindowOnScreen(uia.matchedClass);
       if (_shinhanScreenCheck.moved) this.log('[Shinhan] 인증서 창이 화면 밖에 있어 화면 가운데로 이동했습니다.');
       this._shinhanCorporateCertPhase = 'awaiting_password';
+      this._shinhanCertAttempt = 0;
       this.isLoggedIn = false;
 
       return {
@@ -644,6 +646,12 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Windows에서만 지원됩니다.' };
     }
 
+    this._shinhanCertAttempt += 1;
+    const useSlowTyping = this._shinhanCertAttempt >= 2;
+    if (useSlowTyping) {
+      this.warn(`[SHINHAN] 재시도 ${this._shinhanCertAttempt}회차 — 느린 타이핑 모드 사용`);
+    }
+
     try {
       if (!this.arduinoPort) {
         return {
@@ -665,6 +673,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         SHINHAN_NATIVE_CERT_STEPS,
         {
           log: this.log.bind(this),
+          slowType: useSlowTyping,
           warn: this.warn.bind(this),
           sendkeysEnterFallbackEnv: 'SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK',
         }

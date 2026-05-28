@@ -70,6 +70,7 @@ const BANK_LABELS: Record<string, string> = {
 /** 어음 스케줄 라벨 (은행별 syncPromissoryNotes 지원 시 확장) */
 const PROMISSORY_LABELS: Record<string, string> = {
   ibk: 'IBK 어음(외상매출채권)',
+  woori: '우리 B2B대출(협력)',
 };
 
 export const SchedulerSettings: React.FC = () => {

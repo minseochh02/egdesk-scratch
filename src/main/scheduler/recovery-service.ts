@@ -249,7 +249,9 @@ export class SchedulerRecoveryService {
       SET status = 'running',
           actual_execution_id = ?,
           actual_started_at = datetime('now', 'localtime'),
-          updated_at = datetime('now', 'localtime')
+          updated_at = datetime('now', 'localtime'),
+          error_message = NULL,
+          skip_reason = NULL
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?
@@ -272,7 +274,9 @@ export class SchedulerRecoveryService {
       SET status = 'completed',
           actual_execution_id = ?,
           actual_completed_at = datetime('now', 'localtime'),
-          updated_at = datetime('now', 'localtime')
+          updated_at = datetime('now', 'localtime'),
+          error_message = NULL,
+          skip_reason = NULL
       WHERE scheduler_type = ?
         AND task_id = ?
         AND intended_date = ?

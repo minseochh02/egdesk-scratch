@@ -94,31 +94,6 @@ export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
     },
     defaultOrderBy: 'deposit_date DESC, created_at DESC',
   },
-  ibk_loan_transactions: {
-    slug: 'ibk_loan_transactions',
-    displayName: 'IBK 대출거래내역',
-    bankId: 'ibk',
-    productLabel: '대출거래내역',
-    columns: {
-      id: 'TEXT',
-      account_number: 'TEXT',
-      transaction_date: 'TEXT',
-      transaction_type: 'TEXT',
-      currency: 'TEXT',
-      transaction_amount: 'INTEGER',
-      principal_amount: 'INTEGER',
-      interest_amount: 'INTEGER',
-      loan_balance: 'INTEGER',
-      interest_rate: 'REAL',
-      start_date: 'TEXT',
-      end_date: 'TEXT',
-      status: 'TEXT',
-      synced_at: 'TEXT',
-      created_at: 'TEXT',
-      updated_at: 'TEXT',
-    },
-    defaultOrderBy: 'account_number ASC, transaction_date DESC',
-  },
   ibk_endorsements: {
     slug: 'ibk_endorsements',
     displayName: 'IBK 배서내역',
@@ -200,6 +175,31 @@ export const BANK_PRODUCT_TABLES: Record<string, BankProductTableSpec> = {
       interest_end_date: 'TEXT',
       interest_rate: 'REAL',
       branch: 'TEXT',
+      synced_at: 'TEXT',
+      created_at: 'TEXT',
+      updated_at: 'TEXT',
+    },
+    defaultOrderBy: 'transaction_date DESC, created_at DESC',
+  },
+  ibk_loan_transactions: {
+    slug: 'ibk_loan_transactions',
+    displayName: 'IBK 대출거래내역',
+    bankId: 'ibk',
+    productLabel: '대출거래내역',
+    columns: {
+      id: 'TEXT',
+      account_number: 'TEXT',
+      transaction_date: 'TEXT',
+      transaction_type: 'TEXT',
+      currency: 'TEXT',
+      transaction_amount: 'INTEGER',
+      principal_amount: 'INTEGER',
+      interest_amount: 'INTEGER',
+      loan_balance: 'INTEGER',
+      interest_rate: 'REAL',
+      start_date: 'TEXT',
+      end_date: 'TEXT',
+      status: 'TEXT',
       synced_at: 'TEXT',
       created_at: 'TEXT',
       updated_at: 'TEXT',
@@ -890,6 +890,12 @@ export class FinanceHubDbManager {
     const existing = this.getAccountByNumber(data.bankId, normalizedAcc);
     
     if (existing) {
+      // [개선] 기존 메타데이터와 새 메타데이터 병합 (한도 설정 등 수동 입력 필드 보존)
+      const mergedMetadata = {
+        ...(existing.metadata || {}),
+        ...(data.metadata || {})
+      };
+
       // Update
       const stmt = this.db.prepare(`
         UPDATE accounts SET
@@ -901,7 +907,7 @@ export class FinanceHubDbManager {
           account_type = COALESCE(?, account_type),
           open_date = COALESCE(?, open_date),
           last_synced_at = ?,
-          metadata = COALESCE(?, metadata)
+          metadata = ?
         WHERE id = ?
       `);
       
@@ -914,7 +920,7 @@ export class FinanceHubDbManager {
         data.accountType ?? null,
         data.openDate ?? null,
         now,
-        data.metadata ? JSON.stringify(data.metadata) : null,
+        JSON.stringify(mergedMetadata),
         existing.id
       );
       
@@ -3085,6 +3091,20 @@ export class FinanceHubDbManager {
     return `lh_${h.slice(0, 40)}`;
   }
 
+  private stableLoanTransactionId(
+    bankId: string,
+    date: string,
+    type: string,
+    amount: number,
+    balance: number,
+    accountNumber?: string,
+  ): string {
+    const h = createHash('sha256')
+      .update(`${bankId}\n${accountNumber || ''}\n${date}\n${type}\n${amount}\n${balance}`)
+      .digest('hex');
+    return `lt_${h.slice(0, 40)}`;
+  }
+
   /**
    * Parse IBK 외상매출채권 Excel (header row 3) and upsert into `promissory_notes`.
    * Uses first active IBK account for `account_id` and `customer_name` / `account_name` for `payee_name`.
@@ -3713,6 +3733,196 @@ export class FinanceHubDbManager {
   }
 
   // ============================================================================
+  // IBK 대출거래내역 (`ibk_loan_transactions`)
+  // ============================================================================
+
+  /**
+   * Read all rows from `ibk_loan_transactions`.
+   */
+  getIbkLoanTransactions(): Array<Record<string, unknown>> {
+    try {
+      const exists = this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_loan_transactions' LIMIT 1`)
+        .get();
+      if (!exists) return [];
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, account_number, transaction_date, transaction_type, currency,
+            transaction_amount, principal_amount, interest_amount, loan_balance,
+            interest_rate, start_date, end_date, status,
+            synced_at, created_at, updated_at
+          FROM ibk_loan_transactions
+          ORDER BY transaction_date DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      return rows.map((row) => ({
+        id: row.id,
+        accountNumber: row.account_number,
+        transactionDate: row.transaction_date,
+        transactionType: row.transaction_type,
+        currency: row.currency,
+        transactionAmount: row.transaction_amount,
+        principalAmount: row.principal_amount,
+        interestAmount: row.interest_amount,
+        loanBalance: row.loan_balance,
+        interestRate: row.interest_rate,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        status: row.status,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getIbkLoanTransactions:', e?.message || e);
+      return [];
+    }
+  }
+
+  /**
+   * Parse IBK 대출거래내역 Excel and upsert into `ibk_loan_transactions`.
+   */
+  importIbkLoanTransactionsFromExcel(
+    filePath: string,
+    accountNumberOverride?: string,
+  ): {
+    success: boolean;
+    imported: number;
+    skipped: number;
+    error?: string;
+    warnings?: string[];
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { parseIbkLoanTransactionsExcel } = require('../financehub/utils/ibk-loan-transactions-excel.js');
+
+    try {
+      const table = this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_loan_transactions'`)
+        .get() as { name: string } | undefined;
+      if (!table) {
+        return {
+          success: false,
+          imported: 0,
+          skipped: 0,
+          error: 'ibk_loan_transactions 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
+        };
+      }
+
+      const { accountNumber: extractedAcc, rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
+        accountNumber: string | null;
+        rows: any[];
+        warnings: string[];
+      };
+
+      const finalAcc = (accountNumberOverride || extractedAcc || '').trim();
+
+      if (!rows.length) {
+        return {
+          success: true,
+          imported: 0,
+          skipped: 0,
+          warnings: warnings?.length ? warnings : undefined,
+        };
+      }
+
+      const upsert = this.db.prepare(`
+        INSERT INTO ibk_loan_transactions (
+          id, account_number, transaction_date, transaction_type, currency,
+          transaction_amount, principal_amount, interest_amount, loan_balance,
+          interest_rate, start_date, end_date, status,
+          synced_at, created_at, updated_at
+        ) VALUES (
+          @id, @account_number, @transaction_date, @transaction_type, @currency,
+          @transaction_amount, @principal_amount, @interest_amount, @loan_balance,
+          @interest_rate, @start_date, @end_date, @status,
+          datetime('now'), datetime('now'), datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          account_number = excluded.account_number,
+          transaction_date = excluded.transaction_date,
+          transaction_type = excluded.transaction_type,
+          currency = excluded.currency,
+          transaction_amount = excluded.transaction_amount,
+          principal_amount = excluded.principal_amount,
+          interest_amount = excluded.interest_amount,
+          loan_balance = excluded.loan_balance,
+          interest_rate = excluded.interest_rate,
+          start_date = excluded.start_date,
+          end_date = excluded.end_date,
+          status = excluded.status,
+          synced_at = datetime('now'),
+          updated_at = datetime('now')
+      `);
+
+      const run = this.db.transaction(() => {
+        let n = 0;
+
+        // Ensure account exists in accounts table
+        if (finalAcc) {
+          this.upsertAccount({
+            bankId: 'ibk',
+            accountNumber: finalAcc,
+            accountName: 'IBK 대출계좌',
+            accountType: 'loan',
+          });
+        }
+
+        for (const r of rows) {
+          const id = this.stableLoanTransactionId(
+            'ibk',
+            r.transactionDate,
+            r.transactionType || '',
+            r.transactionAmount || 0,
+            r.loanBalance || 0,
+            finalAcc || '',
+          );
+
+          upsert.run({
+            id,
+            account_number: finalAcc || 'UNKNOWN',
+            transaction_date: r.transactionDate,
+            transaction_type: r.transactionType,
+            currency: r.currency,
+            transaction_amount: r.transactionAmount,
+            principal_amount: r.principal_amount,
+            interest_amount: r.interest_amount,
+            loan_balance: r.loanBalance,
+            interest_rate: r.interestRate,
+            start_date: r.startDate,
+            end_date: r.endDate,
+            status: r.status,
+          });
+          n++;
+        }
+        return n;
+      });
+
+      const imported = run();
+      console.log(`[FinanceHubDb] importIbkLoanTransactionsFromExcel: ${imported} rows for account ${finalAcc} from ${filePath}`);
+
+      return {
+        success: true,
+        imported,
+        skipped: 0,
+        warnings: warnings?.length ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error('[FinanceHubDb] importIbkLoanTransactionsFromExcel failed:', error);
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        error: error?.message || String(error),
+      };
+    }
+  }
+
+  // ============================================================================
   // IBK 대출상세내역 (`ibk_loan_history`)
   // ============================================================================
 
@@ -3766,7 +3976,10 @@ export class FinanceHubDbManager {
   /**
    * Parse IBK 대출상세내역 Excel and upsert into `ibk_loan_history`.
    */
-  importIbkLoanHistoryFromExcel(filePath: string): {
+  importIbkLoanHistoryFromExcel(
+    filePath: string,
+    accountNumberOverride?: string,
+  ): {
     success: boolean;
     imported: number;
     skipped: number;
@@ -3789,12 +4002,14 @@ export class FinanceHubDbManager {
         };
       }
 
-      const { accountNumber, headerBalance, rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
+      const { accountNumber: extractedAcc, headerBalance, rows, warnings } = parseIbkLoanHistoryExcel(filePath) as {
         accountNumber: string | null;
         headerBalance: number | null;
         rows: any[];
         warnings: string[];
       };
+
+      const finalAcc = (accountNumberOverride || extractedAcc || '').trim();
 
       if (!rows.length && !headerBalance) {
         return {
@@ -3836,10 +4051,10 @@ export class FinanceHubDbManager {
         let n = 0;
 
         // Ensure account exists in accounts table
-        if (accountNumber) {
+        if (finalAcc) {
           this.upsertAccount({
             bankId: 'ibk',
-            accountNumber: accountNumber,
+            accountNumber: finalAcc,
             accountName: 'IBK 대출계좌',
             accountType: 'loan',
             balance: headerBalance ?? undefined,
@@ -3853,12 +4068,12 @@ export class FinanceHubDbManager {
             r.description || '',
             r.amount || 0,
             r.balance || 0,
-            accountNumber || '',
+            finalAcc || '',
           );
 
           upsert.run({
             id,
-            account_number: accountNumber || 'UNKNOWN',
+            account_number: finalAcc || 'UNKNOWN',
             transaction_date: r.transactionDate,
             description: r.description,
             currency: r.currency,
@@ -3877,7 +4092,7 @@ export class FinanceHubDbManager {
       });
 
       const imported = run();
-      console.log(`[FinanceHubDb] importIbkLoanHistoryFromExcel: ${imported} rows from ${filePath}`);
+      console.log(`[FinanceHubDb] importIbkLoanHistoryFromExcel: ${imported} rows for account ${finalAcc} from ${filePath}`);
       return {
         success: true,
         imported,
@@ -4476,223 +4691,8 @@ export class FinanceHubDbManager {
   }
 
   // ============================================================================
-  // IBK 대출거래내역 (`ibk_loan_transactions`) — per-loan-account transactions.
+  // IBK 배서내역 (`ibk_endorsements`)
   // ============================================================================
-
-  getIbkLoanTransactions(): Array<Record<string, unknown>> {
-    try {
-      const exists = this.db
-        .prepare(
-          `SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_loan_transactions' LIMIT 1`,
-        )
-        .get();
-      if (!exists) return [];
-
-      const rows = this.db
-        .prepare(
-          `
-          SELECT
-            id, account_number,
-            transaction_date, transaction_type, currency,
-            transaction_amount, principal_amount, interest_amount, loan_balance,
-            interest_rate,
-            start_date, end_date, status,
-            synced_at, created_at, updated_at
-          FROM ibk_loan_transactions
-          ORDER BY account_number ASC, transaction_date DESC, created_at DESC
-          `,
-        )
-        .all() as any[];
-
-      return rows.map((row) => ({
-        id: row.id,
-        accountNumber: row.account_number,
-        transactionDate: row.transaction_date,
-        transactionType: row.transaction_type,
-        currency: row.currency,
-        transactionAmount: row.transaction_amount,
-        principalAmount: row.principal_amount,
-        interestAmount: row.interest_amount,
-        loanBalance: row.loan_balance,
-        interestRate: row.interest_rate,
-        startDate: row.start_date,
-        endDate: row.end_date,
-        status: row.status,
-        syncedAt: row.synced_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
-    } catch (e: any) {
-      console.error('[FinanceHubDb] getIbkLoanTransactions:', e?.message || e);
-      return [];
-    }
-  }
-
-  /**
-   * Parse one account's IBK 대출거래내역 Excel and upsert into `ibk_loan_transactions`.
-   * The account_number is supplied by the caller (the automator's iteration loop)
-   * since the Excel itself doesn't carry the loan-account number on each row.
-   * `id` is a content-hash so re-imports of the same data are no-ops.
-   */
-  importIbkLoanTransactionsFromExcel(
-    filePath: string,
-    accountNumber?: string,
-  ): {
-    success: boolean;
-    imported: number;
-    skipped: number;
-    error?: string;
-    warnings?: string[];
-  } {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { parseIbkLoanTransactionsExcel } = require('../financehub/utils/ibk-loan-transactions-excel.js');
-
-    try {
-      const table = this.db
-        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ibk_loan_transactions'`)
-        .get() as { name: string } | undefined;
-      if (!table) {
-        return {
-          success: false,
-          imported: 0,
-          skipped: 0,
-          error: 'ibk_loan_transactions 테이블이 없습니다. 앱을 최신으로 실행해 마이그레이션을 적용하세요.',
-        };
-      }
-
-      const { accountNumber: extractedAcc, headerBalance, rows, warnings } = parseIbkLoanTransactionsExcel(filePath) as {
-        accountNumber: string | null;
-        headerBalance: number | null;
-        rows: Array<{
-          transactionDate: string | null;
-          transactionType: string | null;
-          currency: string | null;
-          transactionAmount: number | null;
-          principalAmount: number | null;
-          interestAmount: number | null;
-          loanBalance: number | null;
-          interestRate: number | null;
-          startDate: string | null;
-          endDate: string | null;
-          status: string | null;
-        }>;
-        warnings: string[];
-      };
-
-      const finalAcc = (accountNumber || extractedAcc || '').trim();
-      if (!finalAcc) {
-        return { success: false, imported: 0, skipped: 0, error: 'accountNumber is required (none provided or extracted)' };
-      }
-
-      if (!rows.length && !headerBalance) {
-        return {
-          success: true,
-          imported: 0,
-          skipped: 0,
-          warnings: warnings?.length ? warnings : undefined,
-        };
-      }
-
-      const upsert = this.db.prepare(`
-        INSERT INTO ibk_loan_transactions (
-          id, account_number,
-          transaction_date, transaction_type, currency,
-          transaction_amount, principal_amount, interest_amount, loan_balance,
-          interest_rate,
-          start_date, end_date, status,
-          synced_at, created_at, updated_at
-        ) VALUES (
-          @id, @account_number,
-          @transaction_date, @transaction_type, @currency,
-          @transaction_amount, @principal_amount, @interest_amount, @loan_balance,
-          @interest_rate,
-          @start_date, @end_date, @status,
-          datetime('now'), datetime('now'), datetime('now')
-        )
-        ON CONFLICT(id) DO UPDATE SET
-          transaction_type = excluded.transaction_type,
-          currency = excluded.currency,
-          transaction_amount = excluded.transaction_amount,
-          principal_amount = excluded.principal_amount,
-          interest_amount = excluded.interest_amount,
-          loan_balance = excluded.loan_balance,
-          interest_rate = excluded.interest_rate,
-          start_date = excluded.start_date,
-          end_date = excluded.end_date,
-          status = excluded.status,
-          synced_at = datetime('now'),
-          updated_at = datetime('now')
-      `);
-
-      const idFor = (acct: string, r: typeof rows[number]): string => {
-        const parts = [
-          acct,
-          r.transactionDate ?? '',
-          r.transactionType ?? '',
-          String(r.transactionAmount ?? ''),
-          String(r.principalAmount ?? ''),
-          String(r.interestAmount ?? ''),
-          r.startDate ?? '',
-          r.endDate ?? '',
-        ];
-        const h = createHash('sha256').update(`ibk_loan_transactions\n${parts.join('|')}`).digest('hex');
-        return `iblt_${h.slice(0, 40)}`;
-      };
-
-      const run = this.db.transaction(() => {
-        let n = 0;
-
-        // Ensure account exists in accounts table
-        this.upsertAccount({
-          bankId: 'ibk',
-          accountNumber: finalAcc,
-          accountName: 'IBK 대출계좌',
-          accountType: 'loan',
-          balance: headerBalance ?? undefined,
-        });
-
-        for (const r of rows) {
-
-          upsert.run({
-            id: idFor(finalAcc, r),
-            account_number: finalAcc,
-            transaction_date: r.transactionDate,
-            transaction_type: r.transactionType,
-            currency: r.currency,
-            transaction_amount: r.transactionAmount,
-            principal_amount: r.principalAmount,
-            interest_amount: r.interestAmount,
-            loan_balance: r.loanBalance,
-            interest_rate: r.interestRate,
-            start_date: r.startDate,
-            end_date: r.endDate,
-            status: r.status,
-          });
-          n += 1;
-        }
-        return n;
-      });
-
-      const imported = run();
-      console.log(
-        `[FinanceHubDb] importIbkLoanTransactionsFromExcel: ${imported} rows for account ${finalAcc} from ${filePath}`,
-      );
-      return {
-        success: true,
-        imported,
-        skipped: 0,
-        warnings: warnings?.length ? warnings : undefined,
-      };
-    } catch (error: any) {
-      console.error('[FinanceHubDb] importIbkLoanTransactionsFromExcel failed:', error);
-      return {
-        success: false,
-        imported: 0,
-        skipped: 0,
-        error: error?.message || String(error),
-      };
-    }
-  }
 
   /**
    * Execute raw SQL query (DEBUG/DEV ONLY)

@@ -2011,7 +2011,8 @@ export class FinanceHubScheduler extends EventEmitter {
         this.debugLog(`✓ Certificate found, proceeding with collection...`);
 
         // 1. Collect invoices (Tax and Tax-Exempt) and Cash Receipts
-        const result = await collectTaxInvoices(certData, certData.certificatePassword);
+        // [개선] keepAlive: true를 전달하여 브라우저를 닫지 않고 고지서 수집으로 이어지게 함
+        const result = await collectTaxInvoices(certData, certData.certificatePassword, true);
 
         if (!result.success) {
           throw new Error(result.error || 'Failed to collect tax invoices');

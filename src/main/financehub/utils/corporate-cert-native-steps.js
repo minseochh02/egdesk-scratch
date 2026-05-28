@@ -17,7 +17,7 @@ const { sendEnterKeyViaSendKeys, getFocusedNativeElementName, dismissNativeDelet
  * @param {import('playwright').Page} page
  * @param {string} certificatePassword
  * @param {CertStep[]} steps
- * @param {{ log?: (s:string)=>void, warn?: (s:string)=>void, sendkeysEnterFallbackEnv?: string }} [opts]
+ * @param {{ log?: (s:string)=>void, warn?: (s:string)=>void, sendkeysEnterFallbackEnv?: string, slowType?: boolean }} [opts]
  */
 async function runNativeCertArduinoSteps(hid, page, certificatePassword, steps, opts = {}) {
   const log = opts.log || (() => {});
@@ -30,7 +30,12 @@ async function runNativeCertArduinoSteps(hid, page, certificatePassword, steps, 
       continue;
     }
     if (step.type === 'password') {
-      await hid.typeViaNaturalTiming(certificatePassword);
+      if (opts.slowType) {
+        log('[cert-steps] 느린 타이핑 모드 (재시도): 문자 하나씩 입력합니다.');
+        await hid.typeCharByChar(certificatePassword);
+      } else {
+        await hid.typeViaNaturalTiming(certificatePassword);
+      }
       continue;
     }
     if (step.key) {

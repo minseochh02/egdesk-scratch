@@ -45,9 +45,11 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   async _cleanupIbkPopups() {
+    let totalClicked = 0;
     const runCleanup = async (scope) => {
       try {
-        await scope.evaluate(() => {
+        const clicked = await scope.evaluate(() => {
+          let count = 0;
           const TARGET_IMG = 'gnb_sub_close';
           const closeSelectors = [
             `img[src*="${TARGET_IMG}"]`,
@@ -67,6 +69,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
           targets.forEach(el => {
             (el.closest('a, button') || el).click();
+            count++;
           });
 
           // Force hide common modal containers as fallback
@@ -75,17 +78,42 @@ class IbkBankAutomator extends BaseBankAutomator {
             m.style.display = 'none'; 
             m.style.visibility = 'hidden'; 
             m.classList.remove('open');
+            count++;
           });
+          return count;
         });
-      } catch (e) {}
+        return clicked;
+      } catch (e) {
+        return 0;
+      }
     };
 
     try {
       const mf = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
-      if (mf) await runCleanup(mf);
-      await runCleanup(this.page);
+      if (mf) totalClicked += await runCleanup(mf);
+      totalClicked += await runCleanup(this.page);
       await this.page.waitForTimeout(500);
     } catch (e) {}
+    return totalClicked;
+  }
+
+  /**
+   * Robust popup closer with multiple attempts and minimum wait time.
+   */
+  async _robustCleanupIbkPopups({ maxAttempts = 3, minWaitMs = 3000 } = {}) {
+    const start = Date.now();
+    let totalClicked = 0;
+    for (let i = 0; i < maxAttempts; i++) {
+      const clicked = await this._cleanupIbkPopups();
+      totalClicked += clicked;
+      if (clicked > 0) this.log(`[IBK] Cleaned up ${clicked} popups (attempt ${i + 1})`);
+      
+      const elapsed = Date.now() - start;
+      if (elapsed >= minWaitMs && clicked === 0) break;
+      
+      await this.page.waitForTimeout(1000);
+    }
+    return totalClicked;
   }
 
   async _closeIbKPopups(frame) {
@@ -264,7 +292,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       await this.page.waitForTimeout(2000);
 
       let frame = this._mainFrame();
-      if (frame) await this._closeIbKPopups(frame);
+      if (frame) await this._robustCleanupIbkPopups();
       await this.page.waitForTimeout(2000);
 
       frame = this.page.frame({ name: 'mainframe' }) || frame;
@@ -540,7 +568,7 @@ class IbkBankAutomator extends BaseBankAutomator {
     this.log('IBK: syncPromissoryNotes (외상매출채권) 시작...');
 
     try {
-      await this._cleanupIbkPopups();
+      await this._robustCleanupIbkPopups();
 
       let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
       if (!mainframe) {
@@ -551,15 +579,7 @@ class IbkBankAutomator extends BaseBankAutomator {
         return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
       }
 
-      const popupSelectors = ['button:has-text("닫기")', 'button:has-text("확인")', '.popup_close', '.btn_close'];
-      for (const sel of popupSelectors) {
-        try {
-          const btn = mainframe.locator(sel).first();
-          if (await btn.isVisible({ timeout: 800 }).catch(() => false)) await btn.click();
-        } catch (e) {
-          /* ignore */
-        }
-      }
+      await this._robustCleanupIbkPopups();
       await this.page.waitForTimeout(500);
 
       // STEP 9: B2B → 판매기업 → 외상매출채권 → 채권조회/취소신청
@@ -1531,7 +1551,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   /**
    * Driver: walk every loan account row, run 거래내역조회, download or skip on
-   * "조회결과가 없습니다", import each Excel into `ibk_loan_transactions`.
+   * "조회결과가 없습니다", import each Excel into `ibk_loan_history`.
    *
    * Returns aggregate counts; per-account warnings/errors are logged.
    */
@@ -1556,7 +1576,7 @@ class IbkBankAutomator extends BaseBankAutomator {
     this.log(`[IBK loan] syncLoanTransactions ${startDate} ~ ${endDate} 시작...`);
 
     try {
-      await this._cleanupIbkPopups();
+      await this._robustCleanupIbkPopups();
       let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
       if (!mainframe) {
         await this.page.waitForTimeout(2000);
@@ -1565,7 +1585,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       if (!mainframe) return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
 
       await this._navigateIbkToLoanInquiry(mainframe);
-      await this._cleanupIbkPopups();
+      await this._robustCleanupIbkPopups();
       mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
 
       const sParts = this._parseYmdParts(startDate);
@@ -1780,7 +1800,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           if (raced.type === 'nodata') {
             this.log(`[IBK loan] account=${acct} — late no-data detected ("${raced.phrase}"), skip`);
             perAccount.push({ accountNumber: acct, imported: 0, skipped: true });
-            await this._cleanupIbkPopups().catch(() => {});
+            await this._robustCleanupIbkPopups().catch(() => {});
             continue;
           }
           if (raced.type === 'download-event') {
@@ -1824,7 +1844,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           // it). Only fall back to _cleanupIbkPopups force-hide if that misses.
           const closeResult = await this._closeIbkLoanDownloadPopupViaRecording();
           if (!closeResult || !closeResult.ok) {
-            await this._cleanupIbkPopups();
+            await this._robustCleanupIbkPopups();
             await this._closeIbkLoanDownloadPopupAggressive(acct);
           }
           await this.page.waitForTimeout(400);
@@ -1834,13 +1854,20 @@ class IbkBankAutomator extends BaseBankAutomator {
           if (getSQLiteManager) {
             try {
               const fhm = getSQLiteManager().getFinanceHubManager();
-              const imp = fhm.importIbkLoanTransactionsFromExcel(finalPath, acct);
-              imported = imp.imported || 0;
-              if (imp.warnings && imp.warnings.length) {
-                this.warn(`[IBK loan] account=${acct} parser warnings: ${imp.warnings.join('; ')}`);
+              
+              // Import into legacy ibk_loan_history
+              const impHistory = fhm.importIbkLoanHistoryFromExcel(finalPath, acct);
+              
+              // Import into new ibk_loan_transactions
+              const impTransactions = fhm.importIbkLoanTransactionsFromExcel(finalPath, acct);
+              
+              imported = impTransactions.imported || impHistory.imported || 0;
+              
+              if (impTransactions.warnings && impTransactions.warnings.length) {
+                this.warn(`[IBK loan] account=${acct} parser warnings: ${impTransactions.warnings.join('; ')}`);
               }
-              if (imp.success === false) {
-                this.warn(`[IBK loan] account=${acct} import failed: ${imp.error}`);
+              if (impTransactions.success === false && impHistory.success === false) {
+                this.warn(`[IBK loan] account=${acct} import failed: ${impTransactions.error || impHistory.error}`);
               }
             } catch (importErr) {
               this.warn(`[IBK loan] account=${acct} import threw: ${importErr.message}`);
@@ -2264,7 +2291,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
       
       // Clean up popups regardless of what happened
-      await this._cleanupIbkPopups();
+      await this._robustCleanupIbkPopups();
 
       return [
         {
@@ -2276,7 +2303,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       ];
     } catch (error) {
       this.error('IBK getTransactions failed:', error.message);
-      await this._cleanupIbkPopups(); // Always cleanup on fail too
+      await this._robustCleanupIbkPopups(); // Always cleanup on fail too
       throw error;
     }
   }

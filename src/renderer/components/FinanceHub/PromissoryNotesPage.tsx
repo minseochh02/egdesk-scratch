@@ -207,7 +207,7 @@ const TABLE_SECTIONS: TableSection[] = [
   {
     slug: 'woori_b2b_loan_executions',
     title: 'Woori B2B대출(협력) 실행내역',
-    subtitle: '전자결제 → B2B대출(협력) → 대출_신청 → 실행내역',
+    subtitle: '전자결제 → B2B 대출(협력) → 대출신청 → 실행내역',
     bankId: 'woori',
     acceptsDateRange: true,
     defaultDateRange: () => ({ startDate: firstOfThisMonthYmd(), endDate: todayYmd() }),
@@ -218,23 +218,9 @@ const TABLE_SECTIONS: TableSection[] = [
     columns: WOORI_B2B_LOAN_EXECUTIONS_COLS,
   },
   {
-    slug: 'ibk_loan_transactions',
-    title: 'IBK 대출거래내역',
-    subtitle: '대출 → 대출조회 → 대출계좌조회 → (계좌별) 거래내역조회',
-    bankId: 'ibk',
-    acceptsDateRange: true,
-    canImportExcel: true,
-    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
-    load: () => window.electron.financeHubDb.getIbkLoanTransactions(),
-    sync: async (opts) => {
-      return await window.electron.financeHub.syncIbkLoanTransactions(opts);
-    },
-    columns: IBK_LOAN_TRANSACTIONS_COLS,
-  },
-  {
     slug: 'ibk_endorsements',
     title: 'IBK 배서내역',
-    subtitle: 'B2B → 판매기업 → 배서내역조회',
+    subtitle: 'B2B → 전자어음 → 조회 → 배서내역조회',
     bankId: 'ibk',
     canImportExcel: true,
     load: () => window.electron.financeHubDb.getIbkEndorsements(),
@@ -246,20 +232,22 @@ const TABLE_SECTIONS: TableSection[] = [
   },
   {
     slug: 'ibk_loan_history',
-    title: 'IBK 대출상세내역',
-    subtitle: '대출 → 대출조회 → 대출계좌조회 → 거래내역조회',
+    title: 'IBK 대출거래내역',
+    subtitle: '뱅킹업무 → 대출 → 대출조회 → 거래내역조회',
     bankId: 'ibk',
+    acceptsDateRange: true,
     canImportExcel: true,
+    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getIbkLoanHistory(),
-    sync: async () => {
-      return { success: true };
+    sync: async (opts) => {
+      return await window.electron.financeHub.syncIbkLoanHistory(opts);
     },
     columns: IBK_LOAN_HISTORY_COLS,
   },
   {
     slug: 'hana_loan_history',
     title: '하나 대출상세내역',
-    subtitle: '대출 → 대출조회 → 대출계좌조회 → 거래내역조회',
+    subtitle: '상품가입•대출 → 대출조회 → 거래내역/대출계산서 조회',
     bankId: 'hana',
     canImportExcel: true,
     load: () => window.electron.financeHubDb.getHanaLoanHistory(),

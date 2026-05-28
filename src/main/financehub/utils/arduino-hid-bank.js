@@ -59,6 +59,25 @@ class ArduinoHidBankSession {
   }
 
   /**
+   * Type one character at a time with a configurable delay between each character.
+   * Use this on retry attempts so the receiving program has enough time to register each keypress.
+   * @param {string} text
+   * @param {number} [delayBetweenCharsMs=700] delay in ms between each character
+   */
+  async typeCharByChar(text, delayBetweenCharsMs = 700) {
+    if (!this.arduino || !this.arduino.isOpen) await this.connect();
+    this.log(`Typing char-by-char via Arduino (${delayBetweenCharsMs}ms/char, ${text.length} chars)`);
+    for (const char of text) {
+      await new Promise((resolve, reject) => {
+        this.arduino.write(`TYPE:${char}\n`, (err) => {
+          if (err) return reject(err);
+          setTimeout(() => resolve(), delayBetweenCharsMs);
+        });
+      });
+    }
+  }
+
+  /**
    * @param {string} keyName e.g. ENTER, TAB, ESC
    */
   async sendKey(keyName) {

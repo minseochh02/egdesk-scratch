@@ -181,6 +181,17 @@ export async function runSqliteMigrations({
     console.error('⚠️ Migration 035 error:', migration035Error.message);
   }
 
+  try {
+    await runOnceMigration(financeHubDb, '036-drop-ibk-loan-transactions', async () => {
+      const { migrate036DropIbkLoanTransactions } = await import(
+        './migrations/036-drop-ibk-loan-transactions'
+      );
+      migrate036DropIbkLoanTransactions(financeHubDb);
+    });
+  } catch (migration036Error: any) {
+    console.error('⚠️ Migration 036 error:', migration036Error.message);
+  }
+
   // =============================================
   // Migration 009: Add vector embeddings support
   // =============================================

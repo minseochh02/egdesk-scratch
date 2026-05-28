@@ -24,6 +24,7 @@ class WooriBankAutomator extends BaseBankAutomator {
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
     this._wooriCorporateCertPhase = 'idle';
+    this._wooriCertAttempt = 0;
   }
 
   async _disconnectArduinoHid() {
@@ -253,6 +254,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       this.log('[WOORI] Cert dialog is open. Relying on default/active selection.');
 
       this._wooriCorporateCertPhase = 'awaiting_password';
+      this._wooriCertAttempt = 0;
       this.isLoggedIn = false;
       return {
         success: true,
@@ -280,6 +282,12 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
     if (!this.arduinoPort) {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
+    }
+
+    this._wooriCertAttempt += 1;
+    const useSlowTyping = this._wooriCertAttempt >= 2;
+    if (useSlowTyping) {
+      this.warn(`[WOORI] 재시도 ${this._wooriCertAttempt}회차 — 느린 타이핑 모드 사용`);
     }
 
     try {
@@ -321,7 +329,11 @@ class WooriBankAutomator extends BaseBankAutomator {
         throw new Error(`비밀번호 입력칸에 도달하지 못했습니다 (focus: ${focused})`);
       }
 
-      await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
+      if (useSlowTyping) {
+        await this._arduinoHid.typeCharByChar(certificatePassword);
+      } else {
+        await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
+      }
       await this._arduinoHid.disconnect();
       this._arduinoHid = null;
 
@@ -331,6 +343,38 @@ class WooriBankAutomator extends BaseBankAutomator {
         await this.page.locator('[id="xwup_OkButton"]').click({ timeout: 5000 });
       }
       await this.page.waitForTimeout(3000);
+
+      // Check if the cert dialog is still open — the xwup password input is only present
+      // while the dialog is visible. If it's still there after 3s, the password was wrong.
+      const certCheck = await this.page.evaluate(() => {
+        const pwdField = document.querySelector('#xwup_certselect_tek_input1');
+        if (!pwdField) return { open: false, errorText: null };
+        const rect = pwdField.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return { open: false, errorText: null };
+        const style = window.getComputedStyle(pwdField);
+        if (style.display === 'none' || style.visibility === 'hidden') return { open: false, errorText: null };
+        // Try to grab an error message from within the xwup cert container
+        const errorSelectors = ['#xwup_errMsg', '.xwup-msg-text', '.xwup-error', '[id*="xwup"][id*="err"]'];
+        let errorText = null;
+        for (const sel of errorSelectors) {
+          const el = document.querySelector(sel);
+          if (el) {
+            const t = el.textContent.trim();
+            if (t) { errorText = t; break; }
+          }
+        }
+        return { open: true, errorText };
+      }).catch(() => ({ open: false, errorText: null }));
+
+      if (certCheck.open) {
+        this.warn('[WOORI] 인증서 창이 닫히지 않음 — 비밀번호 오류.');
+        this._wooriCorporateCertPhase = 'awaiting_password';
+        return {
+          success: false,
+          wrongPassword: true,
+          error: certCheck.errorText || '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.',
+        };
+      }
 
       await this._navigateWooriToTransactionInquiryMenu();
 
