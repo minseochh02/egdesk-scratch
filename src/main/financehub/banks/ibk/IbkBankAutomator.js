@@ -1814,8 +1814,8 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const trustPerAccount = [];
       try {
-        await this.page.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(2) > a').click({ timeout: 5000 });
-        this.log('[IBK 신탁] 신탁 tab clicked via #ibkContent selector');
+        await mainframe.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(2) > a').click({ timeout: 5000 });
+        this.log('[IBK 신탁] 신탁 tab clicked via mainframe #ibkContent selector');
         await this.page.waitForTimeout(2500);
         mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
         await this._robustCleanupIbkPopups();
@@ -2037,8 +2037,8 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const fundPerAccount = [];
       try {
-        await this.page.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(3) > a').click({ timeout: 5000 });
-        this.log('[IBK 펀드] 펀드 tab clicked via #ibkContent selector');
+        await mainframe.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(3) > a').click({ timeout: 5000 });
+        this.log('[IBK 펀드] 펀드 tab clicked via mainframe #ibkContent selector');
         await this.page.waitForTimeout(2500);
         mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
         await this._robustCleanupIbkPopups();
@@ -2244,8 +2244,8 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       // Click the 대출 tab on the already-open 거래내역조회 page.
       // Cascade: uf_menuLink attr → semantic → css → xpath
-      await this.page.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(4) > a').click({ timeout: 5000 });
-      this.log('[IBK loan] 대출 tab clicked via #ibkContent selector');
+      await mainframe.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(4) > a').click({ timeout: 5000 });
+      this.log('[IBK loan] 대출 tab clicked via mainframe #ibkContent selector');
       await this.page.waitForTimeout(2500);
       mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
       await this._robustCleanupIbkPopups();
@@ -2551,8 +2551,8 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const foreignPerAccount = [];
       try {
-        await this.page.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(5) > a').click({ timeout: 5000 });
-        this.log('[IBK 외화] 외화 tab clicked via #ibkContent selector');
+        await mainframe.locator('#ibkContent > form > div.tab_01 > ul > li:nth-child(5) > a').click({ timeout: 5000 });
+        this.log('[IBK 외화] 외화 tab clicked via mainframe #ibkContent selector');
         await this.page.waitForTimeout(2500);
         mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
         await this._robustCleanupIbkPopups();
