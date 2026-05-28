@@ -1,7 +1,7 @@
 const path = require('path');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
-const { isWindows, waitForNativeCertificateDialogWindow, focusCertElement } = require('../../utils/windows-uia-native');
+const { isWindows, waitForNativeCertificateDialogWindow, focusCertElement, waitForCertWindowClose, dismissCertErrorConfirmButton, ensureCertWindowOnScreen } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -173,6 +173,8 @@ class IbkBankAutomator extends BaseBankAutomator {
         return { success: false, error: uia.error || '인증서 창을 찾지 못했습니다.' };
       }
       this._ibkCertWindowClass = uia.matchedClass;
+      const _ibkScreenCheck = ensureCertWindowOnScreen(uia.matchedClass);
+      if (_ibkScreenCheck.moved) this.log('[IBK] 인증서 창이 화면 밖에 있어 화면 가운데로 이동했습니다.');
       this._ibkCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
       return {
@@ -244,7 +246,22 @@ class IbkBankAutomator extends BaseBankAutomator {
       await this._arduinoHid.disconnect();
       this._arduinoHid = null;
 
-      await this.page.waitForTimeout(5000);
+      // Check if cert window closed (success) or still open (wrong password)
+      this.log('[IBK] 인증서 비밀번호 확인 중...');
+      const certClosed = await waitForCertWindowClose(this._ibkCertWindowClass, {
+        timeoutMs: 5000,
+        pollMs: 500,
+        onLog: (m) => this.log(m),
+      });
+      if (!certClosed.closed) {
+        this.warn('[IBK] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
+        const dismissed = dismissCertErrorConfirmButton(this._ibkCertWindowClass);
+        this.log(`[IBK] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+        this._ibkCorporateCertPhase = 'awaiting_password';
+        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
+      }
+
+      await this.page.waitForTimeout(2000);
 
       let frame = this._mainFrame();
       if (frame) await this._closeIbKPopups(frame);
@@ -460,6 +477,10 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   async getAccounts() {
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     return this._getIbKAccounts();
   }
 
@@ -1860,6 +1881,10 @@ class IbkBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`IBK: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
 

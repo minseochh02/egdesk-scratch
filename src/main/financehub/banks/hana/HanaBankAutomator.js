@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const { parseTransactionExcel } = require('../../utils/transactionParser');
-const { isWindows, waitForNativeCertificateDialogWindow } = require('../../utils/windows-uia-native');
+const { isWindows, waitForNativeCertificateDialogWindow, waitForCertWindowClose, dismissCertErrorConfirmButton, ensureCertWindowOnScreen } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -225,6 +225,9 @@ class HanaBankAutomator extends BaseBankAutomator {
         this._hanaCorporateCertPhase = 'idle';
         return { success: false, error: uia.error || '인증서 창을 찾지 못했습니다.' };
       }
+      this._hanaCertWindowClass = uia.matchedClass;
+      const _hanaScreenCheck = ensureCertWindowOnScreen(uia.matchedClass);
+      if (_hanaScreenCheck.moved) this.log('[Hana] 인증서 창이 화면 밖에 있어 화면 가운데로 이동했습니다.');
       this._hanaCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
       return {
@@ -278,7 +281,22 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this._arduinoHid.disconnect();
       this._arduinoHid = null;
 
-      await this.page.waitForTimeout(5000);
+      // Check if cert window closed (success) or still open (wrong password)
+      this.log('[HANA] 인증서 비밀번호 확인 중...');
+      const certClosed = await waitForCertWindowClose(this._hanaCertWindowClass, {
+        timeoutMs: 5000,
+        pollMs: 500,
+        onLog: (m) => this.log(m),
+      });
+      if (!certClosed.closed) {
+        this.warn('[HANA] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
+        const dismissed = dismissCertErrorConfirmButton(this._hanaCertWindowClass);
+        this.log(`[HANA] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+        this._hanaCorporateCertPhase = 'awaiting_password';
+        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
+      }
+
+      await this.page.waitForTimeout(2000);
       await this._closeHanaPopups();
       await this.page.waitForTimeout(2000);
       await this._closeHanaPopups();
@@ -519,6 +537,10 @@ class HanaBankAutomator extends BaseBankAutomator {
 
   async getAccounts() {
     this.log('[Hana] getAccounts() 시작...');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     const accounts = await this._getHanaAccounts();
     this.log(`[Hana] Found ${accounts.length} accounts from dropdown. Starting detail scraping (Timing A)...`);
 
@@ -876,6 +898,10 @@ class HanaBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`Hana: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
 

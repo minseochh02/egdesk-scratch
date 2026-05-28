@@ -129,13 +129,17 @@ class BCCardAutomator extends BaseCardAutomator {
       await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
+      // [추가] 인트로 페이지에서도 팝업 처리 (마스크 레이어 등)
+      this.log('DEBUG: Attempting to clear intro popups and masks...');
+      await this.handlePopups();
+
       // Step 3: Click login link (line 180)
       this.log('Clicking login link...');
       try {
         await this.page.locator(this.config.xpaths.loginLink.css).click({ timeout: 10000 });
       } catch (e) {
-        this.log('CSS selector failed, trying XPath fallback...');
-        await this.page.locator(`xpath=${this.config.xpaths.loginLink.xpath}`).click();
+        this.log('CSS selector failed, trying XPath fallback with force:true...');
+        await this.page.locator(`xpath=${this.config.xpaths.loginLink.xpath}`).click({ force: true, timeout: 20000 });
       }
       await this.page.waitForTimeout(this.config.delays.afterLogin);
 
@@ -164,7 +168,7 @@ class BCCardAutomator extends BaseCardAutomator {
       await this.page.waitForTimeout(this.config.delays.afterLogin);
 
       // Step 7: Handle post-login popups
-      await this.handlePostLoginPopups();
+      await this.handlePopups();
 
       // Step 8: Navigate to transaction history
       await this.navigateToTransactionHistory();
@@ -205,28 +209,70 @@ class BCCardAutomator extends BaseCardAutomator {
   // ============================================================================
 
   /**
-   * Handles popups after login
+   * Handles popups (intro page or after login)
    * BC Card may have popups - use defensive approach
    */
-  async handlePostLoginPopups() {
+  async handlePopups() {
     try {
-      this.log('Handling post-login popups...');
+      this.log('Handling popups...');
 
-      const popupSelectors = this.config.xpaths.popupClose;
+      // [개선] 팝업이 여러 개일 수 있으므로 최대 3번 반복 시도
+      for (let i = 0; i < 3; i++) {
+        let closedAny = false;
 
-      for (const selector of popupSelectors) {
-        try {
-          const locator = this.page.locator(`xpath=${selector}`);
-          const isVisible = await locator.isVisible({ timeout: 2000 });
+        // 마스크 레이어가 있는지 확인
+        const hasMask = await this.page.evaluate(() => {
+          const mask = document.querySelector('div.mask.mask02');
+          return !!(mask && mask.offsetParent !== null);
+        }).catch(() => false);
 
-          if (isVisible) {
-            await locator.click();
-            this.log('Closed popup with selector:', selector);
+        if (hasMask) {
+          this.log(`Detected overlay mask (div.mask.mask02) - iteration ${i + 1}`);
+          
+          // [추가] 마스크가 있으면 강제로 제거 시도 (Playwright 클릭 방해 방지)
+          await this.page.evaluate(() => {
+            const masks = document.querySelectorAll('div.mask.mask02, .mask, [class*="mask"]');
+            masks.forEach(m => {
+              if (m instanceof HTMLElement) {
+                m.style.display = 'none';
+                m.style.visibility = 'hidden';
+                m.style.opacity = '0';
+                m.style.pointerEvents = 'none';
+              }
+            });
+          }).catch(() => {});
+          this.log('Force-hid overlay masks via JS');
+        }
+
+        // 피싱 안내 팝업 등 특정 팝업 명시적 확인
+        const phishingPopup = this.page.locator('#notiPhishing');
+        if (await phishingPopup.isVisible({ timeout: 1000 })) {
+          this.log('Detected phishing notice popup (#notiPhishing)');
+          const closeBtn = phishingPopup.locator('button.popClose, button:has-text("창닫기"), button:has-text("닫기")').first();
+          if (await closeBtn.isVisible()) {
+            await closeBtn.click();
+            this.log('Closed phishing notice popup');
+            closedAny = true;
             await this.page.waitForTimeout(1000);
           }
-        } catch (e) {
-          // Silent failure - popup might not exist
         }
+
+        const popupSelectors = this.config.xpaths.popupClose;
+        for (const selector of popupSelectors) {
+          try {
+            const locator = this.page.locator(`xpath=${selector}`);
+            const isVisible = await locator.isVisible({ timeout: 500 });
+
+            if (isVisible) {
+              await locator.click();
+              this.log('Closed popup with selector:', selector);
+              closedAny = true;
+              await this.page.waitForTimeout(1000);
+            }
+          } catch (e) {}
+        }
+
+        if (!closedAny) break; // 더 이상 닫을 팝업이 없으면 중단
       }
 
       this.log('Popup handling complete');

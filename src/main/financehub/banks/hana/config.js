@@ -35,6 +35,9 @@ const HANA_CONFIG = {
   xpaths: HANA_XPATHS,
   timeouts: HANA_TIMEOUTS,
   delays: HANA_DELAYS,
+  sessionCheck: {
+    loggedInUrlPatterns: ['biz.kebhana.com'],
+  },
 };
 
 module.exports = {

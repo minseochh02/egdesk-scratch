@@ -959,6 +959,28 @@ class BaseBankAutomator {
     }
   }
 
+  /**
+   * Checks if the current browser session is still active (not booted to login page).
+   * Uses `config.sessionCheck.loggedInUrlPatterns` — an array of URL substrings that
+   * should be present when the user is logged in.  If the current URL no longer matches
+   * any of those patterns we assume the server redirected us to a login/expired page.
+   * @returns {Promise<{active: boolean, reason?: string, url?: string}>}
+   */
+  async checkSessionActive() {
+    if (!this.page || this.page.isClosed()) return { active: false, reason: 'page_closed' };
+    if (!this.isLoggedIn) return { active: false, reason: 'not_logged_in' };
+    const sessionCheck = this.config?.sessionCheck;
+    if (!sessionCheck?.loggedInUrlPatterns?.length) return { active: true };
+    const url = this.page.url();
+    const onExpectedUrl = sessionCheck.loggedInUrlPatterns.some((p) => url.includes(p));
+    if (!onExpectedUrl) {
+      this.warn(`[session] 세션 만료 감지 — URL이 예상 범위를 벗어남: ${url}`);
+      this.isLoggedIn = false;
+      return { active: false, reason: 'unexpected_url', url };
+    }
+    return { active: true };
+  }
+
   // ============================================================================
   // CLEANUP
   // ============================================================================

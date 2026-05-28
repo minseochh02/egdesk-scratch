@@ -8,6 +8,9 @@ const { BaseBankAutomator } = require('../../core/BaseBankAutomator');
 const {
   isWindows,
   waitForNativeCertificateDialogWindow,
+  waitForCertWindowClose,
+  dismissCertErrorConfirmButton,
+  ensureCertWindowOnScreen,
 } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
@@ -247,6 +250,10 @@ class ShinhanBankAutomator extends BaseBankAutomator {
    */
   async getAccounts() {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
 
     try {
       this.log('Navigating to transaction inquiry page...');
@@ -593,6 +600,9 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         };
       }
 
+      this._shinhanCertWindowClass = uia.matchedClass;
+      const _shinhanScreenCheck = ensureCertWindowOnScreen(uia.matchedClass);
+      if (_shinhanScreenCheck.moved) this.log('[Shinhan] 인증서 창이 화면 밖에 있어 화면 가운데로 이동했습니다.');
       this._shinhanCorporateCertPhase = 'awaiting_password';
       this.isLoggedIn = false;
 
@@ -662,7 +672,22 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       await this._arduinoHid.disconnect();
       this._arduinoHid = null;
 
-      await this.page.waitForTimeout(5000);
+      // Check if cert window closed (success) or still open (wrong password)
+      this.log('[SHINHAN] 인증서 비밀번호 확인 중...');
+      const certClosed = await waitForCertWindowClose(this._shinhanCertWindowClass, {
+        timeoutMs: 5000,
+        pollMs: 500,
+        onLog: (m) => this.log(m),
+      });
+      if (!certClosed.closed) {
+        this.warn('[SHINHAN] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
+        const dismissed = dismissCertErrorConfirmButton(this._shinhanCertWindowClass);
+        this.log(`[SHINHAN] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+        this._shinhanCorporateCertPhase = 'awaiting_password';
+        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
+      }
+
+      await this.page.waitForTimeout(2000);
 
       await this._navigateBizToAccountInquiry();
       const accounts = await this._getBizAccountsFromPage();
@@ -1226,6 +1251,10 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);
 
     const url = this.page.url();

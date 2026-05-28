@@ -843,6 +843,10 @@ class WooriBankAutomator extends BaseBankAutomator {
   }
 
   async getAccounts() {
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     return this._getWooriAccountsFromPage();
   }
 
@@ -988,6 +992,10 @@ class WooriBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
     this.ensureOutputDirectory(this.downloadDir);
     this.log(`Woori: fetching transactions for ${accountNumber} (${startDate} ~ ${endDate})...`);
 

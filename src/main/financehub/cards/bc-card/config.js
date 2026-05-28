@@ -89,6 +89,10 @@ const BC_CARD_XPATHS = {
     '//a[text()="닫기"]',
     '//button[text()="닫기"]',
     '//div[@class="popup"]//button',
+    '//div[@id="notiPhishing"]//button[contains(@class, "popClose")]',
+    '//div[@id="notiPhishing"]//button[text()="창닫기"]',
+    '//div[@id="notiPhishing"]//button[text()="닫기"]',
+    '//button[@class="popClose"]',
   ],
 };
 

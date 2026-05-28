@@ -1837,7 +1837,12 @@ export class FinanceHubScheduler extends EventEmitter {
       // Only call getAccounts() for non-cert paths or if the cert flow returned none.
       let accounts: any[] = certLoginAccounts;
       if (accounts.length === 0 && typeof automator.getAccounts === 'function') {
-        accounts = await automator.getAccounts();
+        const accountsResult = await automator.getAccounts();
+        // Session expired: automator returns { success: false, sessionExpired: true } instead of an array
+        if (accountsResult && typeof accountsResult === 'object' && !Array.isArray(accountsResult) && (accountsResult as any).sessionExpired) {
+          return { success: false, sessionExpired: true, error: (accountsResult as any).error || '세션이 만료되었습니다.' };
+        }
+        accounts = Array.isArray(accountsResult) ? accountsResult : [];
       }
 
       if (accounts.length === 0) {

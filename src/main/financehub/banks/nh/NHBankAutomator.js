@@ -848,6 +848,10 @@ class NHBankAutomator extends BaseBankAutomator {
       this.error('[NH] getAccounts called but this.page is null');
       throw new Error('Browser page not initialized');
     }
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
 
     try {
       this.log(`[NH] Current URL at getAccounts start: ${this.page.url()}`);
@@ -1183,6 +1187,10 @@ class NHBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
+    const sessionStatus = await this.checkSessionActive();
+    if (!sessionStatus.active) {
+      return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+    }
 
     try {
       this.log(`Fetching transactions for account ${accountNumber}...`);

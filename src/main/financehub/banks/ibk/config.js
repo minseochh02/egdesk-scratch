@@ -35,6 +35,9 @@ const IBK_CONFIG = {
   xpaths: IBK_XPATHS,
   timeouts: IBK_TIMEOUTS,
   delays: IBK_DELAYS,
+  sessionCheck: {
+    loggedInUrlPatterns: ['kiup.ibk.co.kr'],
+  },
 };
 
 module.exports = {

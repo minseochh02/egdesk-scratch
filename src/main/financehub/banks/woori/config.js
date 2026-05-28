@@ -24,6 +24,9 @@ const WOORI_CONFIG = {
   xpaths: WOORI_XPATHS,
   timeouts: { pageLoad: 3000 },
   delays: {},
+  sessionCheck: {
+    loggedInUrlPatterns: ['nbi.wooribank.com'],
+  },
 };
 
 module.exports = {

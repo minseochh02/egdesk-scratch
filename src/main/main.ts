@@ -664,7 +664,16 @@ const createWindow = async () => {
           }
           
           const accounts = await automator.getAccounts();
-          
+
+          // Session expired: automator returns { success: false, sessionExpired: true } instead of an array
+          if (accounts && typeof accounts === 'object' && !Array.isArray(accounts) && (accounts as any).sessionExpired) {
+            return {
+              success: false,
+              sessionExpired: true,
+              error: (accounts as any).error || '세션이 만료되었습니다. 다시 로그인해주세요.',
+            };
+          }
+
           // [개선] 수집된 계좌 정보를 자동으로 SQLite 데이터베이스에 저장(upsert)하여
           // 탭을 이동하거나 새로고침했을 때 정보가 사라지는 현상을 완벽히 방지합니다.
           try {
@@ -714,6 +723,16 @@ const createWindow = async () => {
           }
           
           const transactions = await automator.getTransactions(accountNumber, startDate, endDate);
+
+          // Session expired: automator returns { success: false, sessionExpired: true } instead of data
+          if (transactions && typeof transactions === 'object' && !Array.isArray(transactions) && (transactions as any).sessionExpired) {
+            return {
+              success: false,
+              sessionExpired: true,
+              error: (transactions as any).error || '세션이 만료되었습니다. 다시 로그인해주세요.',
+            };
+          }
+
           return { success: true, transactions };
         } catch (error) {
           console.error(`[FINANCE-HUB] Failed to get transactions for ${bankId}:`, error);

@@ -114,6 +114,9 @@ const KOOKMIN_CONFIG = {
   xpaths: KOOKMIN_XPATHS,
   timeouts: KOOKMIN_TIMEOUTS,
   delays: KOOKMIN_DELAYS,
+  sessionCheck: {
+    loggedInUrlPatterns: ['obiz.kbstar.com'],
+  },
 };
 
 module.exports = {

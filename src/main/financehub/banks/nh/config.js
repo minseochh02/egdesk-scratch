@@ -107,6 +107,10 @@ const NH_CONFIG = {
   // Windows keyboard input settings
   useWindowsKeyboard: true,  // Set to false to force virtual keyboard on Windows
   windowsInputMethod: 'auto', // 'auto', 'keyboard', 'fill', 'clipboard'
+
+  sessionCheck: {
+    loggedInUrlPatterns: ['ibz.nonghyup.com', 'banking.nonghyup.com'],
+  },
 };
 
 module.exports = {

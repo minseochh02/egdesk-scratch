@@ -475,6 +475,126 @@ function dismissNativeDeletionConfirmDialog() {
 }
 
 /**
+ * Poll until the cert window (by class name) disappears, indicating successful password entry.
+ * If the window remains after the timeout, the password was likely wrong.
+ * @param {string} windowClass - cert window class (e.g. 'QWidget', 'INICertManUI')
+ * @param {{ timeoutMs?: number, pollMs?: number, onLog?: (msg: string) => void }} [opts]
+ * @returns {Promise<{ closed: boolean }>}
+ */
+async function waitForCertWindowClose(windowClass, opts = {}) {
+  if (!isWindows() || !windowClass) return { closed: true };
+  const timeoutMs = opts.timeoutMs ?? 5000;
+  const pollMs = opts.pollMs ?? 500;
+  const onLog = opts.onLog || (() => {});
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const r = probeRootWindowByClassName(windowClass);
+    if (!r.ok) {
+      onLog(`[cert-check] 인증서 창 닫힘 확인 (class=${windowClass})`);
+      return { closed: true };
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  onLog(`[cert-check] 인증서 창이 ${timeoutMs}ms 후에도 열려 있음 — 비밀번호 오류 가능성`);
+  return { closed: false };
+}
+
+/**
+ * After a wrong certificate password, an error popup appears inside the cert window.
+ * Finds the OK/확인 button within the cert window's descendants and invokes it to dismiss.
+ * Falls back to pressing Enter via SendKeys if no button is found.
+ * @param {string} windowClass - cert window class (e.g. 'QWidget', 'INICertManUI')
+ * @returns {{ ok: boolean, method?: string, error?: string }}
+ */
+function dismissCertErrorConfirmButton(windowClass) {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  if (!/^[A-Za-z0-9_]+$/.test(windowClass || '')) {
+    return { ok: false, error: 'Invalid window class' };
+  }
+  try {
+    const result = runPowerShellUtf8(
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      `$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${windowClass}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
+      'if (-not $w) { "no_window"; exit } ' +
+      '$c1 = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, "확인"); ' +
+      '$c2 = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, "OK"); ' +
+      '$nameOr = New-Object System.Windows.Automation.OrCondition($c1, $c2); ' +
+      '$typeCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button); ' +
+      '$cond = New-Object System.Windows.Automation.AndCondition($typeCond, $nameOr); ' +
+      '$btn = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond); ' +
+      'if (-not $btn) { "no_button"; exit } ' +
+      'try { $ip = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern); $ip.Invoke(); "clicked" } catch { "invoke_failed" }',
+      { timeoutMs: 5000 }
+    );
+    if (result === 'clicked') return { ok: true, method: 'uia_invoke' };
+    // Fallback: send Enter to whatever is focused (the error dialog's OK button is usually focused)
+    try {
+      runPowerShellUtf8(
+        'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")',
+        { timeoutMs: 3000 }
+      );
+      return { ok: true, method: 'sendkeys_enter_fallback' };
+    } catch (e2) {
+      return { ok: false, error: `uia: ${result}, sendkeys: ${e2.message}` };
+    }
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Checks if the native cert window (by class name) is visible on any connected screen.
+ * If it is positioned off all screens (e.g. was on a now-disconnected monitor), moves it
+ * to the center of the primary screen using SetWindowPos so interaction is possible.
+ *
+ * Call this right after the cert window is detected but before trying to type into it.
+ *
+ * @param {string} windowClass - e.g. 'QWidget', 'INICertManUI'
+ * @returns {{ ok: boolean, moved?: boolean, detail?: string, error?: string }}
+ */
+function ensureCertWindowOnScreen(windowClass) {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  if (!/^[A-Za-z0-9_]+$/.test(windowClass || '')) {
+    return { ok: false, error: 'Invalid window class' };
+  }
+  try {
+    const result = runPowerShellUtf8(
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      'Add-Type -AssemblyName System.Windows.Forms; ' +
+      // SetWindowPos P/Invoke — flags: SWP_NOSIZE(1)|SWP_NOZORDER(4) = 5
+      'Add-Type -MemberDefinition \'[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr i, int x, int y, int cx, int cy, uint f);\' -Name WinPos -Namespace Win32 -ErrorAction SilentlyContinue; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${windowClass}'); ` +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+      'if (-not $w) { "no_window"; exit } ' +
+      '$rect = $w.Current.BoundingRectangle; ' +
+      'if ($rect.Width -le 0) { "no_bounds"; exit } ' +
+      '$cx = $rect.X + $rect.Width / 2; $cy = $rect.Y + $rect.Height / 2; ' +
+      // Check all connected screens — not just primary (handles multi-monitor setups)
+      '$onScr = $false; foreach ($s in [System.Windows.Forms.Screen]::AllScreens) { if ($cx -ge $s.Bounds.Left -and $cx -le $s.Bounds.Right -and $cy -ge $s.Bounds.Top -and $cy -le $s.Bounds.Bottom) { $onScr = $true; break } }; ' +
+      'if ($onScr) { "on_screen"; exit } ' +
+      // Off-screen: move to center of primary screen
+      '$p = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; ' +
+      '$newX = [Math]::Max($p.Left, [int]($p.Left + ($p.Width - $rect.Width) / 2)); ' +
+      '$newY = [Math]::Max($p.Top, [int]($p.Top + ($p.Height - $rect.Height) / 2)); ' +
+      '$hwnd = New-Object IntPtr($w.Current.NativeWindowHandle); ' +
+      '[Win32.WinPos]::SetWindowPos($hwnd, [IntPtr]::Zero, $newX, $newY, 0, 0, 5) | Out-Null; ' +
+      '"moved"',
+      { timeoutMs: 8000 }
+    );
+    if (result === 'no_window') return { ok: false, error: 'window not found' };
+    if (result === 'no_bounds') return { ok: false, error: 'window has no bounding rect (minimized?)' };
+    if (result === 'on_screen') return { ok: true, moved: false };
+    if (result === 'moved') return { ok: true, moved: true };
+    return { ok: false, error: result || 'unknown result' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Send Enter to the foreground window (fallback after typing cert password).
  */
 function sendEnterKeyViaSendKeys() {
@@ -507,4 +627,7 @@ module.exports = {
   focusCertElement,
   dismissNativeDeletionConfirmDialog,
   sendEnterKeyViaSendKeys,
+  waitForCertWindowClose,
+  dismissCertErrorConfirmButton,
+  ensureCertWindowOnScreen,
 };
