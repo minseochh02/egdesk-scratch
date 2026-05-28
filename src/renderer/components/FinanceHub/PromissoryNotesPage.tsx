@@ -5,7 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSync, faSpinner, faRotateRight, faFileUpload } from '@fortawesome/free-solid-svg-icons';
+import { faSync, faSpinner, faSyncAlt, faUpload } from '@fortawesome/free-solid-svg-icons';
 import './PromissoryNotesPage.css';
 import { formatCurrency } from './utils';
 
@@ -145,6 +145,19 @@ const HANA_LOAN_HISTORY_COLS: ColumnDef[] = [
   { key: 'syncedAt', sql: 'synced_at' },
 ];
 
+const IBK_FOREIGN_CURRENCY_HISTORY_COLS: ColumnDef[] = [
+  { key: 'accountNumber', sql: 'account_number' },
+  { key: 'transactionDatetime', sql: 'transaction_datetime' },
+  { key: 'currency', sql: 'currency' },
+  { key: 'credit', sql: 'credit', align: 'right', format: 'currency' },
+  { key: 'debit', sql: 'debit', align: 'right', format: 'currency' },
+  { key: 'balance', sql: 'balance', align: 'right', format: 'currency' },
+  { key: 'memo', sql: 'memo' },
+  { key: 'exportAccountNumber', sql: 'export_account_number' },
+  { key: 'foreignBuyer', sql: 'foreign_buyer' },
+  { key: 'syncedAt', sql: 'synced_at' },
+];
+
 // ------- Helpers -------
 
 function todayYmd(): string {
@@ -240,6 +253,20 @@ const TABLE_SECTIONS: TableSection[] = [
       return await window.electron.financeHub.syncHanaLoanHistory(opts);
     },
     columns: HANA_LOAN_HISTORY_COLS,
+  },
+  {
+    slug: 'ibk_foreign_currency_history',
+    title: 'IBK 외화거래내역',
+    subtitle: '뱅킹업무 → 외환 → 외화계좌조회 → 거래내역조회',
+    bankId: 'ibk',
+    acceptsDateRange: true,
+    canImportExcel: true,
+    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
+    load: () => window.electron.financeHubDb.getIbkForeignCurrencyHistory(),
+    sync: async (opts) => {
+      return await window.electron.financeHub.syncIbkLoanHistory(opts);
+    },
+    columns: IBK_FOREIGN_CURRENCY_HISTORY_COLS,
   },
 ];
 
@@ -340,6 +367,8 @@ function Section({ section, connectedBankIds }: SectionProps) {
         res = await window.electron.financeHub.importIbkEndorsementsExcel(filePath);
       } else if (section.slug === 'ibk_loan_history') {
         res = await window.electron.financeHub.importIbkLoanHistoryExcel(filePath);
+      } else if (section.slug === 'ibk_foreign_currency_history') {
+        res = await window.electron.financeHub.importIbkForeignCurrencyExcel(filePath);
       } else if (section.slug === 'hana_loan_history') {
         res = await window.electron.financeHub.importHanaLoanHistoryExcel(filePath);
       } else {
@@ -401,7 +430,7 @@ function Section({ section, connectedBankIds }: SectionProps) {
               disabled={loading}
               title="Excel 파일 업로드"
             >
-              <FontAwesomeIcon icon={faFileUpload} />
+              <FontAwesomeIcon icon={faUpload} />
               <span>Excel 업로드</span>
             </button>
           )}
@@ -412,7 +441,7 @@ function Section({ section, connectedBankIds }: SectionProps) {
             disabled={loading}
             title="DB에서 다시 불러오기"
           >
-            <FontAwesomeIcon icon={loading ? faSpinner : faRotateRight} spin={loading} />
+            <FontAwesomeIcon icon={loading ? faSpinner : faSyncAlt} spin={loading} />
             <span>새로고침</span>
           </button>
           <button

@@ -4009,6 +4009,53 @@ export class FinanceHubDbManager {
     }
   }
 
+  /**
+   * Read all rows from `ibk_foreign_currency_history`.
+   */
+  getIbkForeignCurrencyHistory(): { success: boolean; data?: any[]; error?: string } {
+    try {
+      const exists = this.db
+        .prepare(
+          `SELECT 1 FROM sqlite_master WHERE type='table' AND name='ibk_foreign_currency_history' LIMIT 1`,
+        )
+        .get();
+      if (!exists) return { success: true, data: [] };
+
+      const rows = this.db
+        .prepare(
+          `
+          SELECT
+            id, account_number, transaction_datetime, currency, credit, debit, balance,
+            memo, export_account_number, foreign_buyer, synced_at, created_at, updated_at
+          FROM ibk_foreign_currency_history
+          ORDER BY transaction_datetime DESC, created_at DESC
+          `,
+        )
+        .all() as any[];
+
+      const data = rows.map((row) => ({
+        id: row.id,
+        accountNumber: row.account_number,
+        transactionDatetime: row.transaction_datetime,
+        currency: row.currency,
+        credit: row.credit,
+        debit: row.debit,
+        balance: row.balance,
+        memo: row.memo,
+        exportAccountNumber: row.export_account_number,
+        foreignBuyer: row.foreign_buyer,
+        syncedAt: row.synced_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+
+      return { success: true, data };
+    } catch (e: any) {
+      console.error('[FinanceHubDb] getIbkForeignCurrencyHistory:', e?.message || e);
+      return { success: false, error: e?.message || String(e) };
+    }
+  }
+
   // ============================================================================
   // Hana 대출상세내역 (`hana_loan_history`)
   // ============================================================================

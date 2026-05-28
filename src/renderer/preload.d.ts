@@ -815,6 +815,40 @@ interface FinanceHubAPI {
     importError?: string;
     importWarnings?: string[];
   }>;
+  syncIbkEndorsements: () => Promise<{
+    success: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    filePath?: string | null;
+    message?: string;
+    importError?: string;
+    importWarnings?: string[];
+  }>;
+  syncIbkLoanHistory: (opts?: { startDate?: string; endDate?: string }) => Promise<{
+    success: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    filePath?: string | null;
+    message?: string;
+    importError?: string;
+    importWarnings?: string[];
+  }>;
+  syncHanaLoanHistory: (opts?: { startDate?: string; endDate?: string }) => Promise<{
+    success: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    filePath?: string | null;
+    message?: string;
+    importError?: string;
+    importWarnings?: string[];
+  }>;
+  importIbkEndorsementsExcel: (filePath: string) => Promise<{ success: boolean; imported: number; skipped: number; error?: string; warnings?: string[] }>;
+  importIbkLoanHistoryExcel: (filePath: string) => Promise<{ success: boolean; imported: number; skipped: number; error?: string; warnings?: string[] }>;
+  importIbkForeignCurrencyExcel: (filePath: string) => Promise<{ success: boolean; imported: number; skipped: number; error?: string; warnings?: string[] }>;
+  importHanaLoanHistoryExcel: (filePath: string) => Promise<{ success: boolean; imported: number; skipped: number; error?: string; warnings?: string[] }>;
 }
 
 /**
@@ -826,6 +860,10 @@ interface FinanceHubDbAPI {
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getIbkB2bReceivables: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getWooriB2bLoanExecutions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getIbkEndorsements: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getIbkLoanHistory: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getHanaLoanHistory: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  getIbkForeignCurrencyHistory: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   queryTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
@@ -888,6 +926,11 @@ export interface IElectronAPI {
   arch: string;
   isPackaged: boolean;
   fileSystem: FileSystemAPI;
+  dialog: {
+    showOpenDialog: (options: any) => Promise<{ canceled: boolean; filePaths: string[] }>;
+    showSaveDialog: (options: any) => Promise<{ canceled: boolean; filePath?: string }>;
+    showMessageBox: (options: any) => Promise<{ response: number; checkboxChecked: boolean }>;
+  };
   git: any; // Using 'any' for simplicity, define GitAPI if needed
   web: WebUtilitiesAPI;
   wordpress: WordPressAPI;

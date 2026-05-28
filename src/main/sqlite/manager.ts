@@ -862,6 +862,19 @@ export class SQLiteManager {
       }
     });
 
+    ipcMain.handle('sqlite-financehub-get-ibk-foreign-currency-history', async () => {
+      try {
+        const res = this.getFinanceHubManager().getIbkForeignCurrencyHistory();
+        return res;
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          data: [],
+        };
+      }
+    });
+
     ipcMain.handle('sqlite-financehub-get-hana-loan-history', async () => {
       try {
         const rows = this.getFinanceHubManager().getHanaLoanHistory();

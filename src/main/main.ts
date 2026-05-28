@@ -992,6 +992,25 @@ const createWindow = async () => {
       );
 
       ipcMain.handle(
+        'finance-hub:import-ibk-foreign-currency-excel',
+        async (_event, { filePath }: { filePath: string }) => {
+          try {
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const result = financeHubManager.importIbkForeignCurrencyFromExcel(filePath);
+            return result;
+          } catch (error) {
+            console.error('[FINANCE-HUB] import-ibk-foreign-currency-excel failed:', error);
+            return {
+              success: false,
+              imported: 0,
+              skipped: 0,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+
+      ipcMain.handle(
         'finance-hub:sync-ibk-endorsements',
         async (_event) => {
           try {
