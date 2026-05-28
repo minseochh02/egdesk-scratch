@@ -205,7 +205,7 @@ class NHBankAutomator extends BaseBankAutomator {
       });
 
       this.log('[NH Corporate] Navigating to ibz.nonghyup.com...');
-      await this.page.goto('https://ibz.nonghyup.com/');
+      await this.page.goto('https://ibz.nonghyup.com/', { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
 
       this.log('[NH Corporate] Clicking 로그인...');
@@ -581,6 +581,9 @@ class NHBankAutomator extends BaseBankAutomator {
       // 1. Prepare (open browser, go to cert window)
       const prep = await this.prepareCorporateCertificateLogin(proxyUrl);
       if (!prep.success) return prep;
+      
+      // If already logged in (reused session), return success immediately
+      if (prep.isLoggedIn) return prep;
 
       // 2. Fetch certificates and select the best one (latest expiry)
       const certsResult = await this.scrapeIniCertificateRows(this.page);
@@ -609,27 +612,31 @@ class NHBankAutomator extends BaseBankAutomator {
 
     const proxy = this.buildProxyOption(proxyUrl);
     try {
-      // Step 1: Create browser
-      this.log('Starting NH Bank automation...');
-      const { browser, context } = await this.createBrowser(proxy, {
-        useKbScriptPlaywrightProfile: true,
-        extraChromeArgs: [
-          '--start-maximized',
-          '--no-default-browser-check',
-          '--disable-blink-features=AutomationControlled',
-          '--no-first-run',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks',
-          '--allow-running-insecure-content',
-          '--safebrowsing-disable-download-protection',
-        ],
-      });
-      this.browser = browser;
-      this.context = context;
+      // Step 1: Create browser (if not already exists)
+      if (!this.browser) {
+        this.log('Starting NH Bank automation...');
+        const { browser, context } = await this.createBrowser(proxy, {
+          useKbScriptPlaywrightProfile: true,
+          extraChromeArgs: [
+            '--start-maximized',
+            '--no-default-browser-check',
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks',
+            '--allow-running-insecure-content',
+            '--safebrowsing-disable-download-protection',
+          ],
+        });
+        this.browser = browser;
+        this.context = context;
 
-      await this.setupBrowserContext(context, null);
-      this.page = context.pages()[0] || await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+        await this.setupBrowserContext(context, null);
+        this.page = context.pages()[0] || await context.newPage();
+        await this.setupBrowserContext(context, this.page);
+      } else {
+        this.log('Reusing existing browser for login...');
+      }
 
       // Step 2: Navigate to login page
       this.log('Navigating to NH Bank login page...');
@@ -859,8 +866,8 @@ class NHBankAutomator extends BaseBankAutomator {
       this.error('[NH] getAccounts called but this.page is null');
       throw new Error('Browser page not initialized');
     }
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 
@@ -1198,8 +1205,8 @@ class NHBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 

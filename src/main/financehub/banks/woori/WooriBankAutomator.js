@@ -897,13 +897,26 @@ class WooriBankAutomator extends BaseBankAutomator {
     if (closeBrowser) await this.cleanup(false);
   }
 
-  async login() {
+  async login(credentials, proxyUrl) {
+    if (credentials.accountType === 'corporate') {
+      this.log('[Woori] Re-login attempt for corporate account...');
+      const prep = await this.prepareCorporateCertificateLogin(proxyUrl);
+      if (!prep.success) return prep;
+      if (prep.isLoggedIn) return prep;
+
+      return await this.completeCorporateCertificateLogin({
+        certificatePassword: credentials.certificatePassword || credentials.password,
+        certificateIndex: credentials.certificateIndex,
+        xpath: credentials.certificateXPath
+      });
+    }
     return { success: false, error: '우리은행은 기업 공동인증서 연결을 사용하세요.' };
   }
 
   async getAccounts() {
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    if (!this.page) throw new Error('Browser page not initialized');
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     return this._getWooriAccountsFromPage();
@@ -1051,8 +1064,8 @@ class WooriBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     this.ensureOutputDirectory(this.downloadDir);

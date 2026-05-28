@@ -84,7 +84,6 @@ export class FinanceHubScheduler extends EventEmitter {
     'ibk',
     'hana',
     'woori',
-    'nh',
   ]);
 
   private static instance: FinanceHubScheduler | null = null;
@@ -1328,6 +1327,7 @@ export class FinanceHubScheduler extends EventEmitter {
         arduinoPort,
         manualPassword: false
       });
+      automator.setCredentials(savedCredentials);
 
       this.debugLog(`✓ Automator created! Browser should be launching...`);
 
@@ -1717,6 +1717,7 @@ export class FinanceHubScheduler extends EventEmitter {
             headless: false,
             arduinoPort,
           });
+          automator.setCredentials(savedCredentials);
           this.activeBrowsers.set(entityKey, automator);
 
           if (
@@ -1761,6 +1762,7 @@ export class FinanceHubScheduler extends EventEmitter {
           automator = createAutomator(bankId, {
             headless: false, // CRITICAL FIX: Use visible browser (headless causes hangs/failures)
           });
+          automator.setCredentials(savedCredentials);
 
           this.activeBrowsers.set(entityKey, automator);
 

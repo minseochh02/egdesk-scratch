@@ -251,8 +251,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
    */
   async getAccounts() {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 
@@ -772,16 +772,20 @@ class ShinhanBankAutomator extends BaseBankAutomator {
     const proxy = this.buildProxyOption(proxyUrl);
 
     try {
-      // Step 1: Create browser
-      this.log('Starting Shinhan Bank automation...');
-      const { browser, context } = await this.createBrowser(proxy);
-      this.browser = browser;
-      this.context = context;
+      // Step 1: Create browser (if not already exists)
+      if (!this.browser) {
+        this.log('Starting Shinhan Bank automation...');
+        const { browser, context } = await this.createBrowser(proxy);
+        this.browser = browser;
+        this.context = context;
 
-      await this.setupBrowserContext(context, null);
+        await this.setupBrowserContext(context, null);
 
-      this.page = await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+        this.page = await context.newPage();
+        await this.setupBrowserContext(context, this.page);
+      } else {
+        this.log('Reusing existing browser for login...');
+      }
 
       // Step 2: Navigate to inquiry page (which will redirect to login if needed)
       // This is more reliable as it lands us on the inquiry page after login
@@ -1273,8 +1277,8 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);

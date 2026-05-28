@@ -164,8 +164,8 @@ class KookminBankAutomator extends BaseBankAutomator {
    */
   async getAccounts() {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 
@@ -947,15 +947,19 @@ class KookminBankAutomator extends BaseBankAutomator {
     const proxy = this.buildProxyOption(proxyUrl);
 
     try {
-      // Step 1: Create browser
-      this.log('Starting Kookmin Bank automation...');
-      const { browser, context } = await this.createBrowser(proxy);
-      this.browser = browser;
-      this.context = context;
+      // Step 1: Create browser (if not already exists)
+      if (!this.browser) {
+        this.log('Starting Kookmin Bank automation...');
+        const { browser, context } = await this.createBrowser(proxy);
+        this.browser = browser;
+        this.context = context;
 
-      // Use existing page from persistent context (best practice)
-      this.page = context.pages()[0] || await context.newPage();
-      await this.setupBrowserContext(context, this.page);
+        // Use existing page from persistent context (best practice)
+        this.page = context.pages()[0] || await context.newPage();
+        await this.setupBrowserContext(context, this.page);
+      } else {
+        this.log('Reusing existing browser for login...');
+      }
 
       // Step 2: Navigate to login page
       const navigationUrl = this.config.xpaths.inquiryUrl || this.config.targetUrl;
@@ -1058,8 +1062,8 @@ class KookminBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     this.log(`Fetching transactions for account ${accountNumber} (${startDate} ~ ${endDate})...`);

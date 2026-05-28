@@ -34,6 +34,39 @@ class BaseBankAutomator {
     this.outputDir = this.getSafeOutputDir(config.bank.id);
     this.sessionKeepAliveInterval = null;
     this.lastFallbackExtensionClick = 0;
+    this.credentials = null;
+  }
+
+  /**
+   * Sets credentials for auto-relogin
+   * @param {Object} credentials 
+   */
+  setCredentials(credentials) {
+    this.credentials = credentials;
+  }
+
+  /**
+   * Ensures the session is active, attempting re-login if credentials are available.
+   * @returns {Promise<boolean>} True if session is active (or successfully re-logged in)
+   */
+  async ensureSession() {
+    const status = await this.checkSessionActive();
+    if (!status.active) {
+      if (this.credentials) {
+        this.log('Session expired or not found. Attempting auto-relogin...');
+        // Note: subclasses must handle existing browser/page in their login() implementation
+        // or this will create a new browser instance.
+        const result = await this.login(this.credentials);
+        if (!result.success) {
+          this.error('Auto-relogin failed:', result.error);
+          return false;
+        }
+        this.log('Auto-relogin successful.');
+        return true;
+      }
+      return false;
+    }
+    return true;
   }
 
   // ============================================================================

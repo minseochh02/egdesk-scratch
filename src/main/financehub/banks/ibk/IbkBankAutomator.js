@@ -515,13 +515,25 @@ class IbkBankAutomator extends BaseBankAutomator {
     if (closeBrowser) await this.cleanup(false);
   }
 
-  async login() {
+  async login(credentials, proxyUrl) {
+    if (credentials.accountType === 'corporate') {
+      this.log('[IBK] Re-login attempt for corporate account...');
+      const prep = await this.prepareCorporateCertificateLogin(proxyUrl);
+      if (!prep.success) return prep;
+      if (prep.isLoggedIn) return prep;
+
+      return await this.completeCorporateCertificateLogin({
+        certificatePassword: credentials.certificatePassword || credentials.password,
+        certificateIndex: credentials.certificateIndex,
+        xpath: credentials.certificateXPath
+      });
+    }
     return { success: false, error: 'IBK는 기업 공동인증서 연결을 사용하세요.' };
   }
 
   async getAccounts() {
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     return this._getIbKAccounts();
@@ -1747,10 +1759,10 @@ class IbkBankAutomator extends BaseBankAutomator {
   /**
    * Drive a date select trio (yy/mm/dd) for either start or end side.
    */
-  async _setIbkLoanDate(mainframe, side, parts) {
-    const idYY = side === 'start' ? 'inqy_sttg_ymd_yy' : 'inqy_eymd_yy';
-    const idMM = side === 'start' ? 'inqy_sttg_ymd_mm' : 'inqy_eymd_mm';
-    const idDD = side === 'start' ? 'inqy_sttg_ymd_dd' : 'inqy_eymd_dd';
+  async _setIbkLoanDate(mainframe, side, parts, variant = '') {
+    const idYY = side === 'start' ? `inqy_sttg_ymd${variant}_yy` : `inqy_eymd${variant}_yy`;
+    const idMM = side === 'start' ? `inqy_sttg_ymd${variant}_mm` : `inqy_eymd${variant}_mm`;
+    const idDD = side === 'start' ? `inqy_sttg_ymd${variant}_dd` : `inqy_eymd${variant}_dd`;
     await mainframe.locator(`[id="${idYY}"]`).selectOption(parts.yyyy).catch(() => {});
     await mainframe.locator(`[id="${idMM}"]`).selectOption(parts.mm).catch(() => {});
     await mainframe.locator(`[id="${idDD}"]`).selectOption(parts.dd).catch(() => {});
@@ -1797,11 +1809,488 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
       if (!mainframe) return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
 
+      // ===========================================================
+      // 신탁 tab: iterate gnrl_lf_acno99, date variant '1'
+      // ===========================================================
+      const trustPerAccount = [];
+      try {
+        let trustTabClicked = false;
+        try {
+          await this.page.getByRole('link', { name: '신탁' }).first().click({ force: true, timeout: 5000 });
+          trustTabClicked = true;
+        } catch (_te0) {
+          try {
+            await this.page.locator('a:nth-match(1100)').click({ force: true, timeout: 5000 });
+            trustTabClicked = true;
+          } catch (_te1) {
+            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[2]/ul/li[2]/a')
+              .click({ force: true, timeout: 5000 });
+            trustTabClicked = true;
+          }
+        }
+        // Secondary click inside mainframe (spec: every tab needs page-level + mainframe click)
+        await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("신탁")').click({ force: true, timeout: 3000 }).catch(() => {});
+        this.log(`[IBK 신탁] 신탁 tab clicked (trustTabClicked=${trustTabClicked})`);
+        await this.page.waitForTimeout(2500);
+        mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+        await this._robustCleanupIbkPopups();
+        mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+        const trustDropdown = await this._waitForDropdownById(mainframe, 'gnrl_lf_acno99', { maxWaitMs: 15000 });
+        if (!trustDropdown || !trustDropdown.options.length) {
+          this.warn('[IBK 신탁] gnrl_lf_acno99 dropdown not found or empty');
+        } else {
+          const trustAccountOpts = trustDropdown.options.filter((opt) => {
+            const blob = `${opt.text || ''} ${opt.value || ''}`;
+            return /\d{3}-\d{2,6}-\d{2,4}-\d{1,6}|\d{2,4}-\d{4,8}-\d{2,6}|\b\d{10,16}\b/.test(blob);
+          });
+          this.log(`[IBK 신탁] iterating ${trustAccountOpts.length} accounts`);
+
+          for (let i = 0; i < trustAccountOpts.length; i++) {
+            const tOpt = trustAccountOpts[i];
+            const tAcct = this._extractAccountFromText(`${tOpt.text} ${tOpt.value}`) || tOpt.value || '(unknown)';
+            this.log(`[IBK 신탁] (${i + 1}/${trustAccountOpts.length}) account=${tAcct}`);
+
+            try {
+              mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+              const tDropLoc = mainframe.locator('[id="gnrl_lf_acno99"]');
+              let tSelectOk = false;
+              try {
+                await tDropLoc.selectOption(tOpt.value, { timeout: 3000 });
+                tSelectOk = true;
+              } catch (e) {
+                this.warn(`[IBK 신탁] account=${tAcct}: selectOption(value) failed: ${e.message}`);
+                try {
+                  await tDropLoc.selectOption({ label: tOpt.text }, { timeout: 3000 });
+                  tSelectOk = true;
+                } catch (e2) {
+                  this.warn(`[IBK 신탁] account=${tAcct}: selectOption(label) also failed: ${e2.message}`);
+                }
+              }
+              if (!tSelectOk) {
+                trustPerAccount.push({ accountNumber: tAcct, error: 'dropdown select failed' });
+                continue;
+              }
+              await this.page.waitForTimeout(500);
+
+              await this._setIbkLoanDate(mainframe, 'start', sParts, '1');
+              await this._setIbkLoanDate(mainframe, 'end', eParts, '1');
+              await this.page.waitForTimeout(400);
+
+              let tQueryClicked = false;
+              try {
+                await mainframe.locator('a.btn_ok').filter({ hasText: /^조회$/ }).first()
+                  .click({ force: true, timeout: 5000 });
+                tQueryClicked = true;
+              } catch (e) {
+                this.warn(`[IBK 신탁] a.btn_ok 조회 click failed: ${e.message}`);
+              }
+              if (!tQueryClicked) {
+                try {
+                  await mainframe.locator('#ibkContent').locator('a, button')
+                    .filter({ hasText: /^조회$/ }).first().click({ force: true, timeout: 3000 });
+                  tQueryClicked = true;
+                } catch (e) {
+                  this.warn(`[IBK 신탁] #ibkContent 조회 fallback failed: ${e.message}`);
+                }
+              }
+              if (!tQueryClicked) {
+                trustPerAccount.push({ accountNumber: tAcct, error: '조회 click failed' });
+                continue;
+              }
+              await this.page.waitForTimeout(3500);
+
+              const tNoData = await mainframe.evaluate(() => {
+                const sp = document.getElementById('spErrTitle');
+                const spText = (sp && sp.textContent) || '';
+                const bodyText = document.body ? document.body.innerText || '' : '';
+                return { hit: /조회결과가 없습니다/.test(spText) || /조회결과가 없습니다/.test(bodyText) };
+              }).catch(() => ({ hit: false }));
+              if (tNoData.hit) {
+                this.log(`[IBK 신탁] account=${tAcct} — no data (skip)`);
+                trustPerAccount.push({ accountNumber: tAcct, skipped: true });
+                continue;
+              }
+
+              await this.focusPlaywrightPage();
+              const tExportStartedAt = Date.now();
+              const tDownloadPromise = this.context.waitForEvent('download', { timeout: 60000 });
+
+              this.log(`[IBK 신탁] account=${tAcct}: clicking 저장 / 엑셀파일저장 / DownloadExcel / DownloadButton`);
+              await this._robustClickMainframe(mainframe, '[id="save_to_file"]').catch(() => {});
+              await this.page.waitForTimeout(800);
+              await this._robustClickMainframe(mainframe, 'span', '엑셀파일저장(출력용)').catch(() => {});
+              await this.page.waitForTimeout(800);
+              await this._robustClickMainframe(mainframe, '[id="DownloadExcel"]').catch(() => {});
+              await this.page.waitForTimeout(400);
+              await this._robustClickMainframe(mainframe, '[id="DownloadButton"]').catch(() => {});
+
+              const tScanDirs = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+
+              const tPollForFile = async () => {
+                let prevPath = null;
+                let prevSize = -1;
+                for (let j = 0; j < 60; j++) {
+                  const found = this.findRecentDownloadFile(tScanDirs, tExportStartedAt);
+                  if (found) {
+                    if (found.path === prevPath && found.size === prevSize && found.size > 0) {
+                      return { type: 'polling', data: found };
+                    }
+                    prevPath = found.path;
+                    prevSize = found.size;
+                  }
+                  await new Promise((r) => setTimeout(r, 1000));
+                }
+                return { type: 'polling-timeout' };
+              };
+
+              const tNodataWatcher = (async () => {
+                const phrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다', '까지 조회결과가 없습니다', '조회결과가 없습니다'];
+                for (let j = 0; j < 40; j++) {
+                  const hit = await mainframe.evaluate((ps) => {
+                    const txt = (document.body && document.body.innerText) || '';
+                    return ps.find((p) => txt.includes(p)) || null;
+                  }, phrases).catch(() => null);
+                  if (hit) return { type: 'nodata', phrase: hit };
+                  await new Promise((r) => setTimeout(r, 1000));
+                }
+                return { type: 'nodata-timeout' };
+              })();
+
+              const tRaced = await Promise.race([
+                tDownloadPromise.then((dl) => ({ type: 'download-event', data: dl })).catch(() => ({ type: 'download-error' })),
+                tPollForFile(),
+                tNodataWatcher,
+                this.page.waitForTimeout(60000).then(() => ({ type: 'hard-timeout' })),
+              ]);
+
+              if (tRaced.type === 'nodata') {
+                this.log(`[IBK 신탁] account=${tAcct} — late no-data ("${tRaced.phrase}"), skip`);
+                trustPerAccount.push({ accountNumber: tAcct, skipped: true });
+                await this._robustCleanupIbkPopups().catch(() => {});
+                continue;
+              }
+
+              let tDownload = null;
+              let tSuggested = '거래내역조회.xlsx';
+              let tFallbackFile = null;
+
+              if (tRaced.type === 'download-event') {
+                tDownload = tRaced.data;
+                tSuggested = tDownload.suggestedFilename() || tSuggested;
+                this.log(`[IBK 신탁] account=${tAcct}: download event won (${tSuggested})`);
+              } else if (tRaced.type === 'polling') {
+                tFallbackFile = tRaced.data;
+                tSuggested = path.basename(tFallbackFile.path);
+                this.log(`[IBK 신탁] account=${tAcct}: filesystem poll won (${tSuggested})`);
+              } else {
+                const tLastChance = this.findRecentDownloadFile(tScanDirs, tExportStartedAt);
+                if (tLastChance) {
+                  tFallbackFile = tLastChance;
+                  tSuggested = path.basename(tFallbackFile.path);
+                  this.log(`[IBK 신탁] account=${tAcct}: last-chance scan (race=${tRaced.type})`);
+                } else {
+                  this.warn(`[IBK 신탁] account=${tAcct} — download failed (race=${tRaced.type})`);
+                  trustPerAccount.push({ accountNumber: tAcct, error: `download failed: ${tRaced.type}` });
+                  await this._cleanupIbkPopups().catch(() => {});
+                  continue;
+                }
+              }
+
+              const tExt = path.extname(tSuggested) || '.xlsx';
+              const tTs = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+              const tSafeAcct = String(tAcct).replace(/[^\w-]/g, '_');
+              const tFinalName = `IBK_신탁거래_${tSafeAcct}_${startDate}_${endDate}_${tTs}${tExt}`;
+              const tFinalPath = path.join(this.downloadDir, tFinalName);
+              const tSaved = await this.saveDownloadSafely(tDownload, tFallbackFile?.path, tFinalPath);
+              if (!tSaved) {
+                trustPerAccount.push({ accountNumber: tAcct, error: 'save failed' });
+                continue;
+              }
+              this.log(`[IBK 신탁] account=${tAcct} downloaded → ${tFinalPath}`);
+
+              let tImported = 0;
+              if (getSQLiteManager) {
+                try {
+                  const fhm = getSQLiteManager().getFinanceHubManager();
+                  const tImpResult = fhm.importIbkLoanHistoryFromExcel(tFinalPath, tAcct);
+                  tImported = tImpResult.imported || 0;
+                  if (!tImpResult.success) {
+                    this.warn(`[IBK 신탁] account=${tAcct}: DB import failed — ${tImpResult.error}`);
+                  } else {
+                    this.log(`[IBK 신탁] account=${tAcct}: imported ${tImported} rows`);
+                  }
+                } catch (tDbErr) {
+                  this.warn(`[IBK 신탁] account=${tAcct}: DB import error — ${tDbErr.message}`);
+                }
+              }
+
+              trustPerAccount.push({ accountNumber: tAcct, filePath: tFinalPath, imported: tImported });
+
+              const tCloseResult = await this._closeIbkLoanDownloadPopupViaRecording();
+              if (!tCloseResult || !tCloseResult.ok) {
+                await this._robustCleanupIbkPopups();
+                await this._closeIbkLoanDownloadPopupAggressive(tAcct);
+              }
+              await this.page.waitForTimeout(400);
+            } catch (tAcctErr) {
+              this.error(`[IBK 신탁] account=${tAcct} loop error:`, tAcctErr.message);
+              trustPerAccount.push({ accountNumber: tAcct, error: tAcctErr.message });
+              await this._cleanupIbkPopups().catch(() => {});
+            }
+          }
+          this.log(`[IBK 신탁] complete. accounts=${trustAccountOpts.length}, files=${trustPerAccount.filter((r) => r.filePath).length}`);
+        }
+      } catch (trustErr) {
+        this.error('[IBK 신탁] 신탁 tab sync failed:', trustErr.message);
+      }
+
+      // ===========================================================
+      // 펀드 tab: iterate ecb_user_num01, date variant '1'
+      // (spec shows "관련계좌가 없습니다" — handled gracefully via filter)
+      // ===========================================================
+      const fundPerAccount = [];
+      try {
+        let fundTabClicked = false;
+        try {
+          await this.page.getByRole('link', { name: '펀드' }).first().click({ force: true, timeout: 5000 });
+          fundTabClicked = true;
+        } catch (_ffe0) {
+          try {
+            await this.page.locator('a:nth-match(1093)').click({ force: true, timeout: 5000 });
+            fundTabClicked = true;
+          } catch (_ffe1) {
+            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form[2]/div[2]/ul/li[3]/a')
+              .click({ force: true, timeout: 5000 });
+            fundTabClicked = true;
+          }
+        }
+        await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("펀드")').click({ force: true, timeout: 3000 }).catch(() => {});
+        this.log(`[IBK 펀드] 펀드 tab clicked (fundTabClicked=${fundTabClicked})`);
+        await this.page.waitForTimeout(2500);
+        mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+        await this._robustCleanupIbkPopups();
+        mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+        const fundDropdown = await this._waitForDropdownById(mainframe, 'ecb_user_num01', { maxWaitMs: 15000 });
+        if (!fundDropdown || !fundDropdown.options.length) {
+          this.warn('[IBK 펀드] ecb_user_num01 dropdown not found or empty');
+        } else {
+          const fundAccountOpts = fundDropdown.options.filter((opt) => {
+            const blob = `${opt.text || ''} ${opt.value || ''}`;
+            return /\d{3}-\d{2,6}-\d{2,4}-\d{1,6}|\d{2,4}-\d{4,8}-\d{2,6}|\b\d{10,16}\b/.test(blob);
+          });
+          if (fundAccountOpts.length === 0) {
+            this.log('[IBK 펀드] no fund accounts found (관련계좌가 없습니다 — skipping)');
+          } else {
+            this.log(`[IBK 펀드] iterating ${fundAccountOpts.length} accounts`);
+
+            for (let i = 0; i < fundAccountOpts.length; i++) {
+              const fOpt2 = fundAccountOpts[i];
+              const fAcct2 = this._extractAccountFromText(`${fOpt2.text} ${fOpt2.value}`) || fOpt2.value || '(unknown)';
+              this.log(`[IBK 펀드] (${i + 1}/${fundAccountOpts.length}) account=${fAcct2}`);
+
+              try {
+                mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+                const fDropLoc2 = mainframe.locator('[id="ecb_user_num01"]');
+                let fSelectOk2 = false;
+                try {
+                  await fDropLoc2.selectOption(fOpt2.value, { timeout: 3000 });
+                  fSelectOk2 = true;
+                } catch (e) {
+                  this.warn(`[IBK 펀드] account=${fAcct2}: selectOption(value) failed: ${e.message}`);
+                  try {
+                    await fDropLoc2.selectOption({ label: fOpt2.text }, { timeout: 3000 });
+                    fSelectOk2 = true;
+                  } catch (e2) {
+                    this.warn(`[IBK 펀드] account=${fAcct2}: selectOption(label) also failed: ${e2.message}`);
+                  }
+                }
+                if (!fSelectOk2) {
+                  fundPerAccount.push({ accountNumber: fAcct2, error: 'dropdown select failed' });
+                  continue;
+                }
+                await this.page.waitForTimeout(500);
+
+                await this._setIbkLoanDate(mainframe, 'start', sParts, '1');
+                await this._setIbkLoanDate(mainframe, 'end', eParts, '1');
+                await this.page.waitForTimeout(400);
+
+                let fQueryClicked2 = false;
+                try {
+                  await mainframe.locator('a.btn_ok').filter({ hasText: /^조회$/ }).first()
+                    .click({ force: true, timeout: 5000 });
+                  fQueryClicked2 = true;
+                } catch (e) {
+                  this.warn(`[IBK 펀드] a.btn_ok 조회 click failed: ${e.message}`);
+                }
+                if (!fQueryClicked2) {
+                  try {
+                    await mainframe.locator('#ibkContent').locator('a, button')
+                      .filter({ hasText: /^조회$/ }).first().click({ force: true, timeout: 3000 });
+                    fQueryClicked2 = true;
+                  } catch (e) {
+                    this.warn(`[IBK 펀드] #ibkContent 조회 fallback failed: ${e.message}`);
+                  }
+                }
+                if (!fQueryClicked2) {
+                  fundPerAccount.push({ accountNumber: fAcct2, error: '조회 click failed' });
+                  continue;
+                }
+                await this.page.waitForTimeout(3500);
+
+                const fNoData2 = await mainframe.evaluate(() => {
+                  const sp = document.getElementById('spErrTitle');
+                  const spText = (sp && sp.textContent) || '';
+                  const bodyText = document.body ? document.body.innerText || '' : '';
+                  return { hit: /조회결과가 없습니다/.test(spText) || /조회결과가 없습니다/.test(bodyText) };
+                }).catch(() => ({ hit: false }));
+                if (fNoData2.hit) {
+                  this.log(`[IBK 펀드] account=${fAcct2} — no data (skip)`);
+                  fundPerAccount.push({ accountNumber: fAcct2, skipped: true });
+                  continue;
+                }
+
+                await this.focusPlaywrightPage();
+                const fExportStartedAt2 = Date.now();
+                const fDownloadPromise2 = this.context.waitForEvent('download', { timeout: 60000 });
+
+                this.log(`[IBK 펀드] account=${fAcct2}: clicking 저장 / 엑셀파일저장 / DownloadExcel / DownloadButton`);
+                await this._robustClickMainframe(mainframe, '[id="save_to_file"]').catch(() => {});
+                await this.page.waitForTimeout(800);
+                await this._robustClickMainframe(mainframe, 'span', '엑셀파일저장(출력용)').catch(() => {});
+                await this.page.waitForTimeout(800);
+                await this._robustClickMainframe(mainframe, '[id="DownloadExcel"]').catch(() => {});
+                await this.page.waitForTimeout(400);
+                await this._robustClickMainframe(mainframe, '[id="DownloadButton"]').catch(() => {});
+
+                const fScanDirs2 = [this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')];
+
+                const fPollForFile2 = async () => {
+                  let prevPath = null;
+                  let prevSize = -1;
+                  for (let j = 0; j < 60; j++) {
+                    const found = this.findRecentDownloadFile(fScanDirs2, fExportStartedAt2);
+                    if (found) {
+                      if (found.path === prevPath && found.size === prevSize && found.size > 0) {
+                        return { type: 'polling', data: found };
+                      }
+                      prevPath = found.path;
+                      prevSize = found.size;
+                    }
+                    await new Promise((r) => setTimeout(r, 1000));
+                  }
+                  return { type: 'polling-timeout' };
+                };
+
+                const fNodataWatcher2 = (async () => {
+                  const phrases = ['저장할 데이터가 없습니다', '조회된 데이터가 없습니다', '까지 조회결과가 없습니다', '조회결과가 없습니다'];
+                  for (let j = 0; j < 40; j++) {
+                    const hit = await mainframe.evaluate((ps) => {
+                      const txt = (document.body && document.body.innerText) || '';
+                      return ps.find((p) => txt.includes(p)) || null;
+                    }, phrases).catch(() => null);
+                    if (hit) return { type: 'nodata', phrase: hit };
+                    await new Promise((r) => setTimeout(r, 1000));
+                  }
+                  return { type: 'nodata-timeout' };
+                })();
+
+                const fRaced2 = await Promise.race([
+                  fDownloadPromise2.then((dl) => ({ type: 'download-event', data: dl })).catch(() => ({ type: 'download-error' })),
+                  fPollForFile2(),
+                  fNodataWatcher2,
+                  this.page.waitForTimeout(60000).then(() => ({ type: 'hard-timeout' })),
+                ]);
+
+                if (fRaced2.type === 'nodata') {
+                  this.log(`[IBK 펀드] account=${fAcct2} — late no-data ("${fRaced2.phrase}"), skip`);
+                  fundPerAccount.push({ accountNumber: fAcct2, skipped: true });
+                  await this._robustCleanupIbkPopups().catch(() => {});
+                  continue;
+                }
+
+                let fDownload2 = null;
+                let fSuggested2 = '거래내역조회.xlsx';
+                let fFallbackFile2 = null;
+
+                if (fRaced2.type === 'download-event') {
+                  fDownload2 = fRaced2.data;
+                  fSuggested2 = fDownload2.suggestedFilename() || fSuggested2;
+                  this.log(`[IBK 펀드] account=${fAcct2}: download event won (${fSuggested2})`);
+                } else if (fRaced2.type === 'polling') {
+                  fFallbackFile2 = fRaced2.data;
+                  fSuggested2 = path.basename(fFallbackFile2.path);
+                  this.log(`[IBK 펀드] account=${fAcct2}: filesystem poll won (${fSuggested2})`);
+                } else {
+                  const fLastChance2 = this.findRecentDownloadFile(fScanDirs2, fExportStartedAt2);
+                  if (fLastChance2) {
+                    fFallbackFile2 = fLastChance2;
+                    fSuggested2 = path.basename(fFallbackFile2.path);
+                    this.log(`[IBK 펀드] account=${fAcct2}: last-chance scan (race=${fRaced2.type})`);
+                  } else {
+                    this.warn(`[IBK 펀드] account=${fAcct2} — download failed (race=${fRaced2.type})`);
+                    fundPerAccount.push({ accountNumber: fAcct2, error: `download failed: ${fRaced2.type}` });
+                    await this._cleanupIbkPopups().catch(() => {});
+                    continue;
+                  }
+                }
+
+                const fExt2 = path.extname(fSuggested2) || '.xlsx';
+                const fTs2 = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                const fSafeAcct2 = String(fAcct2).replace(/[^\w-]/g, '_');
+                const fFinalName2 = `IBK_펀드거래_${fSafeAcct2}_${startDate}_${endDate}_${fTs2}${fExt2}`;
+                const fFinalPath2 = path.join(this.downloadDir, fFinalName2);
+                const fSaved2 = await this.saveDownloadSafely(fDownload2, fFallbackFile2?.path, fFinalPath2);
+                if (!fSaved2) {
+                  fundPerAccount.push({ accountNumber: fAcct2, error: 'save failed' });
+                  continue;
+                }
+                this.log(`[IBK 펀드] account=${fAcct2} downloaded → ${fFinalPath2}`);
+
+                fundPerAccount.push({ accountNumber: fAcct2, filePath: fFinalPath2 });
+
+                const fCloseResult2 = await this._closeIbkLoanDownloadPopupViaRecording();
+                if (!fCloseResult2 || !fCloseResult2.ok) {
+                  await this._robustCleanupIbkPopups();
+                  await this._closeIbkLoanDownloadPopupAggressive(fAcct2);
+                }
+                await this.page.waitForTimeout(400);
+              } catch (fAcctErr2) {
+                this.error(`[IBK 펀드] account=${fAcct2} loop error:`, fAcctErr2.message);
+                fundPerAccount.push({ accountNumber: fAcct2, error: fAcctErr2.message });
+                await this._cleanupIbkPopups().catch(() => {});
+              }
+            }
+            this.log(`[IBK 펀드] complete. accounts=${fundAccountOpts.length}, files=${fundPerAccount.filter((r) => r.filePath).length}`);
+          }
+        }
+      } catch (fundErr) {
+        this.error('[IBK 펀드] 펀드 tab sync failed:', fundErr.message);
+      }
+
       // Click the 대출 tab on the already-open 거래내역조회 page
       // (ibkbettermethod.spec.js — same page as deposit transactions, no re-nav needed).
-      await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[4]/a')
-        .click({ force: true, timeout: 5000 });
-      this.log('[IBK loan] 대출 tab clicked');
+      // Cascade: semantic → css → xpath (div[N] can shift based on overlay count)
+      let loanTabClicked = false;
+      try {
+        await this.page.getByRole('link', { name: '대출' }).first().click({ force: true, timeout: 5000 });
+        loanTabClicked = true;
+      } catch (_e0) {
+        try {
+          await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+          loanTabClicked = true;
+        } catch (_e1) {
+          await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[4]/a')
+            .click({ force: true, timeout: 5000 });
+          loanTabClicked = true;
+        }
+      }
+      // Secondary click inside mainframe (spec: every tab needs page-level + mainframe click)
+      await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("대출")').click({ force: true, timeout: 3000 }).catch(() => {});
+      this.log(`[IBK loan] 대출 tab clicked (loanTabClicked=${loanTabClicked})`);
       await this.page.waitForTimeout(2500);
       mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
       await this._robustCleanupIbkPopups();
@@ -2107,8 +2596,18 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const foreignPerAccount = [];
       try {
-        await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[5]/a')
-          .click({ force: true, timeout: 5000 });
+        // Cascade: semantic → css → xpath (div[N] can shift based on overlay count)
+        try {
+          await this.page.getByRole('link', { name: '외화' }).first().click({ force: true, timeout: 5000 });
+        } catch (_fe0) {
+          try {
+            await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+          } catch (_fe1) {
+            await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[5]/a')
+              .click({ force: true, timeout: 5000 });
+          }
+        }
+        await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("외화")').click({ force: true, timeout: 3000 }).catch(() => {});
         this.log('[IBK 외화] 외화 tab clicked');
         await this.page.waitForTimeout(2500);
         mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
@@ -2329,6 +2828,17 @@ class IbkBankAutomator extends BaseBankAutomator {
         imported: totalImported,
         skipped,
         perAccount,
+        trust: {
+          accounts: trustPerAccount.length,
+          files: trustPerAccount.filter((r) => r.filePath).length,
+          imported: trustPerAccount.reduce((a, b) => a + (b.imported || 0), 0),
+          perAccount: trustPerAccount,
+        },
+        fund: {
+          accounts: fundPerAccount.length,
+          files: fundPerAccount.filter((r) => r.filePath).length,
+          perAccount: fundPerAccount,
+        },
         foreign: {
           accounts: foreignPerAccount.length,
           files: foreignPerAccount.filter((r) => r.filePath).length,
@@ -2351,8 +2861,8 @@ class IbkBankAutomator extends BaseBankAutomator {
    */
   async getTransactions(accountNumber, startDate, endDate) {
     if (!this.page) throw new Error('Browser page not initialized');
-    const sessionStatus = await this.checkSessionActive();
-    if (!sessionStatus.active) {
+    const sessionActive = await this.ensureSession();
+    if (!sessionActive) {
       return { success: false, sessionExpired: true, error: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
     this.ensureOutputDirectory(this.downloadDir);

@@ -313,6 +313,10 @@ class ShinhanCardAutomator extends BaseCardAutomator {
    */
   async getCards() {
     try {
+      const sessionActive = await this.ensureSession();
+      if (!sessionActive) {
+        throw new Error('Session expired or not found');
+      }
       this.log('Navigating to card list...');
 
       // Check for popups before navigation
@@ -754,6 +758,10 @@ class ShinhanCardAutomator extends BaseCardAutomator {
   async getTransactions(cardNumber, startDate, endDate) {
     try {
       this.log(`Getting transactions for ALL cards from ${startDate} to ${endDate}`);
+      const sessionActive = await this.ensureSession();
+      if (!sessionActive) {
+        throw new Error('Session expired or not found');
+      }
 
       // Step 1: Navigate to transaction history
       await this.navigateToTransactionHistory();
