@@ -33,6 +33,7 @@ class BaseBankAutomator {
     this.page = null;
     this.outputDir = this.getSafeOutputDir(config.bank.id);
     this.sessionKeepAliveInterval = null;
+    this.lastFallbackExtensionClick = 0;
   }
 
   // ============================================================================
@@ -901,15 +902,16 @@ class BaseBankAutomator {
   // ============================================================================
 
   /**
-   * Starts a background task to click the session extension button every 5 minutes
-   * @param {number} intervalMs - Interval in milliseconds (default 5 minutes)
+   * Starts a background task to check and extend the session.
+   * Runs every 1 minute to check the timer, but only clicks extend when needed.
+   * @param {number} intervalMs - Interval in milliseconds (default 1 minute)
    */
-  startSessionKeepAlive(intervalMs = 5 * 60 * 1000) {
+  startSessionKeepAlive(intervalMs = 1 * 60 * 1000) {
     if (this.sessionKeepAliveInterval) {
       clearInterval(this.sessionKeepAliveInterval);
     }
 
-    this.log(`Starting session keep-alive (every ${intervalMs / 1000 / 60} minutes)`);
+    this.log(`Starting session keep-alive (checking every ${intervalMs / 1000 / 60} minute)`);
 
     this.sessionKeepAliveInterval = setInterval(async () => {
       try {
@@ -932,14 +934,56 @@ class BaseBankAutomator {
   }
 
   /**
-   * Clicks the "Extend" (연장) button to keep the session alive
+   * Clicks the "Extend" (연장) button to keep the session alive.
+   * If a timer is detected, only clicks if less than 3 minutes remaining.
+   * Fallback: If no timer is detected, clicks every 8 minutes.
    * @returns {Promise<boolean>} Success status
    */
   async extendSession() {
     if (!this.page) return false;
 
-    this.log('Attempting to extend session...');
     try {
+      let timerFound = false;
+
+      // [개선] 타이머가 있는 경우, 남은 시간이 3분 미만일 때만 연장 버튼 클릭
+      const timerGroupXPath = this.config.xpaths.timerGroup;
+      if (timerGroupXPath) {
+        const timerText = await this.page.locator(`xpath=${timerGroupXPath}`).innerText().catch(() => '');
+        if (timerText) {
+          // "10:00", "09:59" 등의 형식 파싱
+          const match = timerText.match(/(\d{1,2}):(\d{2})/);
+          if (match) {
+            timerFound = true;
+            const minutes = parseInt(match[1], 10);
+            const seconds = parseInt(match[2], 10);
+            const totalSeconds = minutes * 60 + seconds;
+            
+            this.log(`Session timer detected: ${timerText} (${totalSeconds}s remaining)`);
+            
+            if (totalSeconds > 180) {
+              this.log('Session has more than 3 minutes remaining, skipping extension click.');
+              return true;
+            }
+          }
+        }
+      }
+
+      // [개선] 타이머가 없는 경우(Graceful Fallback), 8분마다 한 번씩만 클릭
+      if (!timerFound) {
+        const now = Date.now();
+        const eightMinutesMs = 8 * 60 * 1000;
+        const elapsed = now - this.lastFallbackExtensionClick;
+        
+        if (elapsed < eightMinutesMs) {
+          this.log(`No timer detected. Only ${Math.round(elapsed / 60000)}m since last fallback click. Skipping (next in ${Math.round((eightMinutesMs - elapsed) / 60000)}m).`);
+          return true;
+        }
+        
+        this.log('No timer detected. 8 minutes passed since last fallback click, proceeding...');
+        this.lastFallbackExtensionClick = now;
+      }
+
+      this.log('Attempting to extend session...');
       const extendButtonXPath = `xpath=${this.config.xpaths.extendSessionButton}`;
 
       // Check if button is visible before clicking

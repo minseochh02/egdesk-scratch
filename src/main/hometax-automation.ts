@@ -62,10 +62,8 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
         '--disable-blink-features=AutomationControlled',
         '--no-first-run',
         '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults',
         '--allow-running-insecure-content',
-        '--disable-features=PrivateNetworkAccessSendPreflights',
-        '--disable-features=PrivateNetworkAccessRespectPreflightResults'
       ]
     });
 
@@ -104,11 +102,25 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
     console.log('[Hometax] Preparing initial popup listener...');
     const initialPopupPromise = context.waitForEvent('page', { timeout: 30000 }).catch(() => null);
 
-    // Navigate to Hometax
-    await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3', {
-      timeout: 60000,
-      waitUntil: 'domcontentloaded'
-    });
+    // Navigate to Hometax with retry logic for transient connection failures
+    const hometaxUrl = 'https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await page.goto(hometaxUrl, { timeout: 60000, waitUntil: 'domcontentloaded' });
+        const currentUrl = page.url();
+        if (currentUrl.startsWith('chrome-error://') || currentUrl.startsWith('about:neterror')) {
+          throw new Error(`Navigation failed: landed on error page (${currentUrl})`);
+        }
+        break;
+      } catch (navError) {
+        console.warn(`[Hometax] Navigation attempt ${attempt}/3 failed:`, navError instanceof Error ? navError.message : navError);
+        if (attempt < 3) {
+          await page.waitForTimeout(3000);
+        } else {
+          throw navError;
+        }
+      }
+    }
 
     // Handle initial popup that appears on page load
     const initialPopup = await initialPopupPromise;
@@ -372,10 +384,8 @@ export async function connectToHometax(
           '--disable-blink-features=AutomationControlled',
           '--no-first-run',
           '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults',
           '--allow-running-insecure-content',
-          '--disable-features=PrivateNetworkAccessSendPreflights',
-          '--disable-features=PrivateNetworkAccessRespectPreflightResults'
         ]
       });
 
@@ -414,11 +424,25 @@ export async function connectToHometax(
       console.log('[Hometax] Preparing initial popup listener...');
       const initialPopupPromise = context.waitForEvent('page', { timeout: 30000 }).catch(() => null);
 
-      // Navigate to Hometax
-      await page.goto('https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3', {
-        timeout: 60000,
-        waitUntil: 'domcontentloaded'
-      });
+      // Navigate to Hometax with retry logic for transient connection failures
+      const hometaxUrl = 'https://hometax.go.kr/websquare/websquare.html?w2xPath=/ui/pp/index_pp.xml&menuCd=index3';
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await page.goto(hometaxUrl, { timeout: 60000, waitUntil: 'domcontentloaded' });
+          const currentUrl = page.url();
+          if (currentUrl.startsWith('chrome-error://') || currentUrl.startsWith('about:neterror')) {
+            throw new Error(`Navigation failed: landed on error page (${currentUrl})`);
+          }
+          break;
+        } catch (navError) {
+          console.warn(`[Hometax] Navigation attempt ${attempt}/3 failed:`, navError instanceof Error ? navError.message : navError);
+          if (attempt < 3) {
+            await page.waitForTimeout(3000);
+          } else {
+            throw navError;
+          }
+        }
+      }
 
       // Handle initial popup that appears on page load
       const initialPopup = await initialPopupPromise;

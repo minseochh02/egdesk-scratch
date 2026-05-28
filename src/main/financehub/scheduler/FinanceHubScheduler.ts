@@ -84,6 +84,7 @@ export class FinanceHubScheduler extends EventEmitter {
     'ibk',
     'hana',
     'woori',
+    'nh',
   ]);
 
   private static instance: FinanceHubScheduler | null = null;
@@ -1312,53 +1313,7 @@ export class FinanceHubScheduler extends EventEmitter {
       console.log(`[FinanceHubScheduler] ✅ Retrieved credentials from DATABASE for ${credentialKey}`);
 
       // CRITICAL: Auto-detect Arduino port (like manual UI does)
-      let arduinoPort = store.get('financeHub.arduinoPort', 'COM3');
-      
-      // Try to auto-detect Arduino if not already set or if it's the default Windows port on Mac
-      const isMac = process.platform === 'darwin';
-      const isDefaultWindowsPort = arduinoPort === 'COM3' || arduinoPort?.startsWith('COM');
-      
-      if (isMac && isDefaultWindowsPort) {
-        this.debugLog(`⚠️  Detected macOS with Windows port (${arduinoPort}), attempting auto-detection...`);
-        console.log(`[FinanceHubScheduler] ⚠️  Detected macOS with Windows port (${arduinoPort}), attempting auto-detection...`);
-        
-        try {
-          const { SerialPort } = require('serialport');
-          const ports = await SerialPort.list();
-          
-          // Look for Arduino by checking vendor IDs and path patterns
-          const arduinoPortFound = ports.find((port: any) => {
-            return (
-              port.vendorId === '2341' || // Arduino official
-              port.vendorId === '0403' || // FTDI
-              port.vendorId === '1a86' || // CH340
-              port.vendorId === '10c4' || // CP210x
-              port.path?.includes('usbserial') ||
-              port.path?.includes('usbmodem') ||
-              port.manufacturer?.toLowerCase().includes('arduino')
-            );
-          });
-          
-          if (arduinoPortFound) {
-            arduinoPort = arduinoPortFound.path;
-            store.set('financeHub.arduinoPort', arduinoPort);
-            this.debugLog(`✅ Auto-detected Arduino on port: ${arduinoPort}`);
-            console.log(`[FinanceHubScheduler] ✅ Auto-detected Arduino on port: ${arduinoPort}`);
-          } else {
-            const warningMsg = `⚠️  No Arduino detected. Available ports: ${ports.map((p: any) => p.path).join(', ')}`;
-            this.debugLog(warningMsg);
-            console.warn(`[FinanceHubScheduler] ${warningMsg}`);
-            
-            // Card automation will likely fail without Arduino, but continue anyway
-          }
-        } catch (error) {
-          this.debugLog(`⚠️  Failed to auto-detect Arduino: ${error}`);
-          console.error(`[FinanceHubScheduler] Failed to auto-detect Arduino:`, error);
-        }
-      } else {
-        this.debugLog(`Using configured Arduino port: ${arduinoPort}`);
-        console.log(`[FinanceHubScheduler] Using configured Arduino port: ${arduinoPort}`);
-      }
+      const arduinoPort = await this.resolveArduinoPortForBankSync();
 
       // Create card automator
       const { cards } = require('../index');
