@@ -86,7 +86,6 @@ const ALL_TABLES = [
   // Banking product tables (stable hash IDs — no account FK remapping needed)
   'ibk_b2b_receivables',
   'woori_b2b_loan_executions',
-  'ibk_loan_transactions',
   'ibk_endorsements',
   'ibk_loan_history',
   'hana_loan_history',
@@ -533,8 +532,7 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
       'financehub_scheduler_executions',
       'ibk_b2b_receivables',
       'woori_b2b_loan_executions',
-      'ibk_loan_transactions',
-      'ibk_endorsements',
+          'ibk_endorsements',
       'ibk_loan_history',
       'hana_loan_history',
     ];

@@ -815,14 +815,6 @@ interface FinanceHubAPI {
     importError?: string;
     importWarnings?: string[];
   }>;
-  syncIbkLoanTransactions: (opts?: { startDate?: string; endDate?: string }) => Promise<{
-    success: boolean;
-    error?: string;
-    accounts?: number;
-    imported?: number;
-    skipped?: number;
-    perAccount?: Array<{ accountNumber: string; imported?: number; skipped?: boolean; error?: string; filePath?: string }>;
-  }>;
 }
 
 /**
@@ -834,7 +826,6 @@ interface FinanceHubDbAPI {
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getIbkB2bReceivables: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getWooriB2bLoanExecutions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
-  getIbkLoanTransactions: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   queryTransactions: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getTransactionStats: (options: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMonthlySummary: (options: any) => Promise<{ success: boolean; data?: any[]; error?: string }>;

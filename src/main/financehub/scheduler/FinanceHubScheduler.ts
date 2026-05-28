@@ -1740,6 +1740,8 @@ export class FinanceHubScheduler extends EventEmitter {
 
           const complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
+            certificateIndex: (savedCredentials as any).certificateIndex,
+            xpath: (savedCredentials as any).certificateXPath,
           });
 
           if (!complete?.success || !complete.isLoggedIn) {
@@ -1779,8 +1781,12 @@ export class FinanceHubScheduler extends EventEmitter {
       // Get accounts — prefer accounts returned by completeCorporateCertificateLogin (same
       // as FinanceHub UI) to avoid an extra navigation that boots the session on Hana/IBK/Woori.
       // Only call getAccounts() for non-cert paths or if the cert flow returned none.
+      // [EXCEPTION] For Hana Bank, login accounts are incomplete (dropdown only), so we always
+      // call getAccounts() to get full details (scraping) if available.
       let accounts: any[] = certLoginAccounts;
-      if (accounts.length === 0 && typeof automator.getAccounts === 'function') {
+      const needsFullScrape = bankId === 'hana' || accounts.length === 0;
+
+      if (needsFullScrape && typeof automator.getAccounts === 'function') {
         const accountsResult = await automator.getAccounts();
         // Session expired: automator returns { success: false, sessionExpired: true } instead of an array
         if (accountsResult && typeof accountsResult === 'object' && !Array.isArray(accountsResult) && (accountsResult as any).sessionExpired) {
@@ -1943,15 +1949,6 @@ export class FinanceHubScheduler extends EventEmitter {
           if (endRes?.success && endRes.filePath) {
             const imp = financeHubDbTransactions.importIbkEndorsementsFromExcel(endRes.filePath);
             console.log(`[FinanceHubScheduler] IBK: Imported ${imp.imported} endorsements`);
-          }
-        }
-
-        // 2. IBK 대출거래내역 (Loan History - consolidated)
-        if (bankId === 'ibk' && typeof automator.syncLoanTransactions === 'function') {
-          console.log('[FinanceHubScheduler] IBK: Starting loan history sync...');
-          const loanRes = await automator.syncLoanTransactions();
-          if (loanRes?.success) {
-            console.log(`[FinanceHubScheduler] IBK: Loan history sync complete (${loanRes.imported} imported)`);
           }
         }
 
@@ -2272,6 +2269,8 @@ export class FinanceHubScheduler extends EventEmitter {
 
           const complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
+            certificateIndex: (savedCredentials as any).certificateIndex,
+            xpath: (savedCredentials as any).certificateXPath,
           });
 
           if (!complete?.success || !complete.isLoggedIn) {

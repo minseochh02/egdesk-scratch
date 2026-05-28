@@ -220,7 +220,7 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword } = creds || {};
+    const { certificatePassword, certificateIndex } = creds || {};
     if (this._ibkCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -243,22 +243,37 @@ class IbkBankAutomator extends BaseBankAutomator {
       });
       await this._arduinoHid.connect();
 
-      // [개선] 직접 포커스 시도
-      this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
-      const focusResult = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
-      
-      if (!focusResult.ok) {
-        throw new Error(`인증서 입력창 포커스 실패: ${focusResult.error}`);
-      }
-      this.log(`   ✅ 포커스 성공! (${focusResult.method})`);
+      let inputSteps = IBK_NATIVE_CERT_STEPS;
 
-      // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
-      const pwIndex = IBK_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
-      const inputSteps = IBK_NATIVE_CERT_STEPS.filter((s, idx) => {
-        if (s.key === 'TAB') return false;
-        if (s.key === 'ENTER' && idx < pwIndex) return false;
-        return true;
-      });
+      // [개선] 직접 포커스 시도
+      // 단, certificateIndex가 1보다 큰 경우(인증서 선택이 필요한 경우)에는 안전을 위해 기본 TAB 방식을 사용합니다.
+      if (this._ibkCertWindowClass && (!certificateIndex || certificateIndex <= 1)) {
+        this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
+        const focusResult = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+        
+        if (focusResult.ok) {
+          this.log(`   ✅ 포커스 성공! (${focusResult.method}) - TAB 단계를 건너뜁니다.`);
+          // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
+          const pwIndex = IBK_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
+          inputSteps = IBK_NATIVE_CERT_STEPS.filter((s, idx) => {
+            if (s.key === 'TAB') return false;
+            if (s.key === 'ENTER' && idx < pwIndex) return false;
+            return true;
+          });
+        } else {
+          this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
+        }
+      }
+
+      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+      if (certificateIndex && certificateIndex > 1) {
+        this.log(`[IBK] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+        const indexSteps = [];
+        for (let i = 0; i < certificateIndex - 1; i++) {
+          indexSteps.push({ key: 'DOWN', waitMs: 200 });
+        }
+        inputSteps = [...indexSteps, ...inputSteps];
+      }
 
       await runNativeCertArduinoSteps(
         this._arduinoHid,
@@ -2024,19 +2039,15 @@ class IbkBankAutomator extends BaseBankAutomator {
             try {
               const fhm = getSQLiteManager().getFinanceHubManager();
               
-              // Import into legacy ibk_loan_history
               const impHistory = fhm.importIbkLoanHistoryFromExcel(finalPath, acct);
-              
-              // Import into new ibk_loan_transactions
-              const impTransactions = fhm.importIbkLoanTransactionsFromExcel(finalPath, acct);
-              
-              imported = impTransactions.imported || impHistory.imported || 0;
-              
-              if (impTransactions.warnings && impTransactions.warnings.length) {
-                this.warn(`[IBK loan] account=${acct} parser warnings: ${impTransactions.warnings.join('; ')}`);
+
+              imported = impHistory.imported || 0;
+
+              if (impHistory.warnings && impHistory.warnings.length) {
+                this.warn(`[IBK loan] account=${acct} parser warnings: ${impHistory.warnings.join('; ')}`);
               }
-              if (impTransactions.success === false && impHistory.success === false) {
-                this.warn(`[IBK loan] account=${acct} import failed: ${impTransactions.error || impHistory.error}`);
+              if (impHistory.success === false) {
+                this.warn(`[IBK loan] account=${acct} import failed: ${impHistory.error}`);
               }
             } catch (importErr) {
               this.warn(`[IBK loan] account=${acct} import threw: ${importErr.message}`);

@@ -844,15 +844,6 @@ export class SQLiteManager {
       }
     });
 
-    ipcMain.handle('sqlite-financehub-get-ibk-loan-transactions', async () => {
-      try {
-        const rows = this.getFinanceHubManager().getIbkLoanTransactions();
-        return { success: true, data: rows };
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] };
-      }
-    });
-
     ipcMain.handle('sqlite-financehub-get-ibk-endorsements', async () => {
       try {
         const rows = this.getFinanceHubManager().getIbkEndorsements();

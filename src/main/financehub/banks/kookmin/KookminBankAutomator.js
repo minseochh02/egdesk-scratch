@@ -463,7 +463,7 @@ class KookminBankAutomator extends BaseBankAutomator {
   }
 
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword } = creds || {};
+    const { certificatePassword, certificateIndex } = creds || {};
     if (this._kookminCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -494,7 +494,8 @@ class KookminBankAutomator extends BaseBankAutomator {
       let inputSteps = KOOKMIN_NATIVE_CERT_STEPS;
 
       // [개선] 직접 포커스 시도 (Delfino QWidget 환경)
-      if (this._kookminCertWindowClass) {
+      // 단, certificateIndex가 1보다 큰 경우(인증서 선택이 필요한 경우)에는 안전을 위해 기본 TAB 방식을 사용합니다.
+      if (this._kookminCertWindowClass && (!certificateIndex || certificateIndex <= 1)) {
         this.log(`[KB] 인증서 입력창 직접 포커스 시도 (${this._kookminCertWindowClass})...`);
         const focusResult = focusCertElement(this._kookminCertWindowClass, 'passwordFrame');
         
@@ -510,6 +511,16 @@ class KookminBankAutomator extends BaseBankAutomator {
         } else {
           this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
         }
+      }
+
+      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+      if (certificateIndex && certificateIndex > 1) {
+        this.log(`[KB] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+        const indexSteps = [];
+        for (let i = 0; i < certificateIndex - 1; i++) {
+          indexSteps.push({ key: 'DOWN', waitMs: 200 });
+        }
+        inputSteps = [...indexSteps, ...inputSteps];
       }
 
       await runNativeCertArduinoSteps(

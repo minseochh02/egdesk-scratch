@@ -269,7 +269,7 @@ class WooriBankAutomator extends BaseBankAutomator {
   }
 
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword } = creds || {};
+    const { certificatePassword, certificateIndex } = creds || {};
     if (this._wooriCorporateCertPhase !== 'awaiting_password') {
       return { success: false, error: '인증서 준비 단계가 완료되지 않았습니다.' };
     }
@@ -297,6 +297,15 @@ class WooriBankAutomator extends BaseBankAutomator {
         log: (m) => this.log(m),
       });
       await this._arduinoHid.connect();
+
+      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+      if (certificateIndex && certificateIndex > 1) {
+        this.log(`[WOORI] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+        for (let i = 0; i < certificateIndex - 1; i++) {
+          await this._arduinoHid.sendKey('DOWN');
+          await this.page.waitForTimeout(200);
+        }
+      }
 
       let focused = '';
       for (let i = 1; i <= 20; i++) {

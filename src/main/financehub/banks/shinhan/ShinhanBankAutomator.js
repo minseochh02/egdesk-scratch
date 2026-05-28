@@ -628,7 +628,7 @@ class ShinhanBankAutomator extends BaseBankAutomator {
    * @param {{ certificatePassword: string }} creds
    */
   async completeCorporateCertificateLogin(creds) {
-    const { certificatePassword } = creds || {};
+    const { certificatePassword, certificateIndex } = creds || {};
     if (this._shinhanCorporateCertPhase !== 'awaiting_password') {
       return {
         success: false,
@@ -666,11 +666,24 @@ class ShinhanBankAutomator extends BaseBankAutomator {
         log: (m) => this.log(m),
       });
       await this._arduinoHid.connect();
+
+      let inputSteps = SHINHAN_NATIVE_CERT_STEPS;
+
+      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+      if (certificateIndex && certificateIndex > 1) {
+        this.log(`[SHINHAN] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+        const indexSteps = [];
+        for (let i = 0; i < certificateIndex - 1; i++) {
+          indexSteps.push({ key: 'DOWN', waitMs: 200 });
+        }
+        inputSteps = [...indexSteps, ...inputSteps];
+      }
+
       await runNativeCertArduinoSteps(
         this._arduinoHid,
         this.page,
         certificatePassword,
-        SHINHAN_NATIVE_CERT_STEPS,
+        inputSteps,
         {
           log: this.log.bind(this),
           slowType: useSlowTyping,

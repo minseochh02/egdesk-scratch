@@ -733,6 +733,56 @@ const createWindow = async () => {
             };
           }
 
+          // ===========================================================
+          // [추가] UI 수동 동기화 시에도 추가 상품(대출, 어음 등) 연동
+          // 거래내역 조회가 끝난 후 브라우저 세션을 유지한 채로 진행합니다.
+          // ===========================================================
+          try {
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            
+            // 1. IBK: 외상매출채권, 배서내역, 대출거래내역
+            if (bankId === 'ibk') {
+              if (typeof (automator as any).syncPromissoryNotes === 'function') {
+                console.log('[FINANCE-HUB] IBK: Starting promissory notes sync (UI)...');
+                const promRes = await (automator as any).syncPromissoryNotes();
+                if (promRes?.success && promRes.filePath) {
+                  financeHubManager.importIbkB2bReceivablesFromExcel(promRes.filePath);
+                }
+              }
+              if (typeof (automator as any).syncEndorsements === 'function') {
+                console.log('[FINANCE-HUB] IBK: Starting endorsements sync (UI)...');
+                const endRes = await (automator as any).syncEndorsements();
+                if (endRes?.success && endRes.filePath) {
+                  financeHubManager.importIbkEndorsementsFromExcel(endRes.filePath);
+                }
+              }
+              if (typeof (automator as any).syncLoanTransactions === 'function') {
+                console.log('[FINANCE-HUB] IBK: Starting loan history sync (UI)...');
+                await (automator as any).syncLoanTransactions();
+              }
+            }
+            
+            // 2. Hana: 대출상세내역
+            if (bankId === 'hana' && typeof (automator as any).syncLoanHistory === 'function') {
+              console.log('[FINANCE-HUB] Hana: Starting loan history sync (UI)...');
+              const loanRes = await (automator as any).syncLoanHistory();
+              if (loanRes?.success && loanRes.filePath) {
+                financeHubManager.importHanaLoanHistoryFromExcel(loanRes.filePath);
+              }
+            }
+
+            // 3. Woori: B2B대출 실행내역
+            if (bankId === 'woori' && typeof (automator as any).syncB2bLoanExecutions === 'function') {
+              console.log('[FINANCE-HUB] Woori: Starting B2B loan executions sync (UI)...');
+              const b2bRes = await (automator as any).syncB2bLoanExecutions();
+              if (b2bRes?.success && b2bRes.filePath) {
+                financeHubManager.importWooriB2bLoanExecutionsFromExcel(b2bRes.filePath);
+              }
+            }
+          } catch (extraErr) {
+            console.warn(`[FINANCE-HUB] Failed to sync extra products for ${bankId}:`, extraErr);
+          }
+
           return { success: true, transactions };
         } catch (error) {
           console.error(`[FINANCE-HUB] Failed to get transactions for ${bankId}:`, error);
@@ -904,32 +954,6 @@ const createWindow = async () => {
       );
 
       ipcMain.handle(
-        'finance-hub:sync-ibk-loan-transactions',
-        async (_event, opts: { startDate?: string; endDate?: string } = {}) => {
-          try {
-            const automator = activeAutomators.get('ibk');
-            if (!automator) {
-              return { success: false, error: '활성 IBK 세션이 없습니다. 먼저 로그인해 주세요.' };
-            }
-            type IbkAutomator = {
-              syncLoanTransactions?: (o: { startDate?: string; endDate?: string }) => Promise<Record<string, unknown>>;
-            };
-            const a = automator as IbkAutomator;
-            if (typeof a.syncLoanTransactions !== 'function') {
-              return { success: false, error: 'IBK 자동화에 syncLoanTransactions 메서드가 없습니다.' };
-            }
-            return await a.syncLoanTransactions(opts);
-          } catch (error) {
-            console.error('[FINANCE-HUB] sync-ibk-loan-transactions failed:', error);
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        },
-      );
-
-      ipcMain.handle(
         'finance-hub:import-ibk-loan-history-excel',
         async (_event, { filePath }: { filePath: string }) => {
           try {
@@ -938,25 +962,6 @@ const createWindow = async () => {
             return result;
           } catch (error) {
             console.error('[FINANCE-HUB] import-ibk-loan-history-excel failed:', error);
-            return {
-              success: false,
-              imported: 0,
-              skipped: 0,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        },
-      );
-
-      ipcMain.handle(
-        'finance-hub:import-ibk-loan-transactions-excel',
-        async (_event, { filePath }: { filePath: string }) => {
-          try {
-            const financeHubManager = getSQLiteManager().getFinanceHubManager();
-            const result = financeHubManager.importIbkLoanTransactionsFromExcel(filePath);
-            return result;
-          } catch (error) {
-            console.error('[FINANCE-HUB] import-ibk-loan-transactions-excel failed:', error);
             return {
               success: false,
               imported: 0,
@@ -1213,13 +1218,13 @@ const createWindow = async () => {
 
       ipcMain.handle(
         'finance-hub:shinhan-corporate-cert-complete',
-        async (_event, { certificatePassword }: { certificatePassword: string }) => {
+        async (_event, { certificatePassword, certificateIndex, xpath }: { certificatePassword: string; certificateIndex?: number; xpath?: string }) => {
           try {
             const automator = activeAutomators.get('shinhan');
             if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
               return { success: false, error: '활성 신한 세션이 없습니다. 1단계부터 다시 시도하세요.' };
             }
-            return await automator.completeCorporateCertificateLogin({ certificatePassword });
+            return await automator.completeCorporateCertificateLogin({ certificatePassword, certificateIndex, xpath });
           } catch (error) {
             console.error('[FINANCE-HUB] shinhan-corporate-cert-complete failed:', error);
             return { success: false, error: error instanceof Error ? error.message : String(error) };
