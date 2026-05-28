@@ -1816,11 +1816,12 @@ class IbkBankAutomator extends BaseBankAutomator {
       try {
         let trustTabClicked = false;
         try {
-          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '신탁' }).first().click({ force: true, timeout: 5000 });
+          // efncmenuid is unique to IBK nav <a> elements; no force so actionability check skips hidden dups
+          await this.page.locator('a[efncmenuid]').filter({ hasText: /^신탁$/ }).first().click({ timeout: 5000 });
           trustTabClicked = true;
         } catch (_te0) {
           try {
-            await this.page.getByRole('link', { name: '신탁' }).first().click({ force: true, timeout: 5000 });
+            await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: /^신탁$/ }).first().click({ timeout: 5000 });
             trustTabClicked = true;
           } catch (_te1) {
             try {
@@ -2059,11 +2060,11 @@ class IbkBankAutomator extends BaseBankAutomator {
       try {
         let fundTabClicked = false;
         try {
-          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '펀드' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[efncmenuid]').filter({ hasText: /^펀드$/ }).first().click({ timeout: 5000 });
           fundTabClicked = true;
         } catch (_ffe0) {
           try {
-            await this.page.getByRole('link', { name: '펀드' }).first().click({ force: true, timeout: 5000 });
+            await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: /^펀드$/ }).first().click({ timeout: 5000 });
             fundTabClicked = true;
           } catch (_ffe1) {
             try {
@@ -2285,11 +2286,11 @@ class IbkBankAutomator extends BaseBankAutomator {
       // Cascade: uf_menuLink attr → semantic → css → xpath
       let loanTabClicked = false;
       try {
-        await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '대출' }).first().click({ force: true, timeout: 5000 });
+        await this.page.locator('a[efncmenuid]').filter({ hasText: /^대출$/ }).first().click({ timeout: 5000 });
         loanTabClicked = true;
       } catch (_e0) {
         try {
-          await this.page.getByRole('link', { name: '대출' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: /^대출$/ }).first().click({ timeout: 5000 });
           loanTabClicked = true;
         } catch (_e1) {
           try {
@@ -2610,23 +2611,28 @@ class IbkBankAutomator extends BaseBankAutomator {
       // ===========================================================
       const foreignPerAccount = [];
       try {
-        // Cascade: uf_menuLink attr → semantic → css → xpath
+        // Cascade: efncmenuid attr → uf_menuLink attr → css → xpath
+        let foreignTabClicked = false;
         try {
-          await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: '외화' }).first().click({ force: true, timeout: 5000 });
+          await this.page.locator('a[efncmenuid]').filter({ hasText: /^외화$/ }).first().click({ timeout: 5000 });
+          foreignTabClicked = true;
         } catch (_fe0) {
           try {
-            await this.page.getByRole('link', { name: '외화' }).first().click({ force: true, timeout: 5000 });
+            await this.page.locator('a[onclick*="uf_menuLink"]').filter({ hasText: /^외화$/ }).first().click({ timeout: 5000 });
+            foreignTabClicked = true;
           } catch (_fe1) {
             try {
               await this.page.locator('a:nth-match(1102)').click({ force: true, timeout: 5000 });
+              foreignTabClicked = true;
             } catch (_fe2) {
               await this.page.locator('xpath=/html/body/div[8]/div[4]/div[2]/form/div[3]/ul/li[5]/a')
                 .click({ force: true, timeout: 5000 });
+              foreignTabClicked = true;
             }
           }
         }
         await this.page.frameLocator('[name="mainframe"]').locator('a:has-text("외화")').click({ force: true, timeout: 3000 }).catch(() => {});
-        this.log('[IBK 외화] 외화 tab clicked');
+        this.log(`[IBK 외화] 외화 tab clicked (foreignTabClicked=${foreignTabClicked})`);
         await this.page.waitForTimeout(2500);
         mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
         await this._robustCleanupIbkPopups();
