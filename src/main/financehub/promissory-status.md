@@ -6,28 +6,21 @@ This document summarizes the current state of promissory note and B2B credit pro
 
 ### IBK Industrial Bank (IBK 기업은행)
 *   **Product 1**: 외상매출채권 (B2B e-receivable, seller side)
-    *   **Status**: Fully automated.
+    *   **Status**: Fully automated (Integrated into `syncPromissoryNotes`).
     *   **Navigation**: `B2B > 판매기업 > 외상매출채권 > 채권조회/취소신청`
     *   **Flow**: Login (Corporate Cert) → Navigation → Date Range Selection → Excel Download → SQLite Import.
     *   **Database Table**: `ibk_b2b_receivables`.
     *   **Details**: Captures 21 columns, including metadata for loan-availability (`대출가능일`, `대출실행여부`).
 *   **Product 2**: 대출거래내역 (Loan Transactions)
-    *   **Status**: Fully automated.
+    *   **Status**: Fully automated (Integrated into main Bank Sync flow).
     *   **Navigation**: `뱅킹업무 > 대출 > 대출조회 > 거래내역조회`
-    *   **Flow**: Login → Navigation → Account Iteration → Excel Download → SQLite Import.
+    *   **Flow**: Main Bank Sync → Navigation → Account Iteration → Excel Download → SQLite Import.
     *   **Database Table**: `ibk_loan_history`.
     *   **Details**: Per-account transaction ledger capturing principal, interest, and running balance.
-
----
-
-## 2. Needing Implementation (Paths Known)
-
-These products have been identified on the respective bank portals but require finished automator scripts and parsers.
-
-### IBK Industrial Bank (IBK 기업은행)
-*   **배서내역조회 (Endorsements)**:
+*   **Product 3**: 배서내역조회 (Endorsements)
+    *   **Status**: Fully automated (Integrated into main Bank Sync flow).
     *   **Navigation**: `B2B > 전자어음 > 조회 > 배서내역조회`
-    *   **Status**: Parser and DB table (`ibk_endorsements`) exist. Full automation (navigation/download) pending.
+    *   **Database Table**: `ibk_endorsements`.
 
 ### Woori Bank (우리은행)
 *   **B2B대출(협력) 실행내역**:

@@ -2352,6 +2352,12 @@ const electronHandler = {
     /** IBK 대출 → 대출조회 → 대출계좌조회 → 거래내역조회 (all loan accounts). */
     syncIbkLoanHistory: (opts?: { startDate?: string; endDate?: string }) =>
       ipcRenderer.invoke('finance-hub:sync-ibk-loan-history', opts || {}),
+    /** IBK B2B → 전자어음 → 조회 → 배서내역조회. Auto-imports after download. */
+    syncIbkEndorsements: () =>
+      ipcRenderer.invoke('finance-hub:sync-ibk-endorsements'),
+    /** 하나 상품가입•대출 → 대출조회 → 거래내역/대출계산서 조회. Optional date range (YYYYMMDD). */
+    syncHanaLoanHistory: (opts?: { startDate?: string; endDate?: string }) =>
+      ipcRenderer.invoke('finance-hub:sync-hana-loan-history', opts || {}),
     importIbkEndorsementsExcel: (filePath: string) =>
       ipcRenderer.invoke('finance-hub:import-ibk-endorsements-excel', { filePath }),
     importIbkLoanHistoryExcel: (filePath: string) =>

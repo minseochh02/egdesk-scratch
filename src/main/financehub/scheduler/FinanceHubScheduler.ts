@@ -668,17 +668,6 @@ export class FinanceHubScheduler extends EventEmitter {
       }
     }
 
-    // Schedule promissory notes (bank credentials; automator must implement syncPromissoryNotes)
-    for (const [bankId, schedule] of Object.entries(this.settings.promissoryNotes || {})) {
-      if (schedule && schedule.enabled) {
-        if (banksWithCredentials.includes(bankId)) {
-          this.scheduleEntity('promissory', bankId, schedule.time, now);
-        } else {
-          console.log(`[FinanceHubScheduler] ⚠️  Skipping promissory ${bankId} - no credentials in DATABASE`);
-        }
-      }
-    }
-
     this.debugLog(`✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
     console.log(`[FinanceHubScheduler] ✅ Scheduled ${this.scheduleTimers.size} entities (skipped entities without credentials)`);
   }
@@ -1931,6 +1920,65 @@ export class FinanceHubScheduler extends EventEmitter {
       }
 
       console.log(`[FinanceHubScheduler] Bank sync complete for ${bankId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
+
+      // ===========================================================
+      // [추가] 추가 뱅킹 상품 동기화 (배서내역, 대출상세, B2B 대출 등)
+      // 거래내역 조회가 끝난 후 브라우저가 열려있는 상태에서 연속해서 진행합니다.
+      // ===========================================================
+      try {
+        // 1. IBK 외상매출채권 (Promissory Notes / Receivables)
+        if (bankId === 'ibk' && typeof automator.syncPromissoryNotes === 'function') {
+          console.log('[FinanceHubScheduler] IBK: Starting promissory notes sync...');
+          const promRes = await automator.syncPromissoryNotes();
+          if (promRes?.success && promRes.filePath) {
+            const imp = financeHubDbTransactions.importIbkB2bReceivablesFromExcel(promRes.filePath);
+            console.log(`[FinanceHubScheduler] IBK: Imported ${imp.imported} promissory notes`);
+          }
+        }
+
+        // 2. IBK 배서내역 (Endorsements)
+        if (bankId === 'ibk' && typeof automator.syncEndorsements === 'function') {
+          console.log('[FinanceHubScheduler] IBK: Starting endorsements sync...');
+          const endRes = await automator.syncEndorsements();
+          if (endRes?.success && endRes.filePath) {
+            const imp = financeHubDbTransactions.importIbkEndorsementsFromExcel(endRes.filePath);
+            console.log(`[FinanceHubScheduler] IBK: Imported ${imp.imported} endorsements`);
+          }
+        }
+
+        // 2. IBK 대출거래내역 (Loan History - consolidated)
+        if (bankId === 'ibk' && typeof automator.syncLoanTransactions === 'function') {
+          console.log('[FinanceHubScheduler] IBK: Starting loan history sync...');
+          const loanRes = await automator.syncLoanTransactions();
+          if (loanRes?.success) {
+            console.log(`[FinanceHubScheduler] IBK: Loan history sync complete (${loanRes.imported} imported)`);
+          }
+        }
+
+        // 3. Hana 대출상세내역 (Loan History)
+        if (bankId === 'hana' && typeof automator.syncLoanHistory === 'function') {
+          console.log('[FinanceHubScheduler] Hana: Starting loan history sync...');
+          const loanRes = await automator.syncLoanHistory();
+          if (loanRes?.success && loanRes.filePath) {
+            const imp = financeHubDbTransactions.importHanaLoanHistoryFromExcel(loanRes.filePath);
+            console.log(`[FinanceHubScheduler] Hana: Imported ${imp.imported} loan history rows`);
+          }
+        }
+
+        // 4. Woori B2B대출(협력) 실행내역
+        if (bankId === 'woori' && typeof automator.syncB2bLoanExecutions === 'function') {
+          console.log('[FinanceHubScheduler] Woori: Starting B2B loan executions sync...');
+          const b2bRes = await automator.syncB2bLoanExecutions();
+          if (b2bRes?.success && b2bRes.filePath) {
+            const imp = financeHubDbTransactions.importWooriB2bLoanExecutionsFromExcel(b2bRes.filePath);
+            console.log(`[FinanceHubScheduler] Woori: Imported ${imp.imported} B2B loan executions`);
+          }
+        }
+      } catch (extraSyncError) {
+        console.error(`[FinanceHubScheduler] Error during extra product sync for ${bankId}:`, extraSyncError);
+        // 메인 거래내역 동기화는 성공했으므로 여기서 중단하지 않고 계속 진행
+      }
+
       return {
         success: true,
         inserted: totalInserted,
@@ -2694,13 +2742,6 @@ export class FinanceHubScheduler extends EventEmitter {
       
       if (schedule && schedule.enabled) {
         entitiesToSync.push({ type: 'tax', id: businessName, time: schedule.time });
-      }
-    }
-
-    // Add enabled promissory (requires bank credentials)
-    for (const [bankId, schedule] of Object.entries(this.settings.promissoryNotes || {})) {
-      if (schedule && schedule.enabled && banksWithCredentials.includes(bankId)) {
-        entitiesToSync.push({ type: 'promissory', id: bankId, time: schedule.time });
       }
     }
 

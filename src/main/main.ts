@@ -986,6 +986,72 @@ const createWindow = async () => {
         },
       );
 
+      ipcMain.handle(
+        'finance-hub:sync-ibk-endorsements',
+        async (_event) => {
+          try {
+            const automator = activeAutomators.get('ibk');
+            if (!automator) {
+              return { success: false, error: '활성 IBK 세션이 없습니다. 먼저 로그인해 주세요.' };
+            }
+            type IbkAutomator = {
+              syncEndorsements?: () => Promise<Record<string, unknown>>;
+            };
+            const a = automator as IbkAutomator;
+            if (typeof a.syncEndorsements !== 'function') {
+              return { success: false, error: 'IBK 자동화에 syncEndorsements 메서드가 없습니다.' };
+            }
+            const dlResult = await a.syncEndorsements();
+            if (!dlResult?.success || !dlResult?.filePath) return dlResult;
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const importResult = financeHubManager.importIbkEndorsementsFromExcel(dlResult.filePath as string);
+            return {
+              ...dlResult,
+              imported: importResult.imported,
+              skipped: importResult.skipped,
+              importWarnings: importResult.warnings,
+              importError: importResult.error,
+            };
+          } catch (error) {
+            console.error('[FINANCE-HUB] sync-ibk-endorsements failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        },
+      );
+
+      ipcMain.handle(
+        'finance-hub:sync-hana-loan-history',
+        async (_event, opts: { startDate?: string; endDate?: string } = {}) => {
+          try {
+            const automator = activeAutomators.get('hana');
+            if (!automator) {
+              return { success: false, error: '활성 Hana 세션이 없습니다. 먼저 로그인해 주세요.' };
+            }
+            type HanaAutomator = {
+              syncLoanHistory?: (o: { startDate?: string; endDate?: string }) => Promise<Record<string, unknown>>;
+            };
+            const a = automator as HanaAutomator;
+            if (typeof a.syncLoanHistory !== 'function') {
+              return { success: false, error: 'Hana 자동화에 syncLoanHistory 메서드가 없습니다.' };
+            }
+            const dlResult = await a.syncLoanHistory(opts);
+            if (!dlResult?.success || !dlResult?.filePath) return dlResult;
+            const financeHubManager = getSQLiteManager().getFinanceHubManager();
+            const importResult = financeHubManager.importHanaLoanHistoryFromExcel(dlResult.filePath as string);
+            return {
+              ...dlResult,
+              imported: importResult.imported,
+              skipped: importResult.skipped,
+              importWarnings: importResult.warnings,
+              importError: importResult.error,
+            };
+          } catch (error) {
+            console.error('[FINANCE-HUB] sync-hana-loan-history failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        },
+      );
+
       ipcMain.handle('finance-hub:login-and-get-accounts', async (_event, { bankId, credentials, proxyUrl }) => {
         try {
           // Check if we have an existing automator instance

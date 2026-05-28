@@ -1207,6 +1207,241 @@ class HanaBankAutomator extends BaseBankAutomator {
     }
   }
 
+  // ============================================================================
+  // 하나 상품가입•대출 → 대출조회 → 거래내역/대출계산서 조회
+  // ============================================================================
+
+  /**
+   * Navigate to 하나 대출상세내역 (거래내역/대출계산서 조회) and download Excel.
+   * @param {object} opts
+   * @param {string} [opts.startDate] YYYYMMDD
+   * @param {string} [opts.endDate]   YYYYMMDD
+   * @returns {Promise<{ success: boolean, filePath?: string|null, error?: string }>}
+   */
+  async syncLoanHistory({ startDate, endDate } = {}) {
+    if (!this.page) {
+      return { success: false, error: '브라우저 페이지가 없습니다.' };
+    }
+    this.log('Hana: syncLoanHistory (대출상세내역) 시작...');
+
+    try {
+      let frame = await this._waitForHanaMainframe();
+      await this._closeHanaPopups();
+
+      // ── Top nav: 상품가입•대출 ──────────────────────────────────────────────
+      const loanNavClicked = await (async () => {
+        const candidates = [
+          () => this.page.locator('a').filter({ hasText: /^상품가입[•・]대출$/ }).first(),
+          () => this.page.locator('a').filter({ hasText: '상품가입' }).first(),
+          () => frame.locator('a').filter({ hasText: /상품가입/ }).first(),
+        ];
+        for (const get of candidates) {
+          try {
+            const el = get();
+            const visible = await el.isVisible({ timeout: 2000 }).catch(() => false);
+            if (!visible) continue;
+            await el.hover({ force: true });
+            await this.page.waitForTimeout(300);
+            await el.click({ timeout: 4000 });
+            return true;
+          } catch (e) {
+            this.warn('[Hana loan] 상품가입•대출 candidate failed:', e.message);
+          }
+        }
+        return false;
+      })();
+      if (!loanNavClicked) {
+        this.warn('[Hana loan] 상품가입•대출 top-nav click failed — proceeding anyway');
+      }
+      await this.page.waitForTimeout(1500);
+
+      // ── Hover 대출조회 to expand its submenu ────────────────────────────────
+      try {
+        const loanInquiry = this.page.locator('a').filter({ hasText: /^대출조회$/ }).first();
+        await loanInquiry.hover({ force: true });
+        await this.page.waitForTimeout(400);
+      } catch (e) {
+        this.warn('[Hana loan] 대출조회 hover failed:', e.message);
+      }
+
+      // ── 거래내역/대출계산서 조회 (re-hover parent then click child) ─────────
+      try {
+        const loanInquiry = this.page.locator('a').filter({ hasText: /^대출조회$/ }).first();
+        await loanInquiry.hover({ force: true });
+        await this.page.waitForTimeout(200);
+        const target = this.page.locator('a').filter({ hasText: /거래내역.*대출계산서|대출계산서.*거래내역/ }).first();
+        await target.waitFor({ state: 'visible', timeout: 5000 });
+        await target.hover({ force: true });
+        await this.page.waitForTimeout(200);
+        await target.click({ timeout: 5000 });
+      } catch (e) {
+        this.warn('[Hana loan] 거래내역/대출계산서 조회 click failed, trying frame evaluate:', e.message);
+        await frame.evaluate(() => {
+          const links = Array.from(document.querySelectorAll('a'));
+          const t = links.find(a => /거래내역.*계산서|계산서.*거래내역/.test(a.textContent || ''));
+          if (t) t.click();
+        }).catch(() => {});
+      }
+      await this.page.waitForTimeout(3000);
+
+      frame = this._hanaFrame() || frame;
+
+      // ── Date range ──────────────────────────────────────────────────────────
+      const fmt = (yyyymmdd) =>
+        `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+      const today = new Date();
+      const defaultEnd = today.toISOString().slice(0, 10);
+      const defaultStart = new Date(today.getTime() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const startVal = startDate ? fmt(startDate) : defaultStart;
+      const endVal = endDate ? fmt(endDate) : defaultEnd;
+
+      try {
+        await frame.evaluate(
+          ({ s, e }) => {
+            const setInput = (id, val) => {
+              const el = document.getElementById(id);
+              if (!el) return false;
+              el.value = val;
+              ['input', 'change'].forEach((ev) =>
+                el.dispatchEvent(new Event(ev, { bubbles: true })),
+              );
+              if (typeof el.onchange === 'function') el.onchange();
+              return true;
+            };
+            setInput('sInqStrDt', s) || setInput('startDate', s) || setInput('strDt', s);
+            setInput('sInqEndDt', e) || setInput('endDate', e) || setInput('endDt', e);
+          },
+          { s: startVal, e: endVal },
+        );
+        this.log(`Hana loan: date range set (${startVal} ~ ${endVal})`);
+      } catch (e) {
+        this.warn('Hana loan: date range set failed:', e.message);
+      }
+      await this.page.waitForTimeout(500);
+
+      // ── 조회 ────────────────────────────────────────────────────────────────
+      try {
+        await frame.locator('button:has-text("조회"), a:has-text("조회")').first().click({ timeout: 5000 });
+      } catch (e) {
+        await frame
+          .evaluate(() => {
+            const el = Array.from(document.querySelectorAll('button,a')).find(
+              (b) => b.textContent?.trim() === '조회',
+            );
+            if (el) el.click();
+          })
+          .catch(() => {});
+      }
+      await this.page.waitForTimeout(4000);
+
+      // ── No-data check ────────────────────────────────────────────────────────
+      const isEmpty = await frame
+        .evaluate(() => {
+          const body = document.body?.textContent || '';
+          return (
+            body.includes('조회된 내역이 없습니다') ||
+            body.includes('조회 내역이 없습니다') ||
+            body.includes('저장할 데이터가 없습니다') ||
+            body.includes('조회결과가 없습니다') ||
+            body.includes('거래내역이 없습니다') ||
+            body.includes('조회된 데이터가 없습니다')
+          );
+        })
+        .catch(() => false);
+      if (isEmpty) {
+        return { success: true, filePath: null, message: '조회 결과가 없습니다.' };
+      }
+
+      // ── Excel download ────────────────────────────────────────────────────────
+      const exportStartedAt = Date.now();
+      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+
+      try {
+        await frame.locator('button:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
+      } catch (e) {
+        try {
+          await frame.locator('button:has-text("엑셀다운로드"), a:has-text("엑셀다운로드")').first().click({ timeout: 5000 });
+        } catch (e2) {
+          await frame
+            .evaluate(() => {
+              const btn = Array.from(document.querySelectorAll('button,a')).find((b) =>
+                /엑셀/.test(b.textContent || ''),
+              );
+              if (btn) btn.click();
+            })
+            .catch(() => {});
+        }
+      }
+
+      let download = null;
+      let fallbackFile = null;
+
+      const result = await Promise.race([
+        downloadPromise,
+        this.page.waitForTimeout(5000).then(() => 'timeout'),
+      ]);
+
+      if (result === 'timeout' || !result) {
+        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+        if (!fallbackFile) {
+          download = await downloadPromise.catch(() => null);
+        }
+      } else {
+        download = result;
+      }
+
+      if (!download && !fallbackFile) {
+        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+      }
+
+      if (!download && !fallbackFile) {
+        return { success: false, error: '엑셀 다운로드를 확인할 수 없습니다.' };
+      }
+
+      const suggested =
+        (download && download.suggestedFilename()) ||
+        (fallbackFile && path.basename(fallbackFile.path)) ||
+        'hana-loan-history.xls';
+      const ext = path.extname(suggested) || '.xls';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const finalName = `Hana_대출상세내역_${ts}${ext}`;
+      const finalPath = path.join(this.downloadDir, finalName);
+
+      if (download) {
+        try {
+          const tempPath = await download.path();
+          if (tempPath && fs.existsSync(tempPath)) {
+            fs.copyFileSync(tempPath, finalPath);
+            try { fs.unlinkSync(tempPath); } catch (e) {}
+          } else {
+            await download.saveAs(finalPath);
+          }
+        } catch (saveErr) {
+          this.warn(`Hana loan: primary save failed (${saveErr.message}), trying saveAs...`);
+          await download.saveAs(finalPath).catch((e) => this.error('Hana loan: saveAs also failed:', e.message));
+        }
+      } else if (fallbackFile && fallbackFile.path !== finalPath) {
+        fs.copyFileSync(fallbackFile.path, finalPath);
+      }
+
+      if (!fs.existsSync(finalPath)) {
+        return { success: false, error: '파일 저장에 실패했습니다.' };
+      }
+
+      return {
+        success: true,
+        filePath: finalPath,
+        message: 'Hana loan history downloaded; importing in main process.',
+      };
+    } catch (error) {
+      this.error('Hana syncLoanHistory failed:', error.message);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async getTransactionsWithParsing(accountNumber, startDate, endDate) {
     const downloadResult = await this.getTransactions(accountNumber, startDate, endDate);
     

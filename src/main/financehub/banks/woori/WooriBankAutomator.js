@@ -441,7 +441,13 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
     await this.page.waitForTimeout(1500);
 
-    // Mega-menu: B2B대출(협력)
+    // Mega-menu: hover 판매기업 to expose its sub-items, then click B2B대출(협력)
+    try {
+      await this.page.locator('a').filter({ hasText: '판매기업' }).first().hover({ force: true });
+      await this.page.waitForTimeout(400);
+    } catch (e) {
+      this.warn('[WOORI b2b] 판매기업 hover failed (may not be needed):', e.message);
+    }
     try {
       await this.page.getByRole('link', { name: 'B2B대출(협력)' }).first().click({ timeout: 5000 });
     } catch (e) {

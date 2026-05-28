@@ -717,6 +717,175 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   // ============================================================================
+  // IBK B2B → 전자어음 → 조회 → 배서내역조회
+  // ============================================================================
+
+  /**
+   * Navigate to 배서내역조회 and download the Excel.
+   * Returns { success, filePath } on success; auto-import happens in main process.
+   */
+  async syncEndorsements() {
+    if (!this.page) {
+      return { success: false, error: '브라우저 페이지가 없습니다.' };
+    }
+    this.ensureOutputDirectory(this.promissoryDownloadDir);
+    this.log('IBK: syncEndorsements (배서내역조회) 시작...');
+
+    try {
+      await this._robustCleanupIbkPopups();
+
+      let mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      if (!mainframe) {
+        await this.page.waitForTimeout(2000);
+        mainframe = this.page.frame({ name: 'mainframe' }) || this._mainFrame();
+      }
+      if (!mainframe) {
+        return { success: false, error: 'mainframe을 찾을 수 없습니다.' };
+      }
+
+      await this._robustCleanupIbkPopups();
+      await this.page.waitForTimeout(500);
+
+      // B2B top-nav (hover to expand mega-menu)
+      try {
+        const b2bImg = mainframe.locator('img[alt="B2B"]').first();
+        await b2bImg.hover();
+        await this.page.waitForTimeout(500);
+        await b2bImg.click();
+      } catch (e) {
+        this.warn('IBK endorsements: B2B menu click optional failed:', e.message);
+      }
+      await this.page.waitForTimeout(2000);
+
+      // 전자어음 sub-category (under B2B)
+      const endorseClicked = await this._robustClickMainframe(mainframe, 'a', '전자어음');
+      if (!endorseClicked) {
+        await mainframe.locator('a').filter({ hasText: '전자어음' }).first().click({ force: true }).catch(() => {});
+      }
+      await this.page.waitForTimeout(1500);
+
+      // 조회 (under 전자어음)
+      await this._robustClickMainframe(mainframe, 'a', '조회');
+      await this.page.waitForTimeout(1500);
+
+      // 배서내역조회 (final page)
+      await this._robustClickMainframe(mainframe, 'a', '배서내역조회');
+      await this.page.waitForTimeout(3000);
+
+      mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
+
+      // Date range: wide default (2022-01-01 ~ 당해 연말)
+      const startYY = '2022';
+      const startMM = '01';
+      const startDD = '01';
+      const now = new Date();
+      const endOfYear = new Date(now.getFullYear(), 11, 31);
+      const endYY = String(endOfYear.getFullYear());
+      const endMM = String(endOfYear.getMonth() + 1).padStart(2, '0');
+      const endDD = String(endOfYear.getDate()).padStart(2, '0');
+
+      try {
+        await mainframe.evaluate(({ sy, sm, sd, ey, em, ed }) => {
+          const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.value = val;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              if (typeof el.onchange === 'function') el.onchange();
+              return true;
+            }
+            return false;
+          };
+          setVal('inqy_sttg_ymd_yy', sy);
+          setVal('inqy_sttg_ymd_mm', sm);
+          setVal('inqy_sttg_ymd_dd', sd);
+          setVal('inqy_eymd_yy', ey);
+          setVal('inqy_eymd_mm', em);
+          setVal('inqy_eymd_dd', ed);
+        }, { sy: startYY, sm: startMM, sd: startDD, ey: endYY, em: endMM, ed: endDD });
+        this.log(`IBK endorsements: date range set (${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD})`);
+      } catch (e) {
+        this.warn('IBK endorsements: date selects failed:', e.message);
+      }
+      await this.page.waitForTimeout(1000);
+
+      const searchOk = await this._robustClickMainframe(mainframe, 'a.btn_ok', '조회');
+      if (!searchOk) {
+        await mainframe.locator('a:has-text("조회")').first().click({ force: true }).catch(() => {});
+      }
+      await this.page.waitForTimeout(4000);
+
+      await this.focusPlaywrightPage();
+      const exportStartedAt = Date.now();
+      const downloadPromise = this.waitForNextDownload({ timeout: 60000 });
+
+      await this._robustClickMainframe(mainframe, '#save_to_file');
+      await this._robustClickMainframe(mainframe, 'a', '저장');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, 'span', '엑셀파일저장');
+      await this._robustClickMainframe(mainframe, 'a', '엑셀');
+      await this.page.waitForTimeout(1500);
+
+      await this._robustClickMainframe(mainframe, '#DownloadExcel');
+      await this.page.waitForTimeout(1000);
+      await this._robustClickMainframe(mainframe, '#DownloadButton');
+
+      let download = await downloadPromise.catch(() => null);
+      let suggested = 'ibk-endorsements.xlsx';
+      let fallbackFile = null;
+
+      if (!download) {
+        this.warn('IBK endorsements: no download event; checking filesystem fallback...');
+        fallbackFile = this.findRecentDownloadFile(
+          [this.promissoryDownloadDir, this.downloadDir, path.join(this.outputDir, 'corporate-cert-downloads')],
+          exportStartedAt,
+        );
+        if (!fallbackFile) {
+          await this._cleanupIbkPopups();
+          return {
+            success: false,
+            error: '엑셀 다운로드를 확인할 수 없습니다. 화면에서 조회 결과와 저장 버튼을 확인해 주세요.',
+          };
+        }
+        suggested = path.basename(fallbackFile.path);
+      } else {
+        suggested = download.suggestedFilename() || suggested;
+      }
+
+      const ext = path.extname(suggested) || '.xlsx';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const finalName = `IBK_배서내역_${ts}${ext}`;
+      const finalPath = path.join(this.promissoryDownloadDir, finalName);
+
+      const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
+      if (!saved) {
+        await this._cleanupIbkPopups();
+        return { success: false, error: '다운로드 파일 저장에 실패했습니다.' };
+      }
+
+      await this._cleanupIbkPopups();
+
+      return {
+        success: true,
+        filePath: finalPath,
+        message: 'Download complete; endorsements Excel is imported in the main process after this call.',
+      };
+    } catch (error) {
+      this.error('IBK syncEndorsements failed:', error.message);
+      try {
+        await this._cleanupIbkPopups();
+      } catch (e) {
+        /* ignore */
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // ============================================================================
   // IBK 대출 → 대출조회 → 대출계좌조회 → 거래내역조회 (per-account)
   // Recording: output/browser-recorder-tests/ibk-대출거래.spec.js
   // ============================================================================

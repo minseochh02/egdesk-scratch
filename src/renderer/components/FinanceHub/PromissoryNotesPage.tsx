@@ -85,22 +85,6 @@ const WOORI_B2B_LOAN_EXECUTIONS_COLS: ColumnDef[] = [
   { key: 'syncedAt', sql: 'synced_at' },
 ];
 
-const IBK_LOAN_TRANSACTIONS_COLS: ColumnDef[] = [
-  { key: 'accountNumber', sql: 'account_number' },
-  { key: 'transactionDate', sql: 'transaction_date' },
-  { key: 'transactionType', sql: 'transaction_type' },
-  { key: 'currency', sql: 'currency' },
-  { key: 'transactionAmount', sql: 'transaction_amount', align: 'right', format: 'currency' },
-  { key: 'principalAmount', sql: 'principal_amount', align: 'right', format: 'currency' },
-  { key: 'interestAmount', sql: 'interest_amount', align: 'right', format: 'currency' },
-  { key: 'loanBalance', sql: 'loan_balance', align: 'right', format: 'currency' },
-  { key: 'interestRate', sql: 'interest_rate', align: 'right', format: 'rate' },
-  { key: 'startDate', sql: 'start_date' },
-  { key: 'endDate', sql: 'end_date' },
-  { key: 'status', sql: 'status' },
-  { key: 'syncedAt', sql: 'synced_at' },
-];
-
 const IBK_ENDORSEMENTS_COLS: ColumnDef[] = [
   { key: 'noteNumber', sql: 'note_number' },
   { key: 'issuerName', sql: 'issuer_name' },
@@ -225,8 +209,7 @@ const TABLE_SECTIONS: TableSection[] = [
     canImportExcel: true,
     load: () => window.electron.financeHubDb.getIbkEndorsements(),
     sync: async () => {
-      // No automation yet, but we can allow manual Excel upload
-      return { success: true };
+      return await window.electron.financeHub.syncIbkEndorsements();
     },
     columns: IBK_ENDORSEMENTS_COLS,
   },
@@ -249,10 +232,12 @@ const TABLE_SECTIONS: TableSection[] = [
     title: '하나 대출상세내역',
     subtitle: '상품가입•대출 → 대출조회 → 거래내역/대출계산서 조회',
     bankId: 'hana',
+    acceptsDateRange: true,
     canImportExcel: true,
+    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getHanaLoanHistory(),
-    sync: async () => {
-      return { success: true };
+    sync: async (opts) => {
+      return await window.electron.financeHub.syncHanaLoanHistory(opts);
     },
     columns: HANA_LOAN_HISTORY_COLS,
   },
@@ -357,8 +342,6 @@ function Section({ section, connectedBankIds }: SectionProps) {
         res = await window.electron.financeHub.importIbkLoanHistoryExcel(filePath);
       } else if (section.slug === 'hana_loan_history') {
         res = await window.electron.financeHub.importHanaLoanHistoryExcel(filePath);
-      } else if (section.slug === 'ibk_loan_transactions') {
-        res = await window.electron.financeHub.importIbkLoanTransactionsExcel(filePath);
       } else {
         // Fallback or other tables if needed
         setError('이 테이블은 수동 업로드를 지원하지 않습니다.');
