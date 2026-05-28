@@ -612,18 +612,28 @@ class NHBankAutomator extends BaseBankAutomator {
       // Step 1: Create browser
       this.log('Starting NH Bank automation...');
       const { browser, context } = await this.createBrowser(proxy, {
-        useKbScriptPlaywrightProfile: true
+        useKbScriptPlaywrightProfile: true,
+        extraChromeArgs: [
+          '--start-maximized',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+          '--no-first-run',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,PrivateNetworkAccessChecks',
+          '--allow-running-insecure-content',
+          '--safebrowsing-disable-download-protection',
+        ],
       });
       this.browser = browser;
       this.context = context;
 
       await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
+      this.page = context.pages()[0] || await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
       // Step 2: Navigate to login page
       this.log('Navigating to NH Bank login page...');
-      await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await this.page.goto(this.config.targetUrl, { waitUntil: 'domcontentloaded' });
       
       // Wait longer for the page and any popups to fully load
       this.log('Waiting for page to fully load...');

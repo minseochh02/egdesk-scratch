@@ -740,8 +740,12 @@ const createWindow = async () => {
           try {
             const financeHubManager = getSQLiteManager().getFinanceHubManager();
             
-            // 1. IBK: 외상매출채권, 배서내역, 대출거래내역
+            // 1. IBK: 대출거래내역 + 외화 → 외상매출채권 → 배서내역
             if (bankId === 'ibk') {
+              if (typeof (automator as any).syncLoanTransactions === 'function') {
+                console.log('[FINANCE-HUB] IBK: Starting loan + foreign currency sync (UI)...');
+                await (automator as any).syncLoanTransactions();
+              }
               if (typeof (automator as any).syncPromissoryNotes === 'function') {
                 console.log('[FINANCE-HUB] IBK: Starting promissory notes sync (UI)...');
                 const promRes = await (automator as any).syncPromissoryNotes();
@@ -755,10 +759,6 @@ const createWindow = async () => {
                 if (endRes?.success && endRes.filePath) {
                   financeHubManager.importIbkEndorsementsFromExcel(endRes.filePath);
                 }
-              }
-              if (typeof (automator as any).syncLoanTransactions === 'function') {
-                console.log('[FINANCE-HUB] IBK: Starting loan history sync (UI)...');
-                await (automator as any).syncLoanTransactions();
               }
             }
             

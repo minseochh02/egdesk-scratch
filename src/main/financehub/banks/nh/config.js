@@ -111,6 +111,7 @@ const NH_CONFIG = {
   sessionCheck: {
     loggedInUrlPatterns: ['ibz.nonghyup.com', 'banking.nonghyup.com'],
   },
+  undesiredHostnames: [],
 };
 
 module.exports = {

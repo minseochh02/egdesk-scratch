@@ -150,7 +150,7 @@ class HanaCardAutomator extends BaseCardAutomator {
       this.context = context;
 
       await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
+      this.page = context.pages()[0] || await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
       // Setup download path for this page
@@ -159,7 +159,7 @@ class HanaCardAutomator extends BaseCardAutomator {
       // Step 2: Navigate to main page
       this.log('Navigating to Hana Card main page...');
       await this.page.goto(this.config.targetUrl, {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: this.config.timeouts.pageLoad
       });
       await this.page.waitForTimeout(this.config.delays.betweenActions);

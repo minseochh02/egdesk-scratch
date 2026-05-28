@@ -3954,6 +3954,17 @@ export class FinanceHubDbManager {
       `);
 
       const run = this.db.transaction(() => {
+        if (finalAcc) {
+          this.upsertAccount({
+            bankId: 'ibk',
+            accountNumber: finalAcc,
+            accountName: 'IBK 외화계좌',
+            accountType: 'foreign_currency',
+            currency: rows[0]?.currency ?? undefined,
+            balance: rows[0]?.balance ?? undefined,
+          });
+        }
+
         let n = 0;
         for (const r of rows) {
           const id = this.stableForeignCurrencyHistoryId(

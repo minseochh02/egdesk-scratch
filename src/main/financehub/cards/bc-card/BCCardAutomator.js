@@ -118,7 +118,7 @@ class BCCardAutomator extends BaseCardAutomator {
       this.context = context;
 
       await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
+      this.page = context.pages()[0] || await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
       // Setup download path for this page
@@ -126,7 +126,7 @@ class BCCardAutomator extends BaseCardAutomator {
 
       // Step 2: Navigate to intro page (line 176)
       this.log('Navigating to BC Card intro page...');
-      await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await this.page.goto(this.config.targetUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(this.config.delays.betweenActions);
 
       // [추가] 인트로 페이지에서도 팝업 처리 (마스크 레이어 등)

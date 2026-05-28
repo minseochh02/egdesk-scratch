@@ -28,6 +28,7 @@ class HanaBankAutomator extends BaseBankAutomator {
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
     this._hanaCorporateCertPhase = 'idle';
+    this._hanaCertAttempt = 0;
   }
 
   async _disconnectArduinoHid() {
@@ -229,6 +230,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       const _hanaScreenCheck = ensureCertWindowOnScreen(uia.matchedClass);
       if (_hanaScreenCheck.moved) this.log('[Hana] 인증서 창이 화면 밖에 있어 화면 가운데로 이동했습니다.');
       this._hanaCorporateCertPhase = 'awaiting_password';
+      this._hanaCertAttempt = 0;
       this.isLoggedIn = false;
       return {
         success: true,
@@ -260,75 +262,117 @@ class HanaBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
     }
 
-    try {
-      this._arduinoHid = new ArduinoHidBankSession({
-        portPath: this.arduinoPort,
-        baudRate: this.arduinoBaudRate,
-        log: (m) => this.log(m),
-      });
-      await this._arduinoHid.connect();
+    const maxAttempts = 3;
+    while (this._hanaCertAttempt < maxAttempts) {
+      this._hanaCertAttempt += 1;
+      const useSlowTyping = this._hanaCertAttempt >= 2;
+      if (useSlowTyping) {
+        this.warn(`[Hana] 인증서 로그인 재시도 (${this._hanaCertAttempt}/${maxAttempts}) — 느린 타이핑 모드 사용`);
+      } else {
+        this.log(`[Hana] 인증서 로그인 시도 (${this._hanaCertAttempt}/${maxAttempts})...`);
+      }
 
-      let inputSteps = HANA_NATIVE_CERT_STEPS;
+      try {
+        this._arduinoHid = new ArduinoHidBankSession({
+          portPath: this.arduinoPort,
+          baudRate: this.arduinoBaudRate,
+          log: (m) => this.log(m),
+        });
+        await this._arduinoHid.connect();
 
-      // [개선] 직접 포커스 시도 (Delfino QWidget 환경)
-      // 단, certificateIndex가 1보다 큰 경우(인증서 선택이 필요한 경우)에는 안전을 위해 기본 TAB 방식을 사용합니다.
-      if (this._hanaCertWindowClass && (!certificateIndex || certificateIndex <= 1)) {
-        this.log(`[Hana] 인증서 입력창 직접 포커스 시도 (${this._hanaCertWindowClass})...`);
-        const focusResult = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
-        
-        if (focusResult.ok) {
-          this.log(`   ✅ 포커스 성공! (${focusResult.method}) - TAB 단계를 건너뜁니다.`);
-          // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
-          const pwIndex = HANA_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
-          inputSteps = HANA_NATIVE_CERT_STEPS.filter((s, idx) => {
-            if (s.key === 'TAB') return false;
-            if (s.key === 'ENTER' && idx < pwIndex) return false;
-            return true;
-          });
+        let inputSteps = HANA_NATIVE_CERT_STEPS;
+
+        // [개선] 직접 포커스 시도 (Delfino QWidget 환경)
+        // 단, certificateIndex가 1보다 큰 경우(인증서 선택이 필요한 경우)에는 안전을 위해 기본 TAB 방식을 사용합니다.
+        if (this._hanaCertWindowClass && (!certificateIndex || certificateIndex <= 1)) {
+          this.log(`[Hana] 인증서 입력창 직접 포커스 시도 (${this._hanaCertWindowClass})...`);
+          const focusResult = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
+          
+          if (focusResult.ok) {
+            this.log(`   ✅ 포커스 성공! (${focusResult.method}) - TAB 단계를 건너뜁니다.`);
+            // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
+            const pwIndex = HANA_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
+            inputSteps = HANA_NATIVE_CERT_STEPS.filter((s, idx) => {
+              if (s.key === 'TAB') return false;
+              if (s.key === 'ENTER' && idx < pwIndex) return false;
+              return true;
+            });
+          } else {
+            this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
+          }
+        }
+
+        // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+        if (certificateIndex && certificateIndex > 1) {
+          this.log(`[Hana] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+          const indexSteps = [];
+          for (let i = 0; i < certificateIndex - 1; i++) {
+            indexSteps.push({ key: 'DOWN', waitMs: 200 });
+          }
+          inputSteps = [...indexSteps, ...inputSteps];
+        }
+
+        await runNativeCertArduinoSteps(
+          this._arduinoHid,
+          this.page,
+          certificatePassword,
+          inputSteps,
+          {
+            log: this.log.bind(this),
+            warn: this.warn.bind(this),
+            slowType: useSlowTyping,
+            sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
+          }
+        );
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+
+        // Check if cert window closed (success) or still open (wrong password)
+        this.log('[HANA] 인증서 비밀번호 확인 중...');
+        const certClosed = await waitForCertWindowClose(this._hanaCertWindowClass, {
+          timeoutMs: 5000,
+          pollMs: 500,
+          onLog: (m) => this.log(m),
+        });
+
+        if (certClosed.closed) {
+          this._hanaCertAttempt = 0; // Reset on success
+          break; // Exit retry loop
         } else {
-          this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
+          this.warn(`[HANA] 인증서 창이 닫히지 않음 (시도 ${this._hanaCertAttempt}/${maxAttempts}) — 비밀번호 오류 가능성. 오류 팝업 닫기 시도...`);
+          const dismissed = dismissCertErrorConfirmButton(this._hanaCertWindowClass);
+          this.log(`[HANA] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+          
+          if (this._hanaCertAttempt >= maxAttempts) {
+            this.error(`[HANA] 최대 재시도 횟수(${maxAttempts}회) 도달. 비밀번호 잠김 방지를 위해 중단합니다.`);
+            this._hanaCorporateCertPhase = 'awaiting_password';
+            return { 
+              success: false, 
+              wrongPassword: true, 
+              error: `인증서 비밀번호가 올바르지 않습니다. (${maxAttempts}회 시도 실패) 비밀번호 잠김 방지를 위해 중단합니다. 직접 확인 후 다시 시도해주세요.` 
+            };
+          }
+          
+          this.log('[HANA] 1.5초 대기 후 재시도합니다...');
+          await this.page.waitForTimeout(1500);
+          continue; // Retry loop
         }
-      }
-
-      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
-      if (certificateIndex && certificateIndex > 1) {
-        this.log(`[Hana] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-        const indexSteps = [];
-        for (let i = 0; i < certificateIndex - 1; i++) {
-          indexSteps.push({ key: 'DOWN', waitMs: 200 });
+      } catch (error) {
+        this.error(`completeCorporateCertificateLogin (hana) attempt ${this._hanaCertAttempt} failed:`, error.message);
+        try {
+          await this._disconnectArduinoHid();
+        } catch (e) {}
+        
+        if (this._hanaCertAttempt >= maxAttempts) {
+          this.error(`[HANA] 인증서 로그인 중 오류 발생 (${this._hanaCertAttempt}/${maxAttempts}). 중단합니다:`, error.message);
+          return { success: false, error: `인증서 로그인 중 오류가 발생했습니다: ${error.message}` };
         }
-        inputSteps = [...indexSteps, ...inputSteps];
+        await this.page.waitForTimeout(1500);
+        continue;
       }
+    }
 
-      await runNativeCertArduinoSteps(
-        this._arduinoHid,
-        this.page,
-        certificatePassword,
-        inputSteps,
-        {
-          log: this.log.bind(this),
-          warn: this.warn.bind(this),
-          sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
-        }
-      );
-      await this._arduinoHid.disconnect();
-      this._arduinoHid = null;
-
-      // Check if cert window closed (success) or still open (wrong password)
-      this.log('[HANA] 인증서 비밀번호 확인 중...');
-      const certClosed = await waitForCertWindowClose(this._hanaCertWindowClass, {
-        timeoutMs: 5000,
-        pollMs: 500,
-        onLog: (m) => this.log(m),
-      });
-      if (!certClosed.closed) {
-        this.warn('[HANA] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
-        const dismissed = dismissCertErrorConfirmButton(this._hanaCertWindowClass);
-        this.log(`[HANA] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
-        this._hanaCorporateCertPhase = 'awaiting_password';
-        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
-      }
-
+    try {
       await this.page.waitForTimeout(2000);
       await this._closeHanaPopups();
       await this.page.waitForTimeout(2000);
@@ -1016,18 +1060,28 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this.page.waitForTimeout(3000);
       this.log('Hana: search wait complete');
 
-      const dateError = await frame.evaluate(() => {
-        const body = document.body.textContent || '';
-        return (
-          body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') || body.includes('조회시작일이 계좌개설일')
-        );
-      });
-      if (dateError) {
+      // [개선] 메인 페이지와 프레임 모두에서 에러 메시지 감지 (조회 기간 및 개설일 관련)
+      const checkError = async (target) => {
+        if (!target) return false;
+        return await target.evaluate(() => {
+          const body = document.body.textContent || '';
+          return (
+            body.includes('계좌 개설일보다 과거를 선택할 수 없습니다') || 
+            body.includes('조회시작일이 계좌개설일') ||
+            body.includes('조회기간은') ||
+            body.includes('과거 일자를 선택')
+          );
+        }).catch(() => false);
+      };
+
+      const dateErrorPage = await checkError(this.page);
+      const dateErrorFrame = await checkError(frame);
+
+      if (dateErrorPage || dateErrorFrame) {
         this.warn('Hana: date error detected, retrying with yesterday');
-        try {
-          await frame.locator('button:has-text("확인")').first().click({ timeout: 3000 });
-        } catch (e) {}
-        await this.page.waitForTimeout(600);
+        // [개선] 특정 프레임의 버튼이 아닌 전체 팝업 닫기 로직 사용 (메인 페이지 팝업 대응)
+        await this._closeHanaPopups();
+        await this.page.waitForTimeout(800);
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
@@ -1066,19 +1120,8 @@ class HanaBankAutomator extends BaseBankAutomator {
 
       if (earlyNoData) {
         this.log('Hana: confirmed "조회 결과가 없습니다" (Graceful Exit)');
-        try {
-          // 확인 버튼 클릭하여 팝업 정리
-          await frame.evaluate(() => {
-            const btns = document.querySelectorAll('button, a, span');
-            for (const b of btns) {
-              const txt = (b.textContent || '').trim();
-              if ((txt === '확인' || txt === '닫기') && b.offsetParent !== null) {
-                b.click();
-                return;
-              }
-            }
-          });
-        } catch (e) {}
+        // [개선] 특정 프레임의 버튼이 아닌 전체 팝업 닫기 로직 사용
+        await this._closeHanaPopups();
         return [];
       }
 
@@ -1126,9 +1169,8 @@ class HanaBankAutomator extends BaseBankAutomator {
 
         if (noDataMsg) {
           this.log('Hana: confirmed no data via message check (Graceful Exit)');
-          try { 
-            await frame.locator('button:has-text("확인")').first().click({ timeout: 2000 }).catch(() => {}); 
-          } catch (e) {}
+          // [개선] 특정 프레임의 버튼이 아닌 전체 팝업 닫기 로직 사용
+          await this._closeHanaPopups();
           return [];
         }
 
@@ -1382,6 +1424,8 @@ class HanaBankAutomator extends BaseBankAutomator {
         })
         .catch(() => false);
       if (isEmpty) {
+        this.log('Hana loan: confirmed no data (Graceful Exit)');
+        await this._closeHanaPopups();
         return { success: true, filePath: null, message: '조회 결과가 없습니다.' };
       }
 

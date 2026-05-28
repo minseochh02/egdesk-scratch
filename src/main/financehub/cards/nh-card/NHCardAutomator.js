@@ -141,12 +141,12 @@ class NHCardAutomator extends BaseBankAutomator {
       this.context = context;
 
       await this.setupBrowserContext(context, null);
-      this.page = await context.newPage();
+      this.page = context.pages()[0] || await context.newPage();
       await this.setupBrowserContext(context, this.page);
 
       // Step 2: Navigate to main page
       this.log('Navigating to NH Card main page...');
-      await this.page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      await this.page.goto(this.config.targetUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(5000);
 
       // Step 3: Click the user selection tab span

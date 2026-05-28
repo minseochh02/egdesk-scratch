@@ -1928,11 +1928,18 @@ export class FinanceHubScheduler extends EventEmitter {
       console.log(`[FinanceHubScheduler] Bank sync complete for ${bankId}: ${totalInserted} inserted, ${totalSkipped} skipped`);
 
       // ===========================================================
-      // [추가] 추가 뱅킹 상품 동기화 (배서내역, 대출상세, B2B 대출 등)
+      // [추가] 추가 뱅킹 상품 동기화 (대출, 외화, 어음, B2B 대출 등)
       // 거래내역 조회가 끝난 후 브라우저가 열려있는 상태에서 연속해서 진행합니다.
+      // 순서: 거래내역 → 대출+외화 → 어음(B2B) → 배서내역(B2B)
       // ===========================================================
       try {
-        // 1. IBK 외상매출채권 (Promissory Notes / Receivables)
+        // 1. IBK 대출거래내역 + 외화 (loans then foreign currency, same page)
+        if (bankId === 'ibk' && typeof automator.syncLoanTransactions === 'function') {
+          console.log('[FinanceHubScheduler] IBK: Starting loan + foreign currency sync...');
+          await automator.syncLoanTransactions();
+        }
+
+        // 2. IBK 외상매출채권 (Promissory Notes / Receivables)
         if (bankId === 'ibk' && typeof automator.syncPromissoryNotes === 'function') {
           console.log('[FinanceHubScheduler] IBK: Starting promissory notes sync...');
           const promRes = await automator.syncPromissoryNotes();
@@ -1942,7 +1949,7 @@ export class FinanceHubScheduler extends EventEmitter {
           }
         }
 
-        // 2. IBK 배서내역 (Endorsements)
+        // 3. IBK 배서내역 (Endorsements)
         if (bankId === 'ibk' && typeof automator.syncEndorsements === 'function') {
           console.log('[FinanceHubScheduler] IBK: Starting endorsements sync...');
           const endRes = await automator.syncEndorsements();
@@ -1952,7 +1959,7 @@ export class FinanceHubScheduler extends EventEmitter {
           }
         }
 
-        // 3. Hana 대출상세내역 (Loan History)
+        // 4. Hana 대출상세내역 (Loan History)
         if (bankId === 'hana' && typeof automator.syncLoanHistory === 'function') {
           console.log('[FinanceHubScheduler] Hana: Starting loan history sync...');
           const loanRes = await automator.syncLoanHistory();
@@ -1962,7 +1969,7 @@ export class FinanceHubScheduler extends EventEmitter {
           }
         }
 
-        // 4. Woori B2B대출(협력) 실행내역
+        // 5. Woori B2B대출(협력) 실행내역
         if (bankId === 'woori' && typeof automator.syncB2bLoanExecutions === 'function') {
           console.log('[FinanceHubScheduler] Woori: Starting B2B loan executions sync...');
           const b2bRes = await automator.syncB2bLoanExecutions();
