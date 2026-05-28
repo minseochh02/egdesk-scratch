@@ -718,11 +718,14 @@ const createWindow = async () => {
             throw new Error('No active browser session found. Please open browser or login first.');
           }
           
+          let transactions: unknown;
+          let parsedResult: Record<string, unknown> | null = null;
           if (parse && typeof automator.getTransactionsWithParsing === 'function') {
-            return await automator.getTransactionsWithParsing(accountNumber, startDate, endDate);
+            parsedResult = await automator.getTransactionsWithParsing(accountNumber, startDate, endDate) as Record<string, unknown>;
+            transactions = parsedResult;
+          } else {
+            transactions = await automator.getTransactions(accountNumber, startDate, endDate);
           }
-          
-          const transactions = await automator.getTransactions(accountNumber, startDate, endDate);
 
           // Session expired: automator returns { success: false, sessionExpired: true } instead of data
           if (transactions && typeof transactions === 'object' && !Array.isArray(transactions) && (transactions as any).sessionExpired) {
@@ -783,6 +786,11 @@ const createWindow = async () => {
             console.warn(`[FINANCE-HUB] Failed to sync extra products for ${bankId}:`, extraErr);
           }
 
+          // getTransactionsWithParsing already returns { success, transactions, metadata, ... }
+          // getTransactions returns a raw array — wrap it.
+          if (parsedResult !== null) {
+            return parsedResult;
+          }
           return { success: true, transactions };
         } catch (error) {
           console.error(`[FINANCE-HUB] Failed to get transactions for ${bankId}:`, error);
@@ -5886,6 +5894,7 @@ app
       }
     }, 1500); // Run after credential migration (1.5 seconds after startup)
 
+    /*
     // Silently re-install the Kakao plugin so the openclaw daemon always runs
     // the latest bundled version (the daemon bypasses openclaw:start, which is
     // the only other place that runs `openclaw plugins install --force`).
@@ -5897,6 +5906,7 @@ app
         console.warn('[openclaw:auto-update-plugin] non-fatal startup error:', e?.message);
       }
     }, 5000); // Run 5s after startup — low priority, after migrations settle
+    */
 
     // Auto-detect Arduino port on startup (especially important on macOS)
     setTimeout(async () => {
