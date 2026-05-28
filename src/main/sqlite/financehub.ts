@@ -971,8 +971,6 @@ export class FinanceHubDbManager {
                    UNION ALL
                    SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
                    UNION ALL
-                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
-                   UNION ALL
                    SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
                  )
                  ORDER BY dt DESC, created_at DESC
@@ -1007,8 +1005,6 @@ export class FinanceHubDbManager {
                    SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
                    UNION ALL
                    SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
-                   UNION ALL
-                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
                    UNION ALL
                    SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
                  )
@@ -1046,8 +1042,6 @@ export class FinanceHubDbManager {
                    UNION ALL
                    SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
                    UNION ALL
-                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
-                   UNION ALL
                    SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
                  )
                  ORDER BY dt DESC, created_at DESC
@@ -1072,11 +1066,7 @@ export class FinanceHubDbManager {
                    UNION ALL
                    SELECT balance, transaction_datetime as dt, created_at FROM transactions t WHERE t.account_id = a.id
                    UNION ALL
-                   SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_history ilh WHERE REPLACE(ilh.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilh.description != '기간연장'
-                   UNION ALL
                    SELECT balance, transaction_date || ' 00:00:00' as dt, created_at FROM hana_loan_history hlh WHERE REPLACE(hlh.account_number, '-', '') = REPLACE(a.account_number, '-', '')
-                   UNION ALL
-                   SELECT loan_balance as balance, transaction_date || ' 00:00:00' as dt, created_at FROM ibk_loan_transactions ilt WHERE REPLACE(ilt.account_number, '-', '') = REPLACE(a.account_number, '-', '') AND ilt.transaction_type != '기간연장'
                    UNION ALL
                    SELECT loan_balance as balance, deposit_date || ' 00:00:00' as dt, created_at FROM woori_b2b_loan_executions wble WHERE REPLACE(wble.transaction_number, '-', '') = REPLACE(a.account_number, '-', '') OR REPLACE(wble.receivable_number, '-', '') = REPLACE(a.account_number, '-', '')
                  )
