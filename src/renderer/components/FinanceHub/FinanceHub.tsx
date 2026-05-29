@@ -853,6 +853,27 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const handleRenewBank = async (bankId: string) => {
+    const bank = getBankConfigById(bankId);
+    if (!bank) return;
+    
+    const connection = connectedBanks.find(b => b.bankId === bankId);
+    const accountType = connection?.accountType || 'personal';
+
+    setSelectedBank(bank);
+    setBankAuthMethod('certificate');
+    setCredentials({ 
+      bankId: bank.id, 
+      userId: '', 
+      password: '', 
+      certificatePassword: '', 
+      accountType 
+    });
+    setBankCertificates([]);
+    setSelectedBankCertificate(null);
+    setShowBankSelector(true);
+  };
+
   // ============================================
   // Sync Transactions Handler
   // ============================================
@@ -1742,6 +1763,24 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  const handleRenewCard = async (cardCompanyId: string) => {
+    const card = getCardConfigById(cardCompanyId);
+    if (!card) return;
+
+    const connection = connectedCards.find(c => c.cardCompanyId === cardCompanyId);
+    const accountType = connection?.accountType || 'personal';
+
+    setSelectedCard(card);
+    setCardAuthMethod('certificate');
+    setCardCredentials({ 
+      cardCompanyId, 
+      userId: '', 
+      password: '', 
+      accountType 
+    });
+    setShowCardSelector(true);
+  };
+
   const handleDisconnectCard = async (cardCompanyId: string) => {
     const card = getCardConfigById(cardCompanyId);
     if (!window.confirm(`${card?.nameKo || cardCompanyId} 연결을 해제하시겠습니까?`)) return;
@@ -1831,6 +1870,15 @@ const FinanceHub: React.FC = () => {
         setIsConnectingHometax(false);
       }
     }
+  };
+
+  const handleRenewHometax = async (businessNumber: string) => {
+    const business = connectedBusinesses.find(b => b.businessNumber === businessNumber);
+    if (!business) return;
+
+    setShowHometaxModal(true);
+    handleSelectAuthMethod('certificate');
+    setHometaxCredentials(prev => ({ ...prev, businessNumber }));
   };
 
   const handleSelectCertificate = (cert: any) => {
@@ -2617,11 +2665,16 @@ const FinanceHub: React.FC = () => {
     }
   };
 
-  // Fetch NH Bank certificates automatically when Corporate + Cert are selected
+  // Banks that use NPKI disk-based cert enumeration (Delfino QWidget native cert window)
+  const NPKI_DISK_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'];
+
+  // Fetch certificates automatically when Corporate + Cert are selected (NH browser path or NPKI disk path)
   useEffect(() => {
     let cancelled = false;
+    const bankId = selectedBank?.id ?? '';
+    const usesNpkiDisk = NPKI_DISK_CERT_BANK_IDS.includes(bankId);
     if (
-      selectedBank?.id === 'nh' &&
+      (bankId === 'nh' || usesNpkiDisk) &&
       credentials.accountType === 'corporate' &&
       bankAuthMethod === 'certificate' &&
       !isConnecting &&
@@ -3430,7 +3483,7 @@ const FinanceHub: React.FC = () => {
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
-                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => alert(`${getBankConfigById(connection.bankId)?.nameKo || connection.bankId} 공인인증서 갱신 기능은 준비 중입니다.`)}>
+                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleRenewBank(connection.bankId)}>
                               <FontAwesomeIcon icon={faCertificate} /> 갱신
                             </button>
                             {(connection.status === 'disconnected' || connection.status === 'error') && <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--primary" onClick={() => handleReconnect(connection.bankId)}><FontAwesomeIcon icon={faSync} /> 재연결</button>}
@@ -3699,7 +3752,7 @@ const FinanceHub: React.FC = () => {
                         <div className="finance-hub__bank-card-footer">
                           <span>{connection.lastSync ? `마지막 동기화: ${connection.lastSync.toLocaleString('ko-KR')}` : '동기화 안됨'}</span>
                           <div className="finance-hub__bank-actions">
-                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => alert(`${getCardConfigById(connection.cardCompanyId)?.nameKo || connection.cardCompanyId} 공인인증서 갱신 기능은 준비 중입니다.`)}>
+                            <button className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline" onClick={() => handleRenewCard(connection.cardCompanyId)}>
                               <FontAwesomeIcon icon={faCertificate} /> 갱신
                             </button>
                             {(connection.status === 'disconnected' || connection.status === 'error') && (
@@ -3942,7 +3995,7 @@ const FinanceHub: React.FC = () => {
                           <div className="finance-hub__business-actions">
                             <button
                               className="finance-hub__btn finance-hub__btn--small finance-hub__btn--outline"
-                              onClick={() => alert(`${business.businessName} 공인인증서 갱신 기능은 준비 중입니다.`)}
+                              onClick={() => handleRenewHometax(business.businessNumber)}
                             >
                               <FontAwesomeIcon icon={faCertificate} /> 갱신
                             </button>
@@ -4078,8 +4131,8 @@ const FinanceHub: React.FC = () => {
                     {/* Credential Fields - Show after auth method is selected */}
                     {bankAuthMethod === 'certificate' && (
                       <>
-                        {/* NH 전용 인증서 선택 단계 (홈택스와 유사한 흐름) */}
-                        {selectedBank?.id === 'nh' && bankCertificates.length > 0 && (
+                        {/* 인증서 선택 목록 (NH + 공동인증서 HDD 은행) */}
+                        {bankCertificates.length > 0 && (
                           <div className="finance-hub__login-fields" style={{ padding: 0, marginTop: '20px' }}>
                             <h3 style={{ marginBottom: '16px', color: 'var(--fh-text-primary)', fontSize: '1.1rem' }}>
                               사용할 인증서를 선택하세요
@@ -4087,13 +4140,16 @@ const FinanceHub: React.FC = () => {
                             <div className="finance-hub__certificate-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                               {bankCertificates.map((cert: any, index: number) => (
                                 <div
-                                  key={`nh-cert-${index}`}
-                                  className={`finance-hub__certificate-item ${selectedBankCertificate === cert ? 'finance-hub__certificate-item--selected' : ''}`}
-                                  onClick={() => setSelectedBankCertificate(cert)}
+                                  key={`cert-${index}`}
+                                  className={`finance-hub__certificate-item ${selectedBankCertificate === cert ? 'finance-hub__certificate-item--selected' : ''} ${cert.expired ? 'finance-hub__certificate-item--expired' : ''}`}
+                                  onClick={() => !cert.expired && setSelectedBankCertificate(cert)}
                                 >
                                   <div className="finance-hub__certificate-icon">🔐</div>
                                   <div className="finance-hub__certificate-info">
-                                    <h4>{cert.소유자명 || cert.display || `인증서 ${cert.certificateIndex ?? index + 1}`}</h4>
+                                    <h4>
+                                      {cert.소유자명 || cert.display || `인증서 ${cert.certificateIndex ?? index + 1}`}
+                                      {cert.expired && <span style={{ marginLeft: '8px', color: 'var(--fh-error, #e53e3e)', fontSize: '0.8em' }}>만료됨</span>}
+                                    </h4>
                                     <div className="finance-hub__certificate-details">
                                       {cert.용도 && <span>용도: {cert.용도}</span>}
                                       {cert.발급기관 && <span>발급: {cert.발급기관}</span>}
@@ -4110,7 +4166,7 @@ const FinanceHub: React.FC = () => {
                         )}
 
                         {/* 기본 인증 안내 (인증서 목록이 없을 때만 표시) */}
-                        {!(selectedBank?.id === 'nh' && bankCertificates.length > 0) && (
+                        {bankCertificates.length === 0 && !isFetchingBankCertificates && (
                           <div className="finance-hub__login-notice" style={{ marginTop: '20px' }}>
                             <div className="finance-hub__notice-icon">{credentials.accountType === 'corporate' ? '🏢' : '👤'}</div>
                             <div>
@@ -4120,7 +4176,7 @@ const FinanceHub: React.FC = () => {
                                 ['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh'].includes(selectedBank.id) &&
                                 credentials.accountType === 'corporate' && (
                                 <p style={{ marginTop: '8px', fontSize: '0.9em', opacity: 0.9 }}>
-                                  먼저 아래에 공동인증서 비밀번호를 입력한 뒤 연결하세요. 인증서 창이 열리면 보통 <strong>마지막으로 사용한 인증서</strong>가 선택됩니다.
+                                  먼저 아래에 공동인증서 비밀번호를 입력한 뒤 연결하세요.
                                   (Windows + Arduino HID 필요)
                                 </p>
                               )}

@@ -210,7 +210,7 @@ class HanaBankAutomator extends BaseBankAutomator {
       try {
         await frame.evaluate(() => {
           if (typeof DelfinoConfig !== 'undefined') {
-            DelfinoConfig.lastUsedCertFirst = true;
+            DelfinoConfig.lastUsedCertFirst = false;
           }
         });
       } catch (e) {}

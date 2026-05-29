@@ -1113,14 +1113,34 @@ const createWindow = async () => {
         }
       });
 
+      // Banks that use the Delfino QWidget native cert window — certs read directly from NPKI disk
+      const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+
       ipcMain.handle(
         'finance-hub:fetch-bank-certificates',
         async (_event, { bankId, proxyUrl }: { bankId?: string; proxyUrl?: string }) => {
           const id = String(bankId || '').toLowerCase();
+
+          // Native Delfino banks — enumerate NPKI certs from disk (no browser needed)
+          if (NPKI_DISK_CERT_BANK_IDS.has(id)) {
+            try {
+              const { listAllNpkiCerts } = require('./financehub/utils/npki-cert-utils');
+              const result = listAllNpkiCerts();
+              console.log(`[FINANCE-HUB] NPKI disk certs for ${id}: ok=${result.ok}, count=${result.certificates?.length ?? 0}`);
+              if (result.ok) {
+                return { success: true, certificates: result.certificates };
+              }
+              return { success: false, error: result.error };
+            } catch (error) {
+              console.error('[FINANCE-HUB] NPKI disk cert listing failed:', error);
+              return { success: false, error: error instanceof Error ? error.message : String(error) };
+            }
+          }
+
           if (id !== 'nh') {
             return { success: false, error: '인증서 목록 조회를 지원하지 않는 은행입니다.' };
           }
-          
+
           let automator = activeAutomators.get(id);
           // fetchCertificates를 위해 새로 생성하거나 기존 것 사용 (기존 것이 있다면 정리 후 새로 생성)
           if (automator && typeof automator.cleanup === 'function') {

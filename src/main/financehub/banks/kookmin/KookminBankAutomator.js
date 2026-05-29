@@ -412,7 +412,7 @@ class KookminBankAutomator extends BaseBankAutomator {
       try {
         await this.page.evaluate(() => {
           if (typeof DelfinoConfig !== 'undefined') {
-            DelfinoConfig.lastUsedCertFirst = true;
+            DelfinoConfig.lastUsedCertFirst = false;
           }
         });
       } catch (e) {

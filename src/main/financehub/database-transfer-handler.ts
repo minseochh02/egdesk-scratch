@@ -142,7 +142,14 @@ function getFinanceHubDatabase(): Database.Database {
   if (!fs.existsSync(dbPath)) {
     throw new Error('FinanceHub database not found');
   }
-  return new Database(dbPath, { readonly: false });
+  const db = new Database(dbPath, { readonly: false });
+
+  // Register no-op functions for triggers to avoid "wrong number of arguments" errors during import/export
+  // These functions are normally registered by DBChangeDetector and expect 3 arguments: (action, tableName, rowId)
+  db.function('notify_change_financehub_changed', (_action: any, _table: any, _id: any) => {});
+  db.function('notify_change_db_changed', (_action: any, _table: any, _id: any) => {});
+
+  return db;
 }
 
 /**
@@ -223,7 +230,11 @@ function remapAccountIdInRow(
     return row;
   }
   const mapped = accountIdMap.get(aid);
-  if (mapped === undefined || mapped === aid) {
+  if (mapped === undefined) {
+    // If no mapping found, it might be an orphaned record or reference an account not in export
+    return row;
+  }
+  if (mapped === aid) {
     return row;
   }
   return { ...row, account_id: mapped };
@@ -515,7 +526,9 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
 
     // 3. Open database and begin transaction
     const db = getFinanceHubDatabase();
-    db.pragma('foreign_keys = ON');
+    // Disable foreign keys during import to avoid constraint failures
+    // due to insertion order or existing data conflicts.
+    db.pragma('foreign_keys = OFF');
 
     // Import tables in dependency order (excluding saved_credentials for now)
     const importOrder = [
