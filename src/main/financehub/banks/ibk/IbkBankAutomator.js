@@ -243,49 +243,61 @@ class IbkBankAutomator extends BaseBankAutomator {
       });
       await this._arduinoHid.connect();
 
-      let inputSteps = IBK_NATIVE_CERT_STEPS;
+      const downPresses = certificateIndex ? certificateIndex - 1 : 0;
+      let usedDirectFocus = false;
 
-      // [개선] 직접 포커스 시도
-      // 단, certificateIndex가 1보다 큰 경우(인증서 선택이 필요한 경우)에는 안전을 위해 기본 TAB 방식을 사용합니다.
-      if (this._ibkCertWindowClass && (!certificateIndex || certificateIndex <= 1)) {
+      // Phase 1: cert selection
+      // For the first cert (no DOWN presses needed), try UIA direct focus immediately —
+      // clicking the password field selects the default (top) cert and focuses the input.
+      if (downPresses === 0 && this._ibkCertWindowClass) {
         this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
-        const focusResult = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
-        
-        if (focusResult.ok) {
-          this.log(`   ✅ 포커스 성공! (${focusResult.method}) - TAB 단계를 건너뜁니다.`);
-          // TAB 단계 및 비밀번호 입력 전의 ENTER 단계를 제외한 입력 스텝 준비
-          const pwIndex = IBK_NATIVE_CERT_STEPS.findIndex(s => s.type === 'password');
-          inputSteps = IBK_NATIVE_CERT_STEPS.filter((s, idx) => {
-            if (s.key === 'TAB') return false;
-            if (s.key === 'ENTER' && idx < pwIndex) return false;
-            return true;
-          });
+        const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+        if (fr.ok) {
+          this.log(`   ✅ 포커스 성공! (${fr.method})`);
+          usedDirectFocus = true;
         } else {
-          this.warn(`   ⚠️ 직접 포커스 실패 (${focusResult.error}) - 기본 TAB 방식으로 진행합니다.`);
+          this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — ENTER+TAB 방식으로 진행`);
         }
       }
 
-      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
-      if (certificateIndex && certificateIndex > 1) {
-        this.log(`[IBK] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-        const indexSteps = [];
-        for (let i = 0; i < certificateIndex - 1; i++) {
-          indexSteps.push({ key: 'DOWN', waitMs: 200 });
+      if (!usedDirectFocus) {
+        // ENTER to open cert selection list, then DOWN_ARROW to navigate to the target cert
+        const navSteps = [{ key: 'ENTER' }, { waitMs: 2000 }];
+        if (downPresses > 0) {
+          this.log(`[IBK] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
+          navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
         }
-        inputSteps = [...indexSteps, ...inputSteps];
-      }
-
-      await runNativeCertArduinoSteps(
-        this._arduinoHid,
-        this.page,
-        certificatePassword,
-        inputSteps,
-        {
+        await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
           log: this.log.bind(this),
           warn: this.warn.bind(this),
-          sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
+        });
+
+        // After cert is selected, try UIA focus on the password field
+        if (this._ibkCertWindowClass) {
+          const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+          if (fr.ok) {
+            this.log(`   ✅ 포커스 성공! (${fr.method})`);
+            usedDirectFocus = true;
+          } else {
+            this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — TAB 방식으로 진행`);
+          }
         }
-      );
+      }
+
+      // Phase 2: password entry
+      const pwSteps = [];
+      if (!usedDirectFocus) {
+        pwSteps.push({ key: 'TAB', repeat: 4, interKeyMs: 300 });
+      }
+      pwSteps.push({ type: 'password' });
+      pwSteps.push({ waitMs: 2000 });
+      pwSteps.push({ key: 'ENTER' });
+
+      await runNativeCertArduinoSteps(this._arduinoHid, this.page, certificatePassword, pwSteps, {
+        log: this.log.bind(this),
+        warn: this.warn.bind(this),
+        sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
+      });
       await this._arduinoHid.disconnect();
       this._arduinoHid = null;
 
