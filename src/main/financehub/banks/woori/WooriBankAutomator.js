@@ -301,10 +301,6 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
 
       try {
-        // Focus the Playwright page before connecting Arduino — this ensures keystrokes
-        // from the Arduino go into the page, not the browser address bar or OS.
-        await this.focusPlaywrightPage();
-
         this._arduinoHid = new ArduinoHidBankSession({
           portPath: this.arduinoPort,
           baudRate: this.arduinoBaudRate,
@@ -312,20 +308,16 @@ class WooriBankAutomator extends BaseBankAutomator {
         });
         await this._arduinoHid.connect();
 
-        // Certificate selection — only on first attempt.
-        // xwup collapses the cert list out of the tab order once a cert is selected,
-        // so we always click the target row directly via Playwright (page has focus now
-        // from focusPlaywrightPage() above). This works whether or not a cert is pre-selected.
+        // certificate selection — only on first attempt; cert is already selected on retry
         if (!certNavigated) {
           this.log(`[WOORI] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
           
-          const selectionResult = await this.page.evaluate(({ name, expiry, index }) => {
+          // First, identify the target certificate's identifying text
+          const targetInfo = await this.page.evaluate(({ name, expiry, index }) => {
             const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
-            if (rows.length === 0) return { success: false, error: '인증서 목록 없음 (#xwup_cert_table tr)' };
+            if (rows.length === 0) return null;
 
-            // Try metadata match first, fall back to index
             let targetRow = null;
-            let matchMethod = '';
             if (name) {
               targetRow = rows.find(row => {
                 const text = row.textContent || '';
@@ -333,31 +325,85 @@ class WooriBankAutomator extends BaseBankAutomator {
                 const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
                 return nameMatch && expiryMatch;
               });
-              if (targetRow) matchMethod = 'metadata';
             }
             if (!targetRow && index >= 1) {
               targetRow = rows[index - 1];
-              if (targetRow) matchMethod = 'index';
             }
 
-            if (!targetRow) return { success: false, error: '일치하는 인증서 없음' };
-
-            // Dispatch full mouse event sequence so xwup's event handlers fire
-            const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
-            ['mousedown', 'mouseup', 'click'].forEach(evName => {
-              clickTarget.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true }));
-            });
-            return { success: true, method: matchMethod, text: clickTarget.textContent?.trim().substring(0, 60) };
+            if (targetRow) {
+              return {
+                text: targetRow.textContent?.trim() || '',
+                // We'll use a subset of the text for matching during tab navigation
+                matchSnippet: name || targetRow.textContent?.trim().substring(0, 20) || ''
+              };
+            }
+            return null;
           }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex });
 
-          if (selectionResult.success) {
-            this.log(`[WOORI] ✓ 인증서 클릭 성공 (${selectionResult.method}): "${selectionResult.text}"`);
+          if (!targetInfo) {
+            this.warn('[WOORI] ⚠️ 대상 인증서를 찾을 수 없습니다. 기본 선택 유지 시도.');
           } else {
-            this.warn(`[WOORI] ⚠️ 인증서 클릭 실패: ${selectionResult.error} — 기본 선택 유지`);
+            this.log(`[WOORI] 대상 인증서 확인됨: "${targetInfo.matchSnippet}"...`);
+            
+            // Tab navigation for certificate selection
+            let certFocused = false;
+            this.log('[WOORI] 인증서 목록으로 TAB 이동 시작...');
+            
+            for (let i = 1; i <= 30; i++) {
+              await this._arduinoHid.sendKey('TAB');
+              await this.page.waitForTimeout(300);
+              
+              const focusInfo = await this.page.evaluate(() => {
+                const ae = document.activeElement;
+                if (!ae) return { id: '', tag: '', text: '', className: '' };
+                return {
+                  id: ae.id || '',
+                  tag: ae.tagName || '',
+                  text: ae.textContent?.trim().replace(/\s+/g, ' ') || '',
+                  className: typeof ae.className === 'string' ? ae.className : ''
+                };
+              });
+              
+              this.log(`[WOORI CERT TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} class="${focusInfo.className}" text="${focusInfo.text.substring(0, 60)}"`);
+              
+              // Check if this focused element is our certificate
+              // In xwup, focused rows or cells often have specific classes or contain the cert text
+              if (targetInfo.matchSnippet && focusInfo.text.includes(targetInfo.matchSnippet)) {
+                this.log(`[WOORI] ✓ 대상 인증서 포커스 성공 (Tab ${i})`);
+                certFocused = true;
+                
+                // Once focused, we usually need to press ENTER to select it in some UIs, 
+                // but in many web-based cert lists, focus + Enter or just focus is enough.
+                // For xwup, let's try ENTER to be sure it's "selected".
+                await this._arduinoHid.sendKey('ENTER');
+                await this.page.waitForTimeout(500);
+                break;
+              }
+              
+              // Safety: if we hit the password field already, we might have skipped the cert or it was already selected
+              if (focusInfo.id === 'xwup_certselect_tek_input1') {
+                this.log('[WOORI] 이미 비밀번호 입력창에 도달했습니다. 인증서가 이미 선택된 것으로 간주합니다.');
+                certFocused = true;
+                break;
+              }
+            }
+            
+            if (!certFocused) {
+              this.warn('[WOORI] ⚠️ TAB으로 인증서를 선택하지 못했습니다. 브라우저 클릭 fallback 시도...');
+              // Fallback to direct click if TAB navigation failed
+              await this.page.evaluate(({ name, expiry, index }) => {
+                const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
+                let targetRow = rows.find(row => name && row.textContent?.includes(name)) || (index >= 1 ? rows[index - 1] : null);
+                if (targetRow) {
+                  const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
+                  // @ts-ignore
+                  clickTarget.click();
+                }
+              }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex });
+            }
           }
-
-          // Wait for xwup to show the password section after the cert is clicked
-          await this.page.waitForTimeout(1000);
+          
+          await this.page.waitForTimeout(800);
           certNavigated = true;
         } else {
           this.log('[WOORI] 재시도 — 기존 선택된 인증서 유지');
