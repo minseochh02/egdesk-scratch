@@ -1407,6 +1407,12 @@ class HanaBankAutomator extends BaseBankAutomator {
         // Close dropdown without selecting anything
         await this.page.keyboard.press('Escape').catch(() => {});
         await this.page.waitForTimeout(300);
+        // Deduplicate — dropdown markup may render seltitle elements twice (hidden + visible copy)
+        const seen = new Set();
+        for (let i = accountNames.length - 1; i >= 0; i--) {
+          if (seen.has(accountNames[i])) accountNames.splice(i, 1);
+          else seen.add(accountNames[i]);
+        }
         this.log(`[Hana loan] Found ${accountNames.length} account(s): ${accountNames.join(', ')}`);
       } catch (e) {
         this.warn('[Hana loan] Account enumeration failed:', e.message);
