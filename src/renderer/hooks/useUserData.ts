@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 /**
- * React hook for mydb operations
+ * React hook for My DB operations
  *
  * Provides methods to interact with the user data database via IPC
  */

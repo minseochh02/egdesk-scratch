@@ -298,8 +298,8 @@ class WooriBankAutomator extends BaseBankAutomator {
       });
       await this._arduinoHid.connect();
 
-      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
-      if (certificateIndex && certificateIndex > 1) {
+      // certificateIndex DOWN key selection — only on first attempt; cert is already selected on retry
+      if (certificateIndex && certificateIndex > 1 && this._wooriCertAttempt <= 1) {
         this.log(`[WOORI] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
         for (let i = 0; i < certificateIndex - 1; i++) {
           await this._arduinoHid.sendKey('DOWN');
@@ -307,32 +307,67 @@ class WooriBankAutomator extends BaseBankAutomator {
         }
       }
 
+      // On retry the cert dialog is still open and focus may be on the 확인 button or an
+      // error element. Directly clicking the password input via Playwright avoids having to
+      // TAB through xwup's virtual-keyboard toggle button (which can open the on-screen
+      // keyboard on focus and then intercept subsequent TABs and typed characters).
       let focused = '';
-      for (let i = 1; i <= 20; i++) {
-        await this._arduinoHid.sendKey('TAB');
+      let directFocusOk = false;
+      try {
+        await this.page.locator('#xwup_certselect_tek_input1').click({ timeout: 3000 });
         await this.page.waitForTimeout(300);
-        const focusInfo = await this.page.evaluate(() => {
-          const ae = document.activeElement;
-          if (!ae) return { id: '', tag: '', text: '', className: '', name: '', role: '', type: '', ariaLabel: '', title: '' };
-          return {
-            id: ae.id || '',
-            tag: ae.tagName || '',
-            text: (ae.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
-            className: typeof ae.className === 'string' ? ae.className : '',
-            name: ae.getAttribute?.('name') || '',
-            role: ae.getAttribute?.('role') || '',
-            type: ae.getAttribute?.('type') || '',
-            ariaLabel: ae.getAttribute?.('aria-label') || '',
-            title: ae.getAttribute?.('title') || '',
-          };
-        });
-        this.log(`[WOORI TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} type="${focusInfo.type}" name="${focusInfo.name}" role="${focusInfo.role}" aria="${focusInfo.ariaLabel}" title="${focusInfo.title}" class="${focusInfo.className}" text="${focusInfo.text}"`);
-        focused = focusInfo.id || focusInfo.tag;
-        if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
-          this.warn(`[WOORI] TAB landed on 삭제 button — sending another TAB to skip (i=${i})`);
-          continue;
+        const directFocusId = await this.page.evaluate(() => document.activeElement?.id || '');
+        if (directFocusId === 'xwup_certselect_tek_input1') {
+          focused = 'xwup_certselect_tek_input1';
+          directFocusOk = true;
+          this.log('[WOORI] Password field focused via direct click — skipping TAB loop');
         }
-        if (focused === 'xwup_certselect_tek_input1') break;
+      } catch (e) {
+        this.warn('[WOORI] Direct click on password field failed, falling back to TAB loop:', e.message);
+      }
+
+      if (!directFocusOk) {
+        for (let i = 1; i <= 20; i++) {
+          await this._arduinoHid.sendKey('TAB');
+          await this.page.waitForTimeout(300);
+          const focusInfo = await this.page.evaluate(() => {
+            const ae = document.activeElement;
+            if (!ae) return { id: '', tag: '', text: '', className: '', name: '', role: '', type: '', ariaLabel: '', title: '' };
+            return {
+              id: ae.id || '',
+              tag: ae.tagName || '',
+              text: (ae.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+              className: typeof ae.className === 'string' ? ae.className : '',
+              name: ae.getAttribute?.('name') || '',
+              role: ae.getAttribute?.('role') || '',
+              type: ae.getAttribute?.('type') || '',
+              ariaLabel: ae.getAttribute?.('aria-label') || '',
+              title: ae.getAttribute?.('title') || '',
+            };
+          });
+          this.log(`[WOORI TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} type="${focusInfo.type}" name="${focusInfo.name}" role="${focusInfo.role}" aria="${focusInfo.ariaLabel}" title="${focusInfo.title}" class="${focusInfo.className}" text="${focusInfo.text}"`);
+          focused = focusInfo.id || focusInfo.tag;
+          if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
+            this.warn(`[WOORI] TAB landed on 삭제 button — sending another TAB to skip (i=${i})`);
+            continue;
+          }
+          // Skip xwup virtual keyboard toggle buttons — focusing them opens the on-screen
+          // keyboard overlay which then intercepts further TABs and typed characters.
+          const idLower = focusInfo.id.toLowerCase();
+          const classLower = focusInfo.className.toLowerCase();
+          const isVKButton =
+            idLower.includes('vk') ||
+            idLower.includes('keyboard') ||
+            classLower.includes('xwup-vk') ||
+            classLower.includes('virtualkey') ||
+            focusInfo.ariaLabel.toLowerCase().includes('keyboard') ||
+            focusInfo.title.toLowerCase().includes('가상키보드');
+          if (isVKButton) {
+            this.warn(`[WOORI] TAB landed on virtual keyboard button — skipping (i=${i}, id="${focusInfo.id}")`);
+            continue;
+          }
+          if (focused === 'xwup_certselect_tek_input1') break;
+        }
       }
       if (focused !== 'xwup_certselect_tek_input1') {
         throw new Error(`비밀번호 입력칸에 도달하지 못했습니다 (focus: ${focused})`);

@@ -1397,6 +1397,24 @@ class HanaBankAutomator extends BaseBankAutomator {
         this.log('[Hana loan] Opened 실행번호 popup');
         await this.page.waitForTimeout(3000);
 
+        // Check whether the grid has any data rows. The header (.GMWrap0) is always
+        // rendered, but .GMClassReadOnly cells only appear when rows exist.
+        const dataRowCount = await this.page.locator('.GMClassReadOnly').count();
+        if (dataRowCount === 0) {
+          this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
+          // Close the popup: try 취소, then 닫기, then ESC
+          try {
+            await this.page.locator('a:has-text("취소")').first().click({ timeout: 3000 });
+          } catch (_) {
+            try {
+              await this.page.locator('a:has-text("닫기")').first().click({ timeout: 3000 });
+            } catch (_2) {
+              await this.page.keyboard.press('Escape');
+            }
+          }
+          await this.page.waitForTimeout(1000);
+        } else {
+
         // Click 실행번호 column header to focus/sort the grid
         try {
           await this.page.locator('.GMWrap0').filter({ hasText: '실행번호' }).first()
@@ -1461,6 +1479,7 @@ class HanaBankAutomator extends BaseBankAutomator {
         }
         this.log('[Hana loan] 실행번호 selected and confirmed');
         await this.page.waitForTimeout(2000);
+        } // end else (data rows exist)
       } catch (e) {
         this.warn('[Hana loan] 실행번호 popup flow failed:', e.message);
       }

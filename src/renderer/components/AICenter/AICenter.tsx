@@ -321,7 +321,7 @@ function WorkflowDetail({ workflow }: { workflow: WorkflowDef }) {
 type ActiveTab = 'workflows' | 'actions' | 'sources' | 'tasks' | 'calendar';
 
 const FIXED_ORIGIN_LABELS: Record<string, string> = {
-  userdata:        'mydb',
+  userdata:        'My DB',
   financehub:      'Finance Hub',
   companyresearch: 'Company Research',
 };
@@ -779,7 +779,7 @@ export function AICenter() {
                 <div className="aic-sources-empty-icon">⊞</div>
                 <div className="aic-sources-empty-title">No data sources found</div>
                 <div className="aic-sources-empty-body">
-                  Import data from mydb, Finance Hub, or Business Identity to see sources here.
+                  Import data from My DB, Finance Hub, or Business Identity to see sources here.
                 </div>
               </div>
             ) : (

@@ -366,7 +366,7 @@ export const UserDataPage: React.FC = () => {
     <div className="user-data-page">
       <div className="user-data-header">
         <h1>
-          <FontAwesomeIcon icon={faDatabase} /> {selectedTable ? 'mydb' : `mydb (${tables.length})`}
+          <FontAwesomeIcon icon={faDatabase} /> {selectedTable ? 'My DB' : `My DB (${tables.length})`}
         </h1>
         <div className="user-data-header-actions" ref={headerActionsRef}>
           {!selectedTable && (
