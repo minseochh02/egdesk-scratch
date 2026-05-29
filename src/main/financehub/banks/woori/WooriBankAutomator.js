@@ -301,10 +301,6 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
 
       try {
-        // Focus the Playwright page before connecting Arduino — this ensures keystrokes
-        // from the Arduino go into the page, not the browser address bar or OS.
-        await this.focusPlaywrightPage();
-
         this._arduinoHid = new ArduinoHidBankSession({
           portPath: this.arduinoPort,
           baudRate: this.arduinoBaudRate,
