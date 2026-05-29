@@ -1373,100 +1373,35 @@ class HanaBankAutomator extends BaseBankAutomator {
 
       frame = this._hanaFrame() || frame;
 
-      // ── Account selection ───────────────────────────────────────────────────
+      // ── Enumerate all accounts ──────────────────────────────────────────────
+      const accountNames = [];
       try {
         const accountDropdown = frame.locator('.selected').first();
         await accountDropdown.waitFor({ state: 'visible', timeout: 5000 });
         await accountDropdown.click({ timeout: 5000 });
-        this.log('[Hana loan] Opened account dropdown');
-        await this.page.waitForTimeout(1000);
-        // .seltitle spans are inside the dropdown li items; index 0 is the "계좌선택" placeholder
+        this.log('[Hana loan] Opened account dropdown for enumeration');
+        await this.page.waitForTimeout(800);
         const allTitles = frame.locator('.seltitle');
         const titleCount = await allTitles.count();
-        let accountClicked = false;
         for (let i = 0; i < titleCount; i++) {
           const text = (await allTitles.nth(i).innerText().catch(() => '')).trim();
           if (text && text !== '계좌선택') {
-            await allTitles.nth(i).click({ timeout: 5000 });
-            this.log(`[Hana loan] Selected account: ${text}`);
-            accountClicked = true;
-            break;
+            accountNames.push(text);
           }
         }
-        if (!accountClicked) this.warn('[Hana loan] No real account found in dropdown — skipping account selection');
-        await this.page.waitForTimeout(1500);
+        // Close dropdown without selecting anything
+        await this.page.keyboard.press('Escape').catch(() => {});
+        await this.page.waitForTimeout(300);
+        this.log(`[Hana loan] Found ${accountNames.length} account(s): ${accountNames.join(', ')}`);
       } catch (e) {
-        this.warn('[Hana loan] Account selection failed:', e.message);
+        this.warn('[Hana loan] Account enumeration failed:', e.message);
       }
 
-      // ── 실행번호 popup ──────────────────────────────────────────────────────
-      // Opens a full-page overlay grid; .GMWrap0/.GMClassReadOnly are page-level
-      try {
-        await frame.locator('[id="numSearchDiv"]').click({ timeout: 5000 });
-        this.log('[Hana loan] Opened 실행번호 popup');
-        await this.page.waitForTimeout(3000);
-
-        // When the grid has no data rows, .GMBodyMid is rendered with
-        // display:none and height:0. It becomes visible only when rows exist.
-        const hasData = await frame.locator('.GMBodyMid').first().isVisible().catch(() => false);
-        if (!hasData) {
-          this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
-          // Approach 1: call the site's own close function via page context
-          let popupClosed = false;
-          try {
-            await this.page.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
-            popupClosed = true;
-            this.log('[Hana loan] Popup closed via ocp.common.layerpopup (page context)');
-          } catch (_) {}
-          if (!popupClosed) {
-            try {
-              await frame.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
-              popupClosed = true;
-              this.log('[Hana loan] Popup closed via ocp.common.layerpopup (frame context)');
-            } catch (_) {}
-          }
-          // Approach 2: direct DOM hide — bypasses JS function entirely
-          if (!popupClosed) {
-            this.log('[Hana loan] JS close failed — falling back to direct DOM hide');
-            await this.page.evaluate(() => {
-              const popup = document.getElementById('openPopupLoanExecNoSearch');
-              const mask = document.getElementById('openPopupLoanExecNoSearchocp_modalMaskID_generatedByJS');
-              if (popup) popup.style.display = 'none';
-              if (mask) mask.style.display = 'none';
-            }).catch(() => {});
-          }
-          await this.page.waitForTimeout(1000);
-        } else {
-
-        // Click the 선택 checkbox cell (GMBool2) in the first data row
-        try {
-          await frame.locator('td.GMBool2').first().click({ timeout: 5000 });
-          this.log('[Hana loan] 실행번호 선택 checkbox clicked');
-        } catch (e) {
-          try {
-            await this.page.locator('td.GMBool2').first().click({ timeout: 5000 });
-            this.log('[Hana loan] 실행번호 선택 checkbox clicked (page context)');
-          } catch (e2) {
-            this.warn('[Hana loan] 선택 checkbox click failed:', e2.message);
-          }
-        }
-        await this.page.waitForTimeout(1000);
-
-        // Click 확인 to confirm selection
-        try {
-          await frame.locator('a:has-text("확인")').first().click({ timeout: 5000 });
-        } catch (e) {
-          await this.page.locator('a:has-text("확인")').first().click({ timeout: 5000 })
-            .catch(() => this.warn('[Hana loan] 확인 click failed entirely'));
-        }
-        this.log('[Hana loan] 실행번호 selected and confirmed');
-        await this.page.waitForTimeout(2000);
-        } // end else (data rows exist)
-      } catch (e) {
-        this.warn('[Hana loan] 실행번호 popup flow failed:', e.message);
+      if (accountNames.length === 0) {
+        return { success: false, error: '계좌를 찾을 수 없습니다.' };
       }
 
-      // ── Date range ──────────────────────────────────────────────────────────
+      // ── Pre-compute date range (same for all accounts) ──────────────────────
       const fmt = (yyyymmdd) =>
         `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
       const today = new Date();
@@ -1475,154 +1410,254 @@ class HanaBankAutomator extends BaseBankAutomator {
       const startVal = startDate ? fmt(startDate) : defaultStart;
       const endVal = endDate ? fmt(endDate) : defaultEnd;
 
-      try {
-        // spec confirms IDs are inqStrDt / inqEndDt (not sInqStrDt)
-        await frame.locator('[id="inqStrDt"]').fill(startVal);
-        await frame.locator('[id="inqEndDt"]').fill(endVal);
-        this.log(`Hana loan: date range set (${startVal} ~ ${endVal})`);
-      } catch (e) {
-        // Fallback via evaluate with multiple ID candidates
+      const downloadedPaths = [];
+
+      for (const accountName of accountNames) {
+        this.log(`[Hana loan] ── Processing account: ${accountName} ──`);
         try {
-          await frame.evaluate(
-            ({ s, e }) => {
-              const setInput = (id, val) => {
-                const el = document.getElementById(id);
-                if (!el) return false;
-                el.value = val;
-                ['input', 'change'].forEach((ev) =>
-                  el.dispatchEvent(new Event(ev, { bubbles: true })),
-                );
-                if (typeof el.onchange === 'function') el.onchange();
-                return true;
-              };
-              setInput('inqStrDt', s) || setInput('sInqStrDt', s) || setInput('startDate', s);
-              setInput('inqEndDt', e) || setInput('sInqEndDt', e) || setInput('endDate', e);
-            },
-            { s: startVal, e: endVal },
-          );
-          this.log(`Hana loan: date range set via evaluate (${startVal} ~ ${endVal})`);
-        } catch (e2) {
-          this.warn('Hana loan: date range set failed:', e2.message);
-        }
-      }
-      await this.page.waitForTimeout(500);
 
-      // ── 조회 ────────────────────────────────────────────────────────────────
-      // Call the onclick function directly via frame context (avoids hitting nav links like 대출조회)
-      try {
-        await frame.evaluate(() =>
-          cpb.loan.inquiry.transaction.searchInquiry(document.forms['wclon700_02iForm']),
-        );
-        this.log('[Hana loan] 조회 triggered via frame evaluate');
-      } catch (e) {
-        this.warn('[Hana loan] 조회 evaluate failed, falling back to click:', e.message);
-        await frame.locator('a.btn').filter({ hasText: /^조회$/ }).first()
-          .click({ timeout: 5000 })
-          .catch(() => {});
-      }
-      await this.page.waitForTimeout(4000);
-
-      // ── No-data check ────────────────────────────────────────────────────────
-      const isEmpty = await frame
-        .evaluate(() => {
-          const body = document.body?.textContent || '';
-          return (
-            body.includes('조회된 내역이 없습니다') ||
-            body.includes('조회 내역이 없습니다') ||
-            body.includes('저장할 데이터가 없습니다') ||
-            body.includes('조회결과가 없습니다') ||
-            body.includes('거래내역이 없습니다') ||
-            body.includes('조회된 데이터가 없습니다')
-          );
-        })
-        .catch(() => false);
-      if (isEmpty) {
-        this.log('Hana loan: confirmed no data (Graceful Exit)');
-        await this._closeHanaPopups();
-        return { success: true, filePath: null, message: '조회 결과가 없습니다.' };
-      }
-
-      // ── Excel download ────────────────────────────────────────────────────────
-      const exportStartedAt = Date.now();
-      const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
-
-      try {
-        // spec confirms 전체엑셀다운로드 is an <a> tag
-        await frame.locator('a:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
-      } catch (e) {
-        try {
-          await frame.locator('a:has-text("엑셀다운로드"), button:has-text("엑셀다운로드")').first().click({ timeout: 5000 });
-        } catch (e2) {
-          await frame
-            .evaluate(() => {
-              const btn = Array.from(document.querySelectorAll('button,a')).find((b) =>
-                /엑셀/.test(b.textContent || ''),
-              );
-              if (btn) btn.click();
-            })
-            .catch(() => {});
-        }
-      }
-
-      let download = null;
-      let fallbackFile = null;
-
-      const result = await Promise.race([
-        downloadPromise,
-        this.page.waitForTimeout(5000).then(() => 'timeout'),
-      ]);
-
-      if (result === 'timeout' || !result) {
-        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
-        if (!fallbackFile) {
-          download = await downloadPromise.catch(() => null);
-        }
-      } else {
-        download = result;
-      }
-
-      if (!download && !fallbackFile) {
-        fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
-      }
-
-      if (!download && !fallbackFile) {
-        return { success: false, error: '엑셀 다운로드를 확인할 수 없습니다.' };
-      }
-
-      const suggested =
-        (download && download.suggestedFilename()) ||
-        (fallbackFile && path.basename(fallbackFile.path)) ||
-        'hana-loan-history.xls';
-      const ext = path.extname(suggested) || '.xls';
-      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const finalName = `Hana_대출상세내역_${ts}${ext}`;
-      const finalPath = path.join(this.downloadDir, finalName);
-
-      if (download) {
-        try {
-          const tempPath = await download.path();
-          if (tempPath && fs.existsSync(tempPath)) {
-            fs.copyFileSync(tempPath, finalPath);
-            try { fs.unlinkSync(tempPath); } catch (e) {}
-          } else {
-            await download.saveAs(finalPath);
+          // ── Select this account ───────────────────────────────────────────
+          try {
+            const accountDropdown = frame.locator('.selected').first();
+            await accountDropdown.waitFor({ state: 'visible', timeout: 5000 });
+            await accountDropdown.click({ timeout: 5000 });
+            await this.page.waitForTimeout(800);
+            const allTitles = frame.locator('.seltitle');
+            const titleCount = await allTitles.count();
+            let selected = false;
+            for (let i = 0; i < titleCount; i++) {
+              const text = (await allTitles.nth(i).innerText().catch(() => '')).trim();
+              if (text === accountName) {
+                await allTitles.nth(i).click({ timeout: 5000 });
+                this.log(`[Hana loan] Selected account: ${text}`);
+                selected = true;
+                break;
+              }
+            }
+            if (!selected) {
+              this.warn(`[Hana loan] Could not find account "${accountName}" in dropdown — skipping`);
+              continue;
+            }
+            await this.page.waitForTimeout(1500);
+          } catch (e) {
+            this.warn('[Hana loan] Account selection failed:', e.message);
+            continue;
           }
-        } catch (saveErr) {
-          this.warn(`Hana loan: primary save failed (${saveErr.message}), trying saveAs...`);
-          await download.saveAs(finalPath).catch((e) => this.error('Hana loan: saveAs also failed:', e.message));
-        }
-      } else if (fallbackFile && fallbackFile.path !== finalPath) {
-        fs.copyFileSync(fallbackFile.path, finalPath);
-      }
 
-      if (!fs.existsSync(finalPath)) {
-        return { success: false, error: '파일 저장에 실패했습니다.' };
-      }
+          // ── 실행번호 popup ────────────────────────────────────────────────
+          try {
+            await frame.locator('[id="numSearchDiv"]').click({ timeout: 5000 });
+            this.log('[Hana loan] Opened 실행번호 popup');
+            await this.page.waitForTimeout(3000);
+
+            const hasData = await frame.locator('.GMBodyMid').first().isVisible().catch(() => false);
+            if (!hasData) {
+              this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
+              let popupClosed = false;
+              try {
+                await this.page.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
+                popupClosed = true;
+                this.log('[Hana loan] Popup closed via ocp.common.layerpopup (page context)');
+              } catch (_) {}
+              if (!popupClosed) {
+                try {
+                  await frame.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
+                  popupClosed = true;
+                  this.log('[Hana loan] Popup closed via ocp.common.layerpopup (frame context)');
+                } catch (_) {}
+              }
+              if (!popupClosed) {
+                this.log('[Hana loan] JS close failed — falling back to direct DOM hide');
+                await frame.evaluate(() => {
+                  const popup = document.getElementById('openPopupLoanExecNoSearch');
+                  const mask = document.getElementById('openPopupLoanExecNoSearchocp_modalMaskID_generatedByJS');
+                  if (popup) popup.style.display = 'none';
+                  if (mask) mask.style.display = 'none';
+                }).catch(() => {});
+              }
+              await this.page.waitForTimeout(1000);
+            } else {
+              try {
+                await frame.locator('td.GMBool2').first().click({ timeout: 5000 });
+                this.log('[Hana loan] 실행번호 선택 checkbox clicked');
+              } catch (e) {
+                try {
+                  await this.page.locator('td.GMBool2').first().click({ timeout: 5000 });
+                  this.log('[Hana loan] 실행번호 선택 checkbox clicked (page context)');
+                } catch (e2) {
+                  this.warn('[Hana loan] 선택 checkbox click failed:', e2.message);
+                }
+              }
+              await this.page.waitForTimeout(1000);
+              try {
+                await frame.locator('a:has-text("확인")').first().click({ timeout: 5000 });
+              } catch (e) {
+                await this.page.locator('a:has-text("확인")').first().click({ timeout: 5000 })
+                  .catch(() => this.warn('[Hana loan] 확인 click failed entirely'));
+              }
+              this.log('[Hana loan] 실행번호 selected and confirmed');
+              await this.page.waitForTimeout(2000);
+            }
+          } catch (e) {
+            this.warn('[Hana loan] 실행번호 popup flow failed:', e.message);
+          }
+
+          // ── Date range ────────────────────────────────────────────────────
+          try {
+            await frame.locator('[id="inqStrDt"]').fill(startVal);
+            await frame.locator('[id="inqEndDt"]').fill(endVal);
+            this.log(`Hana loan: date range set (${startVal} ~ ${endVal})`);
+          } catch (e) {
+            try {
+              await frame.evaluate(
+                ({ s, e }) => {
+                  const setInput = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (!el) return false;
+                    el.value = val;
+                    ['input', 'change'].forEach((ev) =>
+                      el.dispatchEvent(new Event(ev, { bubbles: true })),
+                    );
+                    if (typeof el.onchange === 'function') el.onchange();
+                    return true;
+                  };
+                  setInput('inqStrDt', s) || setInput('sInqStrDt', s) || setInput('startDate', s);
+                  setInput('inqEndDt', e) || setInput('sInqEndDt', e) || setInput('endDate', e);
+                },
+                { s: startVal, e: endVal },
+              );
+              this.log(`Hana loan: date range set via evaluate (${startVal} ~ ${endVal})`);
+            } catch (e2) {
+              this.warn('Hana loan: date range set failed:', e2.message);
+            }
+          }
+          await this.page.waitForTimeout(500);
+
+          // ── 조회 ──────────────────────────────────────────────────────────
+          try {
+            await frame.evaluate(() =>
+              cpb.loan.inquiry.transaction.searchInquiry(document.forms['wclon700_02iForm']),
+            );
+            this.log('[Hana loan] 조회 triggered via frame evaluate');
+          } catch (e) {
+            this.warn('[Hana loan] 조회 evaluate failed, falling back to click:', e.message);
+            await frame.locator('a.btn').filter({ hasText: /^조회$/ }).first()
+              .click({ timeout: 5000 })
+              .catch(() => {});
+          }
+          await this.page.waitForTimeout(4000);
+
+          // ── No-data check ─────────────────────────────────────────────────
+          const isEmpty = await frame
+            .evaluate(() => {
+              const body = document.body?.textContent || '';
+              return (
+                body.includes('조회된 내역이 없습니다') ||
+                body.includes('조회 내역이 없습니다') ||
+                body.includes('저장할 데이터가 없습니다') ||
+                body.includes('조회결과가 없습니다') ||
+                body.includes('거래내역이 없습니다') ||
+                body.includes('조회된 데이터가 없습니다')
+              );
+            })
+            .catch(() => false);
+          if (isEmpty) {
+            this.log(`[Hana loan] No data for account ${accountName} — skipping`);
+            continue;
+          }
+
+          // ── Excel download ─────────────────────────────────────────────────
+          const exportStartedAt = Date.now();
+          const downloadPromise = this.page.waitForEvent('download', { timeout: 60000 });
+
+          try {
+            await frame.locator('a:has-text("전체엑셀다운로드")').click({ timeout: 5000 });
+          } catch (e) {
+            try {
+              await frame.locator('a:has-text("엑셀다운로드"), button:has-text("엑셀다운로드")').first().click({ timeout: 5000 });
+            } catch (e2) {
+              await frame
+                .evaluate(() => {
+                  const btn = Array.from(document.querySelectorAll('button,a')).find((b) =>
+                    /엑셀/.test(b.textContent || ''),
+                  );
+                  if (btn) btn.click();
+                })
+                .catch(() => {});
+            }
+          }
+
+          let download = null;
+          let fallbackFile = null;
+
+          const dlResult = await Promise.race([
+            downloadPromise,
+            this.page.waitForTimeout(5000).then(() => 'timeout'),
+          ]);
+
+          if (dlResult === 'timeout' || !dlResult) {
+            fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+            if (!fallbackFile) {
+              download = await downloadPromise.catch(() => null);
+            }
+          } else {
+            download = dlResult;
+          }
+
+          if (!download && !fallbackFile) {
+            fallbackFile = this._findRecentHanaExportFileSince(exportStartedAt);
+          }
+
+          if (!download && !fallbackFile) {
+            this.warn(`[Hana loan] Download failed for account ${accountName} — skipping`);
+            continue;
+          }
+
+          const suggested =
+            (download && download.suggestedFilename()) ||
+            (fallbackFile && path.basename(fallbackFile.path)) ||
+            'hana-loan-history.xls';
+          const ext = path.extname(suggested) || '.xls';
+          const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const safeAcct = accountName.replace(/[^a-zA-Z0-9가-힣_\-]/g, '_');
+          const finalName = `Hana_대출상세내역_${safeAcct}_${ts}${ext}`;
+          const finalPath = path.join(this.downloadDir, finalName);
+
+          if (download) {
+            try {
+              const tempPath = await download.path();
+              if (tempPath && fs.existsSync(tempPath)) {
+                fs.copyFileSync(tempPath, finalPath);
+                try { fs.unlinkSync(tempPath); } catch (e) {}
+              } else {
+                await download.saveAs(finalPath);
+              }
+            } catch (saveErr) {
+              this.warn(`Hana loan: primary save failed (${saveErr.message}), trying saveAs...`);
+              await download.saveAs(finalPath).catch((e) => this.error('Hana loan: saveAs also failed:', e.message));
+            }
+          } else if (fallbackFile && fallbackFile.path !== finalPath) {
+            fs.copyFileSync(fallbackFile.path, finalPath);
+          }
+
+          if (!fs.existsSync(finalPath)) {
+            this.warn(`[Hana loan] File save failed for account ${accountName} — skipping`);
+            continue;
+          }
+
+          this.log(`[Hana loan] Downloaded: ${finalPath}`);
+          downloadedPaths.push(finalPath);
+
+        } catch (err) {
+          this.warn(`[Hana loan] Account ${accountName} processing failed:`, err.message);
+        }
+      } // end for-of accountNames
 
       return {
         success: true,
-        filePath: finalPath,
-        message: 'Hana loan history downloaded; importing in main process.',
+        filePath: downloadedPaths[0] || null,
+        filePaths: downloadedPaths,
+        message: `Hana loan history downloaded for ${downloadedPaths.length} account(s).`,
       };
     } catch (error) {
       this.error('Hana syncLoanHistory failed:', error.message);

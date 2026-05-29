@@ -1747,7 +1747,7 @@ const FinanceHub: React.FC = () => {
     if (!window.confirm(`${card?.nameKo || cardCompanyId} 연결을 해제하시겠습니까?`)) return;
     try {
       await window.electron.financeHub.card.disconnect(cardCompanyId);
-      setConnectedCards(prev => prev.filter(c => c.cardCompanyId !== cardCompanyId));
+      setConnectedCards(prev => prev.map(c => c.cardCompanyId === cardCompanyId ? { ...c, status: 'disconnected' as const } : c));
     } catch (error) {
       console.error('[FinanceHub] Disconnect card error:', error);
     }
@@ -2854,7 +2854,7 @@ const FinanceHub: React.FC = () => {
     if (!window.confirm(`${bank?.nameKo || bankId} 연결을 해제하시겠습니까?`)) return;
     try {
       await window.electron.financeHub.disconnect(bankId);
-      setConnectedBanks(prev => prev.filter(b => b.bankId !== bankId));
+      setConnectedBanks(prev => prev.map(b => b.bankId === bankId ? { ...b, status: 'disconnected' as const } : b));
     } catch (error) {
       console.error('[FinanceHub] Disconnect error:', error);
     }

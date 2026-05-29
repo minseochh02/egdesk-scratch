@@ -1975,9 +1975,12 @@ export class FinanceHubScheduler extends EventEmitter {
         if (bankId === 'hana' && typeof automator.syncLoanHistory === 'function') {
           console.log('[FinanceHubScheduler] Hana: Starting loan history sync...');
           const loanRes = await automator.syncLoanHistory();
-          if (loanRes?.success && loanRes.filePath) {
-            const imp = financeHubDbTransactions.importHanaLoanHistoryFromExcel(loanRes.filePath);
-            console.log(`[FinanceHubScheduler] Hana: Imported ${imp.imported} loan history rows`);
+          if (loanRes?.success) {
+            const paths: string[] = loanRes.filePaths ?? (loanRes.filePath ? [loanRes.filePath] : []);
+            for (const fp of paths) {
+              const imp = financeHubDbTransactions.importHanaLoanHistoryFromExcel(fp);
+              console.log(`[FinanceHubScheduler] Hana: Imported ${imp.imported} loan history rows from ${fp}`);
+            }
           }
         }
 

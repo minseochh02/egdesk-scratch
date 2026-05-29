@@ -769,8 +769,11 @@ const createWindow = async () => {
             if (bankId === 'hana' && typeof (automator as any).syncLoanHistory === 'function') {
               console.log('[FINANCE-HUB] Hana: Starting loan history sync (UI)...');
               const loanRes = await (automator as any).syncLoanHistory();
-              if (loanRes?.success && loanRes.filePath) {
-                financeHubManager.importHanaLoanHistoryFromExcel(loanRes.filePath);
+              if (loanRes?.success) {
+                const paths: string[] = loanRes.filePaths ?? (loanRes.filePath ? [loanRes.filePath] : []);
+                for (const fp of paths) {
+                  financeHubManager.importHanaLoanHistoryFromExcel(fp);
+                }
               }
             }
 
@@ -1297,17 +1300,9 @@ const createWindow = async () => {
             activeAutomators.delete(bankId);
           }
 
-          // Delete all accounts for this bank from database
+          // CRITICAL: Remove saved credentials from DATABASE so scheduler doesn't try to sync
           const sqliteManager = getSQLiteManager();
           const financeHubManager = sqliteManager.getFinanceHubManager();
-          const accounts = financeHubManager.getAccountsByBank(bankId);
-
-          for (const account of accounts) {
-            financeHubManager.deleteAccount(account.accountNumber);
-            console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${bankId}`);
-          }
-
-          // CRITICAL: Remove saved credentials from DATABASE so scheduler doesn't try to sync
           financeHubManager.removeCredentials(bankId);
           console.log(`[FINANCE-HUB] Removed credentials from DATABASE for ${bankId}`);
           
@@ -1514,18 +1509,10 @@ const createWindow = async () => {
             activeAutomators.delete(cardCompanyId);
           }
 
-          // Delete all accounts (cards) for this card company from database
-          const sqliteManager = getSQLiteManager();
-          const financeHubManager = sqliteManager.getFinanceHubManager();
-          const accounts = financeHubManager.getAccountsByBank(cardCompanyId);
-
-          for (const account of accounts) {
-            financeHubManager.deleteAccount(account.accountNumber);
-            console.log(`[FINANCE-HUB] Deleted account ${account.accountNumber} for ${cardCompanyId}`);
-          }
-
           // CRITICAL: Remove saved credentials from DATABASE so scheduler doesn't try to sync
           // Card credentials are stored with full cardCompanyId (e.g., "bc-card", "nh-card")
+          const sqliteManager = getSQLiteManager();
+          const financeHubManager = sqliteManager.getFinanceHubManager();
           financeHubManager.removeCredentials(cardCompanyId);
           console.log(`[FINANCE-HUB] Removed credentials from DATABASE for ${cardCompanyId}`);
           
