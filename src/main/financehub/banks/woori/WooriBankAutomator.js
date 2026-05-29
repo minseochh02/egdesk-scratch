@@ -301,6 +301,10 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
 
       try {
+        // Focus the Playwright page before connecting Arduino — this ensures keystrokes
+        // from the Arduino go into the page, not the browser address bar or OS.
+        await this.focusPlaywrightPage();
+
         this._arduinoHid = new ArduinoHidBankSession({
           portPath: this.arduinoPort,
           baudRate: this.arduinoBaudRate,
@@ -308,18 +312,20 @@ class WooriBankAutomator extends BaseBankAutomator {
         });
         await this._arduinoHid.connect();
 
-        // certificate selection — only on first attempt; cert is already selected on retry
+        // Certificate selection — only on first attempt.
+        // xwup collapses the cert list out of the tab order once a cert is selected,
+        // so we always click the target row directly via Playwright.
         if (!certNavigated) {
-          this.log(`[WOORI] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
-          
-          const selectionResult = await this.page.evaluate(({ name, issuer, expiry, index }) => {
-            const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
-            if (rows.length === 0) return { success: false, error: '인증서 목록을 찾을 수 없습니다.' };
+          this.log(`[WOORI] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Expiry: ${certificateNotAfter || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
+
+          // Find the CSS selector for the target cell using metadata or index.
+          // Use tbody tr to skip header rows. .xwup-tableview-cell is the clickable cell.
+          const targetSelector = await this.page.evaluate(({ name, expiry, index }) => {
+            // Cert rows are in tbody, excluding the header
+            const rows = Array.from(document.querySelectorAll('#xwup_cert_table tbody tr, #xwup_cert_table tr:not(:first-child)'));
+            if (rows.length === 0) return null;
 
             let targetRow = null;
-            let matchMethod = '';
-
-            // 1. Try to match by metadata (Name + Expiry)
             if (name) {
               targetRow = rows.find(row => {
                 const text = row.textContent || '';
@@ -327,37 +333,44 @@ class WooriBankAutomator extends BaseBankAutomator {
                 const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
                 return nameMatch && expiryMatch;
               });
-              if (targetRow) matchMethod = 'metadata';
             }
-
-            // 2. Fallback to index if metadata match fails
+            // Index fallback (1-based, already skipping header)
             if (!targetRow && index >= 1) {
               targetRow = rows[index - 1];
-              if (targetRow) matchMethod = 'index';
             }
 
-            if (targetRow) {
-              const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
-              // @ts-ignore
-              clickTarget.click();
-              return { success: true, method: matchMethod, text: targetRow.textContent?.trim().substring(0, 50) };
+            if (!targetRow) return null;
+
+            // Return a unique-enough identifier so we can click it via Playwright
+            const cell = targetRow.querySelector('.xwup-tableview-cell');
+            const rowText = (cell || targetRow).textContent?.trim().substring(0, 60) || '';
+            return { rowText, rowIndex: rows.indexOf(targetRow) };
+          }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex });
+
+          if (targetSelector) {
+            this.log(`[WOORI] 대상 인증서 확인: index=${targetSelector.rowIndex} text="${targetSelector.rowText}"`);
+            // Use Playwright click — more reliable than dispatchEvent for triggering xwup handlers
+            try {
+              const rows = this.page.locator('#xwup_cert_table tbody tr, #xwup_cert_table tr:not(:first-child)');
+              const targetRow = rows.nth(targetSelector.rowIndex);
+              const cell = targetRow.locator('.xwup-tableview-cell').first();
+              const cellCount = await cell.count();
+              if (cellCount > 0) {
+                await cell.click({ timeout: 5000 });
+                this.log(`[WOORI] ✓ 인증서 클릭 성공 (.xwup-tableview-cell)`);
+              } else {
+                await targetRow.click({ timeout: 5000 });
+                this.log(`[WOORI] ✓ 인증서 클릭 성공 (row fallback)`);
+              }
+            } catch (e) {
+              this.warn(`[WOORI] ⚠️ Playwright 클릭 실패: ${e.message}`);
             }
-
-            return { success: false, error: '일치하는 인증서를 찾을 수 없습니다.' };
-          }, { 
-            name: certificateName, 
-            issuer: certificateIssuer, 
-            expiry: certificateNotAfter, 
-            index: certificateIndex 
-          });
-
-          if (selectionResult.success) {
-            this.log(`[WOORI] ✓ 인증서 선택 성공 (${selectionResult.method}): ${selectionResult.text}`);
           } else {
-            this.warn(`[WOORI] ⚠️ 인증서 선택 실패: ${selectionResult.error} — 기본 선택 유지`);
+            this.warn('[WOORI] ⚠️ 대상 인증서를 찾을 수 없습니다 — 기본 선택 유지');
           }
-          
-          await this.page.waitForTimeout(800);
+
+          // Wait for xwup to show the password section after the cert is clicked
+          await this.page.waitForTimeout(1000);
           certNavigated = true;
         } else {
           this.log('[WOORI] 재시도 — 기존 선택된 인증서 유지');
