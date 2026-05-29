@@ -1402,15 +1402,29 @@ class HanaBankAutomator extends BaseBankAutomator {
         const hasData = await this.page.locator('.GMBodyMid').first().isVisible().catch(() => false);
         if (!hasData) {
           this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
-          // Close the popup by invoking its JS close function directly
+          // Approach 1: call the site's own close function via page context
+          let popupClosed = false;
           try {
-            await frame.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
-          } catch (_) {
+            await this.page.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
+            popupClosed = true;
+            this.log('[Hana loan] Popup closed via ocp.common.layerpopup (page context)');
+          } catch (_) {}
+          if (!popupClosed) {
             try {
-              await this.page.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
-            } catch (_2) {
-              await this.page.keyboard.press('Escape');
-            }
+              await frame.evaluate(() => ocp.common.layerpopup.closeLayer_fnc('openPopupLoanExecNoSearch'));
+              popupClosed = true;
+              this.log('[Hana loan] Popup closed via ocp.common.layerpopup (frame context)');
+            } catch (_) {}
+          }
+          // Approach 2: direct DOM hide — bypasses JS function entirely
+          if (!popupClosed) {
+            this.log('[Hana loan] JS close failed — falling back to direct DOM hide');
+            await this.page.evaluate(() => {
+              const popup = document.getElementById('openPopupLoanExecNoSearch');
+              const mask = document.getElementById('openPopupLoanExecNoSearchocp_modalMaskID_generatedByJS');
+              if (popup) popup.style.display = 'none';
+              if (mask) mask.style.display = 'none';
+            }).catch(() => {});
           }
           await this.page.waitForTimeout(1000);
         } else {
