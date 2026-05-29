@@ -345,7 +345,7 @@ class WooriBankAutomator extends BaseBankAutomator {
             // Dispatch full mouse event sequence so xwup's event handlers fire
             const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
             ['mousedown', 'mouseup', 'click'].forEach(evName => {
-              (clickTarget as any).dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true }));
+              clickTarget.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true }));
             });
             return { success: true, method: matchMethod, text: clickTarget.textContent?.trim().substring(0, 60) };
           }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex });

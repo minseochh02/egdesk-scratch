@@ -1,10 +1,11 @@
 /**
  * Shinhan cert dialog UIA probe.
  *
- * Opens bizbank.shinhan.com, clicks 공동인증서 로그인, waits for the
- * native cert window to appear, then dumps and analyses the full UIA
- * element tree to determine whether keyboard cert-list navigation is
- * possible with INIPay.
+ * Uses ShinhanBankAutomator.prepareCorporateCertificateLogin() — the exact
+ * same code path the real app uses — to open bizbank.shinhan.com and trigger
+ * the native cert dialog. Once the cert window is detected, dumps and analyses
+ * the full UIA element tree to determine whether keyboard cert-list navigation
+ * is possible with INIPay.
  *
  * No Arduino, no password needed.
  *
@@ -15,10 +16,8 @@
 'use strict';
 
 const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { chromium } = require('playwright-core');
+const { ShinhanBankAutomator } = require('../../src/main/financehub/banks/shinhan/ShinhanBankAutomator');
 
 if (process.platform !== 'win32') {
   console.error('This script requires Windows (UIA is Windows-only).');
@@ -43,44 +42,11 @@ function psSafe(script, timeoutMs = 20000) {
   try { return ps(script, timeoutMs); } catch (e) { return ''; }
 }
 
-// ── UIA probes ────────────────────────────────────────────────────────────────
+// ── UIA dump ──────────────────────────────────────────────────────────────────
 
 const UIA_HEADER =
   'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
   '$root = [System.Windows.Automation.AutomationElement]::RootElement; ';
-
-function findWindowByClass(cls) {
-  const out = psSafe(
-    UIA_HEADER +
-    `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${cls}'); ` +
-    '$w = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
-    'if ($w) { "$($w.Current.ClassName)|$($w.Current.Name)" } else { "" }'
-  );
-  if (!out) return null;
-  const pipe = out.indexOf('|');
-  return { windowClass: out.slice(0, pipe), windowName: out.slice(pipe + 1) };
-}
-
-function findWindowByTitle(keyword) {
-  const out = psSafe(
-    UIA_HEADER +
-    '$all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition); ' +
-    `$m = $all | Where-Object { $_.Current.Name -match '${keyword}' } | Select-Object -First 1; ` +
-    'if ($m) { "$($m.Current.ClassName)|$($m.Current.Name)" } else { "" }'
-  );
-  if (!out) return null;
-  const pipe = out.indexOf('|');
-  return { windowClass: out.slice(0, pipe), windowName: out.slice(pipe + 1) };
-}
-
-function listAllDesktopWindows() {
-  return psSafe(
-    UIA_HEADER +
-    '$all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition); ' +
-    'foreach ($c in $all) { "$($c.Current.ClassName)|$($c.Current.Name)" }',
-    12000
-  );
-}
 
 function dumpDescendants(windowClass) {
   const script =
@@ -125,36 +91,24 @@ function dumpDescendants(windowClass) {
   }
 }
 
-// ── detect cert window (INICertManUI, QWidget, or by title) ──────────────────
-
-function detectCertWindow() {
-  for (const cls of ['INICertManUI', 'QWidget', 'INIPAYMSWindows', 'INIPayUI']) {
-    const w = findWindowByClass(cls);
-    if (w) return w;
-  }
-  for (const kw of ['인증서', 'cert', 'certificate']) {
-    const w = findWindowByTitle(kw);
-    if (w) return w;
-  }
-  return null;
-}
-
 // ── analysis & verdict ────────────────────────────────────────────────────────
 
-function analyse(win, elems) {
+function analyse(windowClass, windowName, elems) {
   console.log(`\n${'='.repeat(70)}`);
   console.log('  UIA Element Tree');
   console.log('='.repeat(70));
+  console.log(`  Window class : ${windowClass}`);
+  console.log(`  Window title : ${windowName}`);
+  console.log();
 
   if (elems.length === 0) {
-    console.log('  No elements found — UIA returned empty tree.');
-    console.log('  INIPay may be using a fully custom-drawn window that blocks UIA.\n');
+    console.log('  ❌ No elements found — UIA returned an empty tree.');
+    console.log('     INIPay may be using a fully custom-drawn window that blocks UIA introspection.\n');
     return;
   }
 
   console.log(`  Total elements: ${elems.length}\n`);
 
-  // Print table
   const hdr =
     'Name'.padEnd(30) + 'Class'.padEnd(22) + 'Control'.padEnd(16) +
     'KbFocus'.padEnd(9) + 'SelPat'.padEnd(8) + 'SelItem'.padEnd(9) + 'Selected';
@@ -173,13 +127,12 @@ function analyse(win, elems) {
   }
   console.log('-'.repeat(hdr.length));
 
-  // Groupings
-  const listControls = elems.filter((e) => ['List', 'DataGrid', 'Tree'].includes(e.Control));
-  const listItems    = elems.filter((e) => ['ListItem', 'DataItem', 'TreeItem'].includes(e.Control));
-  const withSelPat   = elems.filter((e) => e.SelectionPattern);
-  const withSelItem  = elems.filter((e) => e.SelectionItemPattern);
+  const listControls  = elems.filter((e) => ['List', 'DataGrid', 'Tree'].includes(e.Control));
+  const listItems     = elems.filter((e) => ['ListItem', 'DataItem', 'TreeItem'].includes(e.Control));
+  const withSelPat    = elems.filter((e) => e.SelectionPattern);
+  const withSelItem   = elems.filter((e) => e.SelectionItemPattern);
   const selectedItems = withSelItem.filter((e) => e.IsSelected);
-  const kbFocusable  = elems.filter((e) => e.KbFocus);
+  const kbFocusable   = elems.filter((e) => e.KbFocus);
 
   console.log(`\n${'─'.repeat(50)}`);
   console.log('  Analysis');
@@ -205,7 +158,6 @@ function analyse(win, elems) {
   );
   if (kbFocusable.length > 15) console.log(`    … and ${kbFocusable.length - 15} more`);
 
-  // Verdict
   const hasList       = listControls.length > 0;
   const listHasSelPat = listControls.some((e) => e.SelectionPattern);
   const itemsHasSIP   = listItems.some((e) => e.SelectionItemPattern);
@@ -217,14 +169,14 @@ function analyse(win, elems) {
   if (!hasList && listItems.length === 0) {
     console.log('  ❌ NO cert list visible to UIA.');
     console.log('     INIPay uses a custom-drawn control UIA cannot enumerate.');
-    console.log('     Keyboard DOWN arrow is blind — UIA cannot confirm cert selection.');
+    console.log('     Keyboard DOWN arrow is blind — cannot confirm cert selection from Node.js.');
     console.log('     → Index-based cert selection is NOT reliably possible via key navigation.');
   } else if (hasList && !listHasSelPat) {
-    console.log('  ⚠️  Cert list container IS in UIA tree but has NO SelectionPattern.');
-    console.log('     We can see the list exists, but cannot read or drive selection from Node.js.');
-    console.log('     DOWN arrow might still move visual focus — but we cannot confirm it.');
+    console.log('  ⚠️  Cert list IS in the UIA tree but has NO SelectionPattern.');
+    console.log('     We can see the list, but cannot read or drive selection from Node.js.');
+    console.log('     DOWN arrow might move visual focus — but we cannot confirm it.');
   } else if (hasList && listHasSelPat && itemsHasSIP) {
-    console.log('  ✅ Cert list is UIA-navigable (SelectionPattern + SelectionItemPattern).');
+    console.log('  ✅ Cert list is fully UIA-navigable (SelectionPattern + SelectionItemPattern).');
     console.log('     DOWN arrow works AND we can confirm which cert is selected from Node.js.');
     console.log(`     Cert entries: ${listItems.length}`);
   } else {
@@ -236,104 +188,49 @@ function analyse(win, elems) {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 (async () => {
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-shinhan-probe-'));
-
-  const context = await chromium.launchPersistentContext(profileDir, {
-    headless: false,
-    channel: 'chrome',
-    viewport: null,
-    args: [
-      '--start-maximized',
-      '--no-default-browser-check',
-      '--disable-blink-features=AutomationControlled',
-      '--no-first-run',
-    ],
+  const automator = new ShinhanBankAutomator({
+    // No arduinoPort needed — we stop before password entry
   });
-
-  const page = context.pages()[0] || await context.newPage();
-  page.on('dialog', async (d) => { try { await d.accept(); } catch (e) {} });
 
   process.on('SIGINT', async () => {
     console.log('\n[SIGINT] Cleaning up...');
-    try { await context.close(); } catch (e) {}
-    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
+    try { await automator.cleanup(false); } catch (e) {}
     process.exit(0);
   });
 
-  try {
-    // ── STEP 1: navigate ──────────────────────────────────────────────────────
-    console.log('[1] Navigating to bizbank.shinhan.com...');
-    await page.goto('https://bizbank.shinhan.com/main.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
-    console.log('[1] ✓ Page loaded.');
+  console.log('='.repeat(70));
+  console.log('  Shinhan cert dialog probe (via ShinhanBankAutomator)');
+  console.log('='.repeat(70));
+  console.log();
 
-    // ── STEP 2: dismiss popup ─────────────────────────────────────────────────
-    console.log('[2] Dismissing popup (if any)...');
-    const popupSelectors = [
-      '[id="mf_divRPPop99_1775110936087_wframe_btn_closePopIco"]',
-      'input[value="팝업닫기"]',
-      'a:has-text("닫기")',
-    ];
-    for (const sel of popupSelectors) {
-      try {
-        await page.locator(sel).first().click({ timeout: 2500 });
-        console.log(`[2] ✓ Popup dismissed via: ${sel}`);
-        await page.waitForTimeout(1000);
-        break;
-      } catch (e) {}
-    }
+  // Phase 1: open browser, navigate, trigger cert dialog — same as real app
+  console.log('[1] Running prepareCorporateCertificateLogin...');
+  const prep = await automator.prepareCorporateCertificateLogin();
 
-    // ── STEP 3: click 공동인증서 로그인 ───────────────────────────────────────
-    console.log('[3] Clicking 공동인증서 로그인...');
-    try {
-      await page.locator('[id="mf_wfm_main_btn_goCert"]').click({ timeout: 10000 });
-    } catch (e) {
-      await page.locator('a:has-text("공동인증서 로그인")').first().click({ timeout: 10000 });
-    }
-    console.log('[3] ✓ Cert login button clicked. Waiting for native cert window...');
-
-    // ── STEP 4: poll for cert window (30 s) ──────────────────────────────────
-    console.log('[4] Polling for cert window...');
-    let certWin = null;
-    for (let i = 0; i < 30; i++) {
-      certWin = detectCertWindow();
-      if (certWin) {
-        console.log(`[4] ✓ Cert window detected!`);
-        console.log(`      Class : ${certWin.windowClass}`);
-        console.log(`      Title : ${certWin.windowName}`);
-        break;
-      }
-      await page.waitForTimeout(1000);
-      if (i % 5 === 4) console.log(`[4] Still waiting... (${i + 1}s elapsed)`);
-    }
-
-    if (!certWin) {
-      console.error('\n[4] ✗ Cert window not detected within 30 seconds.\n');
-      console.log('All visible desktop windows:');
-      const all = listAllDesktopWindows();
-      if (all) all.split('\n').forEach((l) => console.log('  ', l));
-      else console.log('  (none / UIA error)');
-      return;
-    }
-
-    // Give the dialog a moment to finish rendering before probing
-    await page.waitForTimeout(1500);
-
-    // ── STEP 5: probe ─────────────────────────────────────────────────────────
-    console.log('\n[5] Dumping UIA element tree...');
-    const elems = dumpDescendants(certWin.windowClass);
-    analyse(certWin, elems);
-
-    console.log('[Done] Cert dialog is still open — close it manually when finished.');
-    console.log('       Press Ctrl+C to quit this script and close the browser.\n');
-
-    // Keep alive until user presses Ctrl+C
-    await new Promise(() => {});
-
-  } finally {
-    try { await context.close(); } catch (e) {}
-    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
+  if (!prep.success) {
+    console.error(`\n[1] FAIL: ${prep.error}`);
+    try { await automator.cleanup(false); } catch (e) {}
+    process.exit(1);
   }
+
+  console.log(`[1] ✓ Cert window detected.`);
+  console.log(`      Phase : ${prep.phase}`);
+  console.log(`      Class : ${prep.certWindowClass}`);
+  console.log(`      Title : ${prep.certWindowName}`);
+
+  // Give the dialog a moment to finish rendering
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Probe: dump UIA element tree of the cert window
+  console.log('\n[2] Dumping UIA element tree...');
+  const elems = dumpDescendants(prep.certWindowClass);
+  analyse(prep.certWindowClass, prep.certWindowName, elems);
+
+  console.log('[Done] Cert dialog is still open — close it manually when finished.');
+  console.log('       Press Ctrl+C to quit and close the browser.\n');
+
+  // Keep process alive until user exits
+  await new Promise(() => {});
 })().catch((e) => {
   console.error('Fatal:', e.message);
   process.exit(1);
