@@ -284,142 +284,171 @@ class WooriBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
     }
 
-    this._wooriCertAttempt += 1;
-    const useSlowTyping = this._wooriCertAttempt >= 2;
-    if (useSlowTyping) {
-      this.warn(`[WOORI] 재시도 ${this._wooriCertAttempt}회차 — 느린 타이핑 모드 사용`);
+    const maxAttempts = 3;
+    let certNavigated = false;
+
+    while (this._wooriCertAttempt < maxAttempts) {
+      this._wooriCertAttempt += 1;
+      const useSlowTyping = this._wooriCertAttempt >= 2;
+      if (useSlowTyping) {
+        this.warn(`[WOORI] 재시도 ${this._wooriCertAttempt}회차 — 느린 타이핑 모드 사용`);
+      }
+
+      try {
+        this._arduinoHid = new ArduinoHidBankSession({
+          portPath: this.arduinoPort,
+          baudRate: this.arduinoBaudRate,
+          log: (m) => this.log(m),
+        });
+        await this._arduinoHid.connect();
+
+        // certificateIndex DOWN key selection — only on first attempt; cert is already selected on retry
+        if (!certNavigated) {
+          if (certificateIndex && certificateIndex > 1) {
+            this.log(`[WOORI] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+            for (let i = 0; i < certificateIndex - 1; i++) {
+              await this._arduinoHid.sendKey('DOWN');
+              await this.page.waitForTimeout(200);
+            }
+          }
+          certNavigated = true;
+        } else {
+          this.log('[WOORI] 재시도 — 기존 선택된 인증서 유지');
+        }
+
+        // On retry the cert dialog is still open and focus may be on the 확인 button or an
+        // error element. Directly clicking the password input via Playwright avoids having to
+        // TAB through xwup's virtual-keyboard toggle button (which can open the on-screen
+        // keyboard on focus and then intercept subsequent TABs and typed characters).
+        let focused = '';
+        let directFocusOk = false;
+        try {
+          await this.page.locator('#xwup_certselect_tek_input1').click({ timeout: 3000 });
+          await this.page.waitForTimeout(300);
+          const directFocusId = await this.page.evaluate(() => document.activeElement?.id || '');
+          if (directFocusId === 'xwup_certselect_tek_input1') {
+            focused = 'xwup_certselect_tek_input1';
+            directFocusOk = true;
+            this.log('[WOORI] Password field focused via direct click — skipping TAB loop');
+          }
+        } catch (e) {
+          this.warn('[WOORI] Direct click on password field failed, falling back to TAB loop:', e.message);
+        }
+
+        if (!directFocusOk) {
+          for (let i = 1; i <= 20; i++) {
+            await this._arduinoHid.sendKey('TAB');
+            await this.page.waitForTimeout(300);
+            const focusInfo = await this.page.evaluate(() => {
+              const ae = document.activeElement;
+              if (!ae) return { id: '', tag: '', text: '', className: '', name: '', role: '', type: '', ariaLabel: '', title: '' };
+              return {
+                id: ae.id || '',
+                tag: ae.tagName || '',
+                text: (ae.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+                className: typeof ae.className === 'string' ? ae.className : '',
+                name: ae.getAttribute?.('name') || '',
+                role: ae.getAttribute?.('role') || '',
+                type: ae.getAttribute?.('type') || '',
+                ariaLabel: ae.getAttribute?.('aria-label') || '',
+                title: ae.getAttribute?.('title') || '',
+              };
+            });
+            this.log(`[WOORI TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} type="${focusInfo.type}" name="${focusInfo.name}" role="${focusInfo.role}" aria="${focusInfo.ariaLabel}" title="${focusInfo.title}" class="${focusInfo.className}" text="${focusInfo.text}"`);
+            focused = focusInfo.id || focusInfo.tag;
+            if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
+              this.warn(`[WOORI] TAB landed on 삭제 button — sending another TAB to skip (i=${i})`);
+              continue;
+            }
+            // Skip xwup virtual keyboard toggle buttons — focusing them opens the on-screen
+            // keyboard overlay which then intercepts further TABs and typed characters.
+            const idLower = focusInfo.id.toLowerCase();
+            const classLower = focusInfo.className.toLowerCase();
+            const isVKButton =
+              idLower.includes('vk') ||
+              idLower.includes('keyboard') ||
+              classLower.includes('xwup-vk') ||
+              classLower.includes('virtualkey') ||
+              focusInfo.ariaLabel.toLowerCase().includes('keyboard') ||
+              focusInfo.title.toLowerCase().includes('가상키보드');
+            if (isVKButton) {
+              this.warn(`[WOORI] TAB landed on virtual keyboard button — skipping (i=${i}, id="${focusInfo.id}")`);
+              continue;
+            }
+            if (focused === 'xwup_certselect_tek_input1') break;
+          }
+        }
+        if (focused !== 'xwup_certselect_tek_input1') {
+          throw new Error(`비밀번호 입력칸에 도달하지 못했습니다 (focus: ${focused})`);
+        }
+
+        if (useSlowTyping) {
+          await this._arduinoHid.typeCharByChar(certificatePassword);
+        } else {
+          await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
+        }
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+
+        try {
+          await this.page.getByRole('button', { name: '확인' }).click({ timeout: 5000 });
+        } catch (e) {
+          await this.page.locator('[id="xwup_OkButton"]').click({ timeout: 5000 });
+        }
+        await this.page.waitForTimeout(3000);
+
+        // Check if the cert dialog is still open — the xwup password input is only present
+        // while the dialog is visible. If it's still there after 3s, the password was wrong.
+        const certCheck = await this.page.evaluate(() => {
+          const pwdField = document.querySelector('#xwup_certselect_tek_input1');
+          if (!pwdField) return { open: false, errorText: null };
+          const rect = pwdField.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) return { open: false, errorText: null };
+          const style = window.getComputedStyle(pwdField);
+          if (style.display === 'none' || style.visibility === 'hidden') return { open: false, errorText: null };
+          // Try to grab an error message from within the xwup cert container
+          const errorSelectors = ['#xwup_errMsg', '.xwup-msg-text', '.xwup-error', '[id*="xwup"][id*="err"]'];
+          let errorText = null;
+          for (const sel of errorSelectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+              const t = el.textContent.trim();
+              if (t) { errorText = t; break; }
+            }
+          }
+          return { open: true, errorText };
+        }).catch(() => ({ open: false, errorText: null }));
+
+        if (!certCheck.open) {
+          this._wooriCertAttempt = 0;
+          break; // Success!
+        } else {
+          this.warn(`[WOORI] 인증서 창이 닫히지 않음 (시도 ${this._wooriCertAttempt}/${maxAttempts}) — 비밀번호 오류.`);
+          if (this._wooriCertAttempt >= maxAttempts) {
+            this._wooriCorporateCertPhase = 'awaiting_password';
+            return {
+              success: false,
+              wrongPassword: true,
+              error: certCheck.errorText || '인증서 비밀번호가 올바르지 않습니다. 최대 시도 횟수를 초과했습니다.',
+            };
+          }
+          await this.page.waitForTimeout(1500);
+          continue;
+        }
+      } catch (error) {
+        this.error(`completeCorporateCertificateLogin (woori) attempt ${this._wooriCertAttempt} failed:`, error.message);
+        try {
+          await this._disconnectArduinoHid();
+        } catch (e) {}
+        if (this._wooriCertAttempt >= maxAttempts) {
+          return { success: false, error: error.message };
+        }
+        await this.page.waitForTimeout(1500);
+        continue;
+      }
     }
 
     try {
-      this._arduinoHid = new ArduinoHidBankSession({
-        portPath: this.arduinoPort,
-        baudRate: this.arduinoBaudRate,
-        log: (m) => this.log(m),
-      });
-      await this._arduinoHid.connect();
-
-      // certificateIndex DOWN key selection — only on first attempt; cert is already selected on retry
-      if (certificateIndex && certificateIndex > 1 && this._wooriCertAttempt <= 1) {
-        this.log(`[WOORI] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-        for (let i = 0; i < certificateIndex - 1; i++) {
-          await this._arduinoHid.sendKey('DOWN');
-          await this.page.waitForTimeout(200);
-        }
-      }
-
-      // On retry the cert dialog is still open and focus may be on the 확인 button or an
-      // error element. Directly clicking the password input via Playwright avoids having to
-      // TAB through xwup's virtual-keyboard toggle button (which can open the on-screen
-      // keyboard on focus and then intercept subsequent TABs and typed characters).
-      let focused = '';
-      let directFocusOk = false;
-      try {
-        await this.page.locator('#xwup_certselect_tek_input1').click({ timeout: 3000 });
-        await this.page.waitForTimeout(300);
-        const directFocusId = await this.page.evaluate(() => document.activeElement?.id || '');
-        if (directFocusId === 'xwup_certselect_tek_input1') {
-          focused = 'xwup_certselect_tek_input1';
-          directFocusOk = true;
-          this.log('[WOORI] Password field focused via direct click — skipping TAB loop');
-        }
-      } catch (e) {
-        this.warn('[WOORI] Direct click on password field failed, falling back to TAB loop:', e.message);
-      }
-
-      if (!directFocusOk) {
-        for (let i = 1; i <= 20; i++) {
-          await this._arduinoHid.sendKey('TAB');
-          await this.page.waitForTimeout(300);
-          const focusInfo = await this.page.evaluate(() => {
-            const ae = document.activeElement;
-            if (!ae) return { id: '', tag: '', text: '', className: '', name: '', role: '', type: '', ariaLabel: '', title: '' };
-            return {
-              id: ae.id || '',
-              tag: ae.tagName || '',
-              text: (ae.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
-              className: typeof ae.className === 'string' ? ae.className : '',
-              name: ae.getAttribute?.('name') || '',
-              role: ae.getAttribute?.('role') || '',
-              type: ae.getAttribute?.('type') || '',
-              ariaLabel: ae.getAttribute?.('aria-label') || '',
-              title: ae.getAttribute?.('title') || '',
-            };
-          });
-          this.log(`[WOORI TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} type="${focusInfo.type}" name="${focusInfo.name}" role="${focusInfo.role}" aria="${focusInfo.ariaLabel}" title="${focusInfo.title}" class="${focusInfo.className}" text="${focusInfo.text}"`);
-          focused = focusInfo.id || focusInfo.tag;
-          if (focusInfo.tag === 'BUTTON' && focusInfo.text.includes('삭제')) {
-            this.warn(`[WOORI] TAB landed on 삭제 button — sending another TAB to skip (i=${i})`);
-            continue;
-          }
-          // Skip xwup virtual keyboard toggle buttons — focusing them opens the on-screen
-          // keyboard overlay which then intercepts further TABs and typed characters.
-          const idLower = focusInfo.id.toLowerCase();
-          const classLower = focusInfo.className.toLowerCase();
-          const isVKButton =
-            idLower.includes('vk') ||
-            idLower.includes('keyboard') ||
-            classLower.includes('xwup-vk') ||
-            classLower.includes('virtualkey') ||
-            focusInfo.ariaLabel.toLowerCase().includes('keyboard') ||
-            focusInfo.title.toLowerCase().includes('가상키보드');
-          if (isVKButton) {
-            this.warn(`[WOORI] TAB landed on virtual keyboard button — skipping (i=${i}, id="${focusInfo.id}")`);
-            continue;
-          }
-          if (focused === 'xwup_certselect_tek_input1') break;
-        }
-      }
-      if (focused !== 'xwup_certselect_tek_input1') {
-        throw new Error(`비밀번호 입력칸에 도달하지 못했습니다 (focus: ${focused})`);
-      }
-
-      if (useSlowTyping) {
-        await this._arduinoHid.typeCharByChar(certificatePassword);
-      } else {
-        await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
-      }
-      await this._arduinoHid.disconnect();
-      this._arduinoHid = null;
-
-      try {
-        await this.page.getByRole('button', { name: '확인' }).click({ timeout: 5000 });
-      } catch (e) {
-        await this.page.locator('[id="xwup_OkButton"]').click({ timeout: 5000 });
-      }
-      await this.page.waitForTimeout(3000);
-
-      // Check if the cert dialog is still open — the xwup password input is only present
-      // while the dialog is visible. If it's still there after 3s, the password was wrong.
-      const certCheck = await this.page.evaluate(() => {
-        const pwdField = document.querySelector('#xwup_certselect_tek_input1');
-        if (!pwdField) return { open: false, errorText: null };
-        const rect = pwdField.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return { open: false, errorText: null };
-        const style = window.getComputedStyle(pwdField);
-        if (style.display === 'none' || style.visibility === 'hidden') return { open: false, errorText: null };
-        // Try to grab an error message from within the xwup cert container
-        const errorSelectors = ['#xwup_errMsg', '.xwup-msg-text', '.xwup-error', '[id*="xwup"][id*="err"]'];
-        let errorText = null;
-        for (const sel of errorSelectors) {
-          const el = document.querySelector(sel);
-          if (el) {
-            const t = el.textContent.trim();
-            if (t) { errorText = t; break; }
-          }
-        }
-        return { open: true, errorText };
-      }).catch(() => ({ open: false, errorText: null }));
-
-      if (certCheck.open) {
-        this.warn('[WOORI] 인증서 창이 닫히지 않음 — 비밀번호 오류.');
-        this._wooriCorporateCertPhase = 'awaiting_password';
-        return {
-          success: false,
-          wrongPassword: true,
-          error: certCheck.errorText || '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.',
-        };
-      }
-
       await this._navigateWooriToTransactionInquiryMenu();
 
       const accounts = await this._getWooriAccountsFromPage();

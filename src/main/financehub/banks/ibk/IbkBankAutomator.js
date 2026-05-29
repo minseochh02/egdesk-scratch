@@ -27,6 +27,7 @@ class IbkBankAutomator extends BaseBankAutomator {
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
     this._arduinoHid = null;
     this._ibkCorporateCertPhase = 'idle';
+    this._ibkCertAttempt = 0;
   }
 
   async _disconnectArduinoHid() {
@@ -235,90 +236,136 @@ class IbkBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
     }
 
-    try {
-      this._arduinoHid = new ArduinoHidBankSession({
-        portPath: this.arduinoPort,
-        baudRate: this.arduinoBaudRate,
-        log: (m) => this.log(m),
-      });
-      await this._arduinoHid.connect();
+    const downPresses = certificateIndex ? certificateIndex - 1 : 0;
+    let certNavigated = false;
 
-      const downPresses = certificateIndex ? certificateIndex - 1 : 0;
-      let usedDirectFocus = false;
+    const maxAttempts = 3;
+    while (this._ibkCertAttempt < maxAttempts) {
+      this._ibkCertAttempt += 1;
+      const useSlowTyping = this._ibkCertAttempt >= 2;
 
-      // Phase 1: cert selection
-      // For the first cert (no DOWN presses needed), try UIA direct focus immediately —
-      // clicking the password field selects the default (top) cert and focuses the input.
-      if (downPresses === 0 && this._ibkCertWindowClass) {
-        this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
-        const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
-        if (fr.ok) {
-          this.log(`   ✅ 포커스 성공! (${fr.method})`);
-          usedDirectFocus = true;
+      try {
+        this._arduinoHid = new ArduinoHidBankSession({
+          portPath: this.arduinoPort,
+          baudRate: this.arduinoBaudRate,
+          log: (m) => this.log(m),
+        });
+        await this._arduinoHid.connect();
+
+        let usedDirectFocus = false;
+
+        if (!certNavigated) {
+          // Phase 1: cert selection (first attempt only)
+          // For the first cert (no DOWN presses needed), try UIA direct focus immediately —
+          // clicking the password field selects the default (top) cert and focuses the input.
+          if (downPresses === 0 && this._ibkCertWindowClass) {
+            this.log(`[IBK] 인증서 입력창 직접 포커스 시도 (${this._ibkCertWindowClass})...`);
+            const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+            if (fr.ok) {
+              this.log(`   ✅ 포커스 성공! (${fr.method})`);
+              usedDirectFocus = true;
+            } else {
+              this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — ENTER+TAB 방식으로 진행`);
+            }
+          }
+
+          if (!usedDirectFocus) {
+            // Navigate cert list with DOWN_ARROW first, then ENTER to confirm selection
+            const navSteps = [];
+            if (downPresses > 0) {
+              this.log(`[IBK] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
+              navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
+              navSteps.push({ waitMs: 300 }); // brief pause after last DOWN before confirming
+            }
+            navSteps.push({ key: 'ENTER' });
+            navSteps.push({ waitMs: 2000 });
+            await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
+              log: this.log.bind(this),
+              warn: this.warn.bind(this),
+            });
+
+            // After cert is selected, try UIA focus on the password field
+            if (this._ibkCertWindowClass) {
+              const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+              if (fr.ok) {
+                this.log(`   ✅ 포커스 성공! (${fr.method})`);
+                usedDirectFocus = true;
+              } else {
+                this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — TAB 방식으로 진행`);
+              }
+            }
+          }
+          certNavigated = true;
         } else {
-          this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — ENTER+TAB 방식으로 진행`);
+          // Retry: cert is still selected, dialog is at password field — just refocus
+          this.log('[IBK] 재시도 — 비밀번호 입력창 재포커스...');
+          if (this._ibkCertWindowClass) {
+            const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
+            if (fr.ok) {
+              this.log(`   ✅ 포커스 성공! (${fr.method})`);
+            } else {
+              this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — 현재 포커스 유지`);
+            }
+          }
+          usedDirectFocus = true; // never TAB on retry — already at password field
         }
-      }
 
-      if (!usedDirectFocus) {
-        // Navigate cert list with DOWN_ARROW first, then ENTER to confirm selection
-        const navSteps = [];
-        if (downPresses > 0) {
-          this.log(`[IBK] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
-          navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
-          navSteps.push({ waitMs: 300 }); // brief pause after last DOWN before confirming
+        // Phase 2: password entry
+        const pwSteps = [];
+        if (!usedDirectFocus) {
+          pwSteps.push({ key: 'TAB', repeat: 4, interKeyMs: 300 });
         }
-        navSteps.push({ key: 'ENTER' });
-        navSteps.push({ waitMs: 2000 });
-        await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
+        pwSteps.push({ type: 'password' });
+        pwSteps.push({ waitMs: 2000 });
+        pwSteps.push({ key: 'ENTER' });
+
+        await runNativeCertArduinoSteps(this._arduinoHid, this.page, certificatePassword, pwSteps, {
           log: this.log.bind(this),
           warn: this.warn.bind(this),
+          slowType: useSlowTyping,
+          sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
+        });
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+
+        // Check if cert window closed (success) or still open (wrong password)
+        this.log('[IBK] 인증서 비밀번호 확인 중...');
+        const certClosed = await waitForCertWindowClose(this._ibkCertWindowClass, {
+          timeoutMs: 5000,
+          pollMs: 500,
+          onLog: (m) => this.log(m),
         });
 
-        // After cert is selected, try UIA focus on the password field
-        if (this._ibkCertWindowClass) {
-          const fr = focusCertElement(this._ibkCertWindowClass, 'passwordFrame');
-          if (fr.ok) {
-            this.log(`   ✅ 포커스 성공! (${fr.method})`);
-            usedDirectFocus = true;
-          } else {
-            this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — TAB 방식으로 진행`);
+        if (certClosed.closed) {
+          this._ibkCertAttempt = 0;
+          break; // Success!
+        } else {
+          this.warn(`[IBK] 인증서 창이 닫히지 않음 (시도 ${this._ibkCertAttempt}/${maxAttempts}) — 비밀번호 오류. 오류 팝업 닫기 시도...`);
+          const dismissed = dismissCertErrorConfirmButton(this._ibkCertWindowClass);
+          this.log(`[IBK] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+
+          if (this._ibkCertAttempt >= maxAttempts) {
+            this._ibkCorporateCertPhase = 'awaiting_password';
+            return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 최대 시도 횟수를 초과했습니다.' };
           }
+          await this.page.waitForTimeout(1500);
+          continue;
         }
+      } catch (error) {
+        this.error(`completeCorporateCertificateLogin (ibk) attempt ${this._ibkCertAttempt} failed:`, error.message);
+        try {
+          await this._disconnectArduinoHid();
+        } catch (e) {}
+
+        if (this._ibkCertAttempt >= maxAttempts) {
+          return { success: false, error: error.message };
+        }
+        await this.page.waitForTimeout(1500);
+        continue;
       }
+    }
 
-      // Phase 2: password entry
-      const pwSteps = [];
-      if (!usedDirectFocus) {
-        pwSteps.push({ key: 'TAB', repeat: 4, interKeyMs: 300 });
-      }
-      pwSteps.push({ type: 'password' });
-      pwSteps.push({ waitMs: 2000 });
-      pwSteps.push({ key: 'ENTER' });
-
-      await runNativeCertArduinoSteps(this._arduinoHid, this.page, certificatePassword, pwSteps, {
-        log: this.log.bind(this),
-        warn: this.warn.bind(this),
-        sendkeysEnterFallbackEnv: 'CORP_CERT_SENDKEYS_ENTER_FALLBACK',
-      });
-      await this._arduinoHid.disconnect();
-      this._arduinoHid = null;
-
-      // Check if cert window closed (success) or still open (wrong password)
-      this.log('[IBK] 인증서 비밀번호 확인 중...');
-      const certClosed = await waitForCertWindowClose(this._ibkCertWindowClass, {
-        timeoutMs: 5000,
-        pollMs: 500,
-        onLog: (m) => this.log(m),
-      });
-      if (!certClosed.closed) {
-        this.warn('[IBK] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
-        const dismissed = dismissCertErrorConfirmButton(this._ibkCertWindowClass);
-        this.log(`[IBK] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
-        this._ibkCorporateCertPhase = 'awaiting_password';
-        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
-      }
-
+    try {
       await this.page.waitForTimeout(2000);
 
       let frame = this._mainFrame();

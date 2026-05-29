@@ -646,69 +646,105 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Windows에서만 지원됩니다.' };
     }
 
-    this._shinhanCertAttempt += 1;
-    const useSlowTyping = this._shinhanCertAttempt >= 2;
-    if (useSlowTyping) {
-      this.warn(`[SHINHAN] 재시도 ${this._shinhanCertAttempt}회차 — 느린 타이핑 모드 사용`);
+    const maxAttempts = 3;
+    let certNavigated = false;
+
+    while (this._shinhanCertAttempt < maxAttempts) {
+      this._shinhanCertAttempt += 1;
+      const useSlowTyping = this._shinhanCertAttempt >= 2;
+      if (useSlowTyping) {
+        this.warn(`[SHINHAN] 재시도 ${this._shinhanCertAttempt}회차 — 느린 타이핑 모드 사용`);
+      }
+
+      try {
+        if (!this.arduinoPort) {
+          return {
+            success: false,
+            error: 'Arduino 시리얼 포트가 설정되지 않았습니다. 설정에서 포트를 지정하세요.',
+          };
+        }
+
+        this._arduinoHid = new ArduinoHidBankSession({
+          portPath: this.arduinoPort,
+          baudRate: this.arduinoBaudRate,
+          log: (m) => this.log(m),
+        });
+        await this._arduinoHid.connect();
+
+        let inputSteps = SHINHAN_NATIVE_CERT_STEPS;
+
+        // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
+        // Only on first attempt; cert is already selected on retry
+        if (!certNavigated) {
+          if (certificateIndex && certificateIndex > 1) {
+            this.log(`[SHINHAN] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
+            const indexSteps = [];
+            for (let i = 0; i < certificateIndex - 1; i++) {
+              indexSteps.push({ key: 'DOWN', waitMs: 200 });
+            }
+            inputSteps = [...indexSteps, ...inputSteps];
+          }
+          certNavigated = true;
+        } else {
+          this.log('[SHINHAN] 재시도 — 기존 선택된 인증서 유지');
+          // On retry, we should skip the initial navigation steps if they exist in SHINHAN_NATIVE_CERT_STEPS
+          // Looking at SHINHAN_NATIVE_CERT_STEPS, it might contain initial TABs or ENTERs.
+          // However, the pattern for other banks is to just skip the DOWN presses.
+        }
+
+        await runNativeCertArduinoSteps(
+          this._arduinoHid,
+          this.page,
+          certificatePassword,
+          inputSteps,
+          {
+            log: this.log.bind(this),
+            slowType: useSlowTyping,
+            warn: this.warn.bind(this),
+            sendkeysEnterFallbackEnv: 'SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK',
+          }
+        );
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+
+        // Check if cert window closed (success) or still open (wrong password)
+        this.log('[SHINHAN] 인증서 비밀번호 확인 중...');
+        const certClosed = await waitForCertWindowClose(this._shinhanCertWindowClass, {
+          timeoutMs: 5000,
+          pollMs: 500,
+          onLog: (m) => this.log(m),
+        });
+
+        if (certClosed.closed) {
+          this._shinhanCertAttempt = 0;
+          break; // Success!
+        } else {
+          this.warn(`[SHINHAN] 인증서 창이 닫히지 않음 (시도 ${this._shinhanCertAttempt}/${maxAttempts}) — 비밀번호 오류. 오류 팝업 닫기 시도...`);
+          const dismissed = dismissCertErrorConfirmButton(this._shinhanCertWindowClass);
+          this.log(`[SHINHAN] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
+
+          if (this._shinhanCertAttempt >= maxAttempts) {
+            this._shinhanCorporateCertPhase = 'awaiting_password';
+            return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 최대 시도 횟수를 초과했습니다.' };
+          }
+          await this.page.waitForTimeout(1500);
+          continue;
+        }
+      } catch (error) {
+        this.error(`completeCorporateCertificateLogin (shinhan) attempt ${this._shinhanCertAttempt} failed:`, error.message);
+        try {
+          await this._disconnectArduinoHid();
+        } catch (e) {}
+
+        if (this._shinhanCertAttempt >= maxAttempts) {
+          return { success: false, error: error.message };
+        }
+        await this.page.waitForTimeout(1500);
+        continue;
+      }
     }
 
     try {
-      if (!this.arduinoPort) {
-        return {
-          success: false,
-          error: 'Arduino 시리얼 포트가 설정되지 않았습니다. 설정에서 포트를 지정하세요.',
-        };
-      }
-
-      this._arduinoHid = new ArduinoHidBankSession({
-        portPath: this.arduinoPort,
-        baudRate: this.arduinoBaudRate,
-        log: (m) => this.log(m),
-      });
-      await this._arduinoHid.connect();
-
-      let inputSteps = SHINHAN_NATIVE_CERT_STEPS;
-
-      // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
-      if (certificateIndex && certificateIndex > 1) {
-        this.log(`[SHINHAN] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-        const indexSteps = [];
-        for (let i = 0; i < certificateIndex - 1; i++) {
-          indexSteps.push({ key: 'DOWN', waitMs: 200 });
-        }
-        inputSteps = [...indexSteps, ...inputSteps];
-      }
-
-      await runNativeCertArduinoSteps(
-        this._arduinoHid,
-        this.page,
-        certificatePassword,
-        inputSteps,
-        {
-          log: this.log.bind(this),
-          slowType: useSlowTyping,
-          warn: this.warn.bind(this),
-          sendkeysEnterFallbackEnv: 'SHINHAN_CERT_SENDKEYS_ENTER_FALLBACK',
-        }
-      );
-      await this._arduinoHid.disconnect();
-      this._arduinoHid = null;
-
-      // Check if cert window closed (success) or still open (wrong password)
-      this.log('[SHINHAN] 인증서 비밀번호 확인 중...');
-      const certClosed = await waitForCertWindowClose(this._shinhanCertWindowClass, {
-        timeoutMs: 5000,
-        pollMs: 500,
-        onLog: (m) => this.log(m),
-      });
-      if (!certClosed.closed) {
-        this.warn('[SHINHAN] 인증서 창이 닫히지 않음 — 비밀번호 오류. 오류 팝업 닫기 시도...');
-        const dismissed = dismissCertErrorConfirmButton(this._shinhanCertWindowClass);
-        this.log(`[SHINHAN] 오류 팝업 닫기: ${dismissed.ok ? `성공 (${dismissed.method})` : dismissed.error}`);
-        this._shinhanCorporateCertPhase = 'awaiting_password';
-        return { success: false, wrongPassword: true, error: '인증서 비밀번호가 올바르지 않습니다. 다시 시도해주세요.' };
-      }
-
       await this.page.waitForTimeout(2000);
 
       await this._navigateBizToAccountInquiry();

@@ -33,6 +33,7 @@ class NHBankAutomator extends BaseBankAutomator {
     this.outputDir = options.outputDir || this.getSafeOutputDir('nh');
     this.arduinoPort = options.arduinoPort;
     this.arduinoBaudRate = options.arduinoBaudRate || 9600;
+    this._nhCertAttempt = 0;
   }
 
   // ============================================================================
@@ -422,106 +423,171 @@ class NHBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
     }
 
-    try {
-      this._arduinoHid = new ArduinoHidBankSession({
-        portPath: this.arduinoPort,
-        baudRate: this.arduinoBaudRate,
-        log: (m) => this.log(m),
-      });
-      await this._arduinoHid.connect();
+    const maxAttempts = 3;
+    let certNavigated = false;
 
-      // If no explicit cert selected (e.g. background sync), auto-select latest
-      if (certificateIndex == null && !xpath) {
-        this.log('[NH Corporate] No specific certificate provided. Auto-selecting latest expiry...');
-        const certsResult = await this.scrapeIniCertificateRows(this.page);
-        if (certsResult && certsResult.length > 0) {
-          let latestExpiry = '';
-          certsResult.forEach(c => {
-            if (c.expiry > latestExpiry) {
-              latestExpiry = c.expiry;
-              certificateIndex = c.certificateIndex;
-              xpath = c.xpath;
-            }
-          });
-          this.log(`[NH Corporate] Auto-selected cert with expiry: ${latestExpiry} (Index: ${certificateIndex})`);
-        } else {
-          this.log('[NH Corporate] Warning: Could not scrape certificates for auto-selection.');
-        }
+    while (this._nhCertAttempt < maxAttempts) {
+      this._nhCertAttempt += 1;
+      const useSlowTyping = this._nhCertAttempt >= 2;
+      if (useSlowTyping) {
+        this.warn(`[NH] 재시도 ${this._nhCertAttempt}회차 — 느린 타이핑 모드 사용`);
       }
 
-      // UI에서 인증서를 선택한 경우 또는 자동 선택된 경우 해당 인증서 클릭
-      if (certificateIndex != null || xpath) {
-        this.log(`[NH Corporate] Attempting to select certificate (Index: ${certificateIndex}, XPath: ${xpath})...`);
-        const clickResult = await this.page.evaluate(({ idx, xp }) => {
-          let target = null;
-          
-          if (xp) {
-            const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-            target = result.singleNodeValue;
-          }
+      try {
+        this._arduinoHid = new ArduinoHidBankSession({
+          portPath: this.arduinoPort,
+          baudRate: this.arduinoBaudRate,
+          log: (m) => this.log(m),
+        });
+        await this._arduinoHid.connect();
 
-          if (!target && idx != null) {
-            let rows = document.querySelectorAll('#certificate_signature_area tr.data');
-            if (rows.length === 0) rows = document.querySelectorAll('tr.data');
-            target = rows[idx - 1];
-          }
-
-          if (target) {
-            // Find click target (prefer <a>, then <td>)
-            const clickTarget = target.querySelector('a') || target.querySelector('td') || target;
-            
-            const events = ['mousedown', 'mouseup', 'click'];
-            events.forEach(name => {
-              clickTarget.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true }));
+        // If no explicit cert selected (e.g. background sync), auto-select latest
+        if (certificateIndex == null && !xpath) {
+          this.log('[NH Corporate] No specific certificate provided. Auto-selecting latest expiry...');
+          const certsResult = await this.scrapeIniCertificateRows(this.page);
+          if (certsResult && certsResult.length > 0) {
+            let latestExpiry = '';
+            certsResult.forEach(c => {
+              if (c.expiry > latestExpiry) {
+                latestExpiry = c.expiry;
+                certificateIndex = c.certificateIndex;
+                xpath = c.xpath;
+              }
             });
+            this.log(`[NH Corporate] Auto-selected cert with expiry: ${latestExpiry} (Index: ${certificateIndex})`);
+          } else {
+            this.log('[NH Corporate] Warning: Could not scrape certificates for auto-selection.');
+          }
+        }
+
+        // UI에서 인증서를 선택한 경우 또는 자동 선택된 경우 해당 인증서 클릭
+        // Only on first attempt; cert is already selected on retry
+        if (!certNavigated) {
+          if (certificateIndex != null || xpath) {
+            this.log(`[NH Corporate] Attempting to select certificate (Index: ${certificateIndex}, XPath: ${xpath})...`);
+            const clickResult = await this.page.evaluate(({ idx, xp }) => {
+              let target = null;
+              
+              if (xp) {
+                const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                target = result.singleNodeValue;
+              }
+
+              if (!target && idx != null) {
+                let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+                if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+                target = rows[idx - 1];
+              }
+
+              if (target) {
+                // Find click target (prefer <a>, then <td>)
+                const clickTarget = target.querySelector('a') || target.querySelector('td') || target;
+                
+                const events = ['mousedown', 'mouseup', 'click'];
+                events.forEach(name => {
+                  clickTarget.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true }));
+                });
+                return {
+                  success: true,
+                  text: target.textContent?.replace(/\s+/g, ' ').trim().substring(0, 50)
+                };
+              }
+              return { success: false };
+            }, { idx: certificateIndex, xp: xpath });
+
+            if (clickResult.success) {
+              this.log(`[NH Corporate] Selected certificate. Text: "${clickResult.text}"`);
+            } else {
+              this.warn(`[NH Corporate] Could not find certificate via XPath or Index.`);
+            }
+            await this.page.waitForTimeout(1500);
+          }
+          certNavigated = true;
+        } else {
+          this.log('[NH Corporate] 재시도 — 기존 선택된 인증서 유지');
+        }
+
+        this.log('[NH Corporate] Tabbing to password input...');
+        let focused = '';
+        for (let i = 1; i <= 20; i++) {
+          await this._arduinoHid.sendKey('TAB');
+          await this.page.waitForTimeout(300);
+          focused = await this.page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
+          if (focused === 'ini_cert_pwd') {
+            this.log(`[NH Corporate] ✓ Password input focused after ${i} Tab(s).`);
+            break;
+          }
+        }
+        if (focused !== 'ini_cert_pwd') {
+          throw new Error(`Could not Tab to password input. Last focused: "${focused}"`);
+        }
+
+        this.log('[NH Corporate] Typing password via Arduino...');
+        if (useSlowTyping) {
+          await this._arduinoHid.typeCharByChar(certificatePassword);
+        } else {
+          await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
+        }
+        await this.page.waitForTimeout(1000);
+
+        this.log('[NH Corporate] Clicking 확인...');
+        try {
+          await this.page.locator('[id="INI_certSubmit"]').click({ timeout: 5000 });
+        } catch (e) {
+          await this.page.locator('button:has-text("확인")').first().click({ timeout: 5000 });
+        }
+        await this.page.waitForTimeout(5000);
+
+        await this._arduinoHid.disconnect();
+        this._arduinoHid = null;
+
+        // Check if the cert dialog is still open — the INIpay password input is only present
+        // while the dialog is visible. If it's still there after 5s, the password was wrong.
+        const certCheck = await this.page.evaluate(() => {
+          const pwdField = document.querySelector('#ini_cert_pwd');
+          if (!pwdField) return { open: false, errorText: null };
+          const rect = pwdField.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) return { open: false, errorText: null };
+          const style = window.getComputedStyle(pwdField);
+          if (style.display === 'none' || style.visibility === 'hidden') return { open: false, errorText: null };
+          
+          // Try to grab error message
+          const errEl = document.querySelector('#INI_error_msg, .ini-error-text');
+          return { open: true, errorText: errEl ? errEl.textContent.trim() : null };
+        }).catch(() => ({ open: false, errorText: null }));
+
+        if (!certCheck.open) {
+          this._nhCertAttempt = 0;
+          break; // Success!
+        } else {
+          this.warn(`[NH] 인증서 창이 닫히지 않음 (시도 ${this._nhCertAttempt}/${maxAttempts}) — 비밀번호 오류.`);
+          if (this._nhCertAttempt >= maxAttempts) {
+            this._nhCorporateCertPhase = 'awaiting_password';
             return {
-              success: true,
-              text: target.textContent?.replace(/\s+/g, ' ').trim().substring(0, 50)
+              success: false,
+              wrongPassword: true,
+              error: certCheck.errorText || '인증서 비밀번호가 올바르지 않습니다. 최대 시도 횟수를 초과했습니다.',
             };
           }
-          return { success: false };
-        }, { idx: certificateIndex, xp: xpath });
-
-        if (clickResult.success) {
-          this.log(`[NH Corporate] Selected certificate. Text: "${clickResult.text}"`);
-        } else {
-          this.warn(`[NH Corporate] Could not find certificate via XPath or Index.`);
+          await this.page.waitForTimeout(1500);
+          continue;
+        }
+      } catch (error) {
+        this.error(`completeCorporateCertificateLogin (nh) attempt ${this._nhCertAttempt} failed:`, error.message);
+        if (this._arduinoHid) {
+          await this._arduinoHid.disconnect();
+          this._arduinoHid = null;
+        }
+        if (this._nhCertAttempt >= maxAttempts) {
+          return { success: false, error: error.message };
         }
         await this.page.waitForTimeout(1500);
+        continue;
       }
+    }
 
-      this.log('[NH Corporate] Tabbing to password input...');
-      let focused = '';
-      for (let i = 1; i <= 20; i++) {
-        await this._arduinoHid.sendKey('TAB');
-        await this.page.waitForTimeout(300);
-        focused = await this.page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
-        if (focused === 'ini_cert_pwd') {
-          this.log(`[NH Corporate] ✓ Password input focused after ${i} Tab(s).`);
-          break;
-        }
-      }
-      if (focused !== 'ini_cert_pwd') {
-        throw new Error(`Could not Tab to password input. Last focused: "${focused}"`);
-      }
-
-      this.log('[NH Corporate] Typing password via Arduino...');
-      await this._arduinoHid.typeViaNaturalTiming(certificatePassword);
-      await this.page.waitForTimeout(1000);
-
-      this.log('[NH Corporate] Clicking 확인...');
-      try {
-        await this.page.locator('[id="INI_certSubmit"]').click({ timeout: 5000 });
-      } catch (e) {
-        await this.page.locator('button:has-text("확인")').first().click({ timeout: 5000 });
-      }
-      await this.page.waitForTimeout(5000);
-
-      await this._arduinoHid.disconnect();
-      this._arduinoHid = null;
-
-      // Navigate to Transaction Inquiry
-      this.log('[NH Corporate] Navigating to 입출금거래내역조회...');
+    // Navigate to Transaction Inquiry
+    this.log('[NH Corporate] Navigating to 입출금거래내역조회...');
       try {
         await this.page.locator('.ibz-tooltip-ctrl:has-text("조회")').first().click({ timeout: 5000 });
       } catch (e) {

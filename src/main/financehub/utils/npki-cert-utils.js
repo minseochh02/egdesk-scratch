@@ -161,4 +161,41 @@ function listAllNpkiCerts() {
   return { ok: true, certificates };
 }
 
-module.exports = { listAllNpkiCerts, findNpkiRoot, listNpkiCerts, parseCert };
+/**
+ * Resolve the current 1-based index of a certificate based on its metadata.
+ *
+ * @param {Object} metadata - Saved certificate metadata
+ * @param {string} metadata.name - Certificate owner name (CN)
+ * @param {string} metadata.issuer - Certificate issuer (O)
+ * @param {string} [metadata.notAfter] - Expiry date string (YYYY-MM-DD)
+ * @param {string} [metadata.folder] - Folder name (optional fallback)
+ * @returns {number | null} Current 1-based index, or null if not found
+ */
+function resolveCertificateIndex(metadata) {
+  const { ok, certificates } = listAllNpkiCerts();
+  if (!ok || !certificates.length) return null;
+
+  // Try to find an exact match by name, issuer, and expiry
+  let match = certificates.find((c) => 
+    c.name === metadata.name && 
+    c.issuer === metadata.issuer && 
+    (metadata.notAfter ? c.notAfter === metadata.notAfter : true)
+  );
+
+  // Fallback: match by name and issuer only (if expiry changed or not provided)
+  if (!match) {
+    match = certificates.find((c) => 
+      c.name === metadata.name && 
+      c.issuer === metadata.issuer
+    );
+  }
+
+  // Last resort: match by folder name if provided
+  if (!match && metadata.folder) {
+    match = certificates.find((c) => c.folder === metadata.folder);
+  }
+
+  return match ? match.certificateIndex : null;
+}
+
+module.exports = { listAllNpkiCerts, findNpkiRoot, listNpkiCerts, parseCert, resolveCertificateIndex };

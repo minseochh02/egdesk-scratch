@@ -1137,7 +1137,9 @@ const createWindow = async () => {
             }
           }
 
-          if (id !== 'nh') {
+          if (id === 'nh') {
+            // NH is handled below via fetchCertificates
+          } else {
             return { success: false, error: '인증서 목록 조회를 지원하지 않는 은행입니다.' };
           }
 
@@ -1177,6 +1179,20 @@ const createWindow = async () => {
               success: false,
               error: error instanceof Error ? error.message : String(error),
             };
+          }
+        }
+      );
+
+      ipcMain.handle(
+        'finance-hub:resolve-certificate-index',
+        async (_event, metadata: { name: string; issuer: string; notAfter?: string; folder?: string }) => {
+          try {
+            const { resolveCertificateIndex } = require('./financehub/utils/npki-cert-utils');
+            const index = resolveCertificateIndex(metadata);
+            return { success: true, index };
+          } catch (error) {
+            console.error('[FINANCE-HUB] resolve-certificate-index failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
           }
         }
       );

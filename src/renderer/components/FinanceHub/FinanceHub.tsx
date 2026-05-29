@@ -776,7 +776,30 @@ const FinanceHub: React.FC = () => {
         alert(`인증 준비 실패: ${prep.error || '알 수 없는 오류'}`);
         return false;
       }
-      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword, cred.certificateIndex, cred.certificateXPath);
+
+      // [Robustness] Resolve current certificate index from disk before using it
+      let currentCertIndex = cred.certificateIndex;
+      if (cred.certificateName && cred.certificateIssuer) {
+        try {
+          const resolved = await window.electron.financeHub.resolveCertificateIndex({
+            name: cred.certificateName,
+            issuer: cred.certificateIssuer,
+            notAfter: cred.certificateNotAfter,
+            folder: cred.certificateFolder,
+          });
+
+          if (resolved.success && resolved.index !== null) {
+            if (resolved.index !== currentCertIndex) {
+              console.log(`[FinanceHub] Certificate index changed from ${currentCertIndex} to ${resolved.index}. Updating for this session.`);
+              currentCertIndex = resolved.index;
+            }
+          }
+        } catch (err) {
+          console.warn('[FinanceHub] Failed to resolve certificate index:', err);
+        }
+      }
+
+      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword, currentCertIndex, cred.certificateXPath);
       if (!done.success || !done.isLoggedIn) {
         await window.electron.financeHub.corporateCertCancel(bankId);
         alert(`기업 뱅킹 재연결 실패: ${done.error || '알 수 없는 오류'}`);
@@ -2771,7 +2794,12 @@ const FinanceHub: React.FC = () => {
                 ...credentials, 
                 bankId,
                 certificateIndex: selectedBankCertificate?.certificateIndex,
-                certificateXPath: selectedBankCertificate?.xpath
+                certificateXPath: selectedBankCertificate?.xpath,
+                // Add certificate metadata for robust index resolution
+                certificateName: selectedBankCertificate?.name || selectedBankCertificate?.소유자명,
+                certificateIssuer: selectedBankCertificate?.issuer || selectedBankCertificate?.발급기관,
+                certificateNotAfter: selectedBankCertificate?.notAfter || selectedBankCertificate?.만료일,
+                certificateFolder: selectedBankCertificate?.folder,
               });
             }
 

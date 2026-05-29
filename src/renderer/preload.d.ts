@@ -774,6 +774,11 @@ interface FinanceHubAPI {
     error?: string;
   }>;
   corporateCertCancel: (bankId: string) => Promise<{ success: boolean; error?: string }>;
+  resolveCertificateIndex: (metadata: { name: string; issuer: string; notAfter?: string; folder?: string }) => Promise<{
+    success: boolean;
+    index: number | null;
+    error?: string;
+  }>;
   shinhanCorporateCertPrepare: (proxyUrl?: string) => Promise<{
     success: boolean;
     phase?: string;

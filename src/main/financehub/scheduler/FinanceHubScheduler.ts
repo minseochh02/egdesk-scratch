@@ -10,6 +10,7 @@ import { parseHometaxExcel, parseTaxExemptExcel, parseCashReceiptExcel } from '.
 import { importTaxInvoices, importTaxExemptInvoices, importCashReceipts } from '../../sqlite/hometax';
 import { importTaxBillData } from '../../sqlite/tax-bills';
 import { getStore } from '../../storage';
+import { resolveCertificateIndex } from '../utils/npki-cert-utils';
 
 interface EntitySchedule {
   enabled: boolean;
@@ -1739,9 +1740,36 @@ export class FinanceHubScheduler extends EventEmitter {
             };
           }
 
+          // [Robustness] Resolve current certificate index from disk before using it
+          let currentCertIndex = (savedCredentials as any).certificateIndex;
+          const certName = (savedCredentials as any).certificateName;
+          const certIssuer = (savedCredentials as any).certificateIssuer;
+          const certNotAfter = (savedCredentials as any).certificateNotAfter;
+          const certFolder = (savedCredentials as any).certificateFolder;
+
+          if (certName && certIssuer) {
+            const resolvedIndex = resolveCertificateIndex({
+              name: certName,
+              issuer: certIssuer,
+              notAfter: certNotAfter,
+              folder: certFolder,
+            });
+
+            if (resolvedIndex !== null) {
+              if (resolvedIndex !== currentCertIndex) {
+                console.log(`[FinanceHubScheduler] ${bankId}: Certificate index changed from ${currentCertIndex} to ${resolvedIndex}. Updating for this session.`);
+                currentCertIndex = resolvedIndex;
+              } else {
+                console.log(`[FinanceHubScheduler] ${bankId}: Certificate index ${currentCertIndex} verified.`);
+              }
+            } else {
+              console.warn(`[FinanceHubScheduler] ${bankId}: Could not resolve current index for certificate "${certName}". Falling back to saved index ${currentCertIndex}.`);
+            }
+          }
+
           let complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
-            certificateIndex: (savedCredentials as any).certificateIndex,
+            certificateIndex: currentCertIndex,
             xpath: (savedCredentials as any).certificateXPath,
           });
 
@@ -1750,7 +1778,7 @@ export class FinanceHubScheduler extends EventEmitter {
             console.warn(`[FinanceHubScheduler] ${bankId}: 인증서 비밀번호 오류 — 느린 타이핑으로 1회 재시도`);
             complete = await automator.completeCorporateCertificateLogin({
               certificatePassword: certPw,
-              certificateIndex: (savedCredentials as any).certificateIndex,
+              certificateIndex: currentCertIndex,
               xpath: (savedCredentials as any).certificateXPath,
             });
           }

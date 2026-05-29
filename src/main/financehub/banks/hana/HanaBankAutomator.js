@@ -262,6 +262,11 @@ class HanaBankAutomator extends BaseBankAutomator {
       return { success: false, error: 'Arduino 시리얼 포트가 설정되지 않았습니다.' };
     }
 
+    const downPresses = certificateIndex ? certificateIndex - 1 : 0;
+    // Cert navigation only needed on the first attempt — wrong PW dismissal leaves
+    // the dialog at the password field with the cert still selected.
+    let certNavigated = false;
+
     const maxAttempts = 3;
     while (this._hanaCertAttempt < maxAttempts) {
       this._hanaCertAttempt += 1;
@@ -280,48 +285,62 @@ class HanaBankAutomator extends BaseBankAutomator {
         });
         await this._arduinoHid.connect();
 
-        const downPresses = certificateIndex ? certificateIndex - 1 : 0;
         let usedDirectFocus = false;
 
-        // Phase 1: cert selection
-        // For the first cert (no DOWN presses needed), try UIA direct focus immediately —
-        // clicking the password field selects the default (top) cert and focuses the input.
-        if (downPresses === 0 && this._hanaCertWindowClass) {
-          this.log(`[Hana] 인증서 입력창 직접 포커스 시도 (${this._hanaCertWindowClass})...`);
-          const fr = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
-          if (fr.ok) {
-            this.log(`   ✅ 포커스 성공! (${fr.method})`);
-            usedDirectFocus = true;
-          } else {
-            this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — ENTER+TAB 방식으로 진행`);
-          }
-        }
-
-        if (!usedDirectFocus) {
-          // Navigate cert list with DOWN_ARROW first, then ENTER to confirm selection
-          const navSteps = [];
-          if (downPresses > 0) {
-            this.log(`[Hana] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
-            navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
-            navSteps.push({ waitMs: 300 }); // brief pause after last DOWN before confirming
-          }
-          navSteps.push({ key: 'ENTER' });
-          navSteps.push({ waitMs: 2000 });
-          await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
-            log: this.log.bind(this),
-            warn: this.warn.bind(this),
-          });
-
-          // After cert is selected, try UIA focus on the password field
-          if (this._hanaCertWindowClass) {
+        if (!certNavigated) {
+          // Phase 1: cert selection (first attempt only)
+          // For the first cert (no DOWN presses needed), try UIA direct focus immediately —
+          // clicking the password field selects the default (top) cert and focuses the input.
+          if (downPresses === 0 && this._hanaCertWindowClass) {
+            this.log(`[Hana] 인증서 입력창 직접 포커스 시도 (${this._hanaCertWindowClass})...`);
             const fr = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
             if (fr.ok) {
               this.log(`   ✅ 포커스 성공! (${fr.method})`);
               usedDirectFocus = true;
             } else {
-              this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — TAB 방식으로 진행`);
+              this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — ENTER+TAB 방식으로 진행`);
             }
           }
+
+          if (!usedDirectFocus) {
+            // Navigate cert list with DOWN_ARROW first, then ENTER to confirm selection
+            const navSteps = [];
+            if (downPresses > 0) {
+              this.log(`[Hana] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
+              navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
+              navSteps.push({ waitMs: 300 }); // brief pause after last DOWN before confirming
+            }
+            navSteps.push({ key: 'ENTER' });
+            navSteps.push({ waitMs: 2000 });
+            await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
+              log: this.log.bind(this),
+              warn: this.warn.bind(this),
+            });
+
+            // After cert is selected, try UIA focus on the password field
+            if (this._hanaCertWindowClass) {
+              const fr = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
+              if (fr.ok) {
+                this.log(`   ✅ 포커스 성공! (${fr.method})`);
+                usedDirectFocus = true;
+              } else {
+                this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — TAB 방식으로 진행`);
+              }
+            }
+          }
+          certNavigated = true;
+        } else {
+          // Retry: cert is still selected, dialog is at password field — just refocus
+          this.log('[Hana] 재시도 — 비밀번호 입력창 재포커스...');
+          if (this._hanaCertWindowClass) {
+            const fr = focusCertElement(this._hanaCertWindowClass, 'passwordFrame');
+            if (fr.ok) {
+              this.log(`   ✅ 포커스 성공! (${fr.method})`);
+            } else {
+              this.warn(`   ⚠️ 직접 포커스 실패 (${fr.error}) — 현재 포커스 유지`);
+            }
+          }
+          usedDirectFocus = true; // never TAB on retry — already at password field
         }
 
         // Phase 2: password entry
