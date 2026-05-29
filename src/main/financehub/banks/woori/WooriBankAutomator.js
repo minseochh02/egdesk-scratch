@@ -251,7 +251,7 @@ class WooriBankAutomator extends BaseBankAutomator {
       await this._wooriClickLegacyCertButton();
       await this.page.waitForTimeout(3000);
 
-      this.log('[WOORI] 인증서 창이 열렸습니다. 인증서 선택 및 비밀번호 입력을 진행합니다.');
+      this.log('[WOORI] Cert dialog is open. Relying on default/active selection.');
 
       this._wooriCorporateCertPhase = 'awaiting_password';
       this._wooriCertAttempt = 0;
@@ -312,49 +312,44 @@ class WooriBankAutomator extends BaseBankAutomator {
         if (!certNavigated) {
           this.log(`[WOORI] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
           
-            const selectionResult = await this.page.evaluate(({ name, issuer, expiry, index }) => {
-              const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
-              if (rows.length === 0) return { success: false, error: '인증서 목록을 찾을 수 없습니다.' };
+          const selectionResult = await this.page.evaluate(({ name, issuer, expiry, index }) => {
+            const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
+            if (rows.length === 0) return { success: false, error: '인증서 목록을 찾을 수 없습니다.' };
 
-              let targetRow = null;
-              let matchMethod = '';
+            let targetRow = null;
+            let matchMethod = '';
 
-              // 1. Try to match by metadata (Name + Expiry)
-              if (name) {
-                targetRow = rows.find(row => {
-                  const text = row.textContent || '';
-                  const nameMatch = text.includes(name);
-                  const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
-                  return nameMatch && expiryMatch;
-                });
-                if (targetRow) matchMethod = 'metadata';
-              }
+            // 1. Try to match by metadata (Name + Expiry)
+            if (name) {
+              targetRow = rows.find(row => {
+                const text = row.textContent || '';
+                const nameMatch = text.includes(name);
+                const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
+                return nameMatch && expiryMatch;
+              });
+              if (targetRow) matchMethod = 'metadata';
+            }
 
-              // 2. Fallback to index if metadata match fails
-              if (!targetRow && index >= 1) {
-                targetRow = rows[index - 1];
-                if (targetRow) matchMethod = 'index';
-              }
+            // 2. Fallback to index if metadata match fails
+            if (!targetRow && index >= 1) {
+              targetRow = rows[index - 1];
+              if (targetRow) matchMethod = 'index';
+            }
 
-              if (targetRow) {
-                const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
-                
-                // Trigger events to simulate a real user click
-                const events = ['mousedown', 'mouseup', 'click'];
-                events.forEach(evName => {
-                  clickTarget.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true }));
-                });
-                
-                return { success: true, method: matchMethod, text: targetRow.textContent?.trim().substring(0, 50) };
-              }
+            if (targetRow) {
+              const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
+              // @ts-ignore
+              clickTarget.click();
+              return { success: true, method: matchMethod, text: targetRow.textContent?.trim().substring(0, 50) };
+            }
 
-              return { success: false, error: '일치하는 인증서를 찾을 수 없습니다.' };
-            }, { 
-              name: certificateName, 
-              issuer: certificateIssuer, 
-              expiry: certificateNotAfter, 
-              index: certificateIndex 
-            });
+            return { success: false, error: '일치하는 인증서를 찾을 수 없습니다.' };
+          }, { 
+            name: certificateName, 
+            issuer: certificateIssuer, 
+            expiry: certificateNotAfter, 
+            index: certificateIndex 
+          });
 
           if (selectionResult.success) {
             this.log(`[WOORI] ✓ 인증서 선택 성공 (${selectionResult.method}): ${selectionResult.text}`);
@@ -368,68 +363,30 @@ class WooriBankAutomator extends BaseBankAutomator {
           this.log('[WOORI] 재시도 — 기존 선택된 인증서 유지');
         }
 
-        // Focus the password input. A plain mouse click on the xwup field can open the
-        // on-screen virtual keyboard (which steals focus) or be intercepted by an overlay,
-        // so we try non-pointer focus strategies first, then a coordinate click, and finally
-        // fall back to the TAB loop (the historically proven approach).
-        const PWD_ID = 'xwup_certselect_tek_input1';
-        const PWD_SELECTOR = `#${PWD_ID}`;
+        // On retry the cert dialog is still open and focus may be on the 확인 button or an
+        // error element. Directly clicking the password input via Playwright avoids having to
+        // TAB through xwup's virtual-keyboard toggle button (which can open the on-screen
+        // keyboard on focus and then intercept subsequent TABs and typed characters).
         let focused = '';
         let directFocusOk = false;
-
-        const verifyFocused = async () =>
-          this.page.evaluate(() => document.activeElement?.id || '').catch(() => '');
-
         try {
-          await this.page.waitForSelector(PWD_SELECTOR, { state: 'visible', timeout: 5000 });
-
-          // Strategy 1: Playwright locator.focus() — calls DOM focus() with no pointer event,
-          // bypassing overlay interception and the click→keypad handler.
-          try {
-            await this.page.locator(PWD_SELECTOR).focus({ timeout: 3000 });
-            await this.page.waitForTimeout(300);
-            if ((await verifyFocused()) === PWD_ID) {
-              directFocusOk = true;
-              this.log('[WOORI] Password field focused via locator.focus()');
-            }
-          } catch (e) {
-            this.warn('[WOORI] locator.focus() failed:', e.message);
-          }
-
-          // Strategy 2: raw DOM .focus() inside the page (no Playwright actionability checks).
-          if (!directFocusOk) {
-            const rawFocusId = await this.page.evaluate((id) => {
-              const el = document.getElementById(id);
-              if (el && typeof el.focus === 'function') {
-                el.focus();
-              }
-              return document.activeElement?.id || '';
-            }, PWD_ID).catch(() => '');
-            if (rawFocusId === PWD_ID) {
-              directFocusOk = true;
-              this.log('[WOORI] Password field focused via raw DOM focus()');
-            }
-          }
-
-          // Strategy 3: physical coordinate click at the element center (real pointer event).
-          if (!directFocusOk) {
-            const box = await this.page.locator(PWD_SELECTOR).boundingBox();
-            if (box) {
-              await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-              await this.page.waitForTimeout(400);
-              if ((await verifyFocused()) === PWD_ID) {
-                directFocusOk = true;
-                this.log('[WOORI] Password field focused via coordinate mouse click');
-              }
-            }
+          // Ensure the password field is visible and clickable
+          const pwdSelector = '#xwup_certselect_tek_input1';
+          await this.page.waitForSelector(pwdSelector, { state: 'visible', timeout: 5000 });
+          await this.page.locator(pwdSelector).click({ timeout: 3000 });
+          await this.page.waitForTimeout(500);
+          
+          const directFocusId = await this.page.evaluate(() => document.activeElement?.id || '');
+          if (directFocusId === 'xwup_certselect_tek_input1') {
+            focused = 'xwup_certselect_tek_input1';
+            directFocusOk = true;
+            this.log('[WOORI] Password field focused via direct click');
           }
         } catch (e) {
-          this.warn('[WOORI] Direct focus strategies failed, falling back to TAB loop:', e.message);
+          this.warn('[WOORI] Direct click on password field failed, falling back to TAB loop:', e.message);
         }
 
-        if (directFocusOk) {
-          focused = PWD_ID;
-        } else {
+        if (!directFocusOk) {
           this.log('[WOORI] Tabbing to password input...');
           for (let i = 1; i <= 20; i++) {
             await this._arduinoHid.sendKey('TAB');
@@ -440,14 +397,14 @@ class WooriBankAutomator extends BaseBankAutomator {
               return { id: ae.id || '', tag: ae.tagName || '' };
             });
             focused = focusInfo.id || focusInfo.tag;
-            if (focused === PWD_ID) {
+            if (focused === 'xwup_certselect_tek_input1') {
               this.log(`[WOORI] ✓ Password input focused after ${i} Tab(s).`);
               break;
             }
           }
         }
 
-        if (focused !== PWD_ID) {
+        if (focused !== 'xwup_certselect_tek_input1') {
           throw new Error(`비밀번호 입력칸에 도달하지 못했습니다 (focus: ${focused})`);
         }
 
@@ -501,7 +458,7 @@ class WooriBankAutomator extends BaseBankAutomator {
             await this.page.evaluate(() => {
               const btns = Array.from(document.querySelectorAll('button, a'));
               const okBtn = btns.find(b => b.textContent?.includes('확인'));
-              if (okBtn) okBtn.click();
+              if (okBtn) (okBtn as any).click();
             });
           } catch (e) {}
 
