@@ -349,11 +349,9 @@ class WooriBankAutomator extends BaseBankAutomator {
             let certFocused = false;
             this.log('[WOORI] 인증서 목록으로 TAB 이동 시작...');
             
-            for (let i = 0; i <= 30; i++) {
-              if (i > 0) {
-                await this._arduinoHid.sendKey('TAB');
-                await this.page.waitForTimeout(300);
-              }
+            for (let i = 1; i <= 30; i++) {
+              await this._arduinoHid.sendKey('TAB');
+              await this.page.waitForTimeout(300);
               
               const focusInfo = await this.page.evaluate(() => {
                 const ae = document.activeElement;
@@ -366,25 +364,26 @@ class WooriBankAutomator extends BaseBankAutomator {
                 };
               });
               
-              if (i > 0 || focusInfo.tag !== 'BODY') {
-                this.log(`[WOORI CERT TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} class="${focusInfo.className}" text="${focusInfo.text.substring(0, 60)}"`);
+              this.log(`[WOORI CERT TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} class="${focusInfo.className}" text="${focusInfo.text.substring(0, 60)}"`);
+              
+              // Check if this focused element is our certificate
+              // In xwup, focused rows or cells often have specific classes or contain the cert text
+              if (targetInfo.matchSnippet && focusInfo.text.includes(targetInfo.matchSnippet)) {
+                this.log(`[WOORI] ✓ 대상 인증서 포커스 성공 (Tab ${i})`);
+                certFocused = true;
+                
+                // Once focused, we usually need to press ENTER to select it in some UIs, 
+                // but in many web-based cert lists, focus + Enter or just focus is enough.
+                // For xwup, let's try ENTER to be sure it's "selected".
+                await this._arduinoHid.sendKey('ENTER');
+                await this.page.waitForTimeout(500);
+                break;
               }
               
               // Safety: if we hit the password field already, we might have skipped the cert or it was already selected
               if (focusInfo.id === 'xwup_certselect_tek_input1') {
                 this.log('[WOORI] 이미 비밀번호 입력창에 도달했습니다. 인증서가 이미 선택된 것으로 간주합니다.');
                 certFocused = true;
-                break;
-              }
-
-              // Check if this focused element is our certificate
-              if (targetInfo.matchSnippet && focusInfo.text.includes(targetInfo.matchSnippet)) {
-                this.log(`[WOORI] ✓ 대상 인증서 포커스 성공 (Tab ${i})`);
-                certFocused = true;
-                
-                // Once focused, we send ENTER to select it
-                await this._arduinoHid.sendKey('ENTER');
-                await this.page.waitForTimeout(500);
                 break;
               }
             }
@@ -435,22 +434,17 @@ class WooriBankAutomator extends BaseBankAutomator {
 
         if (!directFocusOk) {
           this.log('[WOORI] Tabbing to password input...');
-          for (let i = 0; i <= 20; i++) {
-            if (i > 0) {
-              await this._arduinoHid.sendKey('TAB');
-              await this.page.waitForTimeout(300);
-            }
+          for (let i = 1; i <= 20; i++) {
+            await this._arduinoHid.sendKey('TAB');
+            await this.page.waitForTimeout(300);
             const focusInfo = await this.page.evaluate(() => {
               const ae = document.activeElement;
               if (!ae) return { id: '', tag: '' };
               return { id: ae.id || '', tag: ae.tagName || '' };
             });
             focused = focusInfo.id || focusInfo.tag;
-            if (i > 0 || focused !== 'BODY') {
-              this.log(`[WOORI PW TAB ${i}] focused: "${focused}"`);
-            }
             if (focused === 'xwup_certselect_tek_input1') {
-              this.log(`[WOORI] ✓ Password input focused (Tab ${i}).`);
+              this.log(`[WOORI] ✓ Password input focused after ${i} Tab(s).`);
               break;
             }
           }
