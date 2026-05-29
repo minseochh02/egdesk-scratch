@@ -296,7 +296,7 @@ const LandingPage: React.FC = () => {
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faDatabase} />
               </div>
-              <h3 className="egdesk-landing-card-title">User Data</h3>
+              <h3 className="egdesk-landing-card-title">mydb</h3>
               <p className="egdesk-landing-card-description">
                 Import Excel/CSV data, auto-sync files, and query tables.
               </p>

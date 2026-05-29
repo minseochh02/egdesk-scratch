@@ -376,9 +376,9 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
           </div>
         </td>
         <td className={`txp-table__cell txp-table__cell--amount ${isDeposit ? 'txp-table__cell--deposit' : 'txp-table__cell--withdrawal'}`}>
-          <span className="txp-amount">{isDeposit ? '+' : '-'}{formatCurrency(amount)}</span>
+          <span className="txp-amount">{isDeposit ? '+' : '-'}{formatCurrency(amount, account?.currency)}</span>
         </td>
-        <td className="txp-table__cell txp-table__cell--balance">{formatCurrency(tx.balance)}</td>
+        <td className="txp-table__cell txp-table__cell--balance">{formatCurrency(tx.balance, account?.currency)}</td>
       </tr>
     );
   };
@@ -404,12 +404,12 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
             <span className="txp-card__text">{tx.description || '-'}</span>
           </div>
           <div className={`txp-card__amount ${isDeposit ? 'txp-card__amount--deposit' : 'txp-card__amount--withdrawal'}`}>
-            {isDeposit ? '+' : '-'}{formatCurrency(amount)}
+            {isDeposit ? '+' : '-'}{formatCurrency(amount, account?.currency)}
           </div>
         </div>
         <div className="txp-card__footer">
           <span className="txp-card__account">{formatAccountNumber(account?.accountNumber)}</span>
-          <span className="txp-card__balance">잔액: {formatCurrency(tx.balance)}</span>
+          <span className="txp-card__balance">잔액: {formatCurrency(tx.balance, account?.currency)}</span>
         </div>
       </div>
     );
@@ -589,7 +589,12 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({
       </header>
 
       {/* Stats Summary */}
-      {stats && <TransactionStats stats={stats} />}
+      {stats && (
+        <TransactionStats 
+          stats={stats} 
+          currency={filters.accountId ? accounts.find(a => a.id === filters.accountId)?.currency : undefined} 
+        />
+      )}
 
       {/* Filters Panel */}
       {showFilters && (

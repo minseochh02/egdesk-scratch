@@ -19,10 +19,14 @@ export const formatAccountNumber = (num: string | undefined | null): string => {
 };
 
 /**
- * Format currency with Korean Won symbol
- * e.g., 1000000 -> "₩1,000,000"
+ * Format currency with appropriate symbol
+ * e.g., 1000000, "KRW" -> "₩1,000,000"
+ * e.g., 1000.50, "USD" -> "$1,000.50"
  */
-export const formatCurrency = (amount: number): string => {
+export const formatCurrency = (amount: number, currency: string = 'KRW'): string => {
+  if (currency === 'USD') {
+    return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   return `₩${amount.toLocaleString()}`;
 };
 

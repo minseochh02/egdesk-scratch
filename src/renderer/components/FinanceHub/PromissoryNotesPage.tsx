@@ -176,10 +176,10 @@ function oneYearAgoYmd(): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function formatCell(value: unknown, format?: Format): string {
+function formatCell(value: unknown, format?: Format, currency?: string): string {
   if (value == null || value === '') return '';
   if (format === 'currency' && typeof value === 'number') {
-    return formatCurrency(value);
+    return formatCurrency(value, currency);
   }
   if (format === 'rate' && typeof value === 'number') {
     return `${value.toFixed(2)}%`;
@@ -482,7 +482,7 @@ function Section({ section, connectedBankIds }: SectionProps) {
                 <tr key={row.id}>
                   {section.columns.map((c) => (
                     <td key={c.key} className={c.align === 'right' ? 'ibkrec-cell--right' : undefined}>
-                      {formatCell(row[c.key], c.format)}
+                      {formatCell(row[c.key], c.format, row.currency)}
                     </td>
                   ))}
                 </tr>

@@ -146,7 +146,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
       align: 'right',
       width: '120px',
       className: 'tx-table__cell--withdrawal',
-      render: (tx) => tx.withdrawal > 0 ? formatCurrency(tx.withdrawal) : '-',
+      render: (tx) => {
+        const account = getAccountInfo(tx.accountId);
+        return tx.withdrawal > 0 ? formatCurrency(tx.withdrawal, account?.currency) : '-';
+      },
     },
     {
       key: 'deposit',
@@ -155,7 +158,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
       align: 'right',
       width: '120px',
       className: 'tx-table__cell--deposit',
-      render: (tx) => tx.deposit > 0 ? formatCurrency(tx.deposit) : '-',
+      render: (tx) => {
+        const account = getAccountInfo(tx.accountId);
+        return tx.deposit > 0 ? formatCurrency(tx.deposit, account?.currency) : '-';
+      },
     },
     {
       key: 'balance',
@@ -164,7 +170,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
       align: 'right',
       width: '140px',
       className: 'tx-table__cell--balance',
-      render: (tx) => formatCurrency(tx.balance),
+      render: (tx) => {
+        const account = getAccountInfo(tx.accountId);
+        return formatCurrency(tx.balance, account?.currency);
+      },
     }
   );
 

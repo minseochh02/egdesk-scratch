@@ -147,6 +147,8 @@ const FinanceHub: React.FC = () => {
   const [showManualPasswordContinue, setShowManualPasswordContinue] = useState(false);
   /** 기업 공동인증서 (native Arduino 경로): 연결 시도 중 — 창 닫기 시 IPC cancel */
   const [corporateNativeCertSessionActive, setCorporateNativeCertSessionActive] = useState(false);
+  /** prepare already done; wrong password entered — skip prepare on next attempt */
+  const [certWrongPasswordRetry, setCertWrongPasswordRetry] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLoading, setDebugLoading] = useState<string | null>(null);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
@@ -2690,15 +2692,18 @@ const FinanceHub: React.FC = () => {
         const bankId = selectedBank!.id;
         setCorporateNativeCertSessionActive(true);
         try {
-          setConnectionProgress('기업뱅킹 및 인증서 창 준비 중...');
-          const prep = await window.electron.financeHub.corporateCertPrepare(bankId);
-          if (!prep.success) {
-            setConnectionProgress('');
-            await window.electron.financeHub.corporateCertCancel(bankId);
-            alert(`연결 실패: ${prep.error || '알 수 없는 오류'}`);
-            return;
+          if (!certWrongPasswordRetry) {
+            setConnectionProgress('기업뱅킹 및 인증서 창 준비 중...');
+            const prep = await window.electron.financeHub.corporateCertPrepare(bankId);
+            if (!prep.success) {
+              setConnectionProgress('');
+              await window.electron.financeHub.corporateCertCancel(bankId);
+              alert(`연결 실패: ${prep.error || '알 수 없는 오류'}`);
+              return;
+            }
           }
           setConnectionProgress('인증서 비밀번호 입력 중...');
+          setCertWrongPasswordRetry(false);
           const result = await window.electron.financeHub.corporateCertComplete(
             bankId,
             credentials.certificatePassword || '',
@@ -2753,12 +2758,20 @@ const FinanceHub: React.FC = () => {
             }
             alert(`${selectedBank!.nameKo} 연결 성공! ${result.accounts?.length || 0}개의 계좌를 찾았습니다.`);
             handleCloseModal();
+          } else if ((result as any).wrongPassword) {
+            // cert dialog still open — don't cancel, let user re-enter password
+            setConnectionProgress('');
+            setCertWrongPasswordRetry(true);
+            setCredentials((prev) => ({ ...prev, certificatePassword: '' }));
+            alert(`인증서 비밀번호가 올바르지 않습니다. 다시 입력해주세요.\n${result.error || ''}`);
           } else {
             setConnectionProgress('');
+            setCertWrongPasswordRetry(false);
             await window.electron.financeHub.corporateCertCancel(bankId);
             alert(`${selectedBank!.nameKo} 연결 실패: ${result.error || '알 수 없는 오류'}`);
           }
         } catch {
+          setCertWrongPasswordRetry(false);
           await window.electron.financeHub.corporateCertCancel(bankId);
           setConnectionProgress('');
           alert('은행 연결 중 오류가 발생했습니다.');
@@ -2947,6 +2960,7 @@ const FinanceHub: React.FC = () => {
       void window.electron.financeHub.corporateCertCancel(selectedBank.id);
     }
     setCorporateNativeCertSessionActive(false);
+    setCertWrongPasswordRetry(false);
     setShowBankSelector(false);
     setSelectedBank(null);
     setBankAuthMethod(null);
@@ -2960,6 +2974,7 @@ const FinanceHub: React.FC = () => {
       void window.electron.financeHub.corporateCertCancel(selectedBank.id);
     }
     setCorporateNativeCertSessionActive(false);
+    setCertWrongPasswordRetry(false);
     setSelectedBank(null);
     setBankAuthMethod(null);
     setCredentials({ bankId: '', userId: '', password: '', certificatePassword: '', accountType: 'personal' });
@@ -3313,11 +3328,45 @@ const FinanceHub: React.FC = () => {
                                           <span className="finance-hub__meta-badge finance-hub__meta-badge--warning" style={{ backgroundColor: 'rgba(255, 188, 0, 0.1)', color: '#FFBC00', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold' }}>한도계좌</span>
                                         )}
                                         {fullAccount.metadata.payableAmount && (
-                                          <span>지급가능: <strong style={{ color: 'var(--text-normal)' }}>{fullAccount.metadata.payableAmount.includes('원') ? fullAccount.metadata.payableAmount : `${formatCurrency(Number(fullAccount.metadata.payableAmount.replace(/[^0-9-]/g, '')))}원`}</strong></span>
+                                          <span>
+                                            지급가능:{' '}
+                                            <strong style={{ color: 'var(--text-normal)' }}>
+                                              {fullAccount.metadata.payableAmount.includes('원') ||
+                                              fullAccount.metadata.payableAmount.includes('$')
+                                                ? fullAccount.metadata.payableAmount
+                                                : `${formatCurrency(
+                                                    Number(
+                                                      fullAccount.metadata.payableAmount.replace(
+                                                        /[^0-9.-]/g,
+                                                        '',
+                                                      ),
+                                                    ),
+                                                    fullAccount.currency,
+                                                  )}`}
+                                            </strong>
+                                          </span>
                                         )}
-                                        {fullAccount.metadata.contractAmount && fullAccount.metadata.contractAmount !== '0' && fullAccount.metadata.contractAmount !== '0원' && (
-                                          <span>약정금액: <strong style={{ color: 'var(--text-normal)' }}>{fullAccount.metadata.contractAmount.includes('원') ? fullAccount.metadata.contractAmount : `${formatCurrency(Number(fullAccount.metadata.contractAmount.replace(/[^0-9-]/g, '')))}원`}</strong></span>
-                                        )}
+                                        {fullAccount.metadata.contractAmount &&
+                                          fullAccount.metadata.contractAmount !== '0' &&
+                                          fullAccount.metadata.contractAmount !== '0원' && (
+                                            <span>
+                                              약정금액:{' '}
+                                              <strong style={{ color: 'var(--text-normal)' }}>
+                                                {fullAccount.metadata.contractAmount.includes('원') ||
+                                                fullAccount.metadata.contractAmount.includes('$')
+                                                  ? fullAccount.metadata.contractAmount
+                                                  : `${formatCurrency(
+                                                      Number(
+                                                        fullAccount.metadata.contractAmount.replace(
+                                                          /[^0-9.-]/g,
+                                                          '',
+                                                        ),
+                                                      ),
+                                                      fullAccount.currency,
+                                                    )}`}
+                                              </strong>
+                                            </span>
+                                          )}
                                         {fullAccount.metadata.branchName && (
                                           <span>관리점: {fullAccount.metadata.branchName}</span>
                                         )}
@@ -3325,7 +3374,7 @@ const FinanceHub: React.FC = () => {
                                     )}
                                   </div>
                                   <div className="finance-hub__account-actions">
-                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(fullAccount?.balance ?? account.balance ?? 0)}</span>
+                                    <span className="finance-hub__account-balance">잔액: {formatCurrency(fullAccount?.balance ?? account.balance ?? 0, fullAccount?.currency)}</span>
                                     {isActive ? (
                                       <>
                                         <button className="finance-hub__btn finance-hub__btn--icon" onClick={() => handleOpenLimitModal(connection.bankId, account.accountNumber, fullAccount)} title="계좌 한도 설정">
@@ -3713,13 +3762,35 @@ const FinanceHub: React.FC = () => {
               <section className="finance-hub__section">
                 <div className="finance-hub__section-header"><h2><span className="finance-hub__section-icon"><FontAwesomeIcon icon={faSync} /></span> 최근 동기화 기록</h2></div>
                 <div className="finance-hub__sync-history">
-                  {recentSyncOps.slice(0, 5).map((op) => (
-                    <div key={op.id} className="finance-hub__sync-item">
-                      <div className="finance-hub__sync-info"><span className="finance-hub__sync-account">{formatAccountNumber(op.accountNumber)}</span><span className="finance-hub__sync-date">{new Date(op.startedAt).toLocaleString('ko-KR')}</span></div>
-                      <div className="finance-hub__sync-stats"><span>{op.totalCount}건</span><span className="finance-hub__sync-deposit">+{formatCurrency(op.totalDeposits)}</span><span className="finance-hub__sync-withdrawal">-{formatCurrency(op.totalWithdrawals)}</span></div>
-                      <span className={`finance-hub__sync-status finance-hub__sync-status--${op.status}`}>{op.status === 'completed' ? '✓' : op.status === 'failed' ? '✗' : '⏳'}</span>
-                    </div>
-                  ))}
+                  {recentSyncOps.slice(0, 5).map((op) => {
+                    const account = accounts.find((a) => a.id === op.accountId);
+                    return (
+                      <div key={op.id} className="finance-hub__sync-item">
+                        <div className="finance-hub__sync-info">
+                          <span className="finance-hub__sync-account">
+                            {formatAccountNumber(op.accountNumber)}
+                          </span>
+                          <span className="finance-hub__sync-date">
+                            {new Date(op.startedAt).toLocaleString('ko-KR')}
+                          </span>
+                        </div>
+                        <div className="finance-hub__sync-stats">
+                          <span>{op.totalCount}건</span>
+                          <span className="finance-hub__sync-deposit">
+                            +{formatCurrency(op.totalDeposits, account?.currency)}
+                          </span>
+                          <span className="finance-hub__sync-withdrawal">
+                            -{formatCurrency(op.totalWithdrawals, account?.currency)}
+                          </span>
+                        </div>
+                        <span
+                          className={`finance-hub__sync-status finance-hub__sync-status--${op.status}`}
+                        >
+                          {op.status === 'completed' ? '✓' : op.status === 'failed' ? '✗' : '⏳'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             )}

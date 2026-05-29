@@ -1739,11 +1739,21 @@ export class FinanceHubScheduler extends EventEmitter {
             };
           }
 
-          const complete = await automator.completeCorporateCertificateLogin({
+          let complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
             certificateIndex: (savedCredentials as any).certificateIndex,
             xpath: (savedCredentials as any).certificateXPath,
           });
+
+          // Wrong password: retry once with slow-typing mode (automator increments attempt counter)
+          if (!complete?.success && (complete as any)?.wrongPassword) {
+            console.warn(`[FinanceHubScheduler] ${bankId}: 인증서 비밀번호 오류 — 느린 타이핑으로 1회 재시도`);
+            complete = await automator.completeCorporateCertificateLogin({
+              certificatePassword: certPw,
+              certificateIndex: (savedCredentials as any).certificateIndex,
+              xpath: (savedCredentials as any).certificateXPath,
+            });
+          }
 
           if (!complete?.success || !complete.isLoggedIn) {
             await safeCancelCorporateCert();
@@ -2276,11 +2286,21 @@ export class FinanceHubScheduler extends EventEmitter {
             return { success: false, error: prep?.error || 'Corporate certificate prepare failed' };
           }
 
-          const complete = await automator.completeCorporateCertificateLogin({
+          let complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
             certificateIndex: (savedCredentials as any).certificateIndex,
             xpath: (savedCredentials as any).certificateXPath,
           });
+
+          // Wrong password: retry once with slow-typing mode (automator increments attempt counter)
+          if (!complete?.success && (complete as any)?.wrongPassword) {
+            console.warn(`[FinanceHubScheduler] ${bankId}: 인증서 비밀번호 오류 — 느린 타이핑으로 1회 재시도`);
+            complete = await automator.completeCorporateCertificateLogin({
+              certificatePassword: certPw,
+              certificateIndex: (savedCredentials as any).certificateIndex,
+              xpath: (savedCredentials as any).certificateXPath,
+            });
+          }
 
           if (!complete?.success || !complete.isLoggedIn) {
             await safeCancelCorporateCert();

@@ -1965,7 +1965,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
     try {
       // Show confirmation with service list
       const servicesList = [
-        '• User Data - Query imported tables (Excel, CSV)',
+        '• mydb - Query imported tables (Excel, CSV)',
         '• Gmail - Email operations and search',
         '• Sheets - Google Sheets sync and management',
         '• Apps Script - Google Apps Script tools',
@@ -1991,7 +1991,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
         alert(
           '✅ Successfully configured Claude Desktop!\n\n' +
           'All 5 EGDesk MCP services have been installed:\n' +
-          '✓ User Data\n' +
+          '✓ mydb\n' +
           '✓ Gmail\n' +
           '✓ Sheets\n' +
           '✓ Apps Script\n' +
@@ -2019,7 +2019,7 @@ const MCPServer: React.FC<MCPServerProps> = () => {
       const confirmed = confirm(
         'Remove all EGDesk MCP services from Claude Desktop?\n\n' +
         'This will remove:\n' +
-        '• User Data\n' +
+        '• mydb\n' +
         '• Gmail\n' +
         '• Sheets\n' +
         '• Apps Script\n' +

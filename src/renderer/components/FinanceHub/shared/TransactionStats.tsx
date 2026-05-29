@@ -15,6 +15,7 @@ interface TransactionStatsProps {
   stats: Stats;
   compact?: boolean;
   showTransactionCount?: boolean;
+  currency?: string;
 }
 
 // ============================================
@@ -25,6 +26,7 @@ const TransactionStats: React.FC<TransactionStatsProps> = ({
   stats, 
   compact = false,
   showTransactionCount = true,
+  currency,
 }) => {
   const netChange = stats.netChange ?? (stats.totalDeposits - stats.totalWithdrawals);
   const isPositive = netChange >= 0;
@@ -35,21 +37,21 @@ const TransactionStats: React.FC<TransactionStatsProps> = ({
         <div className="tx-stats__card tx-stats__card--deposit">
           <span className="tx-stats__label">총 입금</span>
           <span className="tx-stats__value tx-stats__value--positive">
-            {formatCurrency(stats.totalDeposits)}
+            {formatCurrency(stats.totalDeposits, currency)}
           </span>
           <span className="tx-stats__count">{stats.depositCount}건</span>
         </div>
         <div className="tx-stats__card tx-stats__card--withdrawal">
           <span className="tx-stats__label">총 출금</span>
           <span className="tx-stats__value">
-            {formatCurrency(stats.totalWithdrawals)}
+            {formatCurrency(stats.totalWithdrawals, currency)}
           </span>
           <span className="tx-stats__count">{stats.withdrawalCount}건</span>
         </div>
         <div className={`tx-stats__card ${isPositive ? 'tx-stats__card--positive' : 'tx-stats__card--negative'}`}>
           <span className="tx-stats__label">순 변동</span>
           <span className={`tx-stats__value ${isPositive ? 'tx-stats__value--positive' : 'tx-stats__value--negative'}`}>
-            {isPositive ? '+' : ''}{formatCurrency(netChange)}
+            {isPositive ? '+' : ''}{formatCurrency(netChange, currency)}
           </span>
         </div>
       </div>
@@ -68,21 +70,21 @@ const TransactionStats: React.FC<TransactionStatsProps> = ({
       <div className="tx-stats__card tx-stats__card--deposit">
         <span className="tx-stats__label">총 입금</span>
         <span className="tx-stats__value tx-stats__value--positive">
-          {formatCurrency(stats.totalDeposits)}
+          {formatCurrency(stats.totalDeposits, currency)}
         </span>
         <span className="tx-stats__count">{stats.depositCount}건</span>
       </div>
       <div className="tx-stats__card tx-stats__card--withdrawal">
         <span className="tx-stats__label">총 출금</span>
         <span className="tx-stats__value">
-          {formatCurrency(stats.totalWithdrawals)}
+          {formatCurrency(stats.totalWithdrawals, currency)}
         </span>
         <span className="tx-stats__count">{stats.withdrawalCount}건</span>
       </div>
       <div className={`tx-stats__card ${isPositive ? 'tx-stats__card--positive' : 'tx-stats__card--negative'}`}>
         <span className="tx-stats__label">순 변동</span>
         <span className={`tx-stats__value ${isPositive ? 'tx-stats__value--positive' : 'tx-stats__value--negative'}`}>
-          {isPositive ? '+' : ''}{formatCurrency(netChange)}
+          {isPositive ? '+' : ''}{formatCurrency(netChange, currency)}
         </span>
       </div>
     </div>

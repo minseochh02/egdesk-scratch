@@ -38,7 +38,7 @@ function typeLabel(type: string): string {
 type ActiveTab = 'graph' | 'sources';
 
 const FIXED_ORIGIN_LABELS: Record<string, string> = {
-  userdata:        'User Data',
+  userdata:        'mydb',
   financehub:      'Finance Hub',
   companyresearch: 'Client Research',
 };
@@ -279,7 +279,7 @@ export const NeuronLayer: React.FC = () => {
   }, [activeTypes, entities, relations]);
 
   // Build ordered display groups:
-  // Order: Business Identity brands → Client Research → Finance Hub → User Data
+  // Order: Business Identity brands → Client Research → Finance Hub → mydb
   const displayGroups = useMemo(() => {
     const map = new Map<string, { title: string; items: DataSource[] }>();
 
@@ -394,7 +394,7 @@ export const NeuronLayer: React.FC = () => {
                 <div className="neuron-graph-empty-icon">⊞</div>
                 <div className="neuron-graph-empty-title">No data sources found</div>
                 <div className="neuron-graph-empty-body">
-                  Import data from User Data, Finance Hub, or Business Identity to see sources here.
+                  Import data from mydb, Finance Hub, or Business Identity to see sources here.
                 </div>
               </div>
             ) : (

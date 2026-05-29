@@ -201,6 +201,13 @@ function parseHanaLoanHistoryExcel(filePath) {
     });
   }
 
+  // If no balance was found in the header rows, use the last transaction row's
+  // 대출금잔액 as the current outstanding balance.
+  if (headerBalance == null && rows.length > 0) {
+    const lastBalance = rows[rows.length - 1].balance;
+    if (lastBalance != null) headerBalance = lastBalance;
+  }
+
   return { accountNumber, headerBalance, rows, warnings };
 }
 

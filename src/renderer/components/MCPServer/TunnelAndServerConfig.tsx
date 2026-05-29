@@ -304,14 +304,14 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
               </div>
               <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '12px', lineHeight: '1.5' }}>
                 Install all 5 EGDesk MCP services to Claude Desktop:<br/>
-                • User Data • Gmail • Sheets • Apps Script • File Conversion
+                • mydb • Gmail • Sheets • Apps Script • File Conversion
               </div>
               <button
                 onClick={async () => {
                   const confirmed = confirm(
                     'Install EGDesk MCP Services to Claude Desktop?\n\n' +
                     'This will add 5 services:\n' +
-                    '• User Data - Query imported tables (Excel, CSV)\n' +
+                    '• mydb - Query imported tables (Excel, CSV)\n' +
                     '• Gmail - Email operations and search\n' +
                     '• Sheets - Google Sheets sync and management\n' +
                     '• Apps Script - Google Apps Script tools\n' +
@@ -332,7 +332,7 @@ const TunnelAndServerConfig: React.FC<TunnelAndServerConfigProps> = ({
                       alert(
                         '✅ Successfully configured Claude Desktop!\n\n' +
                         'All 5 EGDesk MCP services have been installed:\n' +
-                        '✓ User Data\n' +
+                        '✓ mydb\n' +
                         '✓ Gmail\n' +
                         '✓ Sheets\n' +
                         '✓ Apps Script\n' +

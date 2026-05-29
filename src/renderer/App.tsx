@@ -3119,7 +3119,7 @@ function NavigationBar({
               className={`nav-dropdown-item ${location.pathname.startsWith('/user-data') ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faDatabase} fixedWidth />
-              <span>User Database</span>
+              <span>mydb</span>
             </Link>
             <Link to="/finance-hub" className={`nav-dropdown-item ${location.pathname.startsWith('/finance-hub') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faChartBar} fixedWidth />
