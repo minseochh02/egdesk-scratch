@@ -1309,6 +1309,21 @@ class HanaBankAutomator extends BaseBankAutomator {
     if (!this.page) {
       return { success: false, error: '브라우저 페이지가 없습니다.' };
     }
+    // De-duplicate: the UI calls this once per account, so it fires N times.
+    // Only run the full sync once; subsequent calls within 5 min return cached result.
+    const now = Date.now();
+    const DEBOUNCE_MS = 5 * 60 * 1000;
+    if (this._loanHistoryLastSync && (now - this._loanHistoryLastSync) < DEBOUNCE_MS) {
+      this.log('[Hana loan] syncLoanHistory skipped — already ran recently');
+      return {
+        success: true,
+        filePath: this._loanHistoryLastPaths?.[0] ?? null,
+        filePaths: this._loanHistoryLastPaths ?? [],
+        message: 'Already synced recently (debounced).',
+      };
+    }
+    this._loanHistoryLastSync = now;
+    this._loanHistoryLastPaths = [];
     this.log('Hana: syncLoanHistory (대출상세내역) 시작...');
 
     try {
@@ -1653,6 +1668,7 @@ class HanaBankAutomator extends BaseBankAutomator {
         }
       } // end for-of accountNames
 
+      this._loanHistoryLastPaths = downloadedPaths;
       return {
         success: true,
         filePath: downloadedPaths[0] || null,
