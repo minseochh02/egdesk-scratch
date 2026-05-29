@@ -1508,16 +1508,16 @@ class HanaBankAutomator extends BaseBankAutomator {
       await this.page.waitForTimeout(500);
 
       // ── 조회 ────────────────────────────────────────────────────────────────
+      // Call the onclick function directly via frame context (avoids hitting nav links like 대출조회)
       try {
-        await frame.locator('button:has-text("조회"), a:has-text("조회")').first().click({ timeout: 5000 });
+        await frame.evaluate(() =>
+          cpb.loan.inquiry.transaction.searchInquiry(document.forms['wclon700_02iForm']),
+        );
+        this.log('[Hana loan] 조회 triggered via frame evaluate');
       } catch (e) {
-        await frame
-          .evaluate(() => {
-            const el = Array.from(document.querySelectorAll('button,a')).find(
-              (b) => b.textContent?.trim() === '조회',
-            );
-            if (el) el.click();
-          })
+        this.warn('[Hana loan] 조회 evaluate failed, falling back to click:', e.message);
+        await frame.locator('a.btn').filter({ hasText: /^조회$/ }).first()
+          .click({ timeout: 5000 })
           .catch(() => {});
       }
       await this.page.waitForTimeout(4000);
