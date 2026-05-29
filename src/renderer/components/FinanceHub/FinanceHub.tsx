@@ -2690,7 +2690,7 @@ const FinanceHub: React.FC = () => {
   };
 
   // Banks that use NPKI disk-based cert enumeration (Delfino QWidget native cert window)
-  const NPKI_DISK_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'];
+  const NPKI_DISK_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh'];
 
   // Fetch certificates automatically when Corporate + Cert are selected (NH browser path or NPKI disk path)
   useEffect(() => {

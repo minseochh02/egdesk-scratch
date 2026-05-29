@@ -1743,7 +1743,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
           // [Robustness] Resolve current certificate index from disk before using it
           // Only for NPKI disk-based banks (Delfino native window)
-          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh']);
           let currentCertIndex = (savedCredentials as any).certificateIndex;
           const certName = (savedCredentials as any).certificateName;
           const certIssuer = (savedCredentials as any).certificateIssuer;
@@ -2322,7 +2322,7 @@ export class FinanceHubScheduler extends EventEmitter {
 
           // [Robustness] Resolve current certificate index from disk before using it
           // Only for NPKI disk-based banks (Delfino native window)
-          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh']);
           let currentCertIndex = (savedCredentials as any).certificateIndex;
           const certName = (savedCredentials as any).certificateName;
           const certIssuer = (savedCredentials as any).certificateIssuer;

@@ -302,14 +302,31 @@ class WooriBankAutomator extends BaseBankAutomator {
         });
         await this._arduinoHid.connect();
 
-        // certificateIndex DOWN key selection — only on first attempt; cert is already selected on retry
+        // certificateIndex selection — only on first attempt; cert is already selected on retry
         if (!certNavigated) {
-          if (certificateIndex && certificateIndex > 1) {
-            this.log(`[WOORI] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-            for (let i = 0; i < certificateIndex - 1; i++) {
-              await this._arduinoHid.sendKey('DOWN');
-              await this.page.waitForTimeout(200);
+          if (certificateIndex && certificateIndex >= 1) {
+            this.log(`[WOORI] ${certificateIndex}번째 인증서 선택 시도 (브라우저 클릭 방식)...`);
+            const clicked = await this.page.evaluate((idx) => {
+              const cells = Array.from(document.querySelectorAll('#xwup_cert_table .xwup-tableview-cell'));
+              // Each cert row typically has 3-4 cells. The first cell of each row is usually what we want.
+              // But a more robust way is to find the row index.
+              const rows = Array.from(document.querySelectorAll('#xwup_cert_table tr'));
+              const targetRow = rows[idx - 1]; // 1-based index
+              if (targetRow) {
+                const clickTarget = targetRow.querySelector('.xwup-tableview-cell') || targetRow;
+                // @ts-ignore
+                clickTarget.click();
+                return true;
+              }
+              return false;
+            }, certificateIndex);
+
+            if (clicked) {
+              this.log(`[WOORI] ✓ ${certificateIndex}번째 인증서 클릭 성공`);
+            } else {
+              this.warn(`[WOORI] ${certificateIndex}번째 인증서 클릭 실패 — 기본 선택 유지`);
             }
+            await this.page.waitForTimeout(500);
           }
           certNavigated = true;
         } else {

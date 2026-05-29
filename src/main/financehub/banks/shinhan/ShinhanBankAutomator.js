@@ -582,6 +582,16 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       await this.page.goto(bizUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(3000);
 
+      try {
+        await this.page.evaluate(() => {
+          if (typeof DelfinoConfig !== 'undefined') {
+            DelfinoConfig.lastUsedCertFirst = false;
+          }
+        });
+      } catch (e) {
+        this.warn('DelfinoConfig:', e.message);
+      }
+
       await this._closeBizBankPopup();
       await this._clickBizCertLogin();
 

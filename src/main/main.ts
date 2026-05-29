@@ -1114,7 +1114,7 @@ const createWindow = async () => {
       });
 
       // Banks that use the Delfino QWidget native cert window — certs read directly from NPKI disk
-      const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+      const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori', 'nh']);
 
       ipcMain.handle(
         'finance-hub:fetch-bank-certificates',
