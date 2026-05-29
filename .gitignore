@@ -56,3 +56,4 @@ playwright-downloads/
 *.csv
 *.xlsx
 *.xls
+*.html

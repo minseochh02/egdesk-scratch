@@ -1408,7 +1408,7 @@ class HanaBankAutomator extends BaseBankAutomator {
 
         // When the grid has no data rows, .GMBodyMid is rendered with
         // display:none and height:0. It becomes visible only when rows exist.
-        const hasData = await this.page.locator('.GMBodyMid').first().isVisible().catch(() => false);
+        const hasData = await frame.locator('.GMBodyMid').first().isVisible().catch(() => false);
         if (!hasData) {
           this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
           // Approach 1: call the site's own close function via page context
