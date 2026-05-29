@@ -1397,10 +1397,10 @@ class HanaBankAutomator extends BaseBankAutomator {
         this.log('[Hana loan] Opened 실행번호 popup');
         await this.page.waitForTimeout(3000);
 
-        // Check whether the grid has any data rows. The header (.GMWrap0) is always
-        // rendered, but .GMClassReadOnly cells only appear when rows exist.
-        const dataRowCount = await this.page.locator('.GMClassReadOnly').count();
-        if (dataRowCount === 0) {
+        // When the grid has no data rows, .GMBodyMid is rendered with
+        // display:none and height:0. It becomes visible only when rows exist.
+        const hasData = await this.page.locator('.GMBodyMid').first().isVisible().catch(() => false);
+        if (!hasData) {
           this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
           // Close the popup: try 취소, then 닫기, then ESC
           try {
