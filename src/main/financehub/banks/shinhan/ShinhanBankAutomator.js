@@ -744,37 +744,27 @@ class ShinhanBankAutomator extends BaseBankAutomator {
       }
     }
 
+    await this.page.waitForTimeout(2000);
+
+    await this._navigateBizToAccountInquiry();
+    const accounts = await this._getBizAccountsFromPage();
+
+    this._shinhanCorporateCertPhase = 'completed';
+    this.isLoggedIn = true;
+    this.userName = '신한 기업뱅킹';
+
     try {
-      await this.page.waitForTimeout(2000);
-
-      await this._navigateBizToAccountInquiry();
-      const accounts = await this._getBizAccountsFromPage();
-
-      this._shinhanCorporateCertPhase = 'completed';
-      this.isLoggedIn = true;
-      this.userName = '신한 기업뱅킹';
-
-      try {
-        this.startSessionKeepAlive();
-      } catch (e) {
-        this.warn('Session keep-alive not started (biz UI may differ):', e.message);
-      }
-
-      return {
-        success: true,
-        isLoggedIn: this.isLoggedIn,
-        userName: this.userName,
-        accounts,
-      };
-    } catch (error) {
-      this.error('completeCorporateCertificateLogin failed:', error.message);
-      try {
-        await this._disconnectArduinoHid();
-      } catch (e) {
-        /* ignore */
-      }
-      return { success: false, error: error.message };
+      this.startSessionKeepAlive();
+    } catch (e) {
+      this.warn('Session keep-alive not started (biz UI may differ):', e.message);
     }
+
+    return {
+      success: true,
+      isLoggedIn: this.isLoggedIn,
+      userName: this.userName,
+      accounts,
+    };
   }
 
   /**

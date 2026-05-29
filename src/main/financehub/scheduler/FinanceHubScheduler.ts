@@ -85,6 +85,7 @@ export class FinanceHubScheduler extends EventEmitter {
     'ibk',
     'hana',
     'woori',
+    'nh',
   ]);
 
   private static instance: FinanceHubScheduler | null = null;
@@ -1741,13 +1742,15 @@ export class FinanceHubScheduler extends EventEmitter {
           }
 
           // [Robustness] Resolve current certificate index from disk before using it
+          // Only for NPKI disk-based banks (Delfino native window)
+          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
           let currentCertIndex = (savedCredentials as any).certificateIndex;
           const certName = (savedCredentials as any).certificateName;
           const certIssuer = (savedCredentials as any).certificateIssuer;
           const certNotAfter = (savedCredentials as any).certificateNotAfter;
           const certFolder = (savedCredentials as any).certificateFolder;
 
-          if (certName && certIssuer) {
+          if (NPKI_DISK_CERT_BANK_IDS.has(bankId) && certName && certIssuer) {
             const resolvedIndex = resolveCertificateIndex({
               name: certName,
               issuer: certIssuer,
@@ -2317,9 +2320,34 @@ export class FinanceHubScheduler extends EventEmitter {
             return { success: false, error: prep?.error || 'Corporate certificate prepare failed' };
           }
 
+          // [Robustness] Resolve current certificate index from disk before using it
+          // Only for NPKI disk-based banks (Delfino native window)
+          const NPKI_DISK_CERT_BANK_IDS = new Set(['shinhan', 'kookmin', 'ibk', 'hana', 'woori']);
+          let currentCertIndex = (savedCredentials as any).certificateIndex;
+          const certName = (savedCredentials as any).certificateName;
+          const certIssuer = (savedCredentials as any).certificateIssuer;
+          const certNotAfter = (savedCredentials as any).certificateNotAfter;
+          const certFolder = (savedCredentials as any).certificateFolder;
+
+          if (NPKI_DISK_CERT_BANK_IDS.has(bankId) && certName && certIssuer) {
+            const resolvedIndex = resolveCertificateIndex({
+              name: certName,
+              issuer: certIssuer,
+              notAfter: certNotAfter,
+              folder: certFolder,
+            });
+
+            if (resolvedIndex !== null) {
+              if (resolvedIndex !== currentCertIndex) {
+                console.log(`[FinanceHubScheduler] ${bankId} (promissory): Certificate index changed from ${currentCertIndex} to ${resolvedIndex}. Updating for this session.`);
+                currentCertIndex = resolvedIndex;
+              }
+            }
+          }
+
           let complete = await automator.completeCorporateCertificateLogin({
             certificatePassword: certPw,
-            certificateIndex: (savedCredentials as any).certificateIndex,
+            certificateIndex: currentCertIndex,
             xpath: (savedCredentials as any).certificateXPath,
           });
 
@@ -2328,7 +2356,7 @@ export class FinanceHubScheduler extends EventEmitter {
             console.warn(`[FinanceHubScheduler] ${bankId}: 인증서 비밀번호 오류 — 느린 타이핑으로 1회 재시도`);
             complete = await automator.completeCorporateCertificateLogin({
               certificatePassword: certPw,
-              certificateIndex: (savedCredentials as any).certificateIndex,
+              certificateIndex: currentCertIndex,
               xpath: (savedCredentials as any).certificateXPath,
             });
           }

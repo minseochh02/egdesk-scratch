@@ -586,8 +586,9 @@ class NHBankAutomator extends BaseBankAutomator {
       }
     }
 
-    // Navigate to Transaction Inquiry
-    this.log('[NH Corporate] Navigating to 입출금거래내역조회...');
+    try {
+      // Navigate to Transaction Inquiry
+      this.log('[NH Corporate] Navigating to 입출금거래내역조회...');
       try {
         await this.page.locator('.ibz-tooltip-ctrl:has-text("조회")').first().click({ timeout: 5000 });
       } catch (e) {

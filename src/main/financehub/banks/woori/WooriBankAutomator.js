@@ -448,30 +448,22 @@ class WooriBankAutomator extends BaseBankAutomator {
       }
     }
 
+    await this._navigateWooriToTransactionInquiryMenu();
+
+    const accounts = await this._getWooriAccountsFromPage();
+    this._wooriCorporateCertPhase = 'completed';
+    this.isLoggedIn = true;
+    this.userName = '우리 기업뱅킹';
     try {
-      await this._navigateWooriToTransactionInquiryMenu();
+      this.startSessionKeepAlive();
+    } catch (e) {}
 
-      const accounts = await this._getWooriAccountsFromPage();
-      this._wooriCorporateCertPhase = 'completed';
-      this.isLoggedIn = true;
-      this.userName = '우리 기업뱅킹';
-      try {
-        this.startSessionKeepAlive();
-      } catch (e) {}
-
-      return {
-        success: true,
-        isLoggedIn: this.isLoggedIn,
-        userName: this.userName,
-        accounts,
-      };
-    } catch (error) {
-      this.error('completeCorporateCertificateLogin (woori) failed:', error.message);
-      try {
-        await this._disconnectArduinoHid();
-      } catch (e) {}
-      return { success: false, error: error.message };
-    }
+    return {
+      success: true,
+      isLoggedIn: this.isLoggedIn,
+      userName: this.userName,
+      accounts,
+    };
   }
 
   /**

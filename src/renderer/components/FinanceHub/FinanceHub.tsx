@@ -777,9 +777,10 @@ const FinanceHub: React.FC = () => {
         return false;
       }
 
-      // [Robustness] Resolve current certificate index from disk before using it
+      // [Robustness] Resolve current certificate index from disk before using it (NPKI disk banks only)
+      const NPKI_DISK_CERT_BANK_IDS = ['shinhan', 'kookmin', 'ibk', 'hana', 'woori'];
       let currentCertIndex = cred.certificateIndex;
-      if (cred.certificateName && cred.certificateIssuer) {
+      if (NPKI_DISK_CERT_BANK_IDS.includes(bankId) && cred.certificateName && cred.certificateIssuer) {
         try {
           const resolved = await window.electron.financeHub.resolveCertificateIndex({
             name: cred.certificateName,

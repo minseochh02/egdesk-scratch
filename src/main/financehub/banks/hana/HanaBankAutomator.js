@@ -406,71 +406,63 @@ class HanaBankAutomator extends BaseBankAutomator {
       }
     }
 
-    try {
-      await this.page.waitForTimeout(2000);
-      await this._closeHanaPopups();
-      await this.page.waitForTimeout(2000);
-      await this._closeHanaPopups();
+    await this.page.waitForTimeout(2000);
+    await this._closeHanaPopups();
+    await this.page.waitForTimeout(2000);
+    await this._closeHanaPopups();
 
-      const frame = this._hanaFrame();
-      if (frame) {
-        try {
-          await frame.locator('[id="15000"]').click({ timeout: 5000 });
-        } catch (e) {
-          await this.page.getByRole('link', { name: '조회' }).click({ timeout: 5000 });
-        }
-        await this.page.waitForTimeout(2000);
-        try {
-          await frame.locator('a[href*="menuItemId=wcdep700r16i"]').first().click({ timeout: 5000 });
-        } catch (e) {
-          await frame.evaluate(() => {
-            const links = document.querySelectorAll('a.btn_item');
-            for (const a of links) {
-              if (a.textContent.trim() === '거래내역 조회' && a.getAttribute('href') !== '#') {
-                const rect = a.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  a.click();
-                  return;
-                }
+    const frame = this._hanaFrame();
+    if (frame) {
+      try {
+        await frame.locator('[id="15000"]').click({ timeout: 5000 });
+      } catch (e) {
+        await this.page.getByRole('link', { name: '조회' }).click({ timeout: 5000 });
+      }
+      await this.page.waitForTimeout(2000);
+      try {
+        await frame.locator('a[href*="menuItemId=wcdep700r16i"]').first().click({ timeout: 5000 });
+      } catch (e) {
+        await frame.evaluate(() => {
+          const links = document.querySelectorAll('a.btn_item');
+          for (const a of links) {
+            if (a.textContent.trim() === '거래내역 조회' && a.getAttribute('href') !== '#') {
+              const rect = a.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                a.click();
+                return;
               }
             }
-          });
-        }
+          }
+        });
       }
-      await this.page.waitForTimeout(3000);
-      await this._closeHanaPopups();
-
-      // Wait for 거래내역 화면 to paint account controls (dropdown may be in frame or main document)
-      const frameAfter = this._hanaFrame();
-      try {
-        const racers = [this.page.waitForSelector('select', { timeout: 15000 })];
-        if (frameAfter) racers.push(frameAfter.waitForSelector('select', { timeout: 15000 }));
-        await Promise.race(racers);
-      } catch (e) {
-        this.warn('[HANA] No <select> within 15s after navigation — account list may still be empty.');
-      }
-
-      const accounts = await this._getHanaAccounts();
-      this._hanaCorporateCertPhase = 'completed';
-      this.isLoggedIn = true;
-      this.userName = '하나 기업뱅킹';
-      try {
-        this.startSessionKeepAlive();
-      } catch (e) {}
-
-      return {
-        success: true,
-        isLoggedIn: this.isLoggedIn,
-        userName: this.userName,
-        accounts,
-      };
-    } catch (error) {
-      this.error('completeCorporateCertificateLogin (hana) failed:', error.message);
-      try {
-        await this._disconnectArduinoHid();
-      } catch (e) {}
-      return { success: false, error: error.message };
     }
+    await this.page.waitForTimeout(3000);
+    await this._closeHanaPopups();
+
+    // Wait for 거래내역 화면 to paint account controls (dropdown may be in frame or main document)
+    const frameAfter = this._hanaFrame();
+    try {
+      const racers = [this.page.waitForSelector('select', { timeout: 15000 })];
+      if (frameAfter) racers.push(frameAfter.waitForSelector('select', { timeout: 15000 }));
+      await Promise.race(racers);
+    } catch (e) {
+      this.warn('[HANA] No <select> within 15s after navigation — account list may still be empty.');
+    }
+
+    const accounts = await this._getHanaAccounts();
+    this._hanaCorporateCertPhase = 'completed';
+    this.isLoggedIn = true;
+    this.userName = '하나 기업뱅킹';
+    try {
+      this.startSessionKeepAlive();
+    } catch (e) {}
+
+    return {
+      success: true,
+      isLoggedIn: this.isLoggedIn,
+      userName: this.userName,
+      accounts,
+    };
   }
 
   /**

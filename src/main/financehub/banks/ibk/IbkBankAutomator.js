@@ -365,58 +365,50 @@ class IbkBankAutomator extends BaseBankAutomator {
       }
     }
 
-    try {
-      await this.page.waitForTimeout(2000);
+    await this.page.waitForTimeout(2000);
 
-      let frame = this._mainFrame();
-      if (frame) await this._robustCleanupIbkPopups();
-      await this.page.waitForTimeout(2000);
+    let frame = this._mainFrame();
+    if (frame) await this._robustCleanupIbkPopups();
+    await this.page.waitForTimeout(2000);
 
-      frame = this.page.frame({ name: 'mainframe' }) || frame;
-      const activeFrame = frame;
-      if (activeFrame) {
-        await activeFrame.evaluate(() => {
-          const links = document.querySelectorAll('a');
-          for (const a of links) {
-            if (a.textContent.trim() === '거래내역조회') {
-              a.click();
-              return;
-            }
+    frame = this.page.frame({ name: 'mainframe' }) || frame;
+    const activeFrame = frame;
+    if (activeFrame) {
+      await activeFrame.evaluate(() => {
+        const links = document.querySelectorAll('a');
+        for (const a of links) {
+          if (a.textContent.trim() === '거래내역조회') {
+            a.click();
+            return;
           }
-        });
-      }
-      await this.page.waitForTimeout(3000);
-
-      try {
-        const f = this._mainFrame();
-        const racers = [this.page.waitForSelector('select', { timeout: 12000 })];
-        if (f) racers.push(f.waitForSelector('select', { timeout: 12000 }));
-        await Promise.race(racers);
-      } catch (e) {
-        this.warn('[IBK] No <select> soon after 거래내역조회 — account list may be incomplete.');
-      }
-
-      const accounts = await this._getIbKAccounts();
-      this._ibkCorporateCertPhase = 'completed';
-      this.isLoggedIn = true;
-      this.userName = 'IBK 기업뱅킹';
-      try {
-        this.startSessionKeepAlive();
-      } catch (e) {}
-
-      return {
-        success: true,
-        isLoggedIn: this.isLoggedIn,
-        userName: this.userName,
-        accounts,
-      };
-    } catch (error) {
-      this.error('completeCorporateCertificateLogin (ibk) failed:', error.message);
-      try {
-        await this._disconnectArduinoHid();
-      } catch (e) {}
-      return { success: false, error: error.message };
+        }
+      });
     }
+    await this.page.waitForTimeout(3000);
+
+    try {
+      const f = this._mainFrame();
+      const racers = [this.page.waitForSelector('select', { timeout: 12000 })];
+      if (f) racers.push(f.waitForSelector('select', { timeout: 12000 }));
+      await Promise.race(racers);
+    } catch (e) {
+      this.warn('[IBK] No <select> soon after 거래내역조회 — account list may be incomplete.');
+    }
+
+    const accounts = await this._getIbKAccounts();
+    this._ibkCorporateCertPhase = 'completed';
+    this.isLoggedIn = true;
+    this.userName = 'IBK 기업뱅킹';
+    try {
+      this.startSessionKeepAlive();
+    } catch (e) {}
+
+    return {
+      success: true,
+      isLoggedIn: this.isLoggedIn,
+      userName: this.userName,
+      accounts,
+    };
   }
 
   _sanitizeIbkFilenamePart(s) {

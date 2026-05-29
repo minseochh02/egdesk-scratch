@@ -617,36 +617,26 @@ class KookminBankAutomator extends BaseBankAutomator {
       }
     }
 
+    await this.page.waitForTimeout(2000);
+    await this._navigateKookminBizTransactionInquiry();
+    const accounts = await this._getKookminBizAccountsFromAcct();
+
+    this._kookminCorporateCertPhase = 'completed';
+    this.isLoggedIn = true;
+    this.userName = 'KB 기업뱅킹';
+
     try {
-      await this.page.waitForTimeout(2000);
-      await this._navigateKookminBizTransactionInquiry();
-      const accounts = await this._getKookminBizAccountsFromAcct();
-
-      this._kookminCorporateCertPhase = 'completed';
-      this.isLoggedIn = true;
-      this.userName = 'KB 기업뱅킹';
-
-      try {
-        this.startSessionKeepAlive();
-      } catch (e) {
-        this.warn('Session keep-alive:', e.message);
-      }
-
-      return {
-        success: true,
-        isLoggedIn: this.isLoggedIn,
-        userName: this.userName,
-        accounts,
-      };
-    } catch (error) {
-      this.error('completeCorporateCertificateLogin (kookmin) failed:', error.message);
-      try {
-        await this._disconnectArduinoHid();
-      } catch (e) {
-        /* ignore */
-      }
-      return { success: false, error: error.message };
+      this.startSessionKeepAlive();
+    } catch (e) {
+      this.warn('Session keep-alive:', e.message);
     }
+
+    return {
+      success: true,
+      isLoggedIn: this.isLoggedIn,
+      userName: this.userName,
+      accounts,
+    };
   }
 
   async cancelCorporateCertificateLogin(closeBrowser = true) {
