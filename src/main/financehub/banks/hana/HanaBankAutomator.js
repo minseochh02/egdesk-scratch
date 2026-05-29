@@ -1402,15 +1402,11 @@ class HanaBankAutomator extends BaseBankAutomator {
         const hasData = await this.page.locator('.GMBodyMid').first().isVisible().catch(() => false);
         if (!hasData) {
           this.log('[Hana loan] 실행번호 popup has no data rows — closing and skipping selection');
-          // Close the popup: try 취소, then 닫기, then ESC
+          // Close the popup via the dedicated btn_close anchor; fall back to ESC
           try {
-            await this.page.locator('a:has-text("취소")').first().click({ timeout: 3000 });
+            await this.page.locator('a.btn_close').first().click({ timeout: 3000 });
           } catch (_) {
-            try {
-              await this.page.locator('a:has-text("닫기")').first().click({ timeout: 3000 });
-            } catch (_2) {
-              await this.page.keyboard.press('Escape');
-            }
+            await this.page.keyboard.press('Escape');
           }
           await this.page.waitForTimeout(1000);
         } else {
