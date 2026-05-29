@@ -1438,66 +1438,25 @@ class HanaBankAutomator extends BaseBankAutomator {
           await this.page.waitForTimeout(1000);
         } else {
 
-        // Click 실행번호 column header to focus/sort the grid
+        // Click the 선택 checkbox cell (GMBool2) in the first data row
         try {
-          await this.page.locator('.GMWrap0').filter({ hasText: '실행번호' }).first()
-            .click({ timeout: 5000 });
-          await this.page.waitForTimeout(1000);
+          await frame.locator('td.GMBool2').first().click({ timeout: 5000 });
+          this.log('[Hana loan] 실행번호 선택 checkbox clicked');
         } catch (e) {
-          this.warn('[Hana loan] 실행번호 header click failed:', e.message);
-        }
-
-        // Click first data row (the 실행번호 value cell)
-        try {
-          await this.page.locator('.GMClassReadOnly').first().click({ timeout: 5000 });
-          await this.page.waitForTimeout(1000);
-        } catch (e) {
-          this.warn('[Hana loan] 실행번호 data row click failed:', e.message);
-        }
-
-        // Click 선택 column header
-        try {
-          await this.page.locator('.GMWrap0').filter({ hasText: '선택' }).first()
-            .click({ timeout: 5000 });
-          await this.page.waitForTimeout(1000);
-        } catch (e) {
-          this.warn('[Hana loan] 선택 header click failed:', e.message);
-        }
-
-        // Click the checkbox cell in the first data row (td preceding the .GMClassReadOnly)
-        try {
-          await this.page.locator('.GMClassReadOnly').first()
-            .locator('xpath=preceding-sibling::td[1]').click({ timeout: 3000 });
-        } catch (e) {
-          // Fallback: first empty-text .GMWrap0 after the header rows
           try {
-            const allGMWrap = this.page.locator('.GMWrap0');
-            const count = await allGMWrap.count();
-            for (let i = 0; i < count; i++) {
-              const text = (await allGMWrap.nth(i).innerText().catch(() => '')).trim();
-              if (!text) {
-                await allGMWrap.nth(i).click({ timeout: 3000 });
-                break;
-              }
-            }
+            await this.page.locator('td.GMBool2').first().click({ timeout: 5000 });
+            this.log('[Hana loan] 실행번호 선택 checkbox clicked (page context)');
           } catch (e2) {
-            this.warn('[Hana loan] Checkbox click failed:', e2.message);
+            this.warn('[Hana loan] 선택 checkbox click failed:', e2.message);
           }
         }
-        await this.page.waitForTimeout(2000);
+        await this.page.waitForTimeout(1000);
 
-        // Fill hidden tmpinput1 in frame with 'on' to mark selection complete
+        // Click 확인 to confirm selection
         try {
-          await frame.locator('[id="tmpinput1"]').fill('on');
+          await frame.locator('a:has-text("확인")').first().click({ timeout: 5000 });
         } catch (e) {
-          this.warn('[Hana loan] tmpinput1 fill failed:', e.message);
-        }
-
-        // Click 확인 to close the popup (button is page-level, not inside frame)
-        try {
-          await this.page.locator('a:has-text("확인")').first().click({ timeout: 5000 });
-        } catch (e) {
-          await frame.locator('a:has-text("확인")').first().click({ timeout: 5000 })
+          await this.page.locator('a:has-text("확인")').first().click({ timeout: 5000 })
             .catch(() => this.warn('[Hana loan] 확인 click failed entirely'));
         }
         this.log('[Hana loan] 실행번호 selected and confirmed');
