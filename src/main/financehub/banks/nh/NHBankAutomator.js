@@ -463,116 +463,45 @@ class NHBankAutomator extends BaseBankAutomator {
         // UI에서 인증서를 선택한 경우 또는 자동 선택된 경우 해당 인증서 클릭
         // Only on first attempt; cert is already selected on retry
         if (!certNavigated) {
-          this.log(`[NH Corporate] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
-          
-          // First, identify the target certificate's identifying text
-          const targetInfo = await this.page.evaluate(({ name, expiry, index, xp }) => {
-            let rows = Array.from(document.querySelectorAll('#certificate_signature_area tr.data'));
-            if (rows.length === 0) rows = Array.from(document.querySelectorAll('tr.data'));
-            if (rows.length === 0) return null;
-
-            let targetRow = null;
-            if (name) {
-              targetRow = rows.find(row => {
-                const text = row.textContent || '';
-                const nameMatch = text.includes(name);
-                const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
-                return nameMatch && expiryMatch;
-              });
-            }
-            if (!targetRow && xp) {
-              try {
+          if (certificateIndex != null || xpath) {
+            this.log(`[NH Corporate] Attempting to select certificate (Index: ${certificateIndex}, XPath: ${xpath})...`);
+            const clickResult = await this.page.evaluate(({ idx, xp }) => {
+              let target = null;
+              
+              if (xp) {
                 const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                targetRow = result.singleNodeValue;
-              } catch (e) {}
-            }
-            if (!targetRow && index >= 1) {
-              targetRow = rows[index - 1];
-            }
-
-            if (targetRow) {
-              return {
-                text: targetRow.textContent?.trim() || '',
-                matchSnippet: name || targetRow.textContent?.trim().substring(0, 20) || ''
-              };
-            }
-            return null;
-          }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex, xp: xpath });
-
-          if (!targetInfo) {
-            this.warn('[NH Corporate] ⚠️ 대상 인증서를 찾을 수 없습니다. 기본 선택 유지 시도.');
-          } else {
-            this.log(`[NH Corporate] 대상 인증서 확인됨: "${targetInfo.matchSnippet}"...`);
-            
-            // Tab navigation for certificate selection
-            let certFocused = false;
-            this.log('[NH Corporate] 인증서 목록으로 TAB 이동 시작...');
-            
-            for (let i = 1; i <= 30; i++) {
-              await this._arduinoHid.sendKey('TAB');
-              await this.page.waitForTimeout(300);
-              
-              const focusInfo = await this.page.evaluate(() => {
-                const ae = document.activeElement;
-                if (!ae) return { id: '', tag: '', text: '', className: '' };
-                return {
-                  id: ae.id || '',
-                  tag: ae.tagName || '',
-                  text: ae.textContent?.trim().replace(/\s+/g, ' ') || '',
-                  className: typeof ae.className === 'string' ? ae.className : ''
-                };
-              });
-              
-              this.log(`[NH CERT TAB ${i}] id="${focusInfo.id}" tag=${focusInfo.tag} class="${focusInfo.className}" text="${focusInfo.text.substring(0, 60)}"`);
-              
-              if (targetInfo.matchSnippet && focusInfo.text.includes(targetInfo.matchSnippet)) {
-                this.log(`[NH Corporate] ✓ 대상 인증서 포커스 성공 (Tab ${i})`);
-                certFocused = true;
-                await this._arduinoHid.sendKey('ENTER');
-                await this.page.waitForTimeout(500);
-                break;
+                target = result.singleNodeValue;
               }
-              
-              if (focusInfo.id === 'ini_cert_pwd') {
-                this.log('[NH Corporate] 이미 비밀번호 입력창에 도달했습니다. 인증서가 이미 선택된 것으로 간주합니다.');
-                certFocused = true;
-                break;
+
+              if (!target && idx != null) {
+                let rows = document.querySelectorAll('#certificate_signature_area tr.data');
+                if (rows.length === 0) rows = document.querySelectorAll('tr.data');
+                target = rows[idx - 1];
               }
-            }
-            
-            if (!certFocused) {
-              this.warn('[NH Corporate] ⚠️ TAB으로 인증서를 선택하지 못했습니다. 브라우저 클릭 fallback 시도...');
-              // Fallback to direct click if TAB navigation failed
-              await this.page.evaluate(({ name, expiry, index, xp }) => {
-                let rows = Array.from(document.querySelectorAll('#certificate_signature_area tr.data'));
-                if (rows.length === 0) rows = Array.from(document.querySelectorAll('tr.data'));
+
+              if (target) {
+                // Find click target (prefer <a>, then <td>)
+                const clickTarget = target.querySelector('a') || target.querySelector('td') || target;
                 
-                let targetRow = null;
-                if (name) {
-                  targetRow = rows.find(row => row.textContent?.includes(name));
-                }
-                if (!targetRow && xp) {
-                  try {
-                    const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                    targetRow = result.singleNodeValue;
-                  } catch (e) {}
-                }
-                if (!targetRow && index >= 1) {
-                  targetRow = rows[index - 1];
-                }
+                const events = ['mousedown', 'mouseup', 'click'];
+                events.forEach(name => {
+                  clickTarget.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true }));
+                });
+                return {
+                  success: true,
+                  text: target.textContent?.replace(/\s+/g, ' ').trim().substring(0, 50)
+                };
+              }
+              return { success: false };
+            }, { idx: certificateIndex, xp: xpath });
 
-                if (targetRow) {
-                  const clickTarget = targetRow.querySelector('a') || targetRow.querySelector('td') || targetRow;
-                  const events = ['mousedown', 'mouseup', 'click'];
-                  events.forEach(evName => {
-                    clickTarget.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true }));
-                  });
-                }
-              }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex, xp: xpath });
+            if (clickResult.success) {
+              this.log(`[NH Corporate] Selected certificate. Text: "${clickResult.text}"`);
+            } else {
+              this.warn(`[NH Corporate] Could not find certificate via XPath or Index.`);
             }
+            await this.page.waitForTimeout(1500);
           }
-          
-          await this.page.waitForTimeout(1000);
           certNavigated = true;
         } else {
           this.log('[NH Corporate] 재시도 — 기존 선택된 인증서 유지');
