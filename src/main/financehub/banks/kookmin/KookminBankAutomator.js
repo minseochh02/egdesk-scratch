@@ -509,12 +509,15 @@ class KookminBankAutomator extends BaseBankAutomator {
       }
 
       if (!usedDirectFocus) {
-        // ENTER to open cert selection list, then DOWN_ARROW to navigate to the target cert
-        const navSteps = [{ key: 'ENTER' }, { waitMs: 2000 }];
+        // Navigate cert list with DOWN_ARROW first, then ENTER to confirm selection
+        const navSteps = [];
         if (downPresses > 0) {
           this.log(`[KB] ${certificateIndex}번째 인증서 선택 — DOWN_ARROW ${downPresses}회 전송`);
           navSteps.push({ key: 'DOWN_ARROW', repeat: downPresses, interKeyMs: 200 });
+          navSteps.push({ waitMs: 300 }); // brief pause after last DOWN before confirming
         }
+        navSteps.push({ key: 'ENTER' });
+        navSteps.push({ waitMs: 2000 });
         await runNativeCertArduinoSteps(this._arduinoHid, this.page, null, navSteps, {
           log: this.log.bind(this),
           warn: this.warn.bind(this),
