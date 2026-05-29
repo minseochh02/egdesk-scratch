@@ -458,7 +458,7 @@ class WooriBankAutomator extends BaseBankAutomator {
             await this.page.evaluate(() => {
               const btns = Array.from(document.querySelectorAll('button, a'));
               const okBtn = btns.find(b => b.textContent?.includes('확인'));
-              if (okBtn) (okBtn as any).click();
+              if (okBtn) okBtn.click();
             });
           } catch (e) {}
 
