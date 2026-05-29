@@ -1380,11 +1380,20 @@ class HanaBankAutomator extends BaseBankAutomator {
         await accountDropdown.click({ timeout: 5000 });
         this.log('[Hana loan] Opened account dropdown');
         await this.page.waitForTimeout(1000);
-        // .seltitle spans are inside the dropdown li items (account number text)
-        const firstAccount = frame.locator('.seltitle').first();
-        await firstAccount.waitFor({ state: 'visible', timeout: 5000 });
-        await firstAccount.click({ timeout: 5000 });
-        this.log('[Hana loan] Selected first account');
+        // .seltitle spans are inside the dropdown li items; index 0 is the "계좌선택" placeholder
+        const allTitles = frame.locator('.seltitle');
+        const titleCount = await allTitles.count();
+        let accountClicked = false;
+        for (let i = 0; i < titleCount; i++) {
+          const text = (await allTitles.nth(i).innerText().catch(() => '')).trim();
+          if (text && text !== '계좌선택') {
+            await allTitles.nth(i).click({ timeout: 5000 });
+            this.log(`[Hana loan] Selected account: ${text}`);
+            accountClicked = true;
+            break;
+          }
+        }
+        if (!accountClicked) this.warn('[Hana loan] No real account found in dropdown — skipping account selection');
         await this.page.waitForTimeout(1500);
       } catch (e) {
         this.warn('[Hana loan] Account selection failed:', e.message);
