@@ -40,7 +40,7 @@ import {
 import LandingPage from './components/LandingPage';
 import { AIKeysManager } from './components/AIKeysManager';
 import { HomepageEditor } from './components/HomepageEditor';
-import { Coding, DeveloperWindow, AIChat, WebsiteViewer } from './components/Coding';
+import { Coding, Hosting, DeveloperWindow, AIChat, WebsiteViewer } from './components/Coding';
 import SSLAnalyzer from './components/SSLAnalyzer/SSLAnalyzer';
 import CompanyResearchPage from './components/CompanyResearchPage/CompanyResearchPage';
 import URLFileViewerPage from './components/HomepageEditor/URLFileViewerPage';
@@ -3017,6 +3017,7 @@ function NavigationBar({
   const isSystemActive = [
     '/mcp-server',
     '/coding',
+    '/hosting',
     '/docker',
     '/egdesktop',
     '/ai-keys'
@@ -3168,6 +3169,10 @@ function NavigationBar({
               <span>MCP Server</span>
             </Link>
             <Link to="/coding" className={`nav-dropdown-item ${location.pathname.startsWith('/coding') ? 'active' : ''}`}>
+              <FontAwesomeIcon icon={faLaptopCode} fixedWidth />
+              <span>Coding</span>
+            </Link>
+            <Link to="/hosting" className={`nav-dropdown-item ${location.pathname.startsWith('/hosting') ? 'active' : ''}`}>
               <FontAwesomeIcon icon={faServer} fixedWidth />
               <span>Hosting</span>
             </Link>
@@ -3240,7 +3245,7 @@ function RouteWindowBoundsManager() {
         return;
       }
 
-      const isInHomepageEditor = location.pathname.startsWith('/homepage-editor');
+      const isInHomepageEditor = location.pathname.startsWith('/coding');
       if (isInHomepageEditor && !wasInHomepageEditorRef.current) {
         try {
           const result = await mainWindowBridge.getBounds();
@@ -3315,6 +3320,13 @@ function AppContent() {
   const [isEnsuringOllama, setIsEnsuringOllama] = useState(false);
   const [gemmaStatus, setGemmaStatus] = useState<'idle' | 'checking' | 'pulling' | 'ready' | 'error'>('idle');
   const [gemmaMessage, setGemmaMessage] = useState<string | null>(null);
+  const [isCodingPanel, setIsCodingPanel] = useState(() => window.innerWidth <= 850);
+
+  useEffect(() => {
+    const onResize = () => setIsCodingPanel(window.innerWidth <= 850);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const checkOllamaStatus = useCallback(async () => {
     if (!(window as any)?.electron?.ollama?.checkInstalled) {
@@ -3563,8 +3575,10 @@ function AppContent() {
     return <SignInPage />;
   }
 
-  // Check if we should hide navigation (for coding windows)
-  const hideNavigation = location.pathname === '/coding/ai-chat' || location.pathname === '/coding/website-viewer';
+  const hideNavigation =
+    location.pathname === '/coding/ai-chat' ||
+    location.pathname === '/coding/website-viewer' ||
+    (location.pathname.startsWith('/coding') && isCodingPanel);
 
   return (
     <>
@@ -3767,9 +3781,10 @@ function AppContent() {
               } 
             />
             <Route path="/ai-keys" element={<AIKeysManager />} />
-            <Route path="/homepage-editor" element={<HomepageEditor />} />
-            <Route path="/coding" element={<Coding />} />
+            <Route path="/coding" element={<HomepageEditor />} />
+            <Route path="/hosting" element={<Hosting />} />
             <Route path="/coding/developer" element={<DeveloperWindow />} />
+            <Route path="/hosting/developer" element={<DeveloperWindow />} />
             <Route path="/coding/ai-chat" element={<AIChat />} />
             <Route path="/coding/website-viewer" element={<WebsiteViewer />} />
             <Route path="/ssl-analyzer" element={<SSLAnalyzer />} />

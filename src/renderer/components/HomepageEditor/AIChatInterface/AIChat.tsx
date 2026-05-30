@@ -16,9 +16,12 @@ import {
   faArrowLeft,
   faUndo,
   faRobot,
-  faRefresh
+  faRefresh,
+  faRocket,
+  faSpinner,
 } from '../../../utils/fontAwesomeIcons';
 import { AIService } from '../../../services/ai-service';
+import { useNavigate } from 'react-router-dom';
 import { aiKeysStore } from '../../AIKeysManager/store/aiKeysStore';
 import ProjectContextService from '../../../services/projectContextService';
 import { aiChatDataService } from '../../../services/ai-chat-data-service';
@@ -35,9 +38,18 @@ import { AIEventType } from '../../../../main/types/ai-types';
 import type { AIKey } from '../../AIKeysManager/types';
 import { BackupManager } from '../BackupManager/BackupManager';
 import './AIChat.css';
+import { CODING_PORTS } from '../../../../shared/coding-ports';
 
 interface AIChatProps {
   onBackToProjectSelection?: () => void;
+}
+
+type DevServerLoadPhase = 'idle' | 'starting-server' | 'compiling' | 'opening-ide' | 'error';
+
+interface DevServerLoadStatus {
+  phase: DevServerLoadPhase;
+  message: string;
+  port?: number;
 }
 
 /**
@@ -116,6 +128,7 @@ const getToolNameFromMessage = (message: string): string => {
 };
 
 export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
+  const navigate = useNavigate();
   // Track the preview browser window we open for localhost so we can switch its URL later
   const [previewWindowId, setPreviewWindowId] = useState<number | null>(null);
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | null>(null);
@@ -127,6 +140,10 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const [selectedGoogleKey, setSelectedGoogleKey] = useState<AIKey | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [currentProject, setCurrentProject] = useState<any>(null);
+  const [devServerLoadStatus, setDevServerLoadStatus] = useState<DevServerLoadStatus>({
+    phase: 'idle',
+    message: '',
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Conversation state
@@ -372,27 +389,27 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   const refreshBrowser = async () => {
     try {
       const electronAny = (window as any).electron;
-      const status = await electronAny.wordpressServer.getServerStatus();
-      const folderPath = status?.status?.folderPath || currentProject?.path;
-      const port = status?.status?.port || 8000;
-      const serverUrl = status?.status?.url || (port ? `http://localhost:${port}` : undefined);
+      const projectPath = currentProject?.path;
+      if (!projectPath) return;
 
-      if (status?.status?.isRunning) {
+      const statusResult = await electronAny.ipcRenderer.invoke('dev-server:get-status', projectPath);
+      const port = statusResult?.serverInfo?.port || CODING_PORTS.dev.preferred;
+      const serverUrl = statusResult?.serverInfo?.url || `http://localhost:${port}`;
+
+      if (statusResult?.serverInfo?.status === 'running') {
         try {
-          await electronAny.wordpressServer.stopServer();
+          await electronAny.ipcRenderer.invoke('dev-server:stop', projectPath);
         } catch (e) {
           console.warn('Failed to stop server before restart:', e);
         }
       }
 
-      if (folderPath) {
-        try {
-          await electronAny.wordpressServer.startServer(folderPath, port);
-          // Give the server a brief moment to bind the port
-          await new Promise((r) => setTimeout(r, 300));
-        } catch (e) {
-          console.warn('Failed to start server during refreshBrowser:', e);
-        }
+      try {
+        await electronAny.ipcRenderer.invoke('dev-server:start', projectPath, 'dev');
+        // Give the server a brief moment to bind the port
+        await new Promise((r) => setTimeout(r, 300));
+      } catch (e) {
+        console.warn('Failed to start server during refreshBrowser:', e);
       }
 
       // Switch preview window back to localhost site before refreshing, so URLFileViewer isn't refreshed
@@ -501,30 +518,24 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
   // Auto-start server and open preview window when project changes
   useEffect(() => {
     if (currentProject?.path) {
-      let timer: any;
-      (async () => {
-        try {
-          const electronAny = (window as any).electron;
-          // Close existing preview window before opening a new one for the new project
-          if (previewWindowId != null) {
-            try {
-              await electronAny.browserWindow.closeWindow(previewWindowId);
-            } catch (e) {
-              console.warn('Failed to close existing preview window:', e);
-            }
-            setPreviewWindowId(null);
-            setCurrentPreviewUrl(null);
-          }
-        } catch {}
-        // Small delay to ensure component is fully mounted and previous window closed
-        timer = setTimeout(() => {
-          openProjectInBrowser();
-        }, 500);
-      })();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let cancelled = false;
+
+      setDevServerLoadStatus({ phase: 'starting-server', message: 'Preparing project…' });
+
+      timer = setTimeout(() => {
+        if (!cancelled) {
+          openProjectInAntigravity();
+        }
+      }, 500);
+
       return () => {
-        try { clearTimeout(timer); } catch {}
+        cancelled = true;
+        if (timer) clearTimeout(timer);
       };
     }
+
+    setDevServerLoadStatus({ phase: 'idle', message: '' });
   }, [currentProject?.path]);
 
   // (Viewer init moved out of AIChat; AIChat only deep-links the preview window)
@@ -713,126 +724,126 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     return Array.from(collect);
   };
 
-  const openProjectInBrowser = async () => {
-    try {
-      const status = await window.electron.wordpressServer.getServerStatus();
-      if (status.success && status.status?.isRunning) {
-        const url = status.status.url || `http://localhost:${status.status.port}`;
-        await tileChatAndPreview(url);
-      } else {
-        // If server is not running, try to recover project info and start it, else open known port
-        try {
-          // Try to fetch current project from main if not available yet in this window
-          const mainProject = await (window as any).electron.projectContext.getCurrentProject();
-          const projectPath = mainProject?.path || currentProject?.path;
-          if (mainProject?.path && !currentProject?.path) {
-            setCurrentProject(mainProject);
-          }
+  const openProjectInAntigravity = async () => {
+    const projectPath = currentProject?.path;
+    if (!projectPath) return;
 
-          if (projectPath) {
-            try {
-              const start = await window.electron.wordpressServer.startServer(projectPath, 8000);
-              if (start.success) {
-                const port = start.port || 8000;
-                const url = `http://localhost:${port}`;
-                await tileChatAndPreview(url);
-              } else {
-                console.warn('Failed to start local server:', start.error);
-              }
-            } catch (e) {
-              console.error('Failed to start local server:', e);
-            }
-          } else if (status.status?.port) {
-            // Fallback: if a port is known from status, try opening it anyway
-            const url = status.status.url || `http://localhost:${status.status.port}`;
-            await tileChatAndPreview(url);
-          } else {
-            console.warn('Local server is not running and no project is selected.');
-          }
-        } catch (e) {
-          console.warn('Unable to resolve project/server state:', e);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to open project in browser:', err);
-    }
-  };
-
-  const tileChatAndPreview = async (url: string) => {
     try {
       const electronAny = (window as any).electron;
-      
 
-      // If we already have a preview window, just switch its URL instead of creating a new one
-      if (previewWindowId != null) {
-        try {
-          const switched = await electronAny.browserWindow.switchURL(url, previewWindowId);
-          if (switched?.success) {
-            return; // Reused existing preview window
-          }
-        } catch (e) {
-          console.warn('Failed to switch existing preview window URL, will try to locate an existing one:', e);
+      setDevServerLoadStatus({ phase: 'starting-server', message: 'Waiting for dev server port…' });
+
+      let port = CODING_PORTS.dev.preferred;
+      let mode: 'dev' | 'production' = 'dev';
+      let url = `http://localhost:${port}`;
+
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const statusResult = await electronAny.ipcRenderer.invoke('dev-server:get-status', projectPath);
+        const info = statusResult?.serverInfo;
+
+        if (info?.port) {
+          port = info.port;
+          mode = info.mode === 'production' ? 'production' : 'dev';
+          url = info.url || `http://localhost:${port}`;
+          break;
         }
+
+        await new Promise((r) => setTimeout(r, 500));
       }
 
-      // If no known preview window, try to locate an existing localhost window to reuse
-      try {
-        const list = await electronAny.browserWindow.getAllLocalhostWindows();
-        if (list?.success && Array.isArray(list.windows) && list.windows.length > 0) {
-          const first = list.windows[0];
-          setPreviewWindowId(first.windowId);
-          const switched = await electronAny.browserWindow.switchURL(url, first.windowId);
-          if (switched?.success) {
-            return; // Reused existing localhost window
-          }
+      setDevServerLoadStatus({
+        phase: 'opening-ide',
+        message: `Opening Antigravity (dev port ${port})…`,
+        port,
+      });
+
+      const openResult = await electronAny.ipcRenderer.invoke('coding:open-antigravity', {
+        folderPath: projectPath,
+        port,
+        mode,
+        url,
+        projectName: currentProject?.name,
+      });
+
+      if (!openResult?.success) {
+        if (openResult?.needsInstall) {
+          await electronAny.ipcRenderer.invoke('coding:open-antigravity-install');
         }
-      } catch (e) {
-        console.warn('Failed to enumerate localhost browser windows, proceeding to create one:', e);
-      }
-      const work = await electronAny.mainWindow.getWorkArea();
-      if (!work?.success || !work.workArea) {
-        // Fallback: just open centered window
-        const created = await electronAny.browserWindow.createWindow({ url, title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview', width: 1200, height: 800, show: true });
-        if (created?.success && created.windowId) {
-          setPreviewWindowId(created.windowId);
-          // Clean up when closed
-          electronAny.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
-        }
+        setDevServerLoadStatus({
+          phase: 'error',
+          message: openResult?.error || 'Failed to open Antigravity. Click the project name to retry.',
+          port,
+        });
         return;
       }
-      const { x, y, width, height } = work.workArea;
 
-      // Left 30% for chat
-      let chatWidth = Math.floor(width * 0.3);
-      let previewWidth = width - chatWidth; // 70%
-
-      // Resize/move main window (chat) to left 30%
-      await electronAny.mainWindow.setBounds({ x, y, width: chatWidth, height });
-
-      // Open preview window on right 70%
-      const created = await electronAny.browserWindow.createWindow({
-        url,
-        title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview',
-        x: x + chatWidth,
-        y,
-        width: previewWidth,
-        height,
-        show: true,
+      setDevServerLoadStatus({
+        phase: 'compiling',
+        message: openResult?.egdeskChatActivated
+          ? `Antigravity opened — select "egdesk-chat" under ${currentProject?.name ?? 'your project'} for dev context (port ${port})`
+          : openResult?.egdeskChatNeedsActivation
+            ? `Antigravity opened — under "${currentProject?.name ?? 'your project'}", click "egdesk-chat" and send any message (dev context is in AGENTS.md, port ${port})`
+            : `Antigravity opened (port ${port})`,
+        port,
       });
-      if (created?.success && created.windowId) {
-        setPreviewWindowId(created.windowId);
-        setCurrentPreviewUrl(url);
-        electronAny.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
+
+      for (let attempt = 0; attempt < 90; attempt++) {
+        const statusResult = await electronAny.ipcRenderer.invoke('dev-server:get-status', projectPath);
+
+        if (!statusResult.success) {
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+
+        const info = statusResult.serverInfo;
+        if (!info) {
+          setDevServerLoadStatus({
+            phase: 'compiling',
+            message: `Starting dev server on port ${port}…`,
+            port,
+          });
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+
+        if (info.status === 'running') {
+          setDevServerLoadStatus({ phase: 'idle', message: '' });
+          return;
+        }
+
+        if (info.status === 'starting') {
+          setDevServerLoadStatus({
+            phase: 'compiling',
+            message: `Next.js compiling on port ${info.port ?? port}…`,
+            port: info.port ?? port,
+          });
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+
+        if (info.status === 'error' || info.status === 'stopped') {
+          setDevServerLoadStatus({
+            phase: 'error',
+            message: 'Dev server failed to start. Antigravity is open — fix errors there and retry.',
+            port: info.port ?? port,
+          });
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
       }
-    } catch (error) {
-      console.error('Failed to tile chat and preview windows:', error);
-      // Fallback open
-      const created = await (window as any).electron.browserWindow.createWindow({ url, title: currentProject?.name ? `${currentProject.name} Preview` : 'Local Preview', width: 1200, height: 800, show: true });
-      if (created?.success && created.windowId) {
-        setPreviewWindowId(created.windowId);
-        setCurrentPreviewUrl(url);
-        (window as any).electron.browserWindow.onClosed(created.windowId, () => setPreviewWindowId(null));
-      }
+
+      setDevServerLoadStatus({
+        phase: 'error',
+        message: 'Dev server timed out. Antigravity is open — start the server manually if needed.',
+        port,
+      });
+    } catch (err) {
+      console.error('Failed to open project in Antigravity:', err);
+      setDevServerLoadStatus({
+        phase: 'error',
+        message: 'Failed to open Antigravity. Click the project name to retry.',
+      });
     }
   };
 
@@ -885,6 +896,36 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     }
   };
   
+  const handlePushToHosting = async () => {
+    if (!currentProject?.path) return;
+    
+    const confirmPush = window.confirm(`Are you sure you want to push ${currentProject.name} to hosting? This will stop the dev server and start the production server.`);
+    if (!confirmPush) return;
+
+    try {
+      const electronAny = (window as any).electron;
+      
+      // 1. Stop the dev server (4000-series)
+      await electronAny.ipcRenderer.invoke('dev-server:stop', currentProject.path);
+      
+      // 2. Start in production mode (port 3000-series)
+      const startResult = await electronAny.ipcRenderer.invoke('dev-server:start', currentProject.path, 'production');
+      
+      if (startResult.success) {
+        // 3. Update hosting status in context
+        ProjectContextService.getInstance().updateHostingStatus(currentProject.id, true);
+        
+        // 4. Navigate to hosting page
+        navigate('/hosting');
+      } else {
+        alert(`Failed to start hosting: ${startResult.error}`);
+      }
+    } catch (error) {
+      console.error('Error pushing to hosting:', error);
+      alert('An error occurred while pushing to hosting.');
+    }
+  };
+
   /**
    * Handle sending message in autonomous mode
    */
@@ -1314,40 +1355,37 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
     }}>
       <div className="ai-chat-header">
         <div className="header-top">
-          <div className="project-selector">
-            <div className="project-info">
-              <FontAwesomeIcon icon={faFolder} className="homepage-editor-project-icon" />
-              <span className="homepage-editor-project-label">Project:</span>
-              <span 
-                className="homepage-editor-project-name"
-                onClick={openProjectInBrowser}
-                title={currentProject ? 'Open in browser' : undefined}
-                style={{ cursor: currentProject ? 'pointer' as const : 'default' as const }}
-              >
-                {currentProject ? `${currentProject.name} (${currentProject.type})` : 'No project selected'}
-              </span>
-            </div>
-          </div>
-          <div className="header-buttons">
-            {/* Back to Project Selection Button */}
+          <div className="header-row-primary">
             {onBackToProjectSelection && (
-              <button 
-                className="back-btn" 
+              <button
+                className="back-btn"
                 onClick={onBackToProjectSelection}
                 title="Back to project selection"
               >
-                <FontAwesomeIcon icon={faArrowLeft} className="homepage-editor-btn-icon" />
-                Back
+                <FontAwesomeIcon icon={faArrowLeft} />
               </button>
             )}
+            <div className="project-selector">
+              <div className="project-info">
+                <FontAwesomeIcon icon={faFolder} className="homepage-editor-project-icon" />
+                <span
+                  className="homepage-editor-project-name"
+                  onClick={openProjectInAntigravity}
+                  title={currentProject ? 'Open in Antigravity' : undefined}
+                  style={{ cursor: currentProject ? 'pointer' as const : 'default' as const }}
+                >
+                  {currentProject ? currentProject.name : 'No project'}
+                </span>
+              </div>
+            </div>
+          </div>
 
-            {/* Model Selector */}
+          <div className="header-row-toolbar">
             <div className="model-selector" ref={modelSelectorRef}>
-              <div className="model-info" onClick={toggleModelDropdown}>
-                <FontAwesomeIcon icon={faRobot} className="homepage-editor-model-icon" />
-                <span className="model-label">Model:</span>
+              <div className="model-info" onClick={toggleModelDropdown} title={formatModelName(selectedModelId)}>
+                <FontAwesomeIcon icon={faRobot} />
                 <span className="model-name">
-                  {modelsLoading ? `${formatModelName(selectedModelId)} • refreshing...` : formatModelName(selectedModelId)}
+                  {formatModelName(selectedModelId)}
                 </span>
                 <FontAwesomeIcon
                   icon={faChevronDown}
@@ -1357,120 +1395,83 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
               {showModelDropdown && (
                 <div className="model-dropdown">
                   <div className="model-dropdown-header">
-                    <span>Available Models</span>
+                    <span>Models</span>
                     <button
                       type="button"
                       className="model-refresh-btn"
                       onClick={() => refreshModels()}
                       disabled={modelsLoading}
                     >
-                      <FontAwesomeIcon icon={faRefresh} className="model-refresh-icon" />
-                      {modelsLoading ? 'Refreshing...' : 'Refresh'}
+                      <FontAwesomeIcon icon={faRefresh} spin={modelsLoading} />
                     </button>
                   </div>
                   <div className="model-options">
-                    {availableModels.length === 0 ? (
-                      <div className="model-option empty">No models available</div>
-                    ) : (
-                      availableModels.map((model) => {
-                        const isSelected = selectedModelId === model;
-                        const typeLabel = model.startsWith('ollama:') ? 'Local' : 'Cloud';
-                        return (
-                          <div
-                            key={model}
-                            className={`model-option ${isSelected ? 'selected' : ''}`}
-                            onClick={() => handleModelSelection(model)}
-                          >
-                            <span className="model-option-name">{formatModelName(model)}</span>
-                            <span className={`model-option-type ${typeLabel.toLowerCase()}`}>
-                              {typeLabel}
-                            </span>
-                          </div>
-                        );
-                      })
-                    )}
+                    {availableModels.map((model) => (
+                      <div
+                        key={model}
+                        className={`model-option ${selectedModelId === model ? 'selected' : ''}`}
+                        onClick={() => handleModelSelection(model)}
+                      >
+                        <span className="model-option-name">{formatModelName(model)}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Google AI Key Selector */}
-            {googleKeys.length > 1 && (
-              <div className="key-selector" ref={keySelectorRef}>
-                <div className="key-info" onClick={toggleKeyDropdown}>
-                  <FontAwesomeIcon icon={faKey} className="homepage-editor-key-icon" />
-                  <span className="key-label">AI Key:</span>
-                  <span className="key-name">
-                    {selectedGoogleKey?.name || 'No key selected'}
-                  </span>
-                  <FontAwesomeIcon icon={faChevronDown} className="homepage-editor-dropdown-icon" />
-                </div>
-                {showKeyDropdown && (
-                  <div className="key-dropdown">
-                    {googleKeys.map((key) => (
-                      <div
-                        key={key.id}
-                        className={`key-option ${selectedGoogleKey?.id === key.id ? 'selected' : ''}`}
-                        onClick={() => handleKeySelection(key)}
-                      >
-                        <FontAwesomeIcon icon={faKey} className="homepage-editor-key-option-icon" />
-                        <span className="key-option-name">{key.name}</span>
-                        {selectedGoogleKey?.id === key.id && (
-                          <span className="key-option-check">✓</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Cancel button (only show when conversation is active) */}
-            {isConversationActive && (
-              <button 
-                className="cancel-btn" 
-                onClick={handleCancelConversation}
+            <div className="header-actions">
+              <button
+                className="new-conversation-btn"
+                onClick={handleNewConversation}
+                title="New Chat"
               >
-                Cancel
+                <FontAwesomeIcon icon={faHistory} />
               </button>
-            )}
 
-          <button 
-              className="new-conversation-btn" 
-              onClick={handleNewConversation}
-              title="Start a new conversation"
-            >
-              <FontAwesomeIcon icon={faHistory} className="homepage-editor-btn-icon" />
-              New Chat
-            </button>
+              <button
+                className="push-to-hosting-btn"
+                onClick={handlePushToHosting}
+                title="Push to Hosting"
+              >
+                <FontAwesomeIcon icon={faRocket} />
+              </button>
 
-            <button 
-              className="conversations-btn" 
-              onClick={() => setShowConversationList(!showConversationList)}
-              title="View conversation history"
-            >
-              <FontAwesomeIcon icon={faClock} className="homepage-editor-btn-icon" />
-              History ({conversations.length})
-            </button>
+              <button
+                className="conversations-btn"
+                onClick={() => setShowConversationList(!showConversationList)}
+                title="History"
+              >
+                <FontAwesomeIcon icon={faClock} />
+              </button>
 
-            <button 
-              className="backup-btn" 
-              onClick={() => setShowBackupManager(true)}
-              title="Manage backups and revert changes"
-            >
-              <FontAwesomeIcon icon={faUndo} className="homepage-editor-btn-icon" />
-              Backups
-            </button>
+              <button
+                className="backup-btn"
+                onClick={() => setShowBackupManager(true)}
+                title="Backups"
+              >
+                <FontAwesomeIcon icon={faUndo} />
+              </button>
 
+              <button
+                className="clear-btn"
+                onClick={handleClearHistory}
+                disabled={messages.length === 0 || isConversationActive}
+                title="Clear"
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
 
-            <button 
-              className="clear-btn" 
-              onClick={handleClearHistory}
-              disabled={messages.length === 0 || isConversationActive}
-            >
-              <FontAwesomeIcon icon={faTrash} className="homepage-editor-btn-icon" />
-              Clear
-            </button>
+              {isConversationActive && (
+                <button
+                  className="cancel-btn"
+                  onClick={handleCancelConversation}
+                  title="Stop generation"
+                >
+                  <FontAwesomeIcon icon={faStop} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1530,7 +1531,30 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
 
       {/* Messages */}
       <div className="messages-container">
-          {messages.length === 0 ? (
+          {devServerLoadStatus.phase !== 'idle' && (
+            <div className={`dev-server-loading dev-server-loading--${devServerLoadStatus.phase}`}>
+              <div className="dev-server-loading-icon">
+                {devServerLoadStatus.phase === 'error' ? (
+                  <span aria-hidden>⚠️</span>
+                ) : (
+                  <FontAwesomeIcon icon={faSpinner} spin />
+                )}
+              </div>
+              <div className="dev-server-loading-text">
+                <strong>
+                  {devServerLoadStatus.phase === 'starting-server' && 'Starting dev server'}
+                  {devServerLoadStatus.phase === 'compiling' && 'Compiling project'}
+                  {devServerLoadStatus.phase === 'opening-ide' && 'Opening Antigravity'}
+                  {devServerLoadStatus.phase === 'error' && 'Setup issue'}
+                </strong>
+                <span>{devServerLoadStatus.message}</span>
+                {devServerLoadStatus.port != null && devServerLoadStatus.phase !== 'error' && (
+                  <span className="dev-server-loading-port">Port {devServerLoadStatus.port}</span>
+                )}
+              </div>
+            </div>
+          )}
+          {messages.length === 0 && devServerLoadStatus.phase === 'idle' ? (
             <div className="welcome-message">
               <p>👋 Welcome to the AI Assistant!</p>
               <p>🤖 <strong>Start a new conversation</strong> by typing your message below.</p>
@@ -1596,25 +1620,28 @@ export const AIChat: React.FC<AIChatProps> = ({ onBackToProjectSelection }) => {
             ))}
           </div>
         )}
-        <textarea
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder={
-            !isConfigured 
-              ? "Configure Google AI key first..." 
-              : "Type your message... (Enter to send, Shift+Enter for new line)"
-          }
-          disabled={!isConfigured || isLoading}
-          rows={2}
-        />
-        <button 
-          onClick={handleSendAutonomous}
-          disabled={!inputMessage.trim() || isLoading || !isConfigured}
-          className="send-btn"
-        >
-          {isLoading ? 'Sending...' : `Send${uploadPreviews.length > 0 ? ` (${uploadPreviews.length} file${uploadPreviews.length > 1 ? 's' : ''})` : ''}`}
-        </button>
+        <div className="input-wrapper">
+          <textarea
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder={
+              !isConfigured 
+                ? "Configure Google AI key first..." 
+                : "Type your message..."
+            }
+            disabled={!isConfigured || isLoading}
+            rows={1}
+          />
+          <button 
+            onClick={handleSendAutonomous}
+            disabled={!inputMessage.trim() || isLoading || !isConfigured}
+            className="send-btn"
+            title={isLoading ? 'Sending...' : 'Send message'}
+          >
+            <FontAwesomeIcon icon={isLoading ? faRefresh : faRocket} spin={isLoading} />
+          </button>
+        </div>
       </div>
 
       {/* Backup Manager */}

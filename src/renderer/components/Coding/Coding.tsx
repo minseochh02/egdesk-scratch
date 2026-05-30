@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircle, faPlus, faCopy, faStop, faTerminal, faTrash, faChevronDown, faChevronUp, faArrowDown, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 import './Coding.css';
+import { CODING_PORTS } from '../../../shared/coding-ports';
 
 interface Project {
   id: string;
@@ -296,7 +297,7 @@ const Coding: React.FC = () => {
 
       // Step 3: Start server
       updateStep(3, 'active');
-      const mode = tunnelIsUp ? 'production' : 'dev';
+      const mode = 'dev';
 
       if (tunnelIsUp) {
         await electron.ipcRenderer.invoke('dev-server:set-tunnel-id', tunnelName);
@@ -306,7 +307,7 @@ const Coding: React.FC = () => {
       console.log('[TEMPLATE] server start:', startResult.success, startResult.error);
 
       if (startResult.success) {
-        updateStep(3, 'done', mode === 'production' ? 'Production mode' : 'Dev mode (no tunnel)');
+        updateStep(3, 'done', 'Dev mode');
       } else {
         updateStep(3, 'error', startResult.error || 'Failed to start server');
         return;
@@ -551,7 +552,7 @@ const Coding: React.FC = () => {
         }}
       />
       <div className="coding-header">
-        <h1>Projects</h1>
+        <h1>Coding Projects</h1>
         <div className="coding-header-actions">
           <button
             className="coding-btn coding-btn-primary"
@@ -559,7 +560,7 @@ const Coding: React.FC = () => {
             disabled={nodeInstalled === false}
             title={nodeInstalled === false ? 'Node.js is required to open projects' : ''}
           >
-            <span>Open Project</span>
+            <span>Open Dev Project</span>
           </button>
         </div>
       </div>
@@ -644,12 +645,12 @@ const Coding: React.FC = () => {
               Port Utilities
             </h3>
             <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6c757d' }}>
-              If a project fails to start because port 3000 is in use, you can force kill it here.
+              If a project fails to start because port {CODING_PORTS.dev.preferred} is in use, you can force kill it here.
             </p>
           </div>
         </div>
         <button
-          onClick={() => killPortProcess(3000)}
+          onClick={() => killPortProcess(CODING_PORTS.dev.preferred)}
           disabled={killLoading}
           style={{
             padding: '8px 16px',
@@ -664,7 +665,7 @@ const Coding: React.FC = () => {
             transition: 'all 0.2s'
           }}
         >
-          {killLoading ? 'Killing...' : 'Kill Port 3000'}
+          {killLoading ? 'Killing...' : `Kill Port ${CODING_PORTS.dev.preferred}`}
         </button>
       </div>
 

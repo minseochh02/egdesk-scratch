@@ -491,6 +491,45 @@ async function runDoctorFix(cleanEnv: NodeJS.ProcessEnv, log: (msg: string) => v
   }
 }
 
+/** True when the Kakao extension is present on disk (plugin install succeeded). */
+function isKakaoPluginInstalled(): boolean {
+  return fs.existsSync(path.join(os.homedir(), '.openclaw', 'extensions', 'kakao', 'package.json'));
+}
+
+/**
+ * Remove stale Kakao config that blocks openclaw CLI when the plugin is not installed.
+ * OpenClaw validates channels.kakao at startup — unknown channel id aborts gateway + plugin install.
+ */
+function stripStaleKakaoConfig(configPath: string, log: (msg: string) => void): void {
+  if (!fs.existsSync(configPath)) return;
+  if (isKakaoPluginInstalled()) return;
+
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    let changed = false;
+
+    if (cfg.channels?.kakao) {
+      delete cfg.channels.kakao;
+      changed = true;
+    }
+    if (cfg.plugins?.entries?.kakao) {
+      delete cfg.plugins.entries.kakao;
+      changed = true;
+    }
+    if (cfg.plugins?.installs?.kakao) {
+      delete cfg.plugins.installs.kakao;
+      changed = true;
+    }
+
+    if (changed) {
+      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
+      log('Stripped stale Kakao config (plugin not installed — avoids invalid config).');
+    }
+  } catch (e: any) {
+    log(`Could not strip stale Kakao config (non-fatal): ${e?.message}`);
+  }
+}
+
 /**
  * Helper: install Kakao plugin.
  */
@@ -507,6 +546,9 @@ async function installKakaoPlugin(cleanEnv: NodeJS.ProcessEnv, log: (msg: string
     const pluginPath = path.join(resourcesBase, 'openclaw-kakao-plugin');
 
     if (fs.existsSync(pluginPath)) {
+      const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+      stripStaleKakaoConfig(configPath, log);
+
       log(`Installing Kakao plugin from ${pluginPath}…`);
       await execAsync(`openclaw plugins install --force "${pluginPath}"`, { env: cleanEnv, timeout: 60_000, maxBuffer: 5 * 1024 * 1024 });
 
@@ -539,6 +581,38 @@ async function runGoldenMerge(configDir: string, configPath: string, resolvedTok
     
     const currentCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
     
+    const kakaoReady = isKakaoPluginInstalled();
+    const channelEntries: Record<string, unknown> = {
+      ...(currentCfg.channels ?? {}),
+      telegram: {
+        ...(currentCfg.channels?.telegram ?? {}),
+        enabled: true,
+        botToken: resolvedToken,
+      },
+    };
+    if (kakaoReady) {
+      channelEntries.kakao = {
+        enabled: true,
+        webhookPath: '/kakao/skill',
+        useCallback: true,
+        callbackTimeoutMs: 180000,
+        dmPolicy: 'open',
+        ...(currentCfg.channels?.kakao ?? {}),
+      };
+    } else if (channelEntries.kakao) {
+      delete channelEntries.kakao;
+    }
+
+    const pluginEntries: Record<string, unknown> = {
+      ...(currentCfg.plugins?.entries ?? {}),
+      bonjour: { enabled: false }, // prevent mDNS crash
+    };
+    if (kakaoReady) {
+      pluginEntries.kakao = { enabled: true, ...(currentCfg.plugins?.entries?.kakao ?? {}) };
+    } else if (pluginEntries.kakao) {
+      delete pluginEntries.kakao;
+    }
+
     const finalCfg = {
       ...currentCfg,
       gateway: {
@@ -555,22 +629,7 @@ async function runGoldenMerge(configDir: string, configPath: string, resolvedTok
           }
         }
       },
-      channels: {
-        ...(currentCfg.channels ?? {}),
-        telegram: {
-          ...(currentCfg.channels?.telegram ?? {}),
-          enabled: true,
-          botToken: resolvedToken,
-        },
-        kakao: {
-          enabled: true,
-          webhookPath: '/kakao/skill',
-          useCallback: true,
-          callbackTimeoutMs: 180000,
-          dmPolicy: 'open',
-          ...(currentCfg.channels?.kakao ?? {}),
-        }
-      },
+      channels: channelEntries,
       mcp: {
         ...(currentCfg.mcp ?? {}),
         servers: {
@@ -580,10 +639,7 @@ async function runGoldenMerge(configDir: string, configPath: string, resolvedTok
       },
       plugins: {
         ...(currentCfg.plugins ?? {}),
-        entries: {
-          ...(currentCfg.plugins?.entries ?? {}),
-          bonjour: { enabled: false } // prevent mDNS crash
-        }
+        entries: pluginEntries,
       }
     };
 
@@ -592,7 +648,7 @@ async function runGoldenMerge(configDir: string, configPath: string, resolvedTok
 
     fs.writeFileSync(configPath, JSON.stringify(finalCfg, null, 2));
     fs.writeFileSync(path.join(configDir, 'openclaw.json.last-good'), JSON.stringify(finalCfg, null, 2));
-    log('✅ openclaw.json finalized with Golden Merge (Telegram, Kakao, MCP, Gemini).');
+    log(`✅ openclaw.json finalized with Golden Merge (Telegram${kakaoReady ? ', Kakao' : ''}, MCP, Gemini).`);
     return true;
   } catch (e: any) {
     log(`❌ Golden Merge failed: ${e?.message}`);
@@ -741,6 +797,9 @@ export function registerOpenClawHandlers(getGoogleProfilesDir: () => string): vo
 
       try {
         log(`profileName=${profileName} botToken=${resolvedToken || '(none)'} botUsername=${botUsername}`);
+
+        // ── 0. Strip stale Kakao refs so openclaw CLI accepts config ──
+        stripStaleKakaoConfig(configPath, log);
 
         // ── 1. Install openclaw if not on PATH or corrupted ──
         const alreadyInstalled = await ensureCliInstalled(cleanEnv, log);

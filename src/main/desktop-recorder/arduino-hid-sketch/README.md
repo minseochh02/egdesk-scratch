@@ -28,42 +28,103 @@ Since the Arduino acts as a **physical USB keyboard**, it bypasses this restrict
 
 ## Setup Instructions
 
-### 1. Install Arduino IDE
-Download from: https://www.arduino.cc/en/software
+### 1. Flash the Sketch
 
-### 2. Flash the Sketch
+You can flash via **Arduino CLI** (recommended) or the **Arduino IDE**.
 
-1. Open `arduino-hid-sketch.ino` in Arduino IDE
-2. Select board:
-   - **Tools** → **Board** → **Arduino Leonardo** (or **SparkFun Pro Micro**)
-3. Select port:
-   - **Tools** → **Port** → Select your Arduino's COM port
-   - On Windows: Usually `COM3`, `COM4`, etc.
-   - On Mac: Usually `/dev/cu.usbmodem*`
-4. Click **Upload** (→ button)
-5. Wait for "Done uploading" message
+#### Option A: Arduino CLI (recommended)
 
-### 3. Find COM Port
+Install:
 
-After flashing, find the COM port:
+```bash
+# macOS
+brew install arduino-cli
+
+# Or download from https://github.com/arduino/arduino-cli/releases
+```
+
+One-time setup (install board core and libraries):
+
+```bash
+arduino-cli config init
+arduino-cli core update-index
+arduino-cli core install arduino:avr
+arduino-cli lib install Keyboard Mouse
+```
+
+Find your board and serial port (run this before every upload):
+
+```bash
+arduino-cli board list
+```
+
+Example output on Mac:
+
+```
+Port                   Board Name       FQBN
+/dev/cu.usbmodemHIDFG1 Arduino Leonardo arduino:avr:leonardo
+```
+
+Compile and upload from this folder:
+
+```bash
+cd src/main/desktop-recorder/arduino-hid-sketch
+
+arduino-cli compile --upload \
+  -p /dev/cu.usbmodemHIDFG1 \
+  --fqbn arduino:avr:leonardo .
+```
+
+Replace `/dev/cu.usbmodemHIDFG1` with the port from `board list`. On Windows use e.g. `COM3`.
+
+**Leonardo port names change on reset.** After upload or unplug/replug, the suffix changes (e.g. `HIDPC1` → `HIDFG1`). Always run `arduino-cli board list` and use the current port.
+
+Verify the sketch is running:
+
+```bash
+arduino-cli monitor -p /dev/cu.usbmodemHIDFG1 -c baudrate=9600
+```
+
+You should see `READY` on boot. Press Ctrl+C to exit the monitor.
+
+For **SparkFun Pro Micro**, install the SparkFun core and use its FQBN:
+
+```bash
+arduino-cli core install SparkFun:avr
+arduino-cli compile --upload -p <PORT> --fqbn SparkFun:avr:pro-micro .
+```
+
+#### Option B: Arduino IDE
+
+1. Download from: https://www.arduino.cc/en/software
+2. Open `arduino-hid-sketch.ino`
+3. **Tools** → **Board** → **Arduino Leonardo** (or **SparkFun Pro Micro**)
+4. **Tools** → **Port** → select your Arduino's port
+5. Click **Upload** and wait for "Done uploading"
+
+### 2. Find COM Port
+
+After flashing, find the serial port for EGDesk configuration:
 
 **Windows:**
-- Open Device Manager
-- Expand "Ports (COM & LPT)"
-- Look for "Arduino Leonardo (COM3)" or similar
+- Device Manager → **Ports (COM & LPT)** → e.g. `Arduino Leonardo (COM3)`
 
 **Mac:**
-- Open Terminal
-- Run: `ls /dev/cu.usb*`
-- Look for `/dev/cu.usbmodem12345` or similar
+```bash
+arduino-cli board list
+# or
+ls /dev/cu.usb*
+```
 
-### 4. Install SerialPort Dependency
+Look for `/dev/cu.usbmodem*` (the suffix changes after each reset).
+
+### 3. Install SerialPort Dependency
 
 ```bash
 npm install serialport
 ```
 
-### 5. Configure Desktop Recorder
+### 4. Configure Desktop Recorder
 
 ```typescript
 import { DesktopRecorder } from './desktop-recorder';
@@ -154,19 +215,43 @@ COMBO:CTRL+SHIFT+ESC
 - Check Device Manager for COM port
 
 ### Upload Failed
-- Double-press the reset button to enter bootloader mode
-- Try selecting "SparkFun Pro Micro" if Leonardo doesn't work
-- Check that correct board and port are selected
+
+**`Platform 'arduino:avr' not found`**
+```bash
+arduino-cli core install arduino:avr
+```
+
+**`Keyboard.h: No such file or directory`**
+```bash
+arduino-cli lib install Keyboard Mouse
+```
+
+**`cannot open port ... No such file or directory`**
+- The Leonardo port name changed — run `arduino-cli board list` and use the current port
+- Unplug/replug USB, then check again
+- Close Serial Monitor, `arduino-cli monitor`, or any app using the port
+
+**Other upload issues**
+- Double-press the reset button to enter bootloader mode, then upload immediately
+- Try **SparkFun Pro Micro** FQBN if Leonardo does not work
+- Split compile and upload if combined upload fails:
+  ```bash
+  arduino-cli compile --fqbn arduino:avr:leonardo .
+  arduino-cli upload -p <PORT> --fqbn arduino:avr:leonardo .
+  ```
 
 ### Serial Connection Error
-- Close Arduino IDE Serial Monitor before running code
+- Close Arduino IDE Serial Monitor, `arduino-cli monitor`, or EGDesk before uploading
 - Only one program can access the serial port at a time
-- Check that COM port number is correct
+- Re-check the port with `arduino-cli board list` — it may have changed since last use
 
 ### Keys Not Working
 - Verify sketch uploaded successfully (LED should blink)
-- Open Arduino IDE Serial Monitor (9600 baud) to see debug output
-- Check that Arduino is sending "READY" message after connecting
+- Monitor serial output at 9600 baud:
+  ```bash
+  arduino-cli monitor -p <PORT> -c baudrate=9600
+  ```
+- Check that Arduino sends `READY` after connecting
 
 ## Security Considerations
 
@@ -189,6 +274,7 @@ You can use multiple Arduinos on different COM ports for parallel automation.
 
 ## References
 
+- [Arduino CLI](https://arduino.github.io/arduino-cli/latest/)
 - [Arduino Keyboard Library](https://www.arduino.cc/reference/en/language/functions/usb/keyboard/)
 - [ATmega32U4 Datasheet](https://www.microchip.com/wwwproducts/en/ATmega32U4)
 - [Windows UAC Architecture](https://docs.microsoft.com/en-us/windows/security/identity-protection/user-account-control/how-user-account-control-works)

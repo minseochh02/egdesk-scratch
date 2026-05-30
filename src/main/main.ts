@@ -35,6 +35,7 @@ import { BrowserController } from './browser-controller';
 import { browserPoolManager, applyAntiDetectionMeasures } from './shared/browser';
 import { initializeStore, getStore } from './storage';
 import { getDeveloperWindows } from './coding/developer-windows';
+import { registerOpenAntigravityHandlers } from './coding/open-antigravity';
 import { setEgdeskConfigRegeneratorDeps } from './coding/regenerate-egdesk-config';
 import { getDevServerManager } from './coding/dev-server-manager';
 import { codingAIHandler } from './coding/coding-ai-handler';
@@ -4261,6 +4262,7 @@ const createWindow = async () => {
 
     // Initialize Developer Windows IPC handlers
     getDeveloperWindows();
+    registerOpenAntigravityHandlers();
     console.log('✅ Developer Windows IPC handlers registered');
 
     // Initialize Dev Server Manager

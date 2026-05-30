@@ -158,7 +158,7 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/homepage-editor" className="egdesk-landing-action-card egdesk-landing-homepage-card">
+            <Link to="/coding" className="egdesk-landing-action-card egdesk-landing-homepage-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faCode} />
               </div>
@@ -173,7 +173,7 @@ const LandingPage: React.FC = () => {
               </div>
             </Link>
 
-            <Link to="/coding" className="egdesk-landing-action-card egdesk-landing-hosting-card">
+            <Link to="/hosting" className="egdesk-landing-action-card egdesk-landing-hosting-card">
               <div className="egdesk-landing-card-icon">
                 <FontAwesomeIcon icon={faServer} />
               </div>

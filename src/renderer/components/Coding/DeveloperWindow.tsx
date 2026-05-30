@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTerminal, faCopy, faTrash, faArrowDown } from '@fortawesome/free-solid-svg-icons';
 import './DeveloperWindow.css';
+import { CODING_PORTS } from '../../../shared/coding-ports';
 
 interface DeveloperWindowProps {
   projectId?: string;
@@ -344,22 +345,32 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
       // Determine mode if not provided
       let effectiveMode = mode;
       if (!effectiveMode) {
-        // Check if a specific mode was requested (e.g. from template cloning)
-        const forcedMode = localStorage.getItem(`dev-server-mode-${path}`) as 'dev' | 'production' | null;
-        if (forcedMode) {
-          effectiveMode = forcedMode;
-          localStorage.removeItem(`dev-server-mode-${path}`); // Clear after use
+        // Check current path to determine default mode
+        const isHostingPath = window.location.hash.includes('/hosting');
+        const isCodingPath = window.location.hash.includes('/coding');
+        
+        if (isHostingPath) {
+          effectiveMode = 'production';
+        } else if (isCodingPath) {
+          effectiveMode = 'dev';
         } else {
-          const tunnelConfig = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
-          const hasTunnel = tunnelConfig?.tunnel?.registered;
-
-          if (hasTunnel) {
-            setPendingPath(path);
-            setIsModeModalOpen(true);
-            setLoading(false); // Stop loading while waiting for choice
-            return;
+          // Fallback to existing logic
+          const forcedMode = localStorage.getItem(`dev-server-mode-${path}`) as 'dev' | 'production' | null;
+          if (forcedMode) {
+            effectiveMode = forcedMode;
+            localStorage.removeItem(`dev-server-mode-${path}`); // Clear after use
           } else {
-            effectiveMode = 'dev';
+            const tunnelConfig = await electron.ipcRenderer.invoke('get-mcp-tunnel-config');
+            const hasTunnel = tunnelConfig?.tunnel?.registered;
+
+            if (hasTunnel) {
+              setPendingPath(path);
+              setIsModeModalOpen(true);
+              setLoading(false); // Stop loading while waiting for choice
+              return;
+            } else {
+              effectiveMode = 'dev';
+            }
           }
         }
       }
@@ -492,26 +503,43 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
               </button>
             </div>
           )}
-          {(error.includes('EADDRINUSE') || error.includes('port') || error.includes('3000')) && (
+          {(error.includes('EADDRINUSE') || error.includes('port') || error.includes(String(CODING_PORTS.production.preferred)) || error.includes(String(CODING_PORTS.dev.preferred))) && (
             <div style={{ marginTop: '16px' }}>
               <p style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                Port may be in use. Click below to force kill any process on port 3000:
+                Port may be in use. Click below to force kill processes:
               </p>
-              <button
-                onClick={() => killPortProcess(3000)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600'
-                }}
-              >
-                Kill Process on Port 3000
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => killPortProcess(CODING_PORTS.dev.preferred)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#dc3545',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}
+                >
+                  Kill Port {CODING_PORTS.dev.preferred} (Coding)
+                </button>
+                <button
+                  onClick={() => killPortProcess(CODING_PORTS.production.preferred)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#dc3545',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}
+                >
+                  Kill Port {CODING_PORTS.production.preferred} (Hosting)
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -607,7 +635,7 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
           <p style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>🔧 Port Utilities</p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
-              onClick={() => killPortProcess(3000)}
+              onClick={() => killPortProcess(CODING_PORTS.dev.preferred)}
               style={{
                 padding: '8px 16px',
                 backgroundColor: '#dc3545',
@@ -619,10 +647,25 @@ const DeveloperWindow: React.FC<DeveloperWindowProps> = ({ projectId }) => {
                 fontWeight: '500'
               }}
             >
-              Kill Port 3000
+              Kill Port {CODING_PORTS.dev.preferred} (Coding)
+            </button>
+            <button
+              onClick={() => killPortProcess(CODING_PORTS.production.preferred)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '500'
+              }}
+            >
+              Kill Port {CODING_PORTS.production.preferred} (Hosting)
             </button>
             <span style={{ fontSize: '12px', color: '#666' }}>
-              Use this if dev server fails to start due to port conflict
+              Use these if server fails to start due to port conflict
             </span>
           </div>
         </div>

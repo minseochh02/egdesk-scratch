@@ -91,8 +91,14 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     return suitableTypes.includes(project.type) || hasWebContent;
   };
 
-  // Auto-start server for appropriate projects
+  // Auto-start server for appropriate projects (requires Antigravity)
   const handleAutoStartServer = async (project: any) => {
+    const agyCheck = await window.electron.ipcRenderer.invoke('coding:check-antigravity');
+    if (!agyCheck?.available) {
+      console.log('Antigravity not available — skipping server auto-start');
+      return;
+    }
+
     if (!autoStartEnabled) {
       console.log('Auto-start disabled by user preference');
       return;
@@ -109,13 +115,6 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
       const runningFolder = (status as any).folderPath || lastServerFolderPath;
       if (runningFolder && runningFolder === project.path) {
         console.log('Server already running for this project');
-        
-        // Prefer opening repo URL if available
-        if (project.isGit && project.metadata?.repositoryUrl) {
-          openPreviewWindow(project.metadata.repositoryUrl);
-        } else {
-        openPreviewWindow(status.port || 8000);
-        }
         return;
       }
       console.log('Project changed, restarting local server for new project');
@@ -124,28 +123,12 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
       } catch (e) {
         console.warn('Failed to stop existing server before restart:', e);
       }
-      const port = await startLocalServer(project.path);
-      if (port) {
-        // Prefer opening repo URL if available
-        if (project.isGit && project.metadata?.repositoryUrl) {
-          openPreviewWindow(project.metadata.repositoryUrl);
-        } else {
-          openPreviewWindow(port);
-        }
-      }
+      await startLocalServer(project.path);
       return;
     }
 
     console.log('Auto-starting local server for project:', project.name);
-    const port = await startLocalServer(project.path);
-    if (port) {
-      // Prefer opening repo URL if available
-      if (project.isGit && project.metadata?.repositoryUrl) {
-        openPreviewWindow(project.metadata.repositoryUrl);
-      } else {
-        openPreviewWindow(port);
-      }
-    }
+    await startLocalServer(project.path);
   };
 
   // Toggle auto-start preference
@@ -158,18 +141,23 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
   // Check server status
   const checkServerStatus = async () => {
     try {
-      const result = await window.electron.wordpressServer.getServerStatus();
-      if (result.success && result.status) {
+      const electron = (window as any).electron;
+      if (!electron?.ipcRenderer) return { isRunning: false };
+
+      // Get current project path
+      const project = ProjectContextService.getInstance().getContext().currentProject;
+      if (!project?.path) return { isRunning: false };
+
+      const result = await electron.ipcRenderer.invoke('dev-server:get-status', project.path);
+      if (result.success && result.serverInfo) {
         setServerStatus({
-          isRunning: result.status.isRunning,
-          port: result.status.port,
-          url: result.status.url,
+          isRunning: result.serverInfo.status === 'running',
+          port: result.serverInfo.port,
+          url: result.serverInfo.url,
           error: undefined,
         });
-        if ((result.status as any).folderPath) {
-          setLastServerFolderPath((result.status as any).folderPath as string);
-        }
-        return result.status;
+        setLastServerFolderPath(project.path);
+        return { isRunning: result.serverInfo.status === 'running', ...result.serverInfo };
       }
     } catch (error) {
       console.error('Error checking server status:', error);
@@ -184,17 +172,19 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     
     setIsStartingServer(true);
     try {
-      const result = await window.electron.wordpressServer.startServer(folderPath, 8000);
+      const electron = (window as any).electron;
+      // Start in dev mode (4000-series port)
+      const result = await electron.ipcRenderer.invoke('dev-server:start', folderPath, 'dev');
       if (result.success) {
         setServerStatus({
           isRunning: true,
-          port: result.port,
-          url: `http://localhost:${result.port}`,
+          port: result.serverInfo.port,
+          url: result.serverInfo.url,
           error: undefined,
         });
         setLastServerFolderPath(folderPath);
-        console.log(`Local server started successfully on port ${result.port}`);
-        return result.port || 8000;
+        console.log(`Local dev server started successfully on port ${result.serverInfo.port}`);
+        return result.serverInfo.port;
       } else {
         setServerStatus(prev => ({ 
           ...prev, 
@@ -215,30 +205,17 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     }
   };
 
-  // Open a new Electron browser window
-  const openPreviewWindow = (target: string | number) => {
-    try {
-      const url = typeof target === 'number' ? `http://localhost:${target}` : target;
-      window.electron.browserWindow.createWindow({
-        url,
-        title: typeof target === 'number' ? 'Local Preview' : 'Repository Preview',
-        width: 1200,
-        height: 800,
-        show: true,
-      });
-    } catch (err) {
-      console.error('Failed to open preview window:', err);
-    }
-  };
-
   // Stop local server
   const stopLocalServer = async () => {
     try {
-      const result = await window.electron.wordpressServer.stopServer();
-      if (result.success) {
-        setServerStatus({ isRunning: false });
-        setLastServerFolderPath(null);
-        console.log('Local server stopped');
+      const electron = (window as any).electron;
+      if (lastServerFolderPath) {
+        const result = await electron.ipcRenderer.invoke('dev-server:stop', lastServerFolderPath);
+        if (result.success) {
+          setServerStatus({ isRunning: false });
+          setLastServerFolderPath(null);
+          console.log('Local server stopped');
+        }
       }
     } catch (error) {
       console.error('Error stopping server:', error);
@@ -249,8 +226,7 @@ const HomepageEditor: React.FC<HomepageEditorProps> = () => {
     console.log('Project selected:', project);
     setCurrentProject(project);
     setShowAIChat(true);
-    // Auto-start server for appropriate projects
-    await handleAutoStartServer(project);
+    // Server auto-start is handled by the ProjectContextService subscription
   };
 
   const handleBackToProjectSelection = async () => {

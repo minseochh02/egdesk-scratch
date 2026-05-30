@@ -23,6 +23,10 @@ export interface ProjectInfo {
     initializationDate?: Date;
     initializationStatus?: 'pending' | 'completed' | 'failed';
     repositoryUrl?: string;
+    // New: hosting metadata
+    isHosted?: boolean;
+    lastPushedAt?: Date;
+    pushedVersion?: string;
   };
 }
 
@@ -517,6 +521,9 @@ class ProjectContextService {
           if (parsed.currentProject.metadata?.initializationDate) {
             parsed.currentProject.metadata.initializationDate = new Date(parsed.currentProject.metadata.initializationDate);
           }
+          if (parsed.currentProject.metadata?.lastPushedAt) {
+            parsed.currentProject.metadata.lastPushedAt = new Date(parsed.currentProject.metadata.lastPushedAt);
+          }
         }
         
         parsed.recentProjects = parsed.recentProjects.map((p: any) => ({
@@ -530,6 +537,7 @@ class ProjectContextService {
             hasBackupFolder: p.metadata?.hasBackupFolder || false,
             initializationStatus: p.metadata?.initializationStatus || 'pending',
             initializationDate: p.metadata?.initializationDate ? new Date(p.metadata.initializationDate) : undefined,
+            lastPushedAt: p.metadata?.lastPushedAt ? new Date(p.metadata.lastPushedAt) : undefined,
           },
         }));
         
@@ -544,6 +552,7 @@ class ProjectContextService {
             hasBackupFolder: p.metadata?.hasBackupFolder || false,
             initializationStatus: p.metadata?.initializationStatus || 'pending',
             initializationDate: p.metadata?.initializationDate ? new Date(p.metadata.initializationDate) : undefined,
+            lastPushedAt: p.metadata?.lastPushedAt ? new Date(p.metadata.lastPushedAt) : undefined,
           },
         }));
         
@@ -620,6 +629,21 @@ class ProjectContextService {
       isInitialized: false,
       status: 'pending',
     };
+  }
+
+  /**
+   * Update project hosting status
+   */
+  updateHostingStatus(projectId: string, isHosted: boolean, version?: string): void {
+    const project = this.getProjectById(projectId);
+    if (project) {
+      project.metadata.isHosted = isHosted;
+      if (isHosted) {
+        project.metadata.lastPushedAt = new Date();
+        project.metadata.pushedVersion = version || new Date().toISOString().split('T')[0].replace(/-/g, '') + '-' + Math.random().toString(36).substring(2, 5);
+      }
+      this.notifyListeners();
+    }
   }
 
   /**

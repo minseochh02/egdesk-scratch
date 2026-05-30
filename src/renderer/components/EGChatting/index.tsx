@@ -2122,10 +2122,12 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
               {chatHistory.map((chat) => (
                 <button
                   key={chat.id}
+                  type="button"
                   className={`eg-chatting__history-item${
                     chat.isActive ? ' eg-chatting__history-item--active' : ''
                   }`}
                   onClick={() => setActiveConversationId(chat.id)}
+                  title={chat.title}
                 >
                   <span className="eg-chatting__history-title">{chat.title}</span>
                   <span className="eg-chatting__history-preview">{chat.lastMessagePreview}</span>
@@ -2147,8 +2149,10 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
           {chatTabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               className={`eg-chatting__tab${tab.isActive ? ' eg-chatting__tab--active' : ''}`}
               onClick={() => setActiveConversationId(tab.id)}
+              title={tab.title}
             >
               {tab.isPinned ? (
                 <span className="eg-chatting__tab-pin" aria-hidden="true">
@@ -2170,7 +2174,10 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
         <section className="eg-chatting__chat-window" aria-label="Active chat thread">
           <header className="eg-chatting__chat-header">
             <div className="eg-chatting__chat-title">
-              <span className="eg-chatting__chat-name">
+              <span
+                className="eg-chatting__chat-name"
+                title={activeConversation?.title ?? 'Chat with Gemma'}
+              >
                 {activeConversation?.title ?? 'Chat with Gemma'}
               </span>
               <span className={`eg-chatting__chat-status${ollamaReady ? ' eg-chatting__chat-status--ready' : ''}`}>
@@ -2328,7 +2335,7 @@ Be proactive and helpful in interpreting user intent. If a command is ambiguous,
                   ? 'Type a message to chat with Gemma...'
                   : 'Complete Ollama setup above to start chatting'
               }
-              rows={3}
+              rows={2}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => {

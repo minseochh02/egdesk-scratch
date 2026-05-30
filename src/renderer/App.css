@@ -672,6 +672,11 @@ html {
   max-height: 100%;
 }
 
+.main-content:has(.homepage-editor .ai-chat-section) {
+  padding: 0;
+  overflow: hidden;
+}
+
 /* Fix for components that need scrolling */
 .component-container {
   height: 100%;

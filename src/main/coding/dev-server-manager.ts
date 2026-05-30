@@ -8,6 +8,7 @@ import { getProjectRegistry } from './project-registry';
 import { getStore } from '../storage';
 import { getLocalServerManager } from '../mcp/server-creator/local-server-manager';
 import { startTunnel, getTunnelStatus } from '../mcp/server-creator/tunneling-manager';
+import { CODING_PORTS, getPreferredPort, getPortMode, isDevPortAllowed, isProductionPortAllowed, type ActivePortInfo } from '../../shared/coding-ports';
 
 /**
  * Dynamically load setupNextApiPlugin from the user's project node_modules
@@ -58,7 +59,7 @@ interface ServerInfo {
 
 export class DevServerManager {
   private servers: Map<string, ServerInfo> = new Map();
-  private portRange = { start: 3000, end: 3100 };
+  private pendingStarts: Map<string, Promise<ServerInfo>> = new Map();
   private tunnelId: string | null = null;
   private runtimeInitialized: boolean = false;
 
@@ -393,7 +394,6 @@ export class DevServerManager {
     ipcMain.handle('dev-server:get-all', async () => {
       try {
         const allServers = Array.from(this.servers.entries()).map(([path, info]) => {
-          // Remove non-serializable objects before sending through IPC
           const { process, watcher, rebuildTimer, ...serializableInfo } = info;
           return {
             projectPath: path,
@@ -403,6 +403,16 @@ export class DevServerManager {
         return { success: true, servers: allServers };
       } catch (error: any) {
         console.error('Failed to get all servers:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('dev-server:scan-ports', async () => {
+      try {
+        const ports = this.scanActivePorts();
+        return { success: true, ports };
+      } catch (error: any) {
+        console.error('Failed to scan ports:', error);
         return { success: false, error: error.message };
       }
     });
@@ -654,11 +664,154 @@ export class DevServerManager {
     };
   }
 
-  private async findAvailablePort(): Promise<number> {
-    const usedPorts = Array.from(this.servers.values()).map(s => s.port);
+  /**
+   * List listening ports in the 3000-series (production) and 4000-series (dev) ranges.
+   */
+  private getListeningPortsInRanges(): Array<{ port: number; processName?: string; pid?: number }> {
+    const inRange = (port: number) => getPortMode(port) !== null;
+    const byPort = new Map<number, { port: number; processName?: string; pid?: number }>();
 
-    for (let port = this.portRange.start; port <= this.portRange.end; port++) {
-      if (!usedPorts.includes(port)) {
+    try {
+      if (process.platform === 'win32') {
+        const output = execSync('netstat -ano', { encoding: 'utf-8' });
+        for (const line of output.split('\n')) {
+          if (!line.includes('LISTENING')) continue;
+          const portMatch = line.match(/:(\d+)\s+[^\s]+\s+LISTENING\s+(\d+)/);
+          if (!portMatch) continue;
+          const port = parseInt(portMatch[1], 10);
+          if (!inRange(port)) continue;
+          byPort.set(port, {
+            port,
+            pid: parseInt(portMatch[2], 10),
+            processName: 'unknown',
+          });
+        }
+      } else {
+        const output = execSync('lsof -iTCP -sTCP:LISTEN -P -n', { encoding: 'utf-8' });
+        for (const line of output.split('\n').slice(1)) {
+          if (!line.includes('(LISTEN)')) continue;
+          const portMatch = line.match(/:(\d+)\s+\(LISTEN\)/);
+          if (!portMatch) continue;
+          const port = parseInt(portMatch[1], 10);
+          if (!inRange(port)) continue;
+          const parts = line.trim().split(/\s+/);
+          byPort.set(port, {
+            port,
+            processName: parts[0],
+            pid: Number.parseInt(parts[1], 10) || undefined,
+          });
+        }
+      }
+    } catch {
+      // No listeners or command unavailable
+    }
+
+    return Array.from(byPort.values()).sort((a, b) => a.port - b.port);
+  }
+
+  public scanActivePorts(): ActivePortInfo[] {
+    return this.getListeningPortsInRanges().map(({ port, processName, pid }) => {
+      const mode = getPortMode(port)!;
+      let projectPath: string | undefined;
+      let status: string | undefined;
+
+      for (const [folderPath, serverInfo] of this.servers.entries()) {
+        if (serverInfo.port === port) {
+          projectPath = folderPath;
+          status = serverInfo.status;
+          break;
+        }
+      }
+
+      return {
+        port,
+        mode,
+        projectPath,
+        projectName: projectPath ? path.basename(projectPath) : undefined,
+        processName,
+        pid,
+        status,
+      };
+    });
+  }
+
+  /**
+   * Check if a port is occupied on the system (outside our registry).
+   */
+  private isPortInUse(port: number): boolean {
+    try {
+      if (process.platform === 'win32') {
+        execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { stdio: 'ignore' });
+      } else {
+        execSync(`lsof -iTCP:${port} -sTCP:LISTEN -P -n`, { stdio: 'ignore' });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Free the preferred dev port — kills the OS process and clears stale registry entries.
+   */
+  private async ensureDevPortAvailable(port: number, excludeFolderPath?: string): Promise<void> {
+    if (!this.isPortInUse(port)) {
+      return;
+    }
+
+    console.log(`⚠️ Port ${port} is already in use — attempting to free it for dev server...`);
+
+    for (const [folderPath, serverInfo] of this.servers.entries()) {
+      if (serverInfo.port === port && folderPath !== excludeFolderPath) {
+        console.log(`🧹 Removing stale server registry for ${folderPath} (port ${port})`);
+        if (serverInfo.process) {
+          try {
+            serverInfo.process.kill('SIGTERM');
+          } catch {
+            // Process may already be gone
+          }
+        }
+        this.servers.delete(folderPath);
+      }
+    }
+
+    await this.killProcessOnPort(port);
+  }
+
+  private async findAvailablePort(
+    preferredPort?: number,
+    mode?: 'dev' | 'production',
+    folderPath?: string,
+  ): Promise<number> {
+    const devPort = CODING_PORTS.dev.preferred;
+    const prodPort = CODING_PORTS.production.preferred;
+
+    if (mode === 'dev' && preferredPort === devPort) {
+      await this.ensureDevPortAvailable(devPort, folderPath);
+      if (!this.isPortInUse(devPort)) {
+        console.log(`✅ Port ${devPort} is available for dev server`);
+        return devPort;
+      }
+      console.warn(`⚠️ Port ${devPort} still in use after kill attempt — scanning for another port`);
+    }
+
+    const usedPorts = Array.from(this.servers.entries())
+      .filter(([fp]) => fp !== folderPath)
+      .map(([, serverInfo]) => serverInfo.port);
+
+    if (preferredPort && !usedPorts.includes(preferredPort) && !this.isPortInUse(preferredPort)) {
+      return preferredPort;
+    }
+
+    if (preferredPort && this.isPortInUse(preferredPort)) {
+      console.log(`⚠️ Preferred port ${preferredPort} is already in use on the system.`);
+    }
+
+    const portRange = mode === 'dev' ? CODING_PORTS.dev.range : CODING_PORTS.production.range;
+    for (let port = portRange.start; port <= portRange.end; port++) {
+      const allowed = mode === 'dev' ? isDevPortAllowed(port) : isProductionPortAllowed(port);
+      if (!allowed) continue;
+      if (!usedPorts.includes(port) && !this.isPortInUse(port)) {
         return port;
       }
     }
@@ -1257,7 +1410,8 @@ export class DevServerManager {
           }
         });
 
-        if (output.includes('ready') ||
+        const outputLower = output.toLowerCase();
+      if (outputLower.includes('ready') ||
             output.includes('started') ||
             output.includes('Local:') ||
             output.includes('Accepting connections') ||
@@ -1920,6 +2074,8 @@ const nextConfig = {
       allowedOrigins: [
         'localhost:3000',
         '127.0.0.1:3000',
+        'localhost:4000',
+        '127.0.0.1:4000',
         '*.loca.lt',
         '*.ngrok.io',
         '*.ngrok-free.app',
@@ -2061,9 +2217,9 @@ const getLocalIPs = () => {
         if (hasExperimental) {
           const hasServerActions = content.includes('serverActions:') || content.includes('serverActions :');
           if (hasServerActions) {
-            content = content.replace(/(serverActions\s*:\s*\{)/, `$1\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net'],`);
+            content = content.replace(/(serverActions\s*:\s*\{)/, `$1\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', 'localhost:4000', '127.0.0.1:4000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net'],`);
           } else {
-            content = content.replace(/(experimental\s*:\s*\{)/, `$1\n    serverActions: {\n      bodySizeLimit: '10mb',\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net']\n    },`);
+            content = content.replace(/(experimental\s*:\s*\{)/, `$1\n    serverActions: {\n      bodySizeLimit: '10mb',\n      allowedOrigins: ['localhost:3000', '127.0.0.1:3000', 'localhost:4000', '127.0.0.1:4000', '*.loca.lt', '*.ngrok.io', '*.ngrok-free.app', '*.trycloudflare.com', '*.gitpod.io', '*.tryhook.io', '*.localto.net']\n    },`);
           }
         } else {
           injection += `
@@ -2073,6 +2229,8 @@ const getLocalIPs = () => {
       allowedOrigins: [
         'localhost:3000',
         '127.0.0.1:3000',
+        'localhost:4000',
+        '127.0.0.1:4000',
         '*.loca.lt',
         '*.ngrok.io',
         '*.ngrok-free.app',
@@ -2148,6 +2306,31 @@ const getLocalIPs = () => {
 
 
   public async startServer(folderPath: string, mode?: 'dev' | 'production'): Promise<ServerInfo> {
+    const existing = this.servers.get(folderPath);
+    if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+      console.log(`ℹ️ Server already ${existing.status} for ${path.basename(folderPath)} on port ${existing.port}`);
+      return existing;
+    }
+
+    const pending = this.pendingStarts.get(folderPath);
+    if (pending) {
+      console.log(`ℹ️ Waiting for in-progress server start for ${path.basename(folderPath)}`);
+      return pending;
+    }
+
+    const startPromise = this.doStartServer(folderPath, mode);
+    this.pendingStarts.set(folderPath, startPromise);
+    try {
+      return await startPromise;
+    } catch (error) {
+      this.servers.delete(folderPath);
+      throw error;
+    } finally {
+      this.pendingStarts.delete(folderPath);
+    }
+  }
+
+  private async doStartServer(folderPath: string, mode?: 'dev' | 'production'): Promise<ServerInfo> {
     // Ensure runtime is initialized
     if (!this.runtimeInitialized) {
       await this.initializeRuntime();
@@ -2170,6 +2353,19 @@ const getLocalIPs = () => {
     const projectName = path.basename(folderPath);
 
     console.log(`📦 Starting ${projectName} in ${effectiveMode.toUpperCase()} mode`);
+
+    const preferredPort = getPreferredPort(effectiveMode);
+    this.servers.set(folderPath, {
+      port: preferredPort,
+      url: `http://localhost:${preferredPort}`,
+      status: 'starting',
+      process: null,
+      projectPath: folderPath,
+      mode: effectiveMode,
+      supportsHotReload: true,
+      terminalLogs: [],
+      maxLogLines: 500,
+    });
 
     // Ensure local MCP server is running (required for both dev and production)
     // This allows projects to talk to EGDesk APIs via localhost:8080
@@ -2224,12 +2420,6 @@ const getLocalIPs = () => {
       console.log('ℹ️ Starting in dev mode without tunnel (local development)');
     }
 
-    // Check if server already running
-    const existing = this.servers.get(folderPath);
-    if (existing && existing.status === 'running') {
-      return existing;
-    }
-
     // Check if folder has no package.json - if so, initialize Next.js
     if (!fs.existsSync(path.join(folderPath, 'package.json'))) {
       console.log('📂 No package.json found - setting up Next.js project...');
@@ -2270,7 +2460,7 @@ const getLocalIPs = () => {
     }
 
     // Find available port
-    const port = await this.findAvailablePort();
+    const port = await this.findAvailablePort(preferredPort, effectiveMode, folderPath);
 
     // Determine basePath
     const basePath = this.tunnelId ? `/t/${this.tunnelId}/p/${projectName}` : undefined;
@@ -2339,7 +2529,8 @@ const getLocalIPs = () => {
       });
 
       // Detect when server is ready
-      if (output.includes('ready') ||
+      const outputLower = output.toLowerCase();
+      if (outputLower.includes('ready') ||
           output.includes('started') ||
           output.includes('Local:') ||
           output.includes('Accepting connections') ||
