@@ -9,6 +9,8 @@ import { CODING_PORTS } from '../../shared/coding-ports';
 import { repairAgyHubSummaries } from './agyhub-summaries';
 import {
   EGDesk_CHAT_TITLE,
+  buildEgdeskSeedAgentMessage,
+  buildEgdeskSeedUserMessage,
   cleanupOrphanEgdeskChatStubs,
   registerEgdeskChatHistory,
   repairEgdeskChatHub,
@@ -568,8 +570,8 @@ export async function openAntigravityFolder(
     try {
       writeEgdeskChatConversation(
         egdeskChatCascadeId,
-        `Hello! I just opened "${projectName}" in EGDesk.`,
-        `Got it, I'm ready to help!`,
+        buildEgdeskSeedUserMessage(egdeskChatContext),
+        buildEgdeskSeedAgentMessage(egdeskChatContext),
       );
     } catch (err) {
       console.warn('[open-antigravity] Failed to write conversation db (non-critical):', err);

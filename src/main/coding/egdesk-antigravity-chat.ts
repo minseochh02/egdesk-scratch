@@ -76,7 +76,27 @@ export function isEgdeskChatHubLinked(cascadeId: string, projectId: string): boo
 }
 
 export function buildEgdeskSeedUserMessage(context: EgdeskChatContext): string {
-  return `Hello! I just opened "${context.projectName}" in EGDesk. Just reply "Got it, I'm ready to help!" — no actions needed.`;
+  const modeLabel = context.mode === 'dev' ? 'coding (dev)' : 'hosting (production)';
+  return [
+    `Hello! I just opened "${context.projectName}" in EGDesk.`,
+    '',
+    `Dev server: ${context.url} (port ${context.port}, ${modeLabel})`,
+    'Do not use port 3000 for this project.',
+    '',
+    'For EGDesk user-data and MCP calls, use `egdesk-helpers.ts` in the project root',
+    '(e.g. queryTable, searchTable) — it proxies to http://localhost:8080.',
+    '',
+    'Just reply "Got it, I\'m ready to help!" — no actions needed.',
+  ].join('\n');
+}
+
+export function buildEgdeskSeedAgentMessage(context: EgdeskChatContext): string {
+  return [
+    "Got it, I'm ready to help!",
+    '',
+    `Dev server: ${context.url} (port ${context.port}).`,
+    'I will use `egdesk-helpers.ts` for EGDesk MCP/user-data when needed.',
+  ].join('\n');
 }
 
 function buildEgdeskChatTranscriptLines(context: EgdeskChatContext, createdAt: string): string {
