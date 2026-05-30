@@ -635,7 +635,9 @@ interface SslCertificateAPI {
  */
 interface AuthAPI {
   getSession: () => Promise<{ success: boolean; session: any | null; user: any | null; error?: string }>;
-    signInWithGoogle: (scopes?: string) => Promise<{ success: boolean; error?: string }>;
+    signInWithGoogle: (scopes?: string) => Promise<{
+      session: boolean; success: boolean; error?: string 
+}>;
     signInWithGithub: () => Promise<{ success: boolean; error?: string }>;
     signOut: (userId?: string) => Promise<{ success: boolean; error?: string }>;
   getAllAccounts: () => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
@@ -743,6 +745,10 @@ interface UpdaterAPI {
  * Interface for Finance Hub API.
  */
 interface FinanceHubAPI {
+  getPersistentSpreadsheet(spreadsheetKey: string): unknown;
+  card: any;
+  arduino: any;
+  manualPassword: any;
   openBrowser: (bankId: string, proxyUrl?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   login: (bankId: string, credentials: any, proxyUrl?: string) => Promise<{ success: boolean; error?: string; [key: string]: any }>;
   getAccounts: (bankId: string, credentials?: any, proxyUrl?: string) => Promise<{ success: boolean; accounts?: any[]; error?: string }>;
@@ -860,6 +866,8 @@ interface FinanceHubAPI {
  * Interface for Finance Hub Database API.
  */
 interface FinanceHubDbAPI {
+  updateAccountStatus(bankId: string, accountNumber: string, arg2: boolean): unknown;
+  deleteAccount(bankId: string, accountNumber: string): unknown;
   getAllBanks: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAllAccounts: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
   getAccountsByBank: (bankId: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
@@ -925,6 +933,8 @@ interface DevServerAPI {
  * Main Electron API handler that exposes functionality to the renderer process
  */
 export interface IElectronAPI {
+  sheets: any;
+  hometax: any;
   platform: string;
   ipcRenderer: IpcRendererAPI;
   versions: VersionsAPI;

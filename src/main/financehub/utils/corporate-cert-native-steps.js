@@ -11,6 +11,7 @@
  */
 
 const { sendEnterKeyViaSendKeys, getFocusedNativeElementName, dismissNativeDeletionConfirmDialog } = require('./windows-uia-native');
+const { focusPlaywrightPage } = require('../../shared/browser');
 
 /**
  * @param {import('./arduino-hid-bank').ArduinoHidBankSession} hid
@@ -23,6 +24,8 @@ async function runNativeCertArduinoSteps(hid, page, certificatePassword, steps, 
   const log = opts.log || (() => {});
   const warn = opts.warn || (() => {});
   const fallbackEnv = opts.sendkeysEnterFallbackEnv || 'CORP_CERT_SENDKEYS_ENTER_FALLBACK';
+
+  await focusPlaywrightPage(page, warn);
 
   for (const step of steps) {
     if (step.waitMs != null && step.waitMs > 0) {

@@ -7,6 +7,7 @@ const { chromium } = require('playwright-core');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { focusPlaywrightPage: focusPlaywrightPageImpl } = require('../../shared/browser');
 
 // Import keyboard analysis utilities
 const { analyzeKeyboardAndType } = require('../utils/ai-keyboard-analyzer');
@@ -226,14 +227,7 @@ class BaseBankAutomator {
    * focused another app or the session sat on a non–거래내역 screen.
    */
   async focusPlaywrightPage() {
-    if (!this.page || (typeof this.page.isClosed === 'function' && this.page.isClosed())) return;
-    try {
-      if (typeof this.page.bringToFront === 'function') {
-        await this.page.bringToFront();
-      }
-    } catch (e) {
-      this.warn('focusPlaywrightPage failed:', e?.message || e);
-    }
+    await focusPlaywrightPageImpl(this.page, (...args) => this.warn(...args));
   }
 
   /** Prefer context over page — frames / embedded flows often emit download on the context. */

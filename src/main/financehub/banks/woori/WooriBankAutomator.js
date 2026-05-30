@@ -244,6 +244,7 @@ class WooriBankAutomator extends BaseBankAutomator {
 
       await this.page.goto(this.config.xpaths.entryUrl, { waitUntil: 'domcontentloaded' });
       await this.page.waitForTimeout(2839);
+      await this.focusPlaywrightPage();
 
       await this._wooriClickLogin();
       await this.page.waitForTimeout(2044);

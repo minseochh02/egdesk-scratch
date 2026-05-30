@@ -480,13 +480,11 @@ const OpenClawPage: React.FC = () => {
         addLog('Could not detect email. Using default username.');
       }
 
-      // Detect phone number for Telegram setup
-      addLog('Detecting phone number from Google Account…');
-      const phoneResult = await (window as any).electron.debug.googleProfile.getPhone(PROFILE_NAME);
-      if (phoneResult?.phone) {
-        setGooglePhone(phoneResult.phone);
-        googlePhoneRef.current = phoneResult.phone;
-        addLog(`Detected phone: ${phoneResult.phone}`);
+      // Phone detected during login (same Chrome session — no second browser launch)
+      if (result.phone) {
+        setGooglePhone(result.phone);
+        googlePhoneRef.current = result.phone;
+        addLog(`Detected phone: ${result.phone}`);
       } else {
         addLog('Phone number not found — Telegram step will be skipped.');
       }
@@ -991,6 +989,7 @@ const OpenClawPage: React.FC = () => {
               'navigating':      { icon: '🌐', color: '#aaa',    bg: '#1a1a1a', border: '#444' },
               'filling-email':   { icon: '✉️',  color: '#93c5fd', bg: '#0c1a2e', border: '#3b82f6' },
               'filling-password':{ icon: '🔑', color: '#93c5fd', bg: '#0c1a2e', border: '#3b82f6' },
+              'detecting-phone': { icon: '📱', color: '#93c5fd', bg: '#0c1a2e', border: '#3b82f6' },
               'waiting-2fa':     { icon: '📱', color: '#fbbf24', bg: '#1c1200', border: '#d97706' },
               '2fa-approved':    { icon: '✅', color: '#4ade80', bg: '#0d2a1a', border: '#16a34a' },
               'profile-linked':  { icon: '✅', color: '#4caf50', bg: '#0d2a1a', border: '#4caf50' },

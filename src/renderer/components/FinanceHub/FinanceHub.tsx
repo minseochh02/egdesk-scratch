@@ -8,18 +8,10 @@ import './FinanceHub.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSync,
-  faTimes,
-  faBank,
   faChartLine,
-  faPlus,
-  faWallet,
-  faLink,
   faUnlink,
   faExchangeAlt,
   faClock,
-  faCheckCircle,
-  faTimesCircle,
-  faExclamationTriangle,
   faSpinner,
   faTrash,
   faFileInvoice,
@@ -800,7 +792,12 @@ const FinanceHub: React.FC = () => {
         }
       }
 
-      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword, currentCertIndex, cred.certificateXPath);
+      const done = await window.electron.financeHub.corporateCertComplete(bankId, cred.certificatePassword, currentCertIndex, cred.certificateXPath, {
+        name: cred.certificateName,
+        issuer: cred.certificateIssuer,
+        notAfter: cred.certificateNotAfter,
+        folder: cred.certificateFolder,
+      });
       if (!done.success || !done.isLoggedIn) {
         await window.electron.financeHub.corporateCertCancel(bankId);
         alert(`기업 뱅킹 재연결 실패: ${done.error || '알 수 없는 오류'}`);
@@ -2785,7 +2782,13 @@ const FinanceHub: React.FC = () => {
             bankId,
             credentials.certificatePassword || '',
             selectedBankCertificate?.certificateIndex,
-            selectedBankCertificate?.xpath
+            selectedBankCertificate?.xpath,
+            {
+              name: selectedBankCertificate?.name || selectedBankCertificate?.소유자명,
+              issuer: selectedBankCertificate?.issuer || selectedBankCertificate?.발급기관,
+              notAfter: selectedBankCertificate?.notAfter || selectedBankCertificate?.만료일,
+              folder: selectedBankCertificate?.folder,
+            }
           );
           if (result.success && result.isLoggedIn) {
             setCorporateNativeCertSessionActive(false);

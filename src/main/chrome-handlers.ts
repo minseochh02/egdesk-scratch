@@ -4199,6 +4199,45 @@ test('recorded test', async ({ page }) => {
     }
   }
 
+  /** Extract the first phone-shaped string from a block of text. */
+  function firstPhoneFromRaw(raw: string | null): string | null {
+    if (!raw) return null;
+    for (const line of raw.split(/\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/\+?[\d][\d ()\-. ]{5,}\d/);
+      if (match && match[0].replace(/\D/g, '').length >= 7) return match[0].trim();
+    }
+    return null;
+  }
+
+  /** Read the phone number from myaccount.google.com/personal-info (page must already be there). */
+  async function extractGooglePhoneFromPage(page: import('playwright-core').Page): Promise<string | null> {
+    const phoneAnchor = page.locator('a[href*="phone"]').first();
+    const anchorCount = await phoneAnchor.count();
+    if (anchorCount === 0) return null;
+
+    const candidates = await phoneAnchor.evaluate((el) => {
+      const results: string[] = [];
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node: Text | null;
+      while ((node = walker.nextNode() as Text | null)) {
+        const text = (node.textContent ?? '').trim();
+        if (text.replace(/\D/g, '').length >= 7) results.push(text);
+      }
+      return results;
+    });
+    return firstPhoneFromRaw(candidates[0] ?? null);
+  }
+
+  function saveGooglePhoneToStore(profileName: string, phone: string): void {
+    const store = getStore();
+    const profiles = store.get('googleProfiles') || {};
+    const existing = profiles[profileName] || {};
+    profiles[profileName] = { ...existing, googlePhone: phone };
+    store.set('googleProfiles', profiles);
+  }
+
   /**
    * Helper: Extract an 8-digit verification code from Gmail.
    */
@@ -4646,6 +4685,19 @@ test('recorded test', async ({ page }) => {
 
       await page.waitForTimeout(2_000);
 
+      // ── 7b. Detect phone from Google Account (same session — no second browser launch) ──
+      glStatus('detecting-phone', 'Detecting phone number from Google Account…');
+      let detectedPhone: string | null = null;
+      try {
+        await page.goto('https://myaccount.google.com/personal-info', {
+          waitUntil: 'networkidle', timeout: 30_000,
+        });
+        await page.waitForTimeout(4000);
+        detectedPhone = await extractGooglePhoneFromPage(page);
+      } catch (e: any) {
+        console.warn('[Google Login] phone detection failed (non-fatal):', e?.message || e);
+      }
+
       // ── 8. Save metadata to Electron Store ──
       const store = getStore();
       const profiles = store.get('googleProfiles') || {};
@@ -4656,6 +4708,7 @@ test('recorded test', async ({ page }) => {
         profileName,
         profileDir,
         googleEmail: email,
+        ...(detectedPhone && { googlePhone: detectedPhone }),
         createdAt: existing.createdAt ?? new Date().toISOString(),
         lastUsedAt: new Date().toISOString(),
       };
@@ -4665,7 +4718,7 @@ test('recorded test', async ({ page }) => {
       await ctx.close().catch(() => {});
 
       glStatus('logged-in', `Logged in as ${email}`);
-      return { success: true, profileDir, detectedEmail: email };
+      return { success: true, profileDir, detectedEmail: email, phone: detectedPhone };
     } catch (error) {
       activeLoginPage = null;
       console.error('[Google Profile] login error:', error);
@@ -4765,6 +4818,7 @@ test('recorded test', async ({ page }) => {
   /**
    * Detect the phone number saved in a Google profile by navigating to
    * myaccount.google.com/personal-info and extracting the Phone section text.
+   * Standalone/debug use — the main wizard reads phone during google-profile:login.
    */
   ipcMain.handle('google-profile:get-phone', async (_event, { profileName }: { profileName: string }) => {
     try {
@@ -4789,52 +4843,9 @@ test('recorded test', async ({ page }) => {
         await page.goto('https://myaccount.google.com/personal-info', {
           waitUntil: 'networkidle', timeout: 30_000,
         });
-        // Extra wait for dynamic content to render after network idle
         await page.waitForTimeout(4000);
-
-        // Helper: extract just the first phone number from a block of text
-        const firstPhone = (raw: string | null): string | null => {
-          if (!raw) return null;
-          // Process line by line so two numbers on separate lines are never merged
-          for (const line of raw.split(/\n/)) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            // Match phone pattern — \- is escaped so hyphen is literal, not a range indicator
-            const match = trimmed.match(/\+?[\d][\d ()\-. ]{5,}\d/);
-            if (match && match[0].replace(/\D/g, '').length >= 7) return match[0].trim();
-          }
-          return null;
-        };
-
-        // Walk all text nodes in the DOM — finds phone numbers regardless of obfuscated class names.
-        // Scoped to the phone anchor so we don't accidentally pick up unrelated numbers on the page.
-        const phoneAnchor = page.locator('a[href*="phone"]').first();
-        // Use count() instead of isVisible() — anchor may exist but not be in viewport
-        const anchorCount = await phoneAnchor.count();
-
-        if (anchorCount > 0) {
-          // Walk all text nodes inside the phone anchor, return those with >= 7 digits
-          const candidates = await phoneAnchor.evaluate((el) => {
-            const results: string[] = [];
-            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-            let node: Text | null;
-            while ((node = walker.nextNode() as Text | null)) {
-              const text = (node.textContent ?? '').trim();
-              if (text.replace(/\D/g, '').length >= 7) results.push(text);
-            }
-            return results;
-          });
-          // candidates[0] is the first phone-shaped text node in the anchor
-          phone = firstPhone(candidates[0] ?? null);
-        }
-
-        if (phone) {
-          const store = getStore();
-          const profiles = store.get('googleProfiles') || {};
-          const existing = profiles[profileName] || {};
-          profiles[profileName] = { ...existing, googlePhone: phone };
-          store.set('googleProfiles', profiles);
-        }
+        phone = await extractGooglePhoneFromPage(page);
+        if (phone) saveGooglePhoneToStore(profileName, phone);
       } finally {
         await context.close();
       }

@@ -612,6 +612,7 @@ const createWindow = async () => {
           console.log('[FINANCE-HUB] Navigating to:', navigationUrl);
           await automator.page.goto(navigationUrl, { waitUntil: 'domcontentloaded' });
           await automator.page.waitForTimeout(2000);
+          await automator.focusPlaywrightPage();
           
           // Handle security popup if any
           if (automator.handleSecurityPopup) {

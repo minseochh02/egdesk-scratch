@@ -1,13 +1,12 @@
 /**
  * Shinhan cert dialog UIA probe.
  *
- * Uses ShinhanBankAutomator.prepareCorporateCertificateLogin() — the exact
- * same code path the real app uses — to open bizbank.shinhan.com and trigger
- * the native cert dialog. Once the cert window is detected, dumps and analyses
- * the full UIA element tree to determine whether keyboard cert-list navigation
- * is possible with INIPay.
+ * Opens bizbank.shinhan.com the same way shinhan.spec.js does (raw Playwright,
+ * temp Chrome profile, same args), triggers the native INIPay cert dialog, then
+ * dumps and analyses the full UIA element tree to determine whether keyboard
+ * cert-list navigation is possible.
  *
- * No Arduino, no password needed.
+ * No Arduino, no password, no Electron modules.
  *
  * Usage:
  *   node scripts/debug/shinhan-cert-probe.js
@@ -15,9 +14,11 @@
 
 'use strict';
 
+const { chromium } = require('playwright-core');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { ShinhanBankAutomator } = require('../../src/main/financehub/banks/shinhan/ShinhanBankAutomator');
 
 if (process.platform !== 'win32') {
   console.error('This script requires Windows (UIA is Windows-only).');
@@ -91,7 +92,48 @@ function dumpDescendants(windowClass) {
   }
 }
 
-// ── analysis & verdict ────────────────────────────────────────────────────────
+// ── Wait for cert window ──────────────────────────────────────────────────────
+
+async function waitForCertWindow(page, timeoutMs = 30000) {
+  const CLASSES = ['INICertManUI', 'QWidget'];
+  const deadline = Date.now() + timeoutMs;
+  let i = 0;
+
+  while (Date.now() < deadline) {
+    for (const cls of CLASSES) {
+      const out = psSafe(
+        UIA_HEADER +
+        `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, '${cls}'); ` +
+        '$w = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c); ' +
+        'if ($w) { "$($w.Current.ClassName)|$($w.Current.Name)" } else { "" }'
+      );
+      if (out) {
+        const [matchedClass, ...rest] = out.split('|');
+        return { ok: true, matchedClass, windowName: rest.join('|') };
+      }
+    }
+
+    // Also try title-based detection
+    const titleOut = psSafe(
+      UIA_HEADER +
+      '$children = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition); ' +
+      "$match = $children | Where-Object { $_.Current.Name -match '인증서' } | Select-Object -First 1; " +
+      'if ($match) { "$($match.Current.ClassName)|$($match.Current.Name)" } else { "" }'
+    );
+    if (titleOut) {
+      const [matchedClass, ...rest] = titleOut.split('|');
+      return { ok: true, matchedClass, windowName: rest.join('|') };
+    }
+
+    await page.waitForTimeout(1000);
+    i++;
+    if (i % 5 === 0) console.log(`  Still waiting for cert window... (${i}s)`);
+  }
+
+  return { ok: false, error: 'Cert window not detected within timeout' };
+}
+
+// ── Analysis & verdict ────────────────────────────────────────────────────────
 
 function analyse(windowClass, windowName, elems) {
   console.log(`\n${'='.repeat(70)}`);
@@ -102,8 +144,8 @@ function analyse(windowClass, windowName, elems) {
   console.log();
 
   if (elems.length === 0) {
-    console.log('  ❌ No elements found — UIA returned an empty tree.');
-    console.log('     INIPay may be using a fully custom-drawn window that blocks UIA introspection.\n');
+    console.log('  NO elements found — UIA returned an empty tree.');
+    console.log('     INIPay may be using a fully custom-drawn window that blocks UIA.\n');
     return;
   }
 
@@ -167,69 +209,117 @@ function analyse(windowClass, windowName, elems) {
   console.log('─'.repeat(50));
 
   if (!hasList && listItems.length === 0) {
-    console.log('  ❌ NO cert list visible to UIA.');
+    console.log('  NO cert list visible to UIA.');
     console.log('     INIPay uses a custom-drawn control UIA cannot enumerate.');
     console.log('     Keyboard DOWN arrow is blind — cannot confirm cert selection from Node.js.');
-    console.log('     → Index-based cert selection is NOT reliably possible via key navigation.');
+    console.log('     → Index-based cert selection is NOT reliably verifiable via UIA.');
   } else if (hasList && !listHasSelPat) {
-    console.log('  ⚠️  Cert list IS in the UIA tree but has NO SelectionPattern.');
-    console.log('     We can see the list, but cannot read or drive selection from Node.js.');
+    console.log('  Cert list IS in the UIA tree but has NO SelectionPattern.');
+    console.log('     We can see the list, but cannot read/drive selection from Node.js.');
     console.log('     DOWN arrow might move visual focus — but we cannot confirm it.');
   } else if (hasList && listHasSelPat && itemsHasSIP) {
-    console.log('  ✅ Cert list is fully UIA-navigable (SelectionPattern + SelectionItemPattern).');
+    console.log('  Cert list is fully UIA-navigable (SelectionPattern + SelectionItemPattern).');
     console.log('     DOWN arrow works AND we can confirm which cert is selected from Node.js.');
     console.log(`     Cert entries: ${listItems.length}`);
   } else {
-    console.log('  ⚠️  Partial UIA support — see Analysis section for details.');
+    console.log('  Partial UIA support — see Analysis section for details.');
   }
   console.log();
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 (async () => {
-  const automator = new ShinhanBankAutomator({
-    // No arduinoPort needed — we stop before password entry
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));
+
+  const context = await chromium.launchPersistentContext(profileDir, {
+    headless: false,
+    channel: 'chrome',
+    viewport: null,
+    permissions: ['clipboard-read', 'clipboard-write'],
+    acceptDownloads: true,
+    args: [
+      '--start-maximized',
+      '--no-default-browser-check',
+      '--disable-blink-features=AutomationControlled',
+      '--no-first-run',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--allow-running-insecure-content',
+    ],
+  });
+
+  const page = context.pages()[0] || await context.newPage();
+
+  page.on('dialog', async (dialog) => {
+    try { await dialog.accept(); } catch (e) {}
   });
 
   process.on('SIGINT', async () => {
     console.log('\n[SIGINT] Cleaning up...');
-    try { await automator.cleanup(false); } catch (e) {}
+    try { await context.close(); } catch (e) {}
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
     process.exit(0);
   });
 
   console.log('='.repeat(70));
-  console.log('  Shinhan cert dialog probe (via ShinhanBankAutomator)');
+  console.log('  Shinhan cert dialog probe');
   console.log('='.repeat(70));
   console.log();
 
-  // Phase 1: open browser, navigate, trigger cert dialog — same as real app
-  console.log('[1] Running prepareCorporateCertificateLogin...');
-  const prep = await automator.prepareCorporateCertificateLogin();
+  // Step 1: Navigate
+  console.log('[1] Navigating to bizbank.shinhan.com...');
+  await page.goto('https://bizbank.shinhan.com/main.html', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  console.log('[1] ✓ Page loaded.');
 
-  if (!prep.success) {
-    console.error(`\n[1] FAIL: ${prep.error}`);
-    try { await automator.cleanup(false); } catch (e) {}
+  // Step 2: Close popup
+  console.log('[2] Closing popup if present...');
+  try {
+    await page.locator('[id="mf_divRPPop99_1775110936087_wframe_btn_closePopIco"]').click({ timeout: 3000 });
+    console.log('[2] ✓ Popup closed.');
+  } catch (e) {
+    try {
+      await page.locator('input[value="팝업닫기"]').first().click({ timeout: 2000 });
+      console.log('[2] ✓ Popup closed (fallback).');
+    } catch (e2) {
+      console.log('[2] No popup found, continuing.');
+    }
+  }
+  await page.waitForTimeout(1500);
+
+  // Step 3: Click cert login button
+  console.log('[3] Clicking 공동인증서 로그인...');
+  try {
+    await page.locator('[id="mf_wfm_main_btn_goCert"]').click({ timeout: 10000 });
+  } catch (e) {
+    await page.locator('a:has-text("공동인증서 로그인")').first().click({ timeout: 10000 });
+  }
+  console.log('[3] ✓ Clicked. Waiting for INIPay cert window...');
+
+  // Step 4: Wait for cert window
+  const uia = await waitForCertWindow(page, 30000);
+  if (!uia.ok) {
+    console.error(`\n[4] FAIL: ${uia.error}`);
+    await context.close();
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
     process.exit(1);
   }
-
-  console.log(`[1] ✓ Cert window detected.`);
-  console.log(`      Phase : ${prep.phase}`);
-  console.log(`      Class : ${prep.certWindowClass}`);
-  console.log(`      Title : ${prep.certWindowName}`);
+  console.log(`[4] ✓ Cert window detected.`);
+  console.log(`      Class : ${uia.matchedClass}`);
+  console.log(`      Title : ${uia.windowName}`);
 
   // Give the dialog a moment to finish rendering
-  await new Promise((r) => setTimeout(r, 1500));
+  await page.waitForTimeout(1500);
 
-  // Probe: dump UIA element tree of the cert window
-  console.log('\n[2] Dumping UIA element tree...');
-  const elems = dumpDescendants(prep.certWindowClass);
-  analyse(prep.certWindowClass, prep.certWindowName, elems);
+  // Step 5: Dump and analyse UIA element tree
+  console.log('\n[5] Dumping UIA element tree...');
+  const elems = dumpDescendants(uia.matchedClass);
+  analyse(uia.matchedClass, uia.windowName, elems);
 
   console.log('[Done] Cert dialog is still open — close it manually when finished.');
   console.log('       Press Ctrl+C to quit and close the browser.\n');
 
-  // Keep process alive until user exits
   await new Promise(() => {});
 })().catch((e) => {
   console.error('Fatal:', e.message);

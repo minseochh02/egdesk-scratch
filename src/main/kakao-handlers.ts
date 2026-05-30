@@ -2,6 +2,7 @@ import { ipcMain, app } from 'electron';
 import { getStore } from './storage';
 import * as path from 'path';
 import * as fs from 'fs';
+import { focusPlaywrightPage } from './shared/browser/focus-page';
 
 function getDefaultProfileImagePath(): string {
   // In production: process.resourcesPath/assets/icons/512x512.png
@@ -255,6 +256,7 @@ async function createKakaoChannel(
 ): Promise<{ success: true; searchId: string; channelUrl: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
+  await focusPlaywrightPage(page);
 
   try {
     // 1. Login Phase — always go through login URL (resolves instantly if already logged in)
@@ -529,6 +531,7 @@ async function createKakaoBot(
 ): Promise<{ success: true; botName: string; message?: string } | { success: false; error: string }> {
   const context = await launchBrowser(profileDir);
   const page = context.pages()[0];
+  await focusPlaywrightPage(page);
 
   // Capture and log any browser alerts/dialogs
   page.on('dialog', async (dialog: any) => {

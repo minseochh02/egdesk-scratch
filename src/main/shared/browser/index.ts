@@ -76,6 +76,9 @@ export {
   applyMinimalAntiDetection,
 } from './anti-detection';
 
+// Page focus
+export { focusPlaywrightPage } from './focus-page';
+
 // Cleanup Utilities
 export {
   createCleanupHandler,

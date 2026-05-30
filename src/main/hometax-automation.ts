@@ -6,6 +6,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { focusPlaywrightPage } from './shared/browser/focus-page';
 
 interface HometaxCredentials {
   certificatePassword: string;
@@ -121,6 +122,7 @@ export async function fetchCertificates(): Promise<{ success: boolean; certifica
         }
       }
     }
+    await focusPlaywrightPage(page);
 
     // Handle initial popup that appears on page load
     const initialPopup = await initialPopupPromise;
