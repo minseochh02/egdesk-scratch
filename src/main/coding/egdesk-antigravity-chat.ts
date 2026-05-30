@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import Database from 'better-sqlite3';
 import {
   findCascadeIdsForProject,
   findHubEntryForCascade,
@@ -13,12 +14,14 @@ import {
 } from './agyhub-summaries';
 import {
   addTrackedWorkspace,
+  startCascade,
   waitForLanguageServerReady,
   type LanguageServerEndpoint,
 } from './antigravity-language-server';
 import {
   clearEgdeskChatCascadeId,
   getEgdeskChatCascadeId,
+  isAntigravityRunning,
   saveEgdeskChatCascadeId,
 } from './antigravity-session';
 
@@ -73,20 +76,13 @@ export function isEgdeskChatHubLinked(cascadeId: string, projectId: string): boo
 }
 
 export function buildEgdeskSeedUserMessage(context: EgdeskChatContext): string {
-  const modeLabel = context.mode === 'dev' ? 'coding (dev)' : 'hosting (production)';
-  return [
-    `[EGDesk] Opened "${context.projectName}" from EGDesk.`,
-    '',
-    `Dev server: ${context.url} (port ${context.port}, ${modeLabel})`,
-    'EGDesk MCP/API: http://localhost:8080',
-    '',
-    'Do not use port 3000. See AGENTS.md and .agents/rules/egdesk-dev-context.md.',
-  ].join('\n');
+  return `Hello! I just opened "${context.projectName}" in EGDesk. Just reply "Got it, I'm ready to help!" — no actions needed.`;
 }
 
 function buildEgdeskChatTranscriptLines(context: EgdeskChatContext, createdAt: string): string {
-  const modeLabel = context.mode === 'dev' ? 'coding (dev)' : 'hosting (production)';
   const userRequest = buildEgdeskSeedUserMessage(context);
+  // Only write the user seed message — the real AI response comes via SendUserCascadeMessage
+  // after Antigravity relaunches. Keeping this minimal avoids a stale/fake model reply.
   const lines = [
     {
       step_index: 0,
@@ -107,22 +103,6 @@ function buildEgdeskChatTranscriptLines(context: EgdeskChatContext, createdAt: s
       type: 'CONVERSATION_HISTORY',
       status: 'DONE',
       created_at: createdAt,
-    },
-    {
-      step_index: 2,
-      source: 'MODEL',
-      type: 'PLANNER_RESPONSE',
-      status: 'DONE',
-      created_at: createdAt,
-      content: [
-        `EGDesk context loaded for **${context.projectName}**.`,
-        '',
-        `- **Dev server:** ${context.url} (port **${context.port}**, ${modeLabel})`,
-        '- **EGDesk MCP/API:** http://localhost:8080',
-        '- **Do not assume port 3000** — use the port above for dev commands and previews.',
-        '',
-        'See `AGENTS.md` and `.agents/rules/egdesk-dev-context.md` for full details.',
-      ].join('\n'),
     },
   ];
   return `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`;
@@ -152,12 +132,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Write hub + transcript locally. Do not use StartCascade — LS overwrites title/project link. */
-function insertEgdeskChatHistoryLocally(context: EgdeskChatContext): string {
-  const cascadeId = randomUUID();
-  writeEgdeskChatHistory(context, cascadeId);
-  refreshEgdeskChatHub(context, cascadeId);
-  return cascadeId;
+/**
+ * Register the cascade with the running LS via StartCascade so the LS creates its
+ * trajectory state on disk. The new LS after relaunch will find it and serve the
+ * conversation correctly. Only attempts LS registration if Antigravity is already
+ * running — avoids a 20 s timeout on cold start.
+ *
+ * NOTE: do NOT call SendUserCascadeMessage after this — the LS rewrites the hub
+ * entry during agent processing and strips the custom project link (field 17.18).
+ */
+async function registerCascadeWithLS(
+  context: EgdeskChatContext,
+  endpoint?: LanguageServerEndpoint,
+): Promise<{ cascadeId: string; lsRegistered: boolean }> {
+  if (!endpoint && !isAntigravityRunning()) {
+    // LS is not up — fall back to a local UUID.  The thread will appear in the
+    // sidebar (brain transcript exists) but won't load in the UI until a fresh
+    // Antigravity session creates the trajectory on first user interaction.
+    console.log('[egdesk-chat] Antigravity not running — using local cascade id');
+    return { cascadeId: randomUUID(), lsRegistered: false };
+  }
+  try {
+    const ls = endpoint ?? (await waitForLanguageServerReady(context.projectId, { timeoutMs: 10_000 }));
+    await addTrackedWorkspace(ls, context.folderUri);
+    const { cascadeId } = await startCascade(ls, {
+      projectId: context.projectId,
+      workspaceUris: [context.folderUri],
+    });
+    console.log(`[egdesk-chat] LS-registered cascade=${cascadeId}`);
+    return { cascadeId, lsRegistered: true };
+  } catch (error) {
+    console.warn('[egdesk-chat] LS unavailable, using local cascade id:', error);
+    return { cascadeId: randomUUID(), lsRegistered: false };
+  }
 }
 
 /** Re-apply hub row until project link + title stick (Antigravity may reload hub asynchronously). */
@@ -199,14 +206,18 @@ export async function registerEgdeskChatHistory(
 ): Promise<EgdeskChatRegistrationResult> {
   cleanupOrphanEgdeskChatStubs(context.projectId);
 
-  const cascadeId = insertEgdeskChatHistoryLocally(context);
+  // Register with the running LS so it persists a trajectory to disk.
+  // After Antigravity quits and relaunches, the new LS finds the trajectory and
+  // serves the conversation correctly. We do NOT send a cascade message here —
+  // SendUserCascadeMessage causes the LS to rewrite the hub entry and strips the
+  // project link (field 17.18), making the thread appear under "all conversations"
+  // instead of the project.
+  const { cascadeId } = await registerCascadeWithLS(context, endpoint);
 
-  try {
-    const ls = endpoint ?? (await waitForLanguageServerReady(context.projectId, { timeoutMs: 20_000 }));
-    await addTrackedWorkspace(ls, context.folderUri);
-  } catch (error) {
-    console.warn('[egdesk-chat] Skipped LS workspace registration:', error);
-  }
+  // Write our hub entry on top of whatever StartCascade wrote — this restores the
+  // correct egdesk-chat title and project link that StartCascade strips.
+  writeEgdeskChatHistory(context, cascadeId);
+  refreshEgdeskChatHub(context, cascadeId);
 
   const hubLinked = await repairEgdeskChatHub(context, cascadeId);
   saveEgdeskChatCascadeId(context.projectId, cascadeId, context.folderPath);
@@ -252,4 +263,124 @@ export function conversationExists(cascadeId: string): boolean {
 /** @deprecated */
 export function isHealthyEgdeskConversation(cascadeId: string): boolean {
   return hasEgdeskChatHistory(cascadeId);
+}
+
+// ---------------------------------------------------------------------------
+// Protobuf helpers (minimal subset for SQLite step_payload encoding)
+// ---------------------------------------------------------------------------
+
+function pbVarint(value: number): Buffer {
+  const bytes: number[] = [];
+  let v = value >>> 0;
+  while (v >= 0x80) {
+    bytes.push((v & 0x7f) | 0x80);
+    v >>>= 7;
+  }
+  bytes.push(v);
+  return Buffer.from(bytes);
+}
+
+function pbFieldVarint(field: number, value: number): Buffer {
+  return Buffer.concat([pbVarint((field << 3) | 0), pbVarint(value)]);
+}
+
+function pbFieldBytes(field: number, value: Buffer): Buffer {
+  return Buffer.concat([pbVarint((field << 3) | 2), pbVarint(value.length), value]);
+}
+
+function buildUserInputPayload(userMessage: string): Buffer {
+  const msgBuf = Buffer.from(userMessage, 'utf-8');
+  const content = Buffer.concat([
+    pbFieldBytes(2, msgBuf),
+    pbFieldBytes(3, pbFieldBytes(1, msgBuf)),
+  ]);
+  return Buffer.concat([
+    pbFieldVarint(1, 14),
+    pbFieldVarint(4, 3),
+    pbFieldBytes(19, content),
+  ]);
+}
+
+function buildModelResponsePayload(agentMessage: string): Buffer {
+  const msgBuf = Buffer.from(agentMessage, 'utf-8');
+  const content = Buffer.concat([
+    pbFieldBytes(1, msgBuf),
+    pbFieldBytes(8, msgBuf),
+    pbFieldVarint(12, 2),
+  ]);
+  return Buffer.concat([
+    pbFieldVarint(1, 15),
+    pbFieldVarint(4, 3),
+    pbFieldBytes(20, content),
+  ]);
+}
+
+/**
+ * Write a fake two-turn conversation (user + agent) directly into the
+ * Antigravity SQLite conversation database so the thread loads immediately
+ * without triggering any AI agent execution.
+ */
+export function writeEgdeskChatConversation(
+  cascadeId: string,
+  userMessage: string,
+  agentMessage: string,
+): void {
+  const conversationsDir = path.join(os.homedir(), '.gemini', 'antigravity', 'conversations');
+  fs.mkdirSync(conversationsDir, { recursive: true });
+  const dbPath = path.join(conversationsDir, `${cascadeId}.db`);
+
+  const db = new Database(dbPath);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS trajectory_meta (
+        trajectory_id text,
+        cascade_id text,
+        trajectory_type integer,
+        source integer,
+        PRIMARY KEY (trajectory_id)
+      );
+      CREATE TABLE IF NOT EXISTS steps (
+        idx integer,
+        step_type integer NOT NULL DEFAULT 0,
+        status integer NOT NULL DEFAULT 0,
+        has_subtrajectory numeric NOT NULL DEFAULT false,
+        metadata blob,
+        error_details blob,
+        permissions blob,
+        task_details blob,
+        render_info blob,
+        step_payload blob,
+        step_format integer NOT NULL DEFAULT 0,
+        PRIMARY KEY (idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(status);
+      CREATE INDEX IF NOT EXISTS idx_steps_step_type ON steps(step_type);
+      CREATE TABLE IF NOT EXISTS gen_metadata (
+        idx integer, data blob, size integer NOT NULL DEFAULT 0, PRIMARY KEY (idx)
+      );
+      CREATE TABLE IF NOT EXISTS executor_metadata (idx integer, data blob, PRIMARY KEY (idx));
+      CREATE TABLE IF NOT EXISTS parent_references (idx integer, data blob, PRIMARY KEY (idx));
+      CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (
+        id text DEFAULT "main", data blob, PRIMARY KEY (id)
+      );
+      CREATE TABLE IF NOT EXISTS battle_mode_infos (idx integer, data blob, PRIMARY KEY (idx));
+    `);
+
+    const trajectoryId = randomUUID();
+    db.prepare(
+      'INSERT OR REPLACE INTO trajectory_meta (trajectory_id, cascade_id, trajectory_type, source) VALUES (?, ?, ?, ?)',
+    ).run(trajectoryId, cascadeId, 4, 1);
+
+    db.prepare(
+      'INSERT OR REPLACE INTO steps (idx, step_type, status, has_subtrajectory, step_payload, step_format) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(0, 14, 3, 0, buildUserInputPayload(userMessage), 0);
+
+    db.prepare(
+      'INSERT OR REPLACE INTO steps (idx, step_type, status, has_subtrajectory, step_payload, step_format) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(1, 15, 3, 0, buildModelResponsePayload(agentMessage), 0);
+
+    console.log(`[egdesk-chat] Wrote fake conversation db (cascade=${cascadeId})`);
+  } finally {
+    db.close();
+  }
 }

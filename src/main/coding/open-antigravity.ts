@@ -7,11 +7,18 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { CODING_PORTS } from '../../shared/coding-ports';
 import { repairAgyHubSummaries } from './agyhub-summaries';
-import { EGDesk_CHAT_TITLE, cleanupOrphanEgdeskChatStubs, registerEgdeskChatHistory } from './egdesk-antigravity-chat';
+import {
+  EGDesk_CHAT_TITLE,
+  cleanupOrphanEgdeskChatStubs,
+  registerEgdeskChatHistory,
+  repairEgdeskChatHub,
+  writeEgdeskChatConversation,
+} from './egdesk-antigravity-chat';
 import {
   isolateConversationsForFolder,
   isAntigravityRunning,
   launchAntigravityApp,
+  quitAntigravity,
   sanitizeSessionMeta,
 } from './antigravity-session';
 
@@ -532,6 +539,57 @@ export async function openAntigravityFolder(
     console.warn('[open-antigravity] Failed to prepare Antigravity session:', error);
   }
 
+  // Step 1: Write hub entry + transcript BEFORE launching Antigravity.
+  // Must happen first — Antigravity reads the hub only on startup, so any entry
+  // written after launch (into a running instance) will be invisible until restart.
+  try {
+    const egdeskChat = await registerEgdeskChatHistory(egdeskChatContext);
+    egdeskChatCascadeId = egdeskChat.cascadeId;
+    egdeskChatActivated = true;
+    egdeskChatNeedsActivation = false;
+    egdeskChatError = egdeskChat.error;
+
+    console.log(
+      egdeskChat.hubLinked
+        ? `[open-antigravity] Inserted linked "${EGDesk_CHAT_TITLE}" under ${projectName} (cascade=${egdeskChat.cascadeId})`
+        : `[open-antigravity] Inserted "${EGDesk_CHAT_TITLE}" — hub link pending (cascade=${egdeskChat.cascadeId})`,
+    );
+  } catch (error: any) {
+    egdeskChatNeedsActivation = true;
+    egdeskChatActivated = false;
+    egdeskChatError = error.message || String(error);
+    console.warn('[open-antigravity] Failed to register egdesk-chat:', error);
+  }
+
+  // Step 1b: Write the conversation database directly so the thread loads without
+  // triggering any AI agent execution. This creates the SQLite .db file that
+  // Antigravity reads when the user clicks the thread in the sidebar.
+  if (egdeskChatCascadeId) {
+    try {
+      writeEgdeskChatConversation(
+        egdeskChatCascadeId,
+        `Hello! I just opened "${projectName}" in EGDesk.`,
+        `Got it, I'm ready to help!`,
+      );
+    } catch (err) {
+      console.warn('[open-antigravity] Failed to write conversation db (non-critical):', err);
+    }
+  }
+
+  // Step 2: Quit Antigravity if it is already running so the next launch reads
+  // the freshly written hub from disk instead of serving a stale in-memory cache.
+  if (isAntigravityRunning()) {
+    console.log('[open-antigravity] Quitting running Antigravity so it re-reads the hub on restart…');
+    await quitAntigravity();
+  }
+
+  // Step 2b: Re-write the hub with the project link before relaunch.
+  // The LS is now dead so our write is the final state on disk before the new
+  // Antigravity starts and reads the hub.
+  if (egdeskChatCascadeId) {
+    await repairEgdeskChatHub(egdeskChatContext, egdeskChatCascadeId);
+  }
+
   const buildResult = (result: AntigravityOpenResult): AntigravityOpenResult => ({
     ...result,
     port,
@@ -542,31 +600,7 @@ export async function openAntigravityFolder(
     egdeskChatError,
   });
 
-  const finishOpen = async (result: AntigravityOpenResult): Promise<AntigravityOpenResult> => {
-    if (!result.success) return buildResult(result);
-
-    try {
-      const egdeskChat = await registerEgdeskChatHistory(egdeskChatContext);
-      egdeskChatCascadeId = egdeskChat.cascadeId;
-      egdeskChatActivated = true;
-      egdeskChatNeedsActivation = false;
-      egdeskChatError = egdeskChat.error;
-
-      console.log(
-        egdeskChat.hubLinked
-          ? `[open-antigravity] Inserted linked "${EGDesk_CHAT_TITLE}" under ${projectName} (cascade=${egdeskChat.cascadeId})`
-          : `[open-antigravity] Inserted "${EGDesk_CHAT_TITLE}" — hub link pending, restart Antigravity if sidebar missing (cascade=${egdeskChat.cascadeId})`,
-      );
-    } catch (error: any) {
-      egdeskChatNeedsActivation = true;
-      egdeskChatActivated = false;
-      egdeskChatError = error.message || String(error);
-      console.warn('[open-antigravity] Failed to activate egdesk-chat via language server:', error);
-    }
-
-    return buildResult(result);
-  };
-
+  // Step 3: Launch Antigravity — it will start fresh and read the updated hub.
   const ideLauncher = resolveIdeLauncher();
   const desktopExecutable = getDesktopExecutable();
   console.log(
@@ -577,7 +611,7 @@ export async function openAntigravityFolder(
     const result = launchWithIdeBinary(ideLauncher, resolvedPath, launchEnv);
     if (result.success) {
       console.log(`[open-antigravity] Opened via IDE (${result.method})`);
-      return finishOpen({ ...result, port, projectId, egdeskChatCascadeId, egdeskChatNeedsActivation, egdeskChatActivated, egdeskChatError });
+      return buildResult({ ...result, port, projectId });
     }
     console.warn('[open-antigravity] IDE launch failed, trying desktop…', result.error);
   }
@@ -585,7 +619,7 @@ export async function openAntigravityFolder(
   const desktopResult = await launchAntigravityDesktop(projectId, launchEnv);
   if (desktopResult.success) {
     console.log(`[open-antigravity] Opened via desktop (${desktopResult.method})`);
-    return finishOpen({ ...desktopResult, port, projectId, egdeskChatCascadeId, egdeskChatNeedsActivation, egdeskChatActivated, egdeskChatError });
+    return buildResult({ ...desktopResult, port, projectId });
   }
 
   console.error('[open-antigravity] All launch attempts failed:', desktopResult.error);
