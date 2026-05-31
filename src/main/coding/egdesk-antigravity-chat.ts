@@ -63,6 +63,10 @@ export function hasEgdeskChatHistory(cascadeId: string): boolean {
   return fs.existsSync(brainTranscriptPath(cascadeId));
 }
 
+function hasConversationDb(cascadeId: string): boolean {
+  return fs.existsSync(path.join(getAntigravityRoot(), 'conversations', `${cascadeId}.db`));
+}
+
 function hubHasEgdeskChatTitle(cascadeId: string): boolean {
   const entry = findHubEntryForCascade(cascadeId);
   if (!entry) return false;
@@ -202,11 +206,14 @@ export async function repairEgdeskChatHub(
   return isEgdeskChatHubLinked(cascadeId, context.projectId);
 }
 
-/** Remove hub rows that never got a transcript. */
+/** Remove hub rows that never got a transcript OR a conversation db. */
 export function cleanupOrphanEgdeskChatStubs(projectId: string): void {
   for (const cascadeId of findCascadeIdsForProject(projectId)) {
     if (!hubHasEgdeskChatTitle(cascadeId)) continue;
     if (hasEgdeskChatHistory(cascadeId)) continue;
+    // Also guard on the .db file — if it exists the conversation has real content even
+    // if the brain transcript was later overwritten or removed by Antigravity.
+    if (hasConversationDb(cascadeId)) continue;
     if (removeHubEntryForCascade(cascadeId)) {
       console.log(`[egdesk-chat] Removed orphan hub stub cascade=${cascadeId}`);
     }

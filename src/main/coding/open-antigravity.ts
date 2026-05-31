@@ -17,6 +17,7 @@ import {
   writeEgdeskChatConversation,
 } from './egdesk-antigravity-chat';
 import {
+  getAntigravityDesktopExecutable,
   isolateConversationsForFolder,
   isAntigravityRunning,
   launchAntigravityApp,
@@ -280,23 +281,7 @@ function getMacAppNames(): string[] {
 }
 
 function getDesktopExecutable(): string | null {
-  if (process.platform === 'darwin') {
-    const exe = '/Applications/Antigravity.app/Contents/MacOS/Antigravity';
-    return fs.existsSync(exe) ? exe : null;
-  }
-
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || '';
-    const candidates = [
-      path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
-      path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity IDE.exe'),
-      path.join(localAppData, 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
-      path.join(localAppData, 'Programs', 'antigravity', 'Antigravity.exe'),
-    ];
-    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
-  }
-
-  return null;
+  return getAntigravityDesktopExecutable();
 }
 
 function getAntigravityAppPath(): string | null {
@@ -379,7 +364,14 @@ function launchAntigravityDesktop(
   env: NodeJS.ProcessEnv,
 ): Promise<AntigravityOpenResult> {
   const running = isAntigravityRunning();
-  const method = running ? 'open -a "Antigravity" (focus)' : 'open -a "Antigravity" (launch)';
+  const method =
+    process.platform === 'win32'
+      ? running
+        ? 'Antigravity.exe (focus)'
+        : 'Antigravity.exe (launch)'
+      : running
+        ? 'open -a "Antigravity" (focus)'
+        : 'open -a "Antigravity" (launch)';
 
   return launchAntigravityApp(env)
     .then(({ pid }) => {

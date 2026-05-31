@@ -3,7 +3,7 @@ import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { findCascadeIdsForProject, isCascadeUuid, parseCascadeIdFromHubEntry } from './agyhub-summaries';
+import { isCascadeUuid, parseCascadeIdFromHubEntry } from './agyhub-summaries';
 
 const META_PATH = path.join(os.homedir(), '.gemini', 'config', 'egdesk-antigravity-meta.json');
 
@@ -223,8 +223,11 @@ export function saveProjectSessionMeta(
 }
 
 /**
- * Hide other projects' conversations while restoring all conversations for folderPath.
- * Never archives cascades tied to projectId via hub index or EGDesk meta.
+ * Restore any previously archived conversations and leave all live conversations
+ * in place. We no longer archive by project: archiving removes .db/.pb files while
+ * leaving hub entries intact, which causes Antigravity to show "trajectory not found"
+ * whenever the user navigates to a different project inside Antigravity without going
+ * back through EGDesk first.
  */
 export function isolateConversationsForFolder(
   folderPath: string,
@@ -235,30 +238,11 @@ export function isolateConversationsForFolder(
   const conversationsDir = getConversationsDir();
   const archiveRoot = getArchiveDir();
 
-  const protectedIds = new Set<string>();
-  if (projectId) {
-    const meta = readMetaStore()[projectId];
-    const metaCascade = meta?.egdeskChatCascadeId ?? meta?.cascadeId;
-    if (metaCascade && isCascadeUuid(metaCascade)) {
-      protectedIds.add(metaCascade);
-    }
-    for (const cascadeId of findCascadeIdsForProject(projectId)) {
-      protectedIds.add(cascadeId);
-    }
-  }
-  for (const cascadeId of findCascadeIdsForFolder(folderPath)) {
-    protectedIds.add(cascadeId);
-  }
-
   fs.mkdirSync(conversationsDir, { recursive: true });
-  fs.mkdirSync(archiveRoot, { recursive: true });
 
-  // Restore every archived conversation for this folder.
+  // Restore everything that was previously archived so Antigravity can load it.
   if (fs.existsSync(archiveRoot)) {
     for (const cascadeId of fs.readdirSync(archiveRoot)) {
-      const belongsToFolder = cascadeBelongsToFolder(cascadeId, folderPath);
-      const isProtected = protectedIds.has(cascadeId);
-      if (!belongsToFolder && !isProtected) continue;
       for (const ext of ['pb', 'db'] as const) {
         const from = ext === 'pb'
           ? archivedConversationPbPath(cascadeId)
@@ -272,32 +256,77 @@ export function isolateConversationsForFolder(
     }
   }
 
-  // Archive live conversations that belong to other projects only.
-  if (fs.existsSync(conversationsDir)) {
-    for (const file of fs.readdirSync(conversationsDir)) {
-      if (!file.endsWith('.pb') && !file.endsWith('.db')) continue;
-      const cascadeId = file.replace(/\.(pb|db)$/, '');
-      if (protectedIds.has(cascadeId)) continue;
-      if (cascadeBelongsToFolder(cascadeId, folderPath)) continue;
-
-      const livePath = path.join(conversationsDir, file);
-      const archivePath = path.join(getArchiveDir(), cascadeId, file);
-      movePath(livePath, archivePath);
-      if (!archived.includes(cascadeId)) archived.push(cascadeId);
-    }
-  }
-
   return { archived, restored };
 }
 
-export function isAntigravityRunning(): boolean {
-  if (process.platform !== 'darwin') return false;
-  try {
-    execSync('pgrep -x Antigravity', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+const WINDOWS_PROCESS_NAMES = ['Antigravity.exe', 'Antigravity IDE.exe'] as const;
+
+/** Resolve Antigravity 2.0 desktop executable for the current platform. */
+export function getAntigravityDesktopExecutable(): string | null {
+  if (process.platform === 'darwin') {
+    for (const appName of ['Antigravity.app', 'Antigravity IDE.app']) {
+      const exe = `/Applications/${appName}/Contents/MacOS/Antigravity`;
+      if (fs.existsSync(exe)) return exe;
+    }
+    return null;
   }
+
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const candidates = [
+      path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
+      path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity IDE.exe'),
+      path.join(localAppData, 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
+      path.join(localAppData, 'Programs', 'antigravity', 'Antigravity.exe'),
+    ];
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+  }
+
+  return null;
+}
+
+function isWindowsProcessRunning(): boolean {
+  for (const imageName of WINDOWS_PROCESS_NAMES) {
+    try {
+      const output = execSync(`tasklist /FI "IMAGENAME eq ${imageName}" /FO CSV /NH`, {
+        encoding: 'utf-8',
+        windowsHide: true,
+      });
+      if (output.toLowerCase().includes(imageName.toLowerCase())) {
+        return true;
+      }
+    } catch {
+      // not running or tasklist unavailable
+    }
+  }
+  return false;
+}
+
+function quitWindowsAntigravity(): void {
+  for (const imageName of WINDOWS_PROCESS_NAMES) {
+    try {
+      execSync(`taskkill /IM "${imageName}" /T`, { stdio: 'ignore', windowsHide: true });
+    } catch {
+      // already exited
+    }
+  }
+}
+
+export function isAntigravityRunning(): boolean {
+  if (process.platform === 'darwin') {
+    try {
+      execSync('pgrep -x Antigravity', { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (process.platform === 'win32') {
+    return isWindowsProcessRunning();
+  }
+
+  return false;
 }
 
 /** Quit Antigravity so the next launch re-reads hub + conversation state from disk. */
@@ -307,7 +336,11 @@ export function quitAntigravity(): Promise<void> {
   return new Promise((resolve) => {
     console.log('[open-antigravity] Quitting running Antigravity before relaunch…');
     try {
-      execSync('osascript -e \'tell application "Antigravity" to quit\'', { stdio: 'ignore' });
+      if (process.platform === 'darwin') {
+        execSync('osascript -e \'tell application "Antigravity" to quit\'', { stdio: 'ignore' });
+      } else if (process.platform === 'win32') {
+        quitWindowsAntigravity();
+      }
     } catch {
       // ignore
     }
@@ -330,17 +363,39 @@ export async function relaunchAntigravity(env: NodeJS.ProcessEnv): Promise<{ pid
   return launchAntigravityApp(env);
 }
 
-/** Focus Antigravity without quitting — preserves in-memory LS state. */
+/** Launch or focus Antigravity desktop without quitting — preserves in-memory LS state. */
 export function launchAntigravityApp(env: NodeJS.ProcessEnv): Promise<{ pid?: number }> {
   return new Promise((resolve, reject) => {
-    const appName = process.platform === 'darwin' ? 'Antigravity' : 'Antigravity';
-    const child = spawn('open', ['-a', appName], {
-      detached: true,
-      stdio: 'ignore',
-      env,
-    });
-    child.on('error', reject);
-    child.unref();
-    resolve({ pid: child.pid });
+    if (process.platform === 'darwin') {
+      const child = spawn('open', ['-a', 'Antigravity'], {
+        detached: true,
+        stdio: 'ignore',
+        env,
+      });
+      child.on('error', reject);
+      child.unref();
+      resolve({ pid: child.pid });
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      const executable = getAntigravityDesktopExecutable();
+      if (!executable) {
+        reject(new Error('Antigravity desktop executable not found'));
+        return;
+      }
+      const child = spawn(executable, [], {
+        detached: true,
+        stdio: 'ignore',
+        env,
+        windowsHide: true,
+      });
+      child.on('error', reject);
+      child.unref();
+      resolve({ pid: child.pid });
+      return;
+    }
+
+    reject(new Error(`Antigravity desktop launch is not supported on ${process.platform}`));
   });
 }
