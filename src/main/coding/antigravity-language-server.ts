@@ -140,6 +140,8 @@ export interface StartCascadeParams {
   projectId: string;
   workspaceUris: string[];
   conversationTitle?: string;
+  /** Hint the LS to reuse an existing cascade id. Honoured on some versions; ignored on others. */
+  cascadeId?: string;
 }
 
 export async function startCascade(
@@ -153,6 +155,9 @@ export async function startCascade(
   };
   if (params.conversationTitle) {
     body.conversationTitle = params.conversationTitle;
+  }
+  if (params.cascadeId) {
+    body.cascadeId = params.cascadeId;
   }
 
   const response = await connectPost(endpoint, 'StartCascade', body);

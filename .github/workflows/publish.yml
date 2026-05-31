@@ -41,11 +41,14 @@ jobs:
         shell: bash
         continue-on-error: true
 
-      - name: Install and build
-        run: |
-          npm install
-          npm run postinstall
-          npm run build
+      - name: Install dependencies
+        run: npm install
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
+      - name: Build
+        run: npm run build
 
       - name: Publish Windows releases
         if: matrix.os == 'windows-latest'

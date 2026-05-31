@@ -555,9 +555,15 @@ export async function openAntigravityFolder(
     console.warn('[open-antigravity] Failed to register egdesk-chat:', error);
   }
 
-  // Step 1b: Write the conversation database directly so the thread loads without
-  // triggering any AI agent execution. This creates the SQLite .db file that
-  // Antigravity reads when the user clicks the thread in the sidebar.
+  // Step 2: Quit Antigravity if it is already running so the next launch reads
+  // the freshly written hub from disk instead of serving a stale in-memory cache.
+  if (isAntigravityRunning()) {
+    console.log('[open-antigravity] Quitting running Antigravity so it re-reads the hub on restart…');
+    await quitAntigravity();
+  }
+
+  // Step 2a: Write the conversation .db after quit so Antigravity is not holding
+  // a file lock (Windows) and before launch so the thread is not empty on first click.
   if (egdeskChatCascadeId) {
     try {
       writeEgdeskChatConversation(
@@ -568,13 +574,6 @@ export async function openAntigravityFolder(
     } catch (err) {
       console.warn('[open-antigravity] Failed to write conversation db (non-critical):', err);
     }
-  }
-
-  // Step 2: Quit Antigravity if it is already running so the next launch reads
-  // the freshly written hub from disk instead of serving a stale in-memory cache.
-  if (isAntigravityRunning()) {
-    console.log('[open-antigravity] Quitting running Antigravity so it re-reads the hub on restart…');
-    await quitAntigravity();
   }
 
   // Step 2b: Re-write the hub with the project link before relaunch.
