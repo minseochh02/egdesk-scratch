@@ -2944,7 +2944,7 @@ export class LocalServerManager {
       {
         name: 'financehub',
         enabled: true, // Enabled by default per user preference
-        description: 'FinanceHub MCP Server - Query Korean bank accounts and transactions (read-only)'
+        description: 'FinanceHub MCP Server - Query, write, and delete Korean bank accounts, transactions, and bank-product tables (no credentials)'
       },
       {
         name: 'browser-recording',

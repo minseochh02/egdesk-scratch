@@ -21,6 +21,22 @@ interface ColumnDef {
 type LoadFn = () => Promise<{ success: boolean; data?: any[]; error?: string }>;
 type SyncFn = (opts?: { startDate?: string; endDate?: string }) => Promise<unknown>;
 
+export type BankProductSyncResult = {
+  success?: boolean;
+  error?: string;
+  imported?: number;
+  skipped?: number;
+  importError?: string;
+  filePath?: string;
+  importWarnings?: string[];
+};
+
+type RunBankProductSyncFn = (
+  bankId: string,
+  syncFn: () => Promise<BankProductSyncResult>,
+  label: string,
+) => Promise<BankProductSyncResult>;
+
 interface TableSection {
   /** SQL slug (matches the table name). */
   slug: string;
@@ -257,14 +273,23 @@ const TABLE_SECTIONS: TableSection[] = [
   {
     slug: 'ibk_foreign_currency_history',
     title: 'IBK 외화거래내역',
-    subtitle: '뱅킹업무 → 외환 → 외화계좌조회 → 거래내역조회',
+    subtitle: '뱅킹업무 → 대출 → 거래내역조회 → 외화 탭 (대출·신탁·펀드 포함 전체 sync)',
     bankId: 'ibk',
     acceptsDateRange: true,
     canImportExcel: true,
     defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getIbkForeignCurrencyHistory(),
     sync: async (opts) => {
-      return await window.electron.financeHub.syncIbkLoanHistory(opts);
+      // Foreign currency is synced inside syncLoanTransactions (외화 tab on 거래내역조회 page).
+      const result = await window.electron.financeHub.syncIbkLoanHistory(opts);
+      if (result && typeof result === 'object' && result.success) {
+        const foreignImported =
+          typeof (result as { foreign?: { imported?: number } }).foreign?.imported === 'number'
+            ? (result as { foreign: { imported: number } }).foreign.imported
+            : 0;
+        return { ...result, imported: foreignImported };
+      }
+      return result;
     },
     columns: IBK_FOREIGN_CURRENCY_HISTORY_COLS,
   },
@@ -276,9 +301,11 @@ interface SectionProps {
   section: TableSection;
   /** Bank ids that have an active automator session (i.e. logged in). */
   connectedBankIds: Set<string>;
+  onRunBankProductSync?: RunBankProductSyncFn;
+  syncingBankId?: string | null;
 }
 
-function Section({ section, connectedBankIds }: SectionProps) {
+function Section({ section, connectedBankIds, onRunBankProductSync, syncingBankId }: SectionProps) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -293,6 +320,7 @@ function Section({ section, connectedBankIds }: SectionProps) {
   const [endDate, setEndDate] = useState<string>(initialRange.current.endDate);
 
   const isConnected = connectedBankIds.has(section.bankId);
+  const isSyncingThisBank = syncingBankId === section.bankId;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -336,18 +364,33 @@ function Section({ section, connectedBankIds }: SectionProps) {
     }
     setSyncing(true);
     try {
-      if (section.acceptsDateRange) {
-        await section.sync({ startDate, endDate });
-      } else {
-        await section.sync();
+      const syncFn = async (): Promise<BankProductSyncResult> => {
+        const raw = section.acceptsDateRange
+          ? await section.sync({ startDate, endDate })
+          : await section.sync();
+        return (raw && typeof raw === 'object' ? raw : { success: false, error: '동기화 응답 없음' }) as BankProductSyncResult;
+      };
+
+      const result = onRunBankProductSync
+        ? await onRunBankProductSync(section.bankId, syncFn, section.title)
+        : await syncFn();
+
+      if (!result.success) {
+        setError(result.error || '동기화 실패');
+        return;
       }
+
+      if (result.importError) {
+        setError(`DB 반영 실패: ${result.importError}`);
+      }
+
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
       setSyncing(false);
     }
-  }, [section, load, startDate, endDate]);
+  }, [section, load, startDate, endDate, onRunBankProductSync]);
 
   const handleFileUpload = useCallback(async () => {
     setError(null);
@@ -448,11 +491,15 @@ function Section({ section, connectedBankIds }: SectionProps) {
             type="button"
             className="ibkrec-btn ibkrec-btn--primary"
             onClick={() => void handleSync()}
-            disabled={!isConnected || syncing}
-            title={isConnected ? '은행에서 동기화' : `${section.bankId.toUpperCase()}에 먼저 로그인해 주세요`}
+            disabled={syncing || isSyncingThisBank}
+            title={
+              isConnected
+                ? '은행에서 동기화'
+                : `${section.bankId.toUpperCase()} 로그인 후 동기화 (저장된 인증 정보로 자동 연결 시도)`
+            }
           >
-            <FontAwesomeIcon icon={syncing ? faSpinner : faSync} spin={syncing} />
-            <span>{syncing ? '동기화 중...' : '동기화'}</span>
+            <FontAwesomeIcon icon={syncing || isSyncingThisBank ? faSpinner : faSync} spin={syncing || isSyncingThisBank} />
+            <span>{syncing || isSyncingThisBank ? '동기화 중...' : '동기화'}</span>
           </button>
         </div>
       </div>
@@ -500,12 +547,18 @@ function Section({ section, connectedBankIds }: SectionProps) {
 export interface PromissoryNotesPageProps {
   /** Same handler as 계정 관리 → 어음 재동기화 (active automator + Excel import). Used for IBK. */
   onSyncPromissoryNotes?: (bankId: string) => Promise<void>;
+  /** Login + sync + user feedback for all B2B product tables on this page. */
+  onRunBankProductSync?: RunBankProductSyncFn;
   syncingBankId?: string | null;
   /** Banks currently connected (have active automator session). */
   promissorySyncBanks?: { bankId: string; displayName: string }[];
 }
 
-function PromissoryNotesPage({ promissorySyncBanks = [] }: PromissoryNotesPageProps) {
+function PromissoryNotesPage({
+  promissorySyncBanks = [],
+  onRunBankProductSync,
+  syncingBankId = null,
+}: PromissoryNotesPageProps) {
   const connectedBankIds = useMemo(
     () => new Set(promissorySyncBanks.map((b) => b.bankId)),
     [promissorySyncBanks],
@@ -514,7 +567,13 @@ function PromissoryNotesPage({ promissorySyncBanks = [] }: PromissoryNotesPagePr
   return (
     <div className="ibkrec-page">
       {TABLE_SECTIONS.map((section) => (
-        <Section key={section.slug} section={section} connectedBankIds={connectedBankIds} />
+        <Section
+          key={section.slug}
+          section={section}
+          connectedBankIds={connectedBankIds}
+          onRunBankProductSync={onRunBankProductSync}
+          syncingBankId={syncingBankId}
+        />
       ))}
     </div>
   );

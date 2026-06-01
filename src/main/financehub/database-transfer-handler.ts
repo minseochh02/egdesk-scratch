@@ -670,7 +670,9 @@ export async function importDatabase(filePath: string): Promise<ImportResult> {
  * Create a backup of the FinanceHub database
  * @returns Backup info with file path
  */
-export async function createBackup(): Promise<{ success: boolean; backup?: BackupInfo; error?: string }> {
+export async function createBackup(options?: {
+  excludeFromCleanup?: string[];
+}): Promise<{ success: boolean; backup?: BackupInfo; error?: string }> {
   try {
     const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
     const backupFileName = `financehub-backup-${timestamp}.db`;
@@ -707,7 +709,7 @@ export async function createBackup(): Promise<{ success: boolean; backup?: Backu
     console.log(`[DatabaseTransfer] Backup created: ${backupPath}`);
 
     // Auto-cleanup old backups
-    await cleanupOldBackups();
+    await cleanupOldBackups(options?.excludeFromCleanup ?? []);
 
     return { success: true, backup: backupInfo };
   } catch (error: any) {
@@ -768,8 +770,8 @@ export async function restoreBackup(backupId: string): Promise<{ success: boolea
 
     console.log(`[DatabaseTransfer] Restoring from backup: ${backupPath}`);
 
-    // Create a backup of current database before restoring
-    const currentBackupResult = await createBackup();
+    // Create a backup of current database before restoring (keep the restore target)
+    const currentBackupResult = await createBackup({ excludeFromCleanup: [backupId] });
     if (!currentBackupResult.success) {
       console.warn('[DatabaseTransfer] Failed to backup current database before restore');
     }
@@ -817,18 +819,19 @@ export async function deleteBackup(backupId: string): Promise<{ success: boolean
 /**
  * Cleanup old backups (keep only last 5)
  */
-export async function cleanupOldBackups(): Promise<void> {
+export async function cleanupOldBackups(excludeIds: string[] = []): Promise<void> {
   try {
     const result = await listBackups();
     if (!result.success || !result.backups) {
       return;
     }
 
+    const excludeSet = new Set(excludeIds);
     const backups = result.backups;
     const KEEP_COUNT = 5;
 
     if (backups.length > KEEP_COUNT) {
-      const toDelete = backups.slice(KEEP_COUNT);
+      const toDelete = backups.slice(KEEP_COUNT).filter((backup) => !excludeSet.has(backup.id));
       console.log(`[DatabaseTransfer] Cleaning up ${toDelete.length} old backups...`);
 
       for (const backup of toDelete) {

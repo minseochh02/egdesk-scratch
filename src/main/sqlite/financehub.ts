@@ -1126,27 +1126,178 @@ export class FinanceHubDbManager {
     return result.changes > 0;
   }
 
-  deleteAccount(bankId: string, accountNumber: string): boolean {
+  deleteAccount(bankId: string, accountNumber: string): {
+    deleted: boolean;
+    unifiedTransactions: number;
+    bankTransactions: number;
+    cardTransactions: number;
+    syncOperations: number;
+  } {
     const existing = this.getAccountByNumber(bankId, accountNumber);
-    if (!existing) return false;
-    
-    // 데이터 무결성 보장을 위해 트랜잭션 사용
-    const deleteTransactions = this.db.prepare(`
-      DELETE FROM transactions 
-      WHERE account_id = ?
-    `);
-    
-    const deleteAccount = this.db.prepare(`
-      DELETE FROM accounts WHERE id = ?
-    `);
-    
-    const transaction = this.db.transaction(() => {
-      deleteTransactions.run(existing.id);
-      const result = deleteAccount.run(existing.id);
-      return result.changes > 0;
-    });
-    
-    return transaction();
+    if (!existing) {
+      return {
+        deleted: false,
+        unifiedTransactions: 0,
+        bankTransactions: 0,
+        cardTransactions: 0,
+        syncOperations: 0,
+      };
+    }
+
+    const tableExists = (name: string) =>
+      !!this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name);
+
+    return this.db.transaction(() => {
+      let bankTransactions = 0;
+      let cardTransactions = 0;
+
+      if (tableExists('bank_transactions')) {
+        bankTransactions = this.db
+          .prepare(`DELETE FROM bank_transactions WHERE account_id = ?`)
+          .run(existing.id).changes;
+      }
+      if (tableExists('card_transactions')) {
+        cardTransactions = this.db
+          .prepare(`DELETE FROM card_transactions WHERE account_id = ?`)
+          .run(existing.id).changes;
+      }
+
+      const unifiedTransactions = this.db
+        .prepare(`DELETE FROM transactions WHERE account_id = ?`)
+        .run(existing.id).changes;
+      const syncOperations = this.db
+        .prepare(`DELETE FROM sync_operations WHERE account_id = ?`)
+        .run(existing.id).changes;
+      const accountDeleted = this.db.prepare(`DELETE FROM accounts WHERE id = ?`).run(existing.id).changes > 0;
+
+      return {
+        deleted: accountDeleted,
+        unifiedTransactions,
+        bankTransactions,
+        cardTransactions,
+        syncOperations,
+      };
+    })();
+  }
+
+  /**
+   * Delete transactions for an account (unified + separate tables). Requires a scope:
+   * accountId, or bankId+accountNumber, and/or date range, and/or explicit transactionIds.
+   */
+  deleteTransactions(args: {
+    accountId?: string;
+    bankId?: string;
+    accountNumber?: string;
+    startDate?: string;
+    endDate?: string;
+    transactionIds?: string[];
+    isCard?: boolean;
+  }): {
+    accountId: string | null;
+    deleted: number;
+    breakdown: { unified: number; bank: number; card: number };
+  } {
+    let accountId = args.accountId;
+    if (!accountId && args.bankId && args.accountNumber) {
+      const acc = this.getAccountByNumber(args.bankId, args.accountNumber);
+      if (!acc) {
+        throw new Error(`Account not found: ${args.bankId} / ${args.accountNumber}`);
+      }
+      accountId = acc.id;
+    }
+
+    const ids = Array.isArray(args.transactionIds)
+      ? args.transactionIds.filter((id) => typeof id === 'string' && id.trim()).slice(0, 500)
+      : [];
+
+    if (!accountId && ids.length === 0) {
+      throw new Error('Provide accountId, or bankId+accountNumber, or transactionIds');
+    }
+    if (!accountId && ids.length > 0 && !args.startDate && !args.endDate) {
+      // ids-only delete allowed without account
+    } else if (accountId && ids.length === 0 && !args.startDate && !args.endDate) {
+      throw new Error('Provide startDate/endDate, transactionIds, or use financehub_delete_account to remove all data for an account');
+    }
+
+    const tableExists = (name: string) =>
+      !!this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name);
+
+    const buildDateClause = (dateCol: string, params: unknown[]) => {
+      let clause = '';
+      if (args.startDate) {
+        clause += ` AND ${dateCol} >= ?`;
+        params.push(args.startDate);
+      }
+      if (args.endDate) {
+        clause += ` AND ${dateCol} <= ?`;
+        params.push(args.endDate);
+      }
+      return clause;
+    };
+
+    return this.db.transaction(() => {
+      let unified = 0;
+      let bank = 0;
+      let card = 0;
+
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(', ');
+        if (tableExists('transactions')) {
+          unified += this.db
+            .prepare(`DELETE FROM transactions WHERE id IN (${placeholders})`)
+            .run(...ids).changes;
+        }
+        if (tableExists('bank_transactions')) {
+          bank += this.db
+            .prepare(`DELETE FROM bank_transactions WHERE id IN (${placeholders})`)
+            .run(...ids).changes;
+        }
+        if (tableExists('card_transactions')) {
+          card += this.db
+            .prepare(`DELETE FROM card_transactions WHERE id IN (${placeholders})`)
+            .run(...ids).changes;
+        }
+      }
+
+      if (accountId) {
+        const isCard =
+          Boolean(args.isCard) || (args.bankId ? args.bankId.includes('-card') : false);
+
+        if (!isCard || !this.useSeparateTransactionTables()) {
+          const params: unknown[] = [accountId];
+          let sql = `DELETE FROM transactions WHERE account_id = ?`;
+          sql += buildDateClause('date', params);
+          if (ids.length === 0) {
+            unified += this.db.prepare(sql).run(...params).changes;
+          }
+        }
+
+        if (this.useSeparateTransactionTables()) {
+          if (!isCard && tableExists('bank_transactions')) {
+            const params: unknown[] = [accountId];
+            let sql = `DELETE FROM bank_transactions WHERE account_id = ?`;
+            sql += buildDateClause('transaction_date', params);
+            if (ids.length === 0) {
+              bank += this.db.prepare(sql).run(...params).changes;
+            }
+          }
+          if (isCard && tableExists('card_transactions')) {
+            const params: unknown[] = [accountId];
+            let sql = `DELETE FROM card_transactions WHERE account_id = ?`;
+            sql += buildDateClause('approval_date', params);
+            if (ids.length === 0) {
+              card += this.db.prepare(sql).run(...params).changes;
+            }
+          }
+        }
+      }
+
+      return {
+        accountId: accountId || null,
+        deleted: unified + bank + card,
+        breakdown: { unified, bank, card },
+      };
+    })();
   }
 
   // ========================================
@@ -4634,6 +4785,183 @@ export class FinanceHubDbManager {
         error: e?.message || String(e),
       };
     }
+  }
+
+  /**
+   * Upsert rows into a registered per-(bank, product) table (MCP write path).
+   * Column names must match BANK_PRODUCT_TABLES whitelist. Uses INSERT OR REPLACE on `id`.
+   */
+  upsertBankProductRows(args: {
+    tableSlug: string;
+    rows: Array<Record<string, unknown>>;
+    maxRows?: number;
+  }): {
+    tableSlug: string;
+    upserted: number;
+    skipped: number;
+    errors: string[];
+  } {
+    const maxRows = Math.min(Math.max(Number(args.maxRows) || 500, 1), 1000);
+    const rows = Array.isArray(args.rows) ? args.rows.slice(0, maxRows) : [];
+    const meta = BANK_PRODUCT_TABLES[args.tableSlug];
+    if (!meta) {
+      const known = Object.keys(BANK_PRODUCT_TABLES).join(', ');
+      throw new Error(
+        `Unknown tableSlug "${args.tableSlug}". Use financehub_list_bank_product_tables. Known: ${known}`
+      );
+    }
+
+    const exists = this.db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`)
+      .get(meta.slug);
+    if (!exists) {
+      throw new Error(`Table "${meta.slug}" does not exist (migration not yet applied).`);
+    }
+
+    const allowedCols = new Set(Object.keys(meta.columns));
+    const now = new Date().toISOString();
+    const errors: string[] = [];
+    let upserted = 0;
+    let skipped = 0;
+
+    const run = this.db.transaction(() => {
+      for (let i = 0; i < rows.length; i++) {
+        const raw = rows[i];
+        if (!raw || typeof raw !== 'object') {
+          skipped++;
+          errors.push(`Row ${i}: invalid row object`);
+          continue;
+        }
+
+        const row: Record<string, unknown> = { ...raw };
+        if (!row.id || String(row.id).trim() === '') {
+          row.id = randomUUID();
+        }
+        if (!row.synced_at) row.synced_at = now;
+        if (!row.created_at) row.created_at = now;
+        if (!row.updated_at) row.updated_at = now;
+
+        const keys = Object.keys(row).filter((k) => allowedCols.has(k));
+        if (keys.length === 0) {
+          skipped++;
+          errors.push(`Row ${i}: no valid columns for table "${meta.slug}"`);
+          continue;
+        }
+
+        const unknown = Object.keys(row).filter((k) => !allowedCols.has(k));
+        if (unknown.length) {
+          errors.push(`Row ${i}: ignored unknown columns: ${unknown.join(', ')}`);
+        }
+
+        const colList = keys.map((k) => `"${k}"`).join(', ');
+        const placeholders = keys.map(() => '?').join(', ');
+        const sql = `INSERT OR REPLACE INTO "${meta.slug}" (${colList}) VALUES (${placeholders})`;
+        try {
+          this.db.prepare(sql).run(...keys.map((k) => row[k]));
+          upserted++;
+        } catch (e: any) {
+          skipped++;
+          errors.push(`Row ${i}: ${e?.message || String(e)}`);
+        }
+      }
+    });
+
+    run();
+    return { tableSlug: args.tableSlug, upserted, skipped, errors };
+  }
+
+  /**
+   * Delete rows from a registered per-(bank, product) table by primary-key ids and/or filters.
+   * Requires at least one of: non-empty ids, or non-empty filters (max 1000 rows per call).
+   */
+  deleteBankProductRows(args: {
+    tableSlug: string;
+    ids?: string[];
+    filters?: Array<{ column: string; op: string; value: unknown }>;
+    maxRows?: number;
+  }): {
+    tableSlug: string;
+    deleted: number;
+    error?: string;
+  } {
+    const maxRows = Math.min(Math.max(Number(args.maxRows) || 1000, 1), 1000);
+    const meta = BANK_PRODUCT_TABLES[args.tableSlug];
+    if (!meta) {
+      const known = Object.keys(BANK_PRODUCT_TABLES).join(', ');
+      throw new Error(
+        `Unknown tableSlug "${args.tableSlug}". Use financehub_list_bank_product_tables. Known: ${known}`
+      );
+    }
+
+    const exists = this.db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`)
+      .get(meta.slug);
+    if (!exists) {
+      throw new Error(`Table "${meta.slug}" does not exist (migration not yet applied).`);
+    }
+
+    const ids = (Array.isArray(args.ids) ? args.ids : [])
+      .filter((id) => typeof id === 'string' && id.trim())
+      .slice(0, 500);
+    const filters = args.filters || [];
+
+    if (ids.length === 0 && filters.length === 0) {
+      throw new Error('Provide at least one id or filter condition');
+    }
+
+    const allowedCols = new Set(Object.keys(meta.columns));
+    const ALLOWED_OPS = new Set(['=', '!=', '>', '<', '>=', '<=', 'like', 'in']);
+
+    let where = 'WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(', ');
+      where += ` AND "id" IN (${placeholders})`;
+      params.push(...ids);
+    }
+
+    for (const f of filters) {
+      if (!f || typeof f.column !== 'string' || !f.op) continue;
+      if (!allowedCols.has(f.column)) {
+        throw new Error(
+          `Unknown column "${f.column}" in table "${meta.slug}". Allowed: ${[...allowedCols].join(', ')}`
+        );
+      }
+      const op = String(f.op).toLowerCase();
+      if (!ALLOWED_OPS.has(op)) {
+        throw new Error(`Unknown op "${f.op}". Allowed: ${[...ALLOWED_OPS].join(', ')}`);
+      }
+
+      if (op === 'in') {
+        const arr = Array.isArray(f.value) ? f.value : [f.value];
+        if (arr.length === 0) continue;
+        const placeholders = arr.map(() => '?').join(', ');
+        where += ` AND "${f.column}" IN (${placeholders})`;
+        params.push(...arr);
+      } else if (op === 'like') {
+        where += ` AND "${f.column}" LIKE ?`;
+        params.push(String(f.value ?? ''));
+      } else {
+        const sqlOp = op === '!=' ? '<>' : op;
+        where += ` AND "${f.column}" ${sqlOp} ?`;
+        params.push(f.value as never);
+      }
+    }
+
+    const countRow = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM "${meta.slug}" ${where}`)
+      .get(...params) as { c: number };
+    if (countRow.c > maxRows) {
+      return {
+        tableSlug: args.tableSlug,
+        deleted: 0,
+        error: `Would delete ${countRow.c} rows; max ${maxRows}. Narrow ids or filters.`,
+      };
+    }
+
+    const result = this.db.prepare(`DELETE FROM "${meta.slug}" ${where}`).run(...params);
+    return { tableSlug: args.tableSlug, deleted: result.changes };
   }
 
   // ============================================================================

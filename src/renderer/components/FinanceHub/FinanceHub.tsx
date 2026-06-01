@@ -1119,74 +1119,116 @@ const FinanceHub: React.FC = () => {
     }
   };
 
+  type BankProductSyncResult = {
+    success?: boolean;
+    error?: string;
+    imported?: number;
+    skipped?: number;
+    importError?: string;
+    filePath?: string;
+    importWarnings?: string[];
+  };
+
+  const isMissingBankSessionError = (errMsg: string) =>
+    /no active browser session|active browser session|Please open browser|login first|활성 브라우저 세션|활성.*세션|먼저 로그인/i.test(
+      errMsg,
+    );
+
+  /** Ensure Playwright session exists before B2B product sync IPC (receivables, endorsements, loans, …). */
+  const runBankProductSync = async (
+    bankId: string,
+    syncFn: () => Promise<BankProductSyncResult>,
+  ): Promise<BankProductSyncResult> => {
+    const connection = connectedBanks.find((b) => b.bankId === bankId);
+    const needsRestore =
+      !connection || connection.status === 'disconnected' || connection.status === 'error';
+    if (needsRestore) {
+      const ok = await reconnectBankFromSavedCredentials(bankId);
+      if (!ok) {
+        return { success: false, error: '은행 세션을 복구하지 못했습니다.' };
+      }
+    }
+
+    let result = await syncFn();
+    if (!result.success) {
+      const errMsg = String(result.error || '');
+      if (isMissingBankSessionError(errMsg)) {
+        const ok = await reconnectBankFromSavedCredentials(bankId);
+        if (!ok) {
+          return { success: false, error: errMsg };
+        }
+        result = await syncFn();
+      }
+    }
+    return result;
+  };
+
+  const reportBankProductSyncResult = (result: BankProductSyncResult, label: string) => {
+    if (!result.success) {
+      alert(`❌ ${label} 실패: ${result.error || '알 수 없는 오류'}`);
+      return;
+    }
+
+    if (result.importError) {
+      const fileHint = result.filePath ? `\n\n파일: ${result.filePath}` : '';
+      alert(`⚠️ 다운로드는 완료되었으나 DB 반영 실패:\n${result.importError}${fileHint}`);
+      return;
+    }
+
+    const n = typeof result.imported === 'number' ? result.imported : undefined;
+    const skipped = typeof result.skipped === 'number' ? result.skipped : undefined;
+    const fileHint = result.filePath ? `\n\n${result.filePath}` : '';
+    const warnHint = result.importWarnings?.filter(Boolean).length
+      ? `\n\n참고:\n${result.importWarnings!.filter(Boolean).join('\n')}`
+      : '';
+
+    if (n != null && n > 0) {
+      const skipPart = skipped != null && skipped > 0 ? ` (중복 ${skipped}건 건너뜀)` : '';
+      alert(`✅ ${label}: ${n}건 DB 반영${skipPart}${fileHint}${warnHint}`);
+    } else if (result.filePath) {
+      alert(`✅ ${label}: 파일 저장 완료${fileHint}${warnHint}`);
+    } else {
+      alert(`✅ ${label} 동기화가 완료되었습니다.${fileHint}${warnHint}`);
+    }
+  };
+
+  const handleRunBankProductSync = async (
+    bankId: string,
+    syncFn: () => Promise<BankProductSyncResult>,
+    label: string,
+  ): Promise<BankProductSyncResult> => {
+    setIsSyncingPromissory(bankId);
+    try {
+      const result = await runBankProductSync(bankId, syncFn);
+      reportBankProductSyncResult(result, label);
+      if (result.success) {
+        setConnectedBanks((prev) =>
+          prev.map((b) =>
+            b.bankId === bankId ? { ...b, lastSync: new Date(), status: 'connected' as const } : b,
+          ),
+        );
+      }
+      return result;
+    } catch (error: unknown) {
+      console.error('[FinanceHub] Bank product sync error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      alert(`❌ ${label} 실패: ${message}`);
+      return { success: false, error: message };
+    } finally {
+      setIsSyncingPromissory(null);
+    }
+  };
+
   /**
    * 어음: one action per bank (not tied to a single account or date range).
    * Backend uses active automator session; optional `syncPromissoryNotes()` on automator.
    */
   const handleSyncPromissoryNotes = async (bankId: string) => {
-    setIsSyncingPromissory(bankId);
-    try {
-      const connection = connectedBanks.find(b => b.bankId === bankId);
-      const needsRestore =
-        !connection || connection.status === 'disconnected' || connection.status === 'error';
-      if (needsRestore) {
-        const ok = await reconnectBankFromSavedCredentials(bankId);
-        if (!ok) return;
-      }
-
-      let result = await window.electron.financeHub.syncPromissoryNotes(bankId);
-      if (!result.success) {
-        const errMsg = String(result.error || '');
-        if (
-          /no active browser session|active browser session|Please open browser|login first|활성 브라우저 세션/i.test(
-            errMsg,
-          )
-        ) {
-          const ok = await reconnectBankFromSavedCredentials(bankId);
-          if (!ok) {
-            alert(`❌ 어음 동기화 실패: ${errMsg}`);
-            return;
-          }
-          result = await window.electron.financeHub.syncPromissoryNotes(bankId);
-        }
-      }
-
-      if (result.success) {
-        const importError =
-          'importError' in result && typeof (result as { importError?: string }).importError === 'string'
-            ? (result as { importError: string }).importError
-            : '';
-        if (importError) {
-          const fileHint = result.filePath ? `\n\n파일: ${result.filePath}` : '';
-          alert(`⚠️ 다운로드는 완료되었으나 DB 반영 실패:\n${importError}${fileHint}`);
-        } else {
-          const n = typeof result.imported === 'number' ? result.imported : undefined;
-          const fileHint = result.filePath ? `\n\n${result.filePath}` : '';
-          const importWarnings =
-            'importWarnings' in result && Array.isArray((result as { importWarnings?: string[] }).importWarnings)
-              ? (result as { importWarnings: string[] }).importWarnings.filter(Boolean).join('\n')
-              : '';
-          const warnHint = importWarnings ? `\n\n참고:\n${importWarnings}` : '';
-          const msg =
-            n != null && n > 0
-              ? `✅ 어음 ${n}건 DB 반영${fileHint}${warnHint}`
-              : result.filePath
-                ? `✅ 파일 저장 완료${fileHint}${warnHint}`
-                : `✅ 어음 동기화가 완료되었습니다.${fileHint}${warnHint}`;
-          alert(msg);
-        }
-        setConnectedBanks(prev =>
-          prev.map(b => (b.bankId === bankId ? { ...b, lastSync: new Date() } : b)),
-        );
-      } else {
-        alert(`❌ 어음 동기화 실패: ${result.error || '알 수 없는 오류'}`);
-      }
-    } catch (error: unknown) {
-      console.error('[FinanceHub] Promissory notes sync error:', error);
-      alert(`❌ 어음 동기화 실패: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsSyncingPromissory(null);
-    }
+    await handleRunBankProductSync(
+      bankId,
+      () => window.electron.financeHub.syncPromissoryNotes(bankId),
+      '어음',
+    );
   };
 
   // ============================================
@@ -4066,6 +4108,7 @@ const FinanceHub: React.FC = () => {
           <div className="finance-hub__section finance-hub__section--full" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
             <PromissoryNotesPage
               onSyncPromissoryNotes={handleSyncPromissoryNotes}
+              onRunBankProductSync={handleRunBankProductSync}
               syncingBankId={isSyncingPromissory}
               promissorySyncBanks={connectedBanks
                 .filter((b) => b.status === 'connected')

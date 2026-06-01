@@ -2410,10 +2410,10 @@ export class FinanceHubScheduler extends EventEmitter {
         }
 
         if (bankId === 'ibk' && raw.filePath && typeof raw.filePath === 'string') {
-          const imp = financeHubDb.importIbkPromissoryNotesFromExcel(raw.filePath);
+          const imp = financeHubDb.importIbkB2bReceivablesFromExcel(raw.filePath);
           return {
             success: imp.success !== false,
-            inserted: imp.imported,
+            imported: imp.imported,
             skipped: imp.skipped,
             error: imp.error,
           };

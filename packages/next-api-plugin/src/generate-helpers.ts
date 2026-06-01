@@ -521,6 +521,102 @@ export async function queryBankProductTable(options: {
   return callFinanceHubTool('financehub_query_bank_product_table', options);
 }
 
+/**
+ * Create or update a bank/card account (no credentials).
+ */
+export async function upsertFinanceHubAccount(account: {
+  bankId: string;
+  accountNumber: string;
+  accountName?: string;
+  customerName?: string;
+  balance?: number;
+  availableBalance?: number;
+  currency?: string;
+  accountType?: string;
+  openDate?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  return callFinanceHubTool('financehub_upsert_account', account);
+}
+
+/**
+ * Import bank or card transactions (deduplicated). Max 1000 per call.
+ */
+export async function importFinanceHubTransactions(options: {
+  bankId: string;
+  accountData: {
+    accountNumber: string;
+    accountName?: string;
+    customerName?: string;
+    balance?: number;
+    availableBalance?: number;
+    openDate?: string;
+  };
+  transactions: Array<Record<string, unknown>>;
+  syncMetadata: {
+    queryPeriodStart: string;
+    queryPeriodEnd: string;
+    filePath?: string;
+  };
+  isCard?: boolean;
+}) {
+  return callFinanceHubTool('financehub_import_transactions', options);
+}
+
+/**
+ * Upsert rows into a bank-product table (loans, receivables, etc.). Max 500 per call.
+ */
+export async function upsertFinanceHubBankProductRows(options: {
+  tableSlug: string;
+  rows: Array<Record<string, unknown>>;
+}) {
+  return callFinanceHubTool('financehub_upsert_bank_product_rows', options);
+}
+
+/**
+ * Delete an account and all its transactions/sync rows (not credentials).
+ */
+export async function deleteFinanceHubAccount(bankId: string, accountNumber: string) {
+  return callFinanceHubTool('financehub_delete_account', { bankId, accountNumber });
+}
+
+/**
+ * Delete all imported data for a bankId (accounts, transactions, sync ops).
+ */
+export async function deleteFinanceHubImportedDataForBank(bankId: string) {
+  return callFinanceHubTool('financehub_delete_imported_data_for_bank', { bankId });
+}
+
+/**
+ * Delete transactions by account scope, date range, and/or ids (max 500 ids).
+ */
+export async function deleteFinanceHubTransactions(options: {
+  accountId?: string;
+  bankId?: string;
+  accountNumber?: string;
+  startDate?: string;
+  endDate?: string;
+  transactionIds?: string[];
+  isCard?: boolean;
+}) {
+  return callFinanceHubTool('financehub_delete_transactions', options);
+}
+
+/**
+ * Delete bank-product table rows by ids and/or filters (max 1000 rows).
+ */
+export async function deleteFinanceHubBankProductRows(options: {
+  tableSlug: string;
+  ids?: string[];
+  filters?: Array<{
+    column: string;
+    op: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'like' | 'in';
+    value: string | number | Array<string | number>;
+  }>;
+}) {
+  return callFinanceHubTool('financehub_delete_bank_product_rows', options);
+}
+
 // ==========================================
 // INTERNAL KNOWLEDGE / BUSINESS IDENTITY / COMPANY RESEARCH (MCP)
 // ==========================================

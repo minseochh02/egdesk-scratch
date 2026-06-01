@@ -2,8 +2,8 @@
  * FinanceHub MCP Service
  * Implements the IMCPService interface for FinanceHub database operations
  *
- * Provides read-only access to Korean bank accounts, transactions, and Hometax tables
- * All credential operations are explicitly excluded for security
+ * Read/write access to Korean bank accounts, transactions, bank-product tables, and Hometax reads.
+ * Write/delete tools for accounts, transactions, and bank-product rows. No credential operations.
  */
 
 import Database from 'better-sqlite3';
@@ -14,7 +14,7 @@ import { FinanceHubDbManager } from '../../sqlite/financehub';
  * FinanceHub MCP Service
  * Provides MCP tools for querying Korean bank accounts and transactions
  *
- * Security: Read-only access only, no credential operations exposed
+ * Security: No credential operations exposed; writes are scoped (no raw SQL).
  */
 export class FinanceHubMCPService implements IMCPService {
   private manager: FinanceHubDbManager;
@@ -486,6 +486,171 @@ export class FinanceHubMCPService implements IMCPService {
           },
           required: ['tableSlug']
         }
+      },
+      {
+        name: 'financehub_upsert_account',
+        description:
+          'Create or update a bank/card account record (accounts table). Does not store credentials. Returns: { success: true, account: { id, bankId, accountNumber, accountName, customerName, balance, availableBalance, currency, accountType, openDate, isActive, lastSyncedAt, createdAt, updatedAt } }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string', description: 'Bank or card company id (e.g. "shinhan", "bc-card")' },
+            accountNumber: { type: 'string', description: 'Account or card number' },
+            accountName: { type: 'string' },
+            customerName: { type: 'string' },
+            balance: { type: 'number' },
+            availableBalance: { type: 'number' },
+            currency: { type: 'string', default: 'KRW' },
+            accountType: { type: 'string' },
+            openDate: { type: 'string', description: 'YYYY-MM-DD' },
+            metadata: { type: 'object', description: 'Optional JSON metadata (limits, labels, etc.)' }
+          },
+          required: ['bankId', 'accountNumber']
+        }
+      },
+      {
+        name: 'financehub_import_transactions',
+        description:
+          'Import bank or card transactions for an account (deduplicates automatically). Upserts the account, creates a sync operation, and bulk-inserts rows. Max 1000 transactions per call. Returns: { success: true, accountId, syncOperationId, inserted, skipped }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string', description: 'Bank or card company id' },
+            isCard: {
+              type: 'boolean',
+              description: 'True for card companies (or when bankId contains "-card")',
+              default: false
+            },
+            accountData: {
+              type: 'object',
+              description: 'Account fields to upsert before import',
+              properties: {
+                accountNumber: { type: 'string' },
+                accountName: { type: 'string' },
+                customerName: { type: 'string' },
+                balance: { type: 'number' },
+                availableBalance: { type: 'number' },
+                openDate: { type: 'string' }
+              },
+              required: ['accountNumber']
+            },
+            transactions: {
+              type: 'array',
+              description:
+                'Transaction rows. Bank: date, time, withdrawal, deposit, description, memo, balance, branch, counterparty. Card: approvalDatetime/date, amount, merchantName, cardNumber, etc.',
+              items: { type: 'object' }
+            },
+            syncMetadata: {
+              type: 'object',
+              properties: {
+                queryPeriodStart: { type: 'string', description: 'YYYY-MM-DD' },
+                queryPeriodEnd: { type: 'string', description: 'YYYY-MM-DD' },
+                filePath: { type: 'string' }
+              },
+              required: ['queryPeriodStart', 'queryPeriodEnd']
+            }
+          },
+          required: ['bankId', 'accountData', 'transactions', 'syncMetadata']
+        }
+      },
+      {
+        name: 'financehub_upsert_bank_product_rows',
+        description:
+          'Insert or replace rows in a per-(bank, product) table (loans, receivables, endorsements, etc.). Call financehub_list_bank_product_tables first for slug and column names. Each row needs `id` or one will be generated. Max 500 rows per call. Returns: { tableSlug, upserted, skipped, errors }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableSlug: {
+              type: 'string',
+              description: 'Table slug from financehub_list_bank_product_tables'
+            },
+            rows: {
+              type: 'array',
+              description: 'Array of row objects using exact snake_case column names from the table schema',
+              items: { type: 'object' }
+            }
+          },
+          required: ['tableSlug', 'rows']
+        }
+      },
+      {
+        name: 'financehub_delete_account',
+        description:
+          'Delete an account and all its transactions/sync history for that account. Does not remove bank registry or saved credentials. Returns: { success, deleted, unifiedTransactions, bankTransactions, cardTransactions, syncOperations }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string' },
+            accountNumber: { type: 'string' }
+          },
+          required: ['bankId', 'accountNumber']
+        }
+      },
+      {
+        name: 'financehub_delete_imported_data_for_bank',
+        description:
+          'Delete all accounts, transactions, and sync operations for a bankId. Does not remove the banks registry row or saved credentials. Returns counts per table.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string', description: 'e.g. "shinhan", "serp", "bc-card"' }
+          },
+          required: ['bankId']
+        }
+      },
+      {
+        name: 'financehub_delete_transactions',
+        description:
+          'Delete transactions by account scope and/or explicit ids. Requires accountId or bankId+accountNumber, plus startDate/endDate or transactionIds (or use financehub_delete_account to wipe an account). Max 500 transactionIds. Returns: { accountId, deleted, breakdown }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            accountId: { type: 'string' },
+            bankId: { type: 'string' },
+            accountNumber: { type: 'string' },
+            startDate: { type: 'string', description: 'YYYY-MM-DD' },
+            endDate: { type: 'string', description: 'YYYY-MM-DD' },
+            transactionIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Up to 500 transaction row ids'
+            },
+            isCard: { type: 'boolean' }
+          },
+          required: []
+        }
+      },
+      {
+        name: 'financehub_delete_bank_product_rows',
+        description:
+          'Delete rows from a bank-product table by ids and/or filters (same filter shape as financehub_query_bank_product_table). Requires at least one id or filter. Max 1000 rows per call. Returns: { tableSlug, deleted, error? }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tableSlug: { type: 'string' },
+            ids: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Primary-key ids to delete (max 500)'
+            },
+            filters: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  column: { type: 'string' },
+                  op: {
+                    type: 'string',
+                    enum: ['=', '!=', '>', '<', '>=', '<=', 'like', 'in']
+                  },
+                  value: {}
+                },
+                required: ['column', 'op', 'value']
+              }
+            }
+          },
+          required: ['tableSlug']
+        }
       }
     ];
   }
@@ -940,6 +1105,131 @@ export class FinanceHubMCPService implements IMCPService {
             offset: q.offset,
             rows: q.rows
           };
+          break;
+        }
+
+        case 'financehub_upsert_account': {
+          const { bankId, accountNumber, accountName, customerName, balance, availableBalance, currency, accountType, openDate, metadata } = args;
+          if (!bankId || !accountNumber) {
+            throw new Error('bankId and accountNumber are required');
+          }
+          const account = this.manager.upsertAccount({
+            bankId,
+            accountNumber,
+            accountName,
+            customerName,
+            balance,
+            availableBalance,
+            currency,
+            accountType,
+            openDate,
+            metadata
+          });
+          result = {
+            success: true,
+            account: {
+              id: account.id,
+              bankId: account.bankId,
+              accountNumber: account.accountNumber,
+              accountName: account.accountName,
+              customerName: account.customerName,
+              balance: account.balance,
+              availableBalance: account.availableBalance,
+              currency: account.currency,
+              accountType: account.accountType,
+              openDate: account.openDate,
+              isActive: account.isActive,
+              lastSyncedAt: account.lastSyncedAt,
+              createdAt: account.createdAt,
+              updatedAt: account.updatedAt
+            }
+          };
+          break;
+        }
+
+        case 'financehub_import_transactions': {
+          const { bankId, accountData, transactions, syncMetadata, isCard = false } = args;
+          if (!bankId || !accountData?.accountNumber || !Array.isArray(transactions)) {
+            throw new Error('bankId, accountData.accountNumber, and transactions array are required');
+          }
+          if (!syncMetadata?.queryPeriodStart || !syncMetadata?.queryPeriodEnd) {
+            throw new Error('syncMetadata.queryPeriodStart and queryPeriodEnd are required');
+          }
+          const capped = transactions.slice(0, 1000);
+          const importResult = this.manager.importTransactions(
+            bankId,
+            accountData,
+            capped,
+            syncMetadata,
+            Boolean(isCard)
+          );
+          result = {
+            success: true,
+            accountId: importResult.account.id,
+            syncOperationId: importResult.syncOperation.id,
+            inserted: importResult.inserted,
+            skipped: importResult.skipped
+          };
+          break;
+        }
+
+        case 'financehub_upsert_bank_product_rows': {
+          const { tableSlug, rows } = args;
+          if (!tableSlug || typeof tableSlug !== 'string') {
+            throw new Error('tableSlug is required');
+          }
+          if (!Array.isArray(rows) || rows.length === 0) {
+            throw new Error('rows must be a non-empty array');
+          }
+          const upsertResult = this.manager.upsertBankProductRows({ tableSlug, rows });
+          result = { success: true, ...upsertResult };
+          break;
+        }
+
+        case 'financehub_delete_account': {
+          const { bankId, accountNumber } = args;
+          if (!bankId || !accountNumber) {
+            throw new Error('bankId and accountNumber are required');
+          }
+          const del = this.manager.deleteAccount(bankId, accountNumber);
+          result = { success: del.deleted, ...del };
+          break;
+        }
+
+        case 'financehub_delete_imported_data_for_bank': {
+          const { bankId } = args;
+          if (!bankId) {
+            throw new Error('bankId is required');
+          }
+          const counts = this.manager.deleteImportedDataForBankId(bankId);
+          result = { success: true, bankId, ...counts };
+          break;
+        }
+
+        case 'financehub_delete_transactions': {
+          const delTx = this.manager.deleteTransactions({
+            accountId: args.accountId,
+            bankId: args.bankId,
+            accountNumber: args.accountNumber,
+            startDate: args.startDate,
+            endDate: args.endDate,
+            transactionIds: args.transactionIds,
+            isCard: args.isCard
+          });
+          result = { success: true, ...delTx };
+          break;
+        }
+
+        case 'financehub_delete_bank_product_rows': {
+          const { tableSlug, ids, filters } = args;
+          if (!tableSlug) {
+            throw new Error('tableSlug is required');
+          }
+          const delRows = this.manager.deleteBankProductRows({ tableSlug, ids, filters });
+          if (delRows.error) {
+            throw new Error(delRows.error);
+          }
+          result = { success: true, ...delRows };
           break;
         }
 

@@ -994,7 +994,7 @@ export class SQLiteManager {
     ipcMain.handle('sqlite-financehub-delete-account', async (event, bankId, accountNumber) => {
       try {
         const result = this.getFinanceHubManager().deleteAccount(bankId, accountNumber);
-        return { success: result, data: result };
+        return { success: result.deleted, data: result };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }

@@ -40,6 +40,13 @@ import {
   FinanceHubListAccountsTool,
   FinanceHubQueryTransactionsTool,
   FinanceHubGetStatisticsTool,
+  FinanceHubUpsertAccountTool,
+  FinanceHubImportTransactionsTool,
+  FinanceHubUpsertBankProductRowsTool,
+  FinanceHubDeleteAccountTool,
+  FinanceHubDeleteImportedDataForBankTool,
+  FinanceHubDeleteTransactionsTool,
+  FinanceHubDeleteBankProductRowsTool,
   InternalKnowledgeListSnapshotsTool,
   InternalKnowledgeGetSnapshotTool,
   InternalKnowledgeGetCompanyInfoTool,
@@ -556,6 +563,122 @@ export class ToolRegistry {
           required: []
         };
 
+      case 'financehub_upsert_account':
+        return {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string', description: 'Bank or card company id' },
+            accountNumber: { type: 'string', description: 'Account or card number' },
+            accountName: { type: 'string' },
+            customerName: { type: 'string' },
+            balance: { type: 'number' },
+            availableBalance: { type: 'number' },
+            currency: { type: 'string' },
+            accountType: { type: 'string' },
+            openDate: { type: 'string', description: 'YYYY-MM-DD' },
+            metadata: { type: 'object' }
+          },
+          required: ['bankId', 'accountNumber']
+        };
+
+      case 'financehub_import_transactions':
+        return {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string' },
+            isCard: { type: 'boolean' },
+            accountData: {
+              type: 'object',
+              properties: {
+                accountNumber: { type: 'string' },
+                accountName: { type: 'string' },
+                customerName: { type: 'string' },
+                balance: { type: 'number' },
+                availableBalance: { type: 'number' },
+                openDate: { type: 'string' }
+              },
+              required: ['accountNumber']
+            },
+            transactions: { type: 'array', items: { type: 'object' } },
+            syncMetadata: {
+              type: 'object',
+              properties: {
+                queryPeriodStart: { type: 'string' },
+                queryPeriodEnd: { type: 'string' },
+                filePath: { type: 'string' }
+              },
+              required: ['queryPeriodStart', 'queryPeriodEnd']
+            }
+          },
+          required: ['bankId', 'accountData', 'transactions', 'syncMetadata']
+        };
+
+      case 'financehub_upsert_bank_product_rows':
+        return {
+          type: 'object',
+          properties: {
+            tableSlug: { type: 'string', description: 'From financehub_list_bank_product_tables' },
+            rows: { type: 'array', items: { type: 'object' } }
+          },
+          required: ['tableSlug', 'rows']
+        };
+
+      case 'financehub_delete_account':
+        return {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string' },
+            accountNumber: { type: 'string' }
+          },
+          required: ['bankId', 'accountNumber']
+        };
+
+      case 'financehub_delete_imported_data_for_bank':
+        return {
+          type: 'object',
+          properties: {
+            bankId: { type: 'string' }
+          },
+          required: ['bankId']
+        };
+
+      case 'financehub_delete_transactions':
+        return {
+          type: 'object',
+          properties: {
+            accountId: { type: 'string' },
+            bankId: { type: 'string' },
+            accountNumber: { type: 'string' },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            transactionIds: { type: 'array', items: { type: 'string' } },
+            isCard: { type: 'boolean' }
+          },
+          required: []
+        };
+
+      case 'financehub_delete_bank_product_rows':
+        return {
+          type: 'object',
+          properties: {
+            tableSlug: { type: 'string' },
+            ids: { type: 'array', items: { type: 'string' } },
+            filters: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  column: { type: 'string' },
+                  op: { type: 'string' },
+                  value: {}
+                },
+                required: ['column', 'op', 'value']
+              }
+            }
+          },
+          required: ['tableSlug']
+        };
+
       case 'businessidentity_list_snapshots':
         return {
           type: 'object',
@@ -1042,6 +1165,13 @@ export class ToolRegistry {
     this.registerTool(new FinanceHubListAccountsTool());
     this.registerTool(new FinanceHubQueryTransactionsTool());
     this.registerTool(new FinanceHubGetStatisticsTool());
+    this.registerTool(new FinanceHubUpsertAccountTool());
+    this.registerTool(new FinanceHubImportTransactionsTool());
+    this.registerTool(new FinanceHubUpsertBankProductRowsTool());
+    this.registerTool(new FinanceHubDeleteAccountTool());
+    this.registerTool(new FinanceHubDeleteImportedDataForBankTool());
+    this.registerTool(new FinanceHubDeleteTransactionsTool());
+    this.registerTool(new FinanceHubDeleteBankProductRowsTool());
 
     // Business Identity & Internal Knowledge Tools
     this.registerTool(new InternalKnowledgeListSnapshotsTool());
