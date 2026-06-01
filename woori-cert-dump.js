@@ -5,6 +5,9 @@
  * .xwup-tableview-cell XPaths, clicks the November-expiry cert, then keeps
  * the browser open for inspection (does NOT complete login).
  *
+ * On failure (or if password field does not appear), writes debug HTML to
+ * woori-cert-debug/woori-cert-<timestamp>-*.html
+ *
  * Usage (from egdesk-scratch/):
  *   node woori-cert-dump.js              # click cert expiring in November (month 11)
  *   node woori-cert-dump.js --month 9    # click September instead
@@ -21,6 +24,8 @@ const {
   dumpWooriCertRowsInBrowser,
 } = require('./scripts/bank-excel-download-automation/woori-xwup-cert');
 
+const DEBUG_DIR = path.join(__dirname, 'woori-cert-debug');
+
 function parseArgs(argv) {
   let month = parseInt(process.env.WOORI_CERT_MONTH || '11', 10);
   for (let i = 2; i < argv.length; i++) {
@@ -33,6 +38,116 @@ function parseArgs(argv) {
     month: Number.isNaN(month) ? 11 : month,
     expiry: process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '',
   };
+}
+
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+async function writeDebugHtml(page, label, extra = {}) {
+  fs.mkdirSync(DEBUG_DIR, { recursive: true });
+  const ts = stamp();
+  const base = path.join(DEBUG_DIR, `woori-cert-${ts}-${label}`);
+
+  const snapshot = await page.evaluate(() => {
+    const xwupRoot =
+      document.querySelector('#xwup') ||
+      document.querySelector('[id*="xwup"]') ||
+      document.querySelector('.xwup-body')?.closest('div') ||
+      null;
+    const cells = Array.from(document.querySelectorAll('.xwup-tableview-cell')).map((el, i) => ({
+      index: i,
+      text: el.innerText.trim().replace(/\s+/g, ' ').slice(0, 120),
+      visible: el.offsetParent != null,
+      display: getComputedStyle(el).display,
+      rect: el.getBoundingClientRect(),
+      outerHTML: el.outerHTML.slice(0, 400),
+    }));
+    return {
+      url: location.href,
+      title: document.title,
+      fullHtml: document.documentElement.outerHTML,
+      xwupHtml: xwupRoot ? xwupRoot.outerHTML : null,
+      xwupRootTag: xwupRoot ? xwupRoot.id || xwupRoot.className : null,
+      cells,
+    };
+  });
+
+  const fullPath = `${base}-full.html`;
+  fs.writeFileSync(fullPath, snapshot.fullHtml, 'utf8');
+
+  let xwupPath = null;
+  if (snapshot.xwupHtml) {
+    xwupPath = `${base}-xwup.html`;
+    fs.writeFileSync(xwupPath, snapshot.xwupHtml, 'utf8');
+  }
+
+  const metaPath = `${base}-meta.json`;
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify(
+      {
+        label,
+        timestamp: ts,
+        url: snapshot.url,
+        title: snapshot.title,
+        xwupRoot: snapshot.xwupRootTag,
+        cellCount: snapshot.cells.length,
+        cells: snapshot.cells,
+        ...extra,
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+
+  console.log(`\n📁 Debug dump (${label}):`);
+  console.log(`   full:  ${fullPath}`);
+  if (xwupPath) console.log(`   xwup:  ${xwupPath}`);
+  console.log(`   meta:  ${metaPath}`);
+
+  return { fullPath, xwupPath, metaPath, cells: snapshot.cells };
+}
+
+async function clickCertCell(page, target) {
+  const cell = page.locator('.xwup-tableview-cell').nth(target.cellIndex);
+  const box = await cell.boundingBox().catch(() => null);
+  console.log(`[5] cell boundingBox:`, box);
+
+  try {
+    await cell.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    await cell.click({ timeout: 8000, force: true });
+    return { method: 'playwright-click', ok: true };
+  } catch (e1) {
+    console.log(`[5] playwright click failed: ${e1.message}`);
+  }
+
+  try {
+    const viaJs = await page.evaluate((cellIndex) => {
+      const el = document.querySelectorAll('.xwup-tableview-cell')[cellIndex];
+      if (!el) return { ok: false, reason: 'cell missing in DOM' };
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      if (typeof el.click === 'function') el.click();
+      return { ok: true, text: el.innerText.trim().slice(0, 80) };
+    }, target.cellIndex);
+    if (viaJs.ok) return { method: 'dispatchEvent+click', ok: true, detail: viaJs };
+  } catch (e2) {
+    console.log(`[5] JS click failed: ${e2.message}`);
+  }
+
+  if (target.expiryXpath) {
+    try {
+      await page.locator(`xpath=${target.expiryXpath}`).click({ timeout: 5000, force: true });
+      return { method: 'expiry-xpath', ok: true };
+    } catch (e3) {
+      console.log(`[5] xpath click failed: ${e3.message}`);
+    }
+  }
+
+  return { method: 'none', ok: false };
 }
 
 (async () => {
@@ -69,6 +184,8 @@ function parseArgs(argv) {
     process.exit(0);
   });
 
+  let clickOk = false;
+
   try {
     console.log('[1] Navigating to Woori Bank...');
     await page.goto('https://nbi.wooribank.com/nbi/woori?withyou=bi');
@@ -97,6 +214,7 @@ function parseArgs(argv) {
     await page.waitForTimeout(1000);
 
     const dump = await page.evaluate(dumpWooriCertRowsInBrowser);
+    await writeDebugHtml(page, 'before-click', { certRows: dump.rows, month, expiry });
 
     console.log(`\n.xwup-tableview-cell total: ${dump.allCellCount}`);
     console.log(`#xwup_cert_table present: ${dump.hasCertTable}`);
@@ -109,19 +227,20 @@ function parseArgs(argv) {
         return el ? el.innerText.substring(0, 2000) : document.body.innerText.substring(0, 2000);
       });
       console.log(raw);
-    } else {
-      console.log(`\n✅ Found ${dump.rows.length} cert row(s)\n`);
-      console.log('─'.repeat(80));
-      for (const row of dump.rows) {
-        console.log(
-          `[${row.index}] 구분="${row.texts[0]}"  사용자="${row.texts[1]}"  만료일="${row.texts[2]}"  발급자="${row.texts[3]}"`
-        );
-        console.log(`     click: page.locator('.xwup-tableview-cell').nth(${row.cellIndex}).click({ force: true })`);
-        console.log(`     expiry xpath: ${row.expiryXpath}`);
-        console.log();
-      }
-      console.log('─'.repeat(80));
+      throw new Error('no cert rows — see woori-cert-debug/*-before-click-full.html');
     }
+
+    console.log(`\n✅ Found ${dump.rows.length} cert row(s)\n`);
+    console.log('─'.repeat(80));
+    for (const row of dump.rows) {
+      console.log(
+        `[${row.index}] 구분="${row.texts[0]}"  사용자="${row.texts[1]}"  만료일="${row.texts[2]}"  발급자="${row.texts[3]}"`
+      );
+      console.log(`     click: page.locator('.xwup-tableview-cell').nth(${row.cellIndex}).click({ force: true })`);
+      console.log(`     expiry xpath: ${row.expiryXpath}`);
+      console.log();
+    }
+    console.log('─'.repeat(80));
 
     const resolveArgs = expiry ? { expiry } : { month };
     console.log(
@@ -129,32 +248,57 @@ function parseArgs(argv) {
     );
     const target = await page.evaluate(resolveWooriCertCellInBrowser, resolveArgs);
     if (!target?.ok) {
+      await writeDebugHtml(page, 'resolve-failed', { resolveArgs, target });
       throw new Error(target?.reason || 'cert not found for given month/expiry');
     }
+
+    const rowMeta = dump.rows[target.rowIdx];
+    if (rowMeta?.expiryXpath) target.expiryXpath = rowMeta.expiryXpath;
+
     console.log(
       `[5] Target row ${target.rowIdx}: name="${target.nameText}" expiry="${target.expiryText}" → nth(${target.cellIndex})`
     );
 
-    await page.locator('.xwup-tableview-cell').nth(target.cellIndex).click({ timeout: 8000, force: true });
+    const clickResult = await clickCertCell(page, target);
+    console.log(`[5] click result:`, clickResult);
     await page.waitForTimeout(1500);
 
     const afterClick = await page.evaluate(() => ({
       pwdVisible: !!document.querySelector('#xwup_certselect_tek_input1'),
-      pwdDisplay: document.querySelector('#xwup_certselect_tek_input1')?.offsetParent != null,
-      selectedText: document.querySelector('.xwup_cert_table, #xwup_cert_table')?.innerText?.slice(0, 200) || '',
+      pwdDisplayed:
+        document.querySelector('#xwup_certselect_tek_input1')?.offsetParent != null,
     }));
-    if (afterClick.pwdVisible) {
+
+    clickOk = clickResult.ok && afterClick.pwdVisible;
+
+    await writeDebugHtml(page, clickOk ? 'after-click-ok' : 'after-click-failed', {
+      target,
+      clickResult,
+      afterClick,
+      month,
+      expiry,
+    });
+
+    if (clickOk) {
       console.log('[5] ✓ Click OK — password field (#xwup_certselect_tek_input1) is present');
     } else {
-      console.log('[5] ⚠️ Click done but password field not visible yet — check browser');
+      console.log('[5] ✗ Click failed or password field not visible — see woori-cert-debug/');
     }
 
     console.log('\nBrowser stays open 30s for inspection (Ctrl+C to exit early)...');
     await page.waitForTimeout(30000);
+  } catch (err) {
+    try {
+      await writeDebugHtml(page, 'error', { error: err.message, stack: err.stack });
+    } catch (_) {}
+    throw err;
   } finally {
     await context.close();
     try {
       fs.rmSync(profileDir, { recursive: true, force: true });
     } catch (_) {}
   }
-})().catch(console.error);
+})().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});
