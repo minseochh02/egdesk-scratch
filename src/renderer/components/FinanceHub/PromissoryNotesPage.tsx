@@ -233,12 +233,14 @@ const TABLE_SECTIONS: TableSection[] = [
   {
     slug: 'ibk_endorsements',
     title: 'IBK 배서내역',
-    subtitle: 'B2B → 전자어음 → 조회 → 배서내역조회',
+    subtitle: 'B2B → 전자어음 → 조회 → 배서내역조회 (최대 12개월)',
     bankId: 'ibk',
+    acceptsDateRange: true,
     canImportExcel: true,
+    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getIbkEndorsements(),
-    sync: async () => {
-      return await window.electron.financeHub.syncIbkEndorsements();
+    sync: async (opts) => {
+      return await window.electron.financeHub.syncIbkEndorsements(opts);
     },
     columns: IBK_ENDORSEMENTS_COLS,
   },

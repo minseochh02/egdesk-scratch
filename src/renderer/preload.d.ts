@@ -826,7 +826,7 @@ interface FinanceHubAPI {
     importError?: string;
     importWarnings?: string[];
   }>;
-  syncIbkEndorsements: () => Promise<{
+  syncIbkEndorsements: (opts?: { startDate?: string; endDate?: string }) => Promise<{
     success: boolean;
     error?: string;
     imported?: number;

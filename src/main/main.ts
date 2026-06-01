@@ -1025,20 +1025,20 @@ const createWindow = async () => {
 
       ipcMain.handle(
         'finance-hub:sync-ibk-endorsements',
-        async (_event) => {
+        async (_event, opts: { startDate?: string; endDate?: string } = {}) => {
           try {
             const automator = activeAutomators.get('ibk');
             if (!automator) {
               return { success: false, error: '활성 IBK 세션이 없습니다. 먼저 로그인해 주세요.' };
             }
             type IbkAutomator = {
-              syncEndorsements?: () => Promise<Record<string, unknown>>;
+              syncEndorsements?: (o?: { startDate?: string; endDate?: string }) => Promise<Record<string, unknown>>;
             };
             const a = automator as IbkAutomator;
             if (typeof a.syncEndorsements !== 'function') {
               return { success: false, error: 'IBK 자동화에 syncEndorsements 메서드가 없습니다.' };
             }
-            const dlResult = await a.syncEndorsements();
+            const dlResult = await a.syncEndorsements(opts);
             if (!dlResult?.success || !dlResult?.filePath) return dlResult;
             const financeHubManager = getSQLiteManager().getFinanceHubManager();
             const importResult = financeHubManager.importIbkEndorsementsFromExcel(dlResult.filePath as string);

@@ -10,6 +10,7 @@ export interface RegisteredProject {
   type?: 'nextjs' | 'vite' | 'react' | 'unknown';
   mode: 'dev' | 'production';
   availableModes: ('dev' | 'production')[];
+  deploymentPath?: string;
 }
 
 export class ProjectRegistry {
@@ -24,7 +25,8 @@ export class ProjectRegistry {
     url: string,
     status: 'starting' | 'running' | 'stopped' | 'error' | 'rebuilding',
     type?: 'nextjs' | 'vite' | 'react' | 'unknown',
-    mode: 'dev' | 'production' = 'production'
+    mode: 'dev' | 'production' = 'production',
+    deploymentPath?: string
   ): RegisteredProject {
     // Use folder name as project name
     const projectName = path.basename(folderPath);
@@ -38,7 +40,8 @@ export class ProjectRegistry {
       registeredAt: new Date().toISOString(),
       type,
       mode,
-      availableModes: ['dev', 'production']
+      availableModes: ['dev', 'production'],
+      deploymentPath,
     };
 
     this.projects.set(projectName, project);

@@ -753,7 +753,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           exportStartedAt,
         );
         if (!fallbackFile) {
-          await this._cleanupIbkPopups();
+          await this._closeIbkPostDownloadPopup('promissory-download-failed');
           return {
             success: false,
             error: '엑셀 다운로드를 확인할 수 없습니다. 화면에서 조회 결과와 저장 버튼을 확인해 주세요.',
@@ -771,11 +771,11 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
       if (!saved) {
-        await this._cleanupIbkPopups();
+        await this._closeIbkPostDownloadPopup('promissory-save-failed');
         return { success: false, error: '다운로드 파일 저장에 실패했습니다.' };
       }
 
-      await this._cleanupIbkPopups();
+      await this._closeIbkPostDownloadPopup('promissory');
 
       return {
         success: true,
@@ -786,7 +786,7 @@ class IbkBankAutomator extends BaseBankAutomator {
     } catch (error) {
       this.error('IBK syncPromissoryNotes failed:', error.message);
       try {
-        await this._cleanupIbkPopups();
+        await this._closeIbkPostDownloadPopup('promissory-error');
       } catch (e) {
         /* ignore */
       }
@@ -803,9 +803,10 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   /**
    * Navigate to 배서내역조회 and download the Excel.
+   * @param {{ startDate?: string, endDate?: string }} [opts] YYYYMMDD; max 12-month span.
    * Returns { success, filePath } on success; auto-import happens in main process.
    */
-  async syncEndorsements() {
+  async syncEndorsements(opts = {}) {
     if (!this.page) {
       return { success: false, error: '브라우저 페이지가 없습니다.' };
     }
@@ -855,39 +856,8 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       mainframe = this.page.frame({ name: 'mainframe' }) || mainframe;
 
-      // Date range: wide default (2022-01-01 ~ 당해 연말)
-      const startYY = '2022';
-      const startMM = '01';
-      const startDD = '01';
-      const now = new Date();
-      const endOfYear = new Date(now.getFullYear(), 11, 31);
-      const endYY = String(endOfYear.getFullYear());
-      const endMM = String(endOfYear.getMonth() + 1).padStart(2, '0');
-      const endDD = String(endOfYear.getDate()).padStart(2, '0');
-
-      try {
-        await mainframe.evaluate(({ sy, sm, sd, ey, em, ed }) => {
-          const setVal = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) {
-              el.value = val;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              if (typeof el.onchange === 'function') el.onchange();
-              return true;
-            }
-            return false;
-          };
-          setVal('inqy_sttg_ymd_yy', sy);
-          setVal('inqy_sttg_ymd_mm', sm);
-          setVal('inqy_sttg_ymd_dd', sd);
-          setVal('inqy_eymd_yy', ey);
-          setVal('inqy_eymd_mm', em);
-          setVal('inqy_eymd_dd', ed);
-        }, { sy: startYY, sm: startMM, sd: startDD, ey: endYY, em: endMM, ed: endDD });
-        this.log(`IBK endorsements: date range set (${startYY}-${startMM}-${startDD} ~ ${endYY}-${endMM}-${endDD})`);
-      } catch (e) {
-        this.warn('IBK endorsements: date selects failed:', e.message);
-      }
+      const { startDate, endDate } = this._ibkEndorsementsDateRange(opts);
+      await this._setIbkInquiryDateRange(mainframe, startDate, endDate);
       await this.page.waitForTimeout(1000);
 
       const searchOk = await this._robustClickMainframe(mainframe, 'a.btn_ok', '조회');
@@ -895,6 +865,40 @@ class IbkBankAutomator extends BaseBankAutomator {
         await mainframe.locator('a:has-text("조회")').first().click({ force: true }).catch(() => {});
       }
       await this.page.waitForTimeout(4000);
+
+      const inquiryBlocked = await mainframe.evaluate(() => {
+        const text = document.body?.innerText || '';
+        const phrases = [
+          '조회기간은 12개월',
+          '12개월 이내',
+          '조회기간을 확인',
+          '조회결과가 없습니다',
+          '저장할 데이터가 없습니다',
+          '조회된 데이터가 없습니다',
+        ];
+        const hit = phrases.find((p) => text.includes(p));
+        return { blocked: !!hit, phrase: hit || null };
+      }).catch(() => ({ blocked: false, phrase: null }));
+
+      if (inquiryBlocked.blocked) {
+        const phrase = inquiryBlocked.phrase || '';
+        if (/12개월|조회기간/.test(phrase)) {
+          await this._closeIbkPostDownloadPopup('endorsements-date-error');
+          return {
+            success: false,
+            error: `배서내역 조회기간 오류: ${phrase} (현재 설정: ${startDate} ~ ${endDate})`,
+          };
+        }
+        if (/없습니다|없음/.test(phrase)) {
+          this.log(`[IBK endorsements] no data for ${startDate} ~ ${endDate} — ${phrase}`);
+          return {
+            success: true,
+            imported: 0,
+            filePath: null,
+            message: phrase,
+          };
+        }
+      }
 
       await this.focusPlaywrightPage();
       const exportStartedAt = Date.now();
@@ -923,7 +927,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           exportStartedAt,
         );
         if (!fallbackFile) {
-          await this._cleanupIbkPopups();
+          await this._closeIbkPostDownloadPopup('endorsements-download-failed');
           return {
             success: false,
             error: '엑셀 다운로드를 확인할 수 없습니다. 화면에서 조회 결과와 저장 버튼을 확인해 주세요.',
@@ -941,11 +945,11 @@ class IbkBankAutomator extends BaseBankAutomator {
 
       const saved = await this.saveDownloadSafely(download, fallbackFile?.path, finalPath);
       if (!saved) {
-        await this._cleanupIbkPopups();
+        await this._closeIbkPostDownloadPopup('endorsements-save-failed');
         return { success: false, error: '다운로드 파일 저장에 실패했습니다.' };
       }
 
-      await this._cleanupIbkPopups();
+      await this._closeIbkPostDownloadPopup('endorsements');
 
       return {
         success: true,
@@ -955,7 +959,7 @@ class IbkBankAutomator extends BaseBankAutomator {
     } catch (error) {
       this.error('IBK syncEndorsements failed:', error.message);
       try {
-        await this._cleanupIbkPopups();
+        await this._closeIbkPostDownloadPopup('endorsements-error');
       } catch (e) {
         /* ignore */
       }
@@ -1703,7 +1707,46 @@ class IbkBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * Click td[4] (the checkbox cell) of the given row in the loan-account table,
+   * Dismiss the IBK Excel "저장 완료" overlay (X button on outer page / frames).
+   * Same sequence as 거래내역 fetcher + loan sync recording: recording xpath first,
+   * then outer-page xpath, then generic cleanup, then aggressive scan.
+   */
+  async _closeIbkPostDownloadPopup(contextLabel = '') {
+    if (!this.page || this.page.isClosed()) return { ok: false };
+
+    const label = contextLabel ? ` (${contextLabel})` : '';
+
+    let closeResult = await this._closeIbkLoanDownloadPopupViaRecording();
+    if (closeResult?.ok) {
+      this.log(`[IBK] post-download popup closed via recording${label}`);
+      await this.page.waitForTimeout(400);
+      return { ok: true, method: 'recording' };
+    }
+
+    await this._closeIbkDownloadPopup();
+    await this.page.waitForTimeout(300);
+
+    closeResult = await this._closeIbkLoanDownloadPopupViaRecording();
+    if (closeResult?.ok) {
+      this.log(`[IBK] post-download popup closed via recording (2nd pass)${label}`);
+      await this.page.waitForTimeout(400);
+      return { ok: true, method: 'recording-retry' };
+    }
+
+    const cleaned = await this._robustCleanupIbkPopups({ maxAttempts: 2, minWaitMs: 1500 });
+    if (cleaned > 0) {
+      this.log(`[IBK] post-download popup cleaned via generic closer (${cleaned})${label}`);
+      await this.page.waitForTimeout(400);
+      return { ok: true, method: 'robust-cleanup' };
+    }
+
+    await this._closeIbkLoanDownloadPopupAggressive(contextLabel || 'post-download');
+    await this.page.waitForTimeout(400);
+    this.log(`[IBK] post-download popup close attempted (aggressive)${label}`);
+    return { ok: true, method: 'aggressive' };
+  }
+
+  /**
    * via JS-dispatched mouse events. Re-resolves the table the same way the
    * scanner does, so we click the exact same row that was enumerated.
    * Returns true if the click landed.
@@ -1828,8 +1871,89 @@ class IbkBankAutomator extends BaseBankAutomator {
     return { yyyy: d.slice(0, 4), mm: d.slice(4, 6), dd: d.slice(6, 8) };
   }
 
+  /** IBK 배서내역조회: max 12-month window, default = last 365 days → today. */
+  _ibkEndorsementsDateRange(opts = {}) {
+    return this._clampIbkInquiryDateRange(
+      opts.startDate && opts.endDate ? opts : this._ibkDefaultLoanDateRange(),
+      365,
+    );
+  }
+
   /**
-   * Driver: walk every loan account row, run 거래내역조회, download or skip on
+   * Clamp IBK inquiry dates: end ≤ today, span ≤ maxDays (배서내역 = 12 months).
+   */
+  _clampIbkInquiryDateRange(range, maxDays = 365) {
+    const fallback = this._ibkDefaultLoanDateRange();
+    let startDate = String(range?.startDate || fallback.startDate).replace(/\D/g, '');
+    let endDate = String(range?.endDate || fallback.endDate).replace(/\D/g, '');
+    const today = fallback.endDate;
+
+    if (endDate > today) endDate = today;
+    if (startDate > today) startDate = today;
+    if (startDate > endDate) startDate = endDate;
+
+    const endMs = new Date(
+      Number(endDate.slice(0, 4)),
+      Number(endDate.slice(4, 6)) - 1,
+      Number(endDate.slice(6, 8)),
+    ).getTime();
+    const startMs = new Date(
+      Number(startDate.slice(0, 4)),
+      Number(startDate.slice(4, 6)) - 1,
+      Number(startDate.slice(6, 8)),
+    ).getTime();
+    const diffDays = Math.round((endMs - startMs) / (24 * 3600 * 1000));
+
+    if (diffDays > maxDays) {
+      const clampedStart = new Date(endMs - maxDays * 24 * 3600 * 1000);
+      startDate = `${clampedStart.getFullYear()}${String(clampedStart.getMonth() + 1).padStart(2, '0')}${String(clampedStart.getDate()).padStart(2, '0')}`;
+      this.warn(`[IBK] date range clamped to ${maxDays} days: ${startDate} ~ ${endDate}`);
+    }
+
+    return { startDate, endDate };
+  }
+
+  /**
+   * Set 조회 start/end on IBK B2B inquiry pages (배서, 외상매출채권, etc.).
+   * Uses `<select id="inqy_sttg_ymd_yy">` trios — same as loan 거래내역조회.
+   */
+  async _setIbkInquiryDateRange(mainframe, startDate, endDate) {
+    const sParts = this._parseYmdParts(startDate);
+    const eParts = this._parseYmdParts(endDate);
+
+    for (const variant of ['', '1']) {
+      await this._setIbkLoanDate(mainframe, 'start', sParts, variant);
+      await this._setIbkLoanDate(mainframe, 'end', eParts, variant);
+    }
+
+    // Fallback for pages that use inputs instead of selects
+    await mainframe
+      .evaluate(({ sy, sm, sd, ey, em, ed }) => {
+        const setVal = (id, val) => {
+          const el = document.getElementById(id);
+          if (!el) return false;
+          el.value = val;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          if (typeof el.onchange === 'function') el.onchange();
+          return true;
+        };
+        for (const base of ['inqy_sttg_ymd', 'inqy_sttg_ymd1']) {
+          setVal(`${base}_yy`, sy);
+          setVal(`${base}_mm`, sm);
+          setVal(`${base}_dd`, sd);
+        }
+        for (const base of ['inqy_eymd', 'inqy_eymd1']) {
+          setVal(`${base}_yy`, ey);
+          setVal(`${base}_mm`, em);
+          setVal(`${base}_dd`, ed);
+        }
+      }, { sy: sParts.yyyy, sm: sParts.mm, sd: sParts.dd, ey: eParts.yyyy, em: eParts.mm, ed: eParts.dd })
+      .catch(() => {});
+
+    this.log(`IBK inquiry date range set (${startDate} ~ ${endDate})`);
+  }
+
+  /**
    * "조회결과가 없습니다", import each Excel into `ibk_loan_history`.
    *
    * Returns aggregate counts; per-account warnings/errors are logged.
@@ -2067,12 +2191,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
               trustPerAccount.push({ accountNumber: tAcct, filePath: tFinalPath, imported: tImported });
 
-              const tCloseResult = await this._closeIbkLoanDownloadPopupViaRecording();
-              if (!tCloseResult || !tCloseResult.ok) {
-                await this._robustCleanupIbkPopups();
-                await this._closeIbkLoanDownloadPopupAggressive(tAcct);
-              }
-              await this.page.waitForTimeout(400);
+              await this._closeIbkPostDownloadPopup(`trust-${tAcct}`);
             } catch (tAcctErr) {
               this.error(`[IBK 신탁] account=${tAcct} loop error:`, tAcctErr.message);
               trustPerAccount.push({ accountNumber: tAcct, error: tAcctErr.message });
@@ -2277,12 +2396,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
                 fundPerAccount.push({ accountNumber: fAcct2, filePath: fFinalPath2 });
 
-                const fCloseResult2 = await this._closeIbkLoanDownloadPopupViaRecording();
-                if (!fCloseResult2 || !fCloseResult2.ok) {
-                  await this._robustCleanupIbkPopups();
-                  await this._closeIbkLoanDownloadPopupAggressive(fAcct2);
-                }
-                await this.page.waitForTimeout(400);
+                await this._closeIbkPostDownloadPopup(`fund-${fAcct2}`);
               } catch (fAcctErr2) {
                 this.error(`[IBK 펀드] account=${fAcct2} loop error:`, fAcctErr2.message);
                 fundPerAccount.push({ accountNumber: fAcct2, error: fAcctErr2.message });
@@ -2555,16 +2669,7 @@ class IbkBankAutomator extends BaseBankAutomator {
           }
           this.log(`[IBK loan] account=${acct} downloaded → ${finalPath}`);
 
-          // Close the post-download popup. ORDER MATTERS: JS-dispatch the
-          // recording's exact close button FIRST (no visibility check — popup
-          // partially renders at top of viewport so Playwright's flow rejects
-          // it). Only fall back to _cleanupIbkPopups force-hide if that misses.
-          const closeResult = await this._closeIbkLoanDownloadPopupViaRecording();
-          if (!closeResult || !closeResult.ok) {
-            await this._robustCleanupIbkPopups();
-            await this._closeIbkLoanDownloadPopupAggressive(acct);
-          }
-          await this.page.waitForTimeout(400);
+          await this._closeIbkPostDownloadPopup(`loan-${acct}`);
 
           // Import
           let imported = 0;
@@ -2802,12 +2907,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
               foreignPerAccount.push({ accountNumber: fAcct, filePath: fFinalPath, imported: fImported });
 
-              const fCloseResult = await this._closeIbkLoanDownloadPopupViaRecording();
-              if (!fCloseResult || !fCloseResult.ok) {
-                await this._robustCleanupIbkPopups();
-                await this._closeIbkLoanDownloadPopupAggressive(fAcct);
-              }
-              await this.page.waitForTimeout(400);
+              await this._closeIbkPostDownloadPopup(`foreign-${fAcct}`);
             } catch (fAcctErr) {
               this.error(`[IBK 외화] account=${fAcct} loop error:`, fAcctErr.message);
               foreignPerAccount.push({ accountNumber: fAcct, error: fAcctErr.message });
@@ -3208,6 +3308,8 @@ class IbkBankAutomator extends BaseBankAutomator {
         throw new Error('Failed to save IBK export file via all methods');
       }
 
+      await this._closeIbkPostDownloadPopup(`transactions-${accountNumber}`);
+
       let extractedData;
       try {
         const parsed = parseTransactionExcel(finalPath, this);
@@ -3241,7 +3343,7 @@ class IbkBankAutomator extends BaseBankAutomator {
         };
       }
       
-      // Clean up popups regardless of what happened
+      // Final sweep for any remaining overlays
       await this._robustCleanupIbkPopups();
 
       return [
@@ -3254,6 +3356,7 @@ class IbkBankAutomator extends BaseBankAutomator {
       ];
     } catch (error) {
       this.error('IBK getTransactions failed:', error.message);
+      await this._closeIbkPostDownloadPopup('transactions-error');
       await this._robustCleanupIbkPopups(); // Always cleanup on fail too
       throw error;
     }

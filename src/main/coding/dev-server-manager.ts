@@ -9,6 +9,7 @@ import { getStore } from '../storage';
 import { getLocalServerManager } from '../mcp/server-creator/local-server-manager';
 import { startTunnel, getTunnelStatus } from '../mcp/server-creator/tunneling-manager';
 import { CODING_PORTS, getPreferredPort, getPortMode, isDevPortAllowed, isProductionPortAllowed, type ActivePortInfo } from '../../shared/coding-ports';
+import { getDeploymentManager } from './deployment-manager';
 
 /**
  * Dynamically load setupNextApiPlugin from the user's project node_modules
@@ -55,6 +56,7 @@ interface ServerInfo {
   lastModeChange?: string;
   terminalLogs: string[];
   maxLogLines: number;
+  deploymentPath?: string;
 }
 
 export class DevServerManager {
@@ -497,6 +499,56 @@ export class DevServerManager {
       } catch (error: any) {
         console.error('Failed to set active certificate:', error);
         return { success: false, error: error.message };
+      }
+    });
+
+    // ── Deployment management handlers ──────────────────────────────────────
+
+    ipcMain.handle('deployment:list', async (_event, projectName: string) => {
+      try {
+        const versions = getDeploymentManager().listDeployments(projectName);
+        return { success: true, versions };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('deployment:get-active', async (_event, projectName: string) => {
+      try {
+        const version = getDeploymentManager().getActiveVersion(projectName);
+        return { success: true, version };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('deployment:rollback', async (_event, projectName: string, versionId: string) => {
+      try {
+        const result = getDeploymentManager().rollbackToVersion(projectName, versionId);
+        if (!result.success) return { success: false, error: result.error };
+
+        // Restart the running production server from the rolled-back snapshot
+        const projectRegistry = getProjectRegistry();
+        const project = projectRegistry.getProject(projectName);
+        if (project?.mode === 'production' && project.folderPath) {
+          const serverInfo = this.servers.get(project.folderPath);
+          if (serverInfo?.process) {
+            await this.rebuildAndRestart(project.folderPath);
+            return { success: true, message: `Rolled back to ${versionId} and restarted` };
+          }
+        }
+        return { success: true, message: `Rolled back to ${versionId} (server not running)` };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('deployment:cleanup', async (_event, projectName: string, keepCount: number = 5) => {
+      try {
+        const result = getDeploymentManager().cleanupOldDeployments(projectName, keepCount);
+        return result;
+      } catch (error: any) {
+        return { success: false, removed: 0, error: error.message };
       }
     });
   }
@@ -1045,7 +1097,8 @@ export class DevServerManager {
     projectType: ProjectInfo['type'],
     packageManager: string,
     port: number,
-    basePath?: string
+    basePath?: string,
+    deploymentPath?: string
   ): Promise<ChildProcess> {
     const packageManagerCommand = process.platform === 'win32'
       ? `${packageManager}.cmd`
@@ -1065,14 +1118,11 @@ export class DevServerManager {
         // but we can set environment variables if the project uses a custom server or is configured
         break;
       case 'vite':
-        command = packageManagerCommand;
-        // Bind to 0.0.0.0 to allow network access (IP address)
-        args = ['run', 'preview', '--', '--port', port.toString(), '--host', '0.0.0.0'];
+        command = 'npx';
+        // Use static file serving from deployment dir (no node_modules needed)
+        args = ['serve', 'dist', '-l', port.toString(), '-n'];
         if (sslFiles) {
-          args.push('--https');
-        }
-        if (basePath) {
-          args.push('--base', basePath);
+          args.push('--ssl-cert', sslFiles.certPath, '--ssl-key', sslFiles.keyPath);
         }
         break;
       case 'react':
@@ -1101,10 +1151,17 @@ export class DevServerManager {
       serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
     }
 
-    console.log(`🚀 Starting PRODUCTION mode: ${command} ${args.join(' ')}`);
+    // Serve from deployment snapshot when available.
+    // Next.js on Windows falls back to source (symlinks unreliable without admin rights).
+    const servingCwd =
+      deploymentPath && !(projectType === 'nextjs' && process.platform === 'win32')
+        ? deploymentPath
+        : folderPath;
+
+    console.log(`🚀 Starting PRODUCTION mode: ${command} ${args.join(' ')} (cwd: ${servingCwd})`);
 
     return spawn(command, args, {
-      cwd: folderPath,
+      cwd: servingCwd,
       shell: true,
       env: serverEnv
     });
@@ -1325,6 +1382,25 @@ export class DevServerManager {
         basePath
       );
 
+      // Create a new versioned deployment snapshot after rebuild
+      let rebuildDeploymentPath: string | undefined;
+      try {
+        const deploymentManager = getDeploymentManager();
+        const deploymentResult = await deploymentManager.createDeploymentSnapshot(
+          projectName,
+          folderPath,
+          serverInfo.projectType || 'unknown',
+          'Auto-rebuild after file changes'
+        );
+        if (deploymentResult.success && deploymentResult.deploymentPath) {
+          rebuildDeploymentPath = deploymentResult.deploymentPath;
+          serverInfo.deploymentPath = rebuildDeploymentPath;
+          console.log(`📂 Restart will serve from new deployment: ${rebuildDeploymentPath}`);
+        }
+      } catch (deployErr) {
+        console.warn('⚠️ Deployment snapshot failed during rebuild, serving from source:', deployErr);
+      }
+
       console.log('🚀 Restarting server...');
 
       // Restart server with same port
@@ -1345,14 +1421,11 @@ export class DevServerManager {
           args = ['run', 'start', '--', '-p', port.toString(), '-H', '0.0.0.0'];
           break;
         case 'vite':
-          command = packageManagerCommand;
-          // Bind to 0.0.0.0 to allow network access (IP address)
-          args = ['run', 'preview', '--', '--port', port.toString(), '--host', '0.0.0.0'];
+          command = 'npx';
+          // Use static file serving from deployment dir (no node_modules needed)
+          args = ['serve', 'dist', '-l', port.toString(), '-n'];
           if (sslFiles) {
-            args.push('--https');
-          }
-          if (basePath) {
-            args.push('--base', basePath);
+            args.push('--ssl-cert', sslFiles.certPath, '--ssl-key', sslFiles.keyPath);
           }
           break;
         case 'react':
@@ -1387,9 +1460,15 @@ export class DevServerManager {
         serverEnv.NEXT_PUBLIC_EGDESK_BASE_PATH = basePath;
       }
 
+      // Serve from deployment snapshot when available
+      const restartCwd =
+        rebuildDeploymentPath && !(serverInfo.projectType === 'nextjs' && process.platform === 'win32')
+          ? rebuildDeploymentPath
+          : folderPath;
+
       // Start new process
       const serverProcess = spawn(command, args, {
-        cwd: folderPath,
+        cwd: restartCwd,
         shell: true,
         env: serverEnv
       });
@@ -2466,10 +2545,11 @@ const getLocalIPs = () => {
     const basePath = this.tunnelId ? `/t/${this.tunnelId}/p/${projectName}` : undefined;
 
     let serverProcess: ChildProcess;
+    let deploymentPath: string | undefined;
 
     if (effectiveMode === 'dev') {
       // DEV MODE: Skip build, start immediately
-      
+
       // Dev mode doesn't use basePath - pass undefined
       serverProcess = await this.startDevModeServer(
         folderPath,
@@ -2480,14 +2560,29 @@ const getLocalIPs = () => {
       );
 
     } else {
-      // PRODUCTION MODE: Build then start
+      // PRODUCTION MODE: Build then create deployment snapshot, then start from snapshot
       await this.buildProject(folderPath, projectInfo.packageManager, projectInfo.type, basePath);
+
+      const deploymentManager = getDeploymentManager();
+      const deploymentResult = await deploymentManager.createDeploymentSnapshot(
+        projectName,
+        folderPath,
+        projectInfo.type
+      );
+      if (deploymentResult.success && deploymentResult.deploymentPath) {
+        deploymentPath = deploymentResult.deploymentPath;
+        console.log(`📂 Production server will serve from: ${deploymentPath}`);
+      } else {
+        console.warn(`⚠️ Deployment snapshot failed (${deploymentResult.error}), serving from source`);
+      }
+
       serverProcess = await this.startProductionServer(
         folderPath,
         projectInfo.type,
         projectInfo.packageManager,
         port,
-        basePath
+        basePath,
+        deploymentPath
       );
     }
 
@@ -2504,7 +2599,8 @@ const getLocalIPs = () => {
       supportsHotReload: ['nextjs', 'vite', 'react'].includes(projectInfo.type),
       lastModeChange: new Date().toISOString(),
       terminalLogs: [],
-      maxLogLines: 500
+      maxLogLines: 500,
+      deploymentPath,
     };
 
     this.servers.set(folderPath, serverInfo);
@@ -2513,7 +2609,7 @@ const getLocalIPs = () => {
     const projectRegistry = getProjectRegistry();
     projectRegistry.register(
       folderPath, port, serverInfo.url, 'starting',
-      projectInfo.type, effectiveMode
+      projectInfo.type, effectiveMode, deploymentPath
     );
 
     // Monitor output for "ready" status and capture logs
