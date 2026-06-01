@@ -151,9 +151,85 @@ async function clickCertCell(page, target) {
   return { method: 'none', ok: false };
 }
 
+async function readActiveFocus(page) {
+  return page.evaluate(() => ({
+    id: document.activeElement?.id || '',
+    tag: document.activeElement?.tagName || '',
+  }));
+}
+
+/** Try known strategies to focus xwup password input (same as woori.spec.js / automator). */
+async function tryFocusPasswordField(page, arduino = null) {
+  const attempts = [];
+  const pwdCss = '#xwup_certselect_tek_input1';
+  const pwdXpath =
+    'xpath=/html/body/div[1]/div/div[2]/div[6]/table/tbody/tr/td[2]/form/div[3]/input[1]';
+
+  const tryMethod = async (method, fn) => {
+    try {
+      await fn();
+      await page.waitForTimeout(400);
+      const focus = await readActiveFocus(page);
+      const ok = focus.id === 'xwup_certselect_tek_input1';
+      attempts.push({ method, ok, focus });
+      return ok;
+    } catch (e) {
+      attempts.push({ method, ok: false, error: e.message });
+      return false;
+    }
+  };
+
+  if (await tryMethod('playwright-css-click', () => page.locator(pwdCss).click({ timeout: 3000, force: true }))) {
+    return { ok: true, method: 'playwright-css-click', attempts };
+  }
+  if (await tryMethod('playwright-xpath-click', () => page.locator(pwdXpath).click({ timeout: 3000, force: true }))) {
+    return { ok: true, method: 'playwright-xpath-click', attempts };
+  }
+  if (
+    await tryMethod('js-focus', () =>
+      page.evaluate(() => {
+        const el = document.querySelector('#xwup_certselect_tek_input1');
+        if (!el) throw new Error('password input not in DOM');
+        el.focus();
+        if (typeof el.click === 'function') el.click();
+      })
+    )
+  ) {
+    return { ok: true, method: 'js-focus', attempts };
+  }
+
+  if (arduino) {
+    console.log('[6] Playwright focus failed — trying Arduino TAB (woori.spec.js)...');
+    for (let i = 1; i <= 20; i++) {
+      await arduino.key('TAB');
+      await page.waitForTimeout(300);
+      const focus = await readActiveFocus(page);
+      console.log(`[6] Tab #${i} -> "${focus.id || focus.tag}"`);
+      attempts.push({ method: `arduino-tab-${i}`, ok: focus.id === 'xwup_certselect_tek_input1', focus });
+      if (focus.id === 'xwup_certselect_tek_input1') {
+        return { ok: true, method: `arduino-tab-${i}`, attempts };
+      }
+    }
+  }
+
+  return { ok: false, attempts };
+}
+
 (async () => {
   const { month, expiry } = parseArgs(process.argv);
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));
+
+  let arduino = null;
+  if (process.env.WOORI_SKIP_ARDUINO !== '1') {
+    try {
+      const { ArduinoHID } = require('./scripts/bank-excel-download-automation/arduino-typer');
+      arduino = new ArduinoHID();
+      await arduino.connect();
+      console.log('[0] Arduino connected (for password TAB test)');
+    } catch (e) {
+      console.log(`[0] Arduino not used (${e.message}) — password TAB test skipped unless Playwright focus works`);
+    }
+  }
 
   const context = await chromium.launchPersistentContext(profileDir, {
     headless: false,
@@ -176,6 +252,11 @@ async function clickCertCell(page, target) {
   });
 
   process.on('SIGINT', async () => {
+    if (arduino) {
+      try {
+        await arduino.close();
+      } catch (_) {}
+    }
     try {
       await context.close();
     } catch (_) {}
@@ -282,6 +363,28 @@ async function clickCertCell(page, target) {
 
     if (clickOk) {
       console.log('[5] ✓ Click OK — password field (#xwup_certselect_tek_input1) is present');
+
+      console.log('\n[6] Testing password field focus...');
+      await page.waitForTimeout(500);
+      const focusResult = await tryFocusPasswordField(page, arduino);
+      console.log('[6] focus result:', focusResult.method || 'all failed', focusResult);
+
+      await writeDebugHtml(page, focusResult.ok ? 'after-pwd-focus-ok' : 'after-pwd-focus-failed', {
+        target,
+        focusResult,
+      });
+
+      if (focusResult.ok) {
+        console.log(`[6] ✓ Password field focused via ${focusResult.method}`);
+        if (process.env.CERT_PASSWORD && arduino) {
+          console.log('[7] Typing CERT_PASSWORD via Arduino (optional test)...');
+          await arduino.type(process.env.CERT_PASSWORD);
+          console.log('[7] ✓ Typed — click 확인 manually or set WOORI_CLICK_OK=1 later');
+        }
+      } else {
+        console.log('[6] ✗ Could not focus password field — connect Arduino (COM port) and re-run');
+        console.log('    woori.spec.js uses Arduino TAB; Playwright click alone often fails on xwup tek inputs');
+      }
     } else {
       console.log('[5] ✗ Click failed or password field not visible — see woori-cert-debug/');
     }
@@ -294,6 +397,11 @@ async function clickCertCell(page, target) {
     } catch (_) {}
     throw err;
   } finally {
+    if (arduino) {
+      try {
+        await arduino.close();
+      } catch (_) {}
+    }
     await context.close();
     try {
       fs.rmSync(profileDir, { recursive: true, force: true });
