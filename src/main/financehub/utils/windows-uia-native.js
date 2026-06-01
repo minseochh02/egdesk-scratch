@@ -3,6 +3,8 @@
  */
 
 const { spawnSync, execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const os = require('os');
 
 /** UIA script bodies copied from scripts/bank-excel-download-automation/kb.spec.js (STEP 3 cert window) */
@@ -46,6 +48,37 @@ function runPowerShellUtf8(scriptBody, opts = {}) {
   });
   if (r.error) throw r.error;
   return (r.stdout || '').trim();
+}
+
+/**
+ * Run PowerShell via temp .ps1 file (-File). Required for Add-Type @'...'@ blocks;
+ * -Command breaks them (shinhan-cert-hid-click.js psFile pattern).
+ * @param {string} scriptBody
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {string}
+ */
+function runPowerShellFile(scriptBody, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 15000;
+  const tmp = path.join(
+    os.tmpdir(),
+    `egdesk-ps-${Date.now()}-${Math.random().toString(36).slice(2)}.ps1`
+  );
+  fs.writeFileSync(tmp, '\uFEFF' + scriptBody, 'utf8');
+  try {
+    const r = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmp],
+      { encoding: 'utf8', timeout: timeoutMs, windowsHide: true }
+    );
+    if (r.error) throw r.error;
+    return (r.stdout || '').trim();
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch (_) {
+      /* ignore */
+    }
+  }
 }
 
 /**
@@ -601,23 +634,24 @@ function ensureCertWindowOnScreen(windowClass) {
 function readPhysicalCursorPos() {
   if (!isWindows()) return { ok: false, error: 'not windows' };
   try {
-    const raw = runPowerShellUtf8(
-      'Add-Type -TypeDefinition @\' ' +
-        'using System; using System.Runtime.InteropServices; ' +
-        'public class CurPos { ' +
-        '  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); ' +
-        '  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p); ' +
-        '  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; } ' +
-        '} ' +
-        '\'; ' +
-        '[void][CurPos]::SetProcessDPIAware(); ' +
-        '$p = New-Object CurPos+POINT; ' +
-        '[void][CurPos]::GetCursorPos([ref]$p); ' +
-        'Write-Output ("CUR:{0},{1}" -f $p.X,$p.Y)',
+    const raw = runPowerShellFile(
+      `Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public class CurPos {
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+}
+'@
+[void][CurPos]::SetProcessDPIAware()
+$p = New-Object CurPos+POINT
+[void][CurPos]::GetCursorPos([ref]$p)
+Write-Host ("CUR:{0},{1}" -f $p.X,$p.Y)
+`,
       { timeoutMs: 10000 }
     );
     const m = raw.match(/CUR:(-?\d+),(-?\d+)/);
-    if (!m) return { ok: false, error: 'cursor_read_failed' };
+    if (!m) return { ok: false, error: `cursor_read_failed:${raw.slice(0, 120)}` };
     return { ok: true, x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -767,6 +801,7 @@ function sendEnterKeyViaSendKeys() {
 module.exports = {
   isWindows,
   runPowerShellUtf8,
+  runPowerShellFile,
   runPowerShellKbBankSpec,
   probeKookminKbCertificateWindow,
   waitForKookminKbCertificateWindow,

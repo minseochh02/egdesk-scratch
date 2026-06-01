@@ -104,7 +104,12 @@ class ArduinoHidBankSession {
     return new Promise((resolve, reject) => {
       this.arduino.write(`${cmd}\n`, (err) => {
         if (err) return reject(err);
-        this.arduino.drain(() => setTimeout(resolve, settleMs));
+        const done = () => setTimeout(resolve, settleMs);
+        if (typeof this.arduino.drain === 'function') {
+          this.arduino.drain(done);
+        } else {
+          done();
+        }
       });
     });
   }
@@ -132,17 +137,36 @@ class ArduinoHidBankSession {
    * @param {number} ty
    * @param {string} [label]
    */
+  _readCursorRetry(label, tries = 4) {
+    for (let t = 0; t < tries; t++) {
+      const cur = readPhysicalCursorPos();
+      if (cur.ok) return cur;
+      if (t < tries - 1) {
+        this.warn(`[${label}] cursor read retry ${t + 1}/${tries}: ${cur.error}`);
+      } else {
+        this.warn(`[${label}] cursor read failed: ${cur.error}`);
+      }
+    }
+    return { ok: false, error: 'cursor_read_failed' };
+  }
+
   async moveTo(tx, ty, label = 'target') {
     if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
     this.log(`Arduino closed-loop move to (${tx},${ty}) [${label}]`);
 
     let stepScale = 0.5;
     let lastSign = { x: 0, y: 0 };
+    let moved = false;
 
     for (let i = 1; i <= 28; i++) {
-      const cur = readPhysicalCursorPos();
+      const cur = this._readCursorRetry(label, i === 1 ? 4 : 2);
       if (!cur.ok) {
-        this.warn(`[${label}] cursor read failed: ${cur.error}`);
+        if (!moved) {
+          throw new Error(
+            `[${label}] cannot move mouse: GetCursorPos failed (${cur.error}). ` +
+              'Closed-loop HID requires cursor position (see shinhan-cert-hid-click.js).'
+          );
+        }
         break;
       }
 
@@ -176,7 +200,9 @@ class ArduinoHidBankSession {
         if (mvy === 0 && dy !== 0) mvy = Math.sign(dy);
       }
 
+      this.log(`[${label}] iter ${i}: cur=(${cur.x},${cur.y}) move(${mvx},${mvy})`);
       await this._moveRel(mvx, mvy);
+      moved = true;
     }
 
     const final = readPhysicalCursorPos();
