@@ -5,6 +5,7 @@ const { parseTransactionExcel } = require('../../utils/transactionParser');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const { WOORI_CONFIG } = require('./config');
 const { accountDisplayNameFromOptionText } = require('../../utils/accountOptionLabel');
+const { resolveWooriCertCellInBrowser } = require('../../../../../scripts/bank-excel-download-automation/woori-xwup-cert');
 
 /**
  * Woori 기업: INI cert UI is in-page (xwup_*). Arduino for TAB/password; Playwright for 확인 / navigation.
@@ -143,60 +144,23 @@ class WooriBankAutomator extends BaseBankAutomator {
     }
   }
 
-  /**
-   * 1-based tbody row for recorded XPath (col3 = expiry). Skips header rows without a date in td[3].
-   */
-  async _wooriResolveCertXPathRow({ certificateIndex, certificateNotAfter, certificateName } = {}) {
-    return this.page.evaluate(({ index, expiry, name }) => {
-      const rows = Array.from(
-        document.querySelectorAll('#xwup_cert_table tbody tr, table tbody tr')
-      );
-      const dataRows = rows.filter((row) => {
-        const td3 = row.querySelector('td:nth-child(3)');
-        return td3 && /\d{4}/.test(td3.textContent || '');
-      });
-      if (dataRows.length === 0) {
-        return index >= 1 ? index : 1;
-      }
-
-      let targetRow = null;
-      if (expiry) {
-        const norm = expiry.replace(/-/g, '.');
-        targetRow = dataRows.find((row) => {
-          const text = row.querySelector('td:nth-child(3)')?.textContent || '';
-          return text.includes(expiry) || text.includes(norm);
-        });
-      }
-      if (!targetRow && name) {
-        targetRow = dataRows.find((row) => (row.textContent || '').includes(name));
-      }
-      if (!targetRow && index >= 1) {
-        targetRow = dataRows[index - 1];
-      }
-      if (!targetRow) {
-        targetRow = dataRows[0];
-      }
-      return rows.indexOf(targetRow) + 1;
-    }, {
-      index: certificateIndex != null && certificateIndex >= 1 ? certificateIndex : 1,
-      expiry: certificateNotAfter || '',
-      name: certificateName || '',
-    });
-  }
-
-  /** woori.spec.js STEP 4 — click expiry cell via recorded absolute XPath. */
+  /** Click expiry cell in xwup div-based cert list (.xwup-tableview-cell, 4 columns). */
   async _wooriClickCertExpiryCell({ certificateIndex, certificateNotAfter, certificateName } = {}) {
     const envExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
-    const xpathRow = await this._wooriResolveCertXPathRow({
-      certificateIndex,
-      certificateNotAfter: certificateNotAfter || envExpiry,
-      certificateName,
+    const target = await this.page.evaluate(resolveWooriCertCellInBrowser, {
+      index: certificateIndex != null && certificateIndex >= 1 ? certificateIndex : 1,
+      expiry: certificateNotAfter || envExpiry,
+      name: certificateName || '',
     });
-    this.log(`[WOORI] cert row: xpath …/tr[${xpathRow}]/td[3]/div`);
+    if (!target?.ok) {
+      throw new Error(target?.reason || 'cert cell not found');
+    }
+    this.log(
+      `[WOORI] cert row ${target.rowIdx}: name="${target.nameText}" expiry="${target.expiryText}" → .xwup-tableview-cell nth(${target.cellIndex})`
+    );
     await this.page
-      .locator(
-        `xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[${xpathRow}]/td[3]/div`
-      )
+      .locator('.xwup-tableview-cell')
+      .nth(target.cellIndex)
       .click({ timeout: 5000, force: true });
   }
 

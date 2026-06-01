@@ -12,6 +12,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { ArduinoHID } = require('./arduino-typer');
+const { resolveWooriCertCellInBrowser } = require('./woori-xwup-cert');
 
 // Original extension paths from recording session
 const EXTENSION_PATHS = [];
@@ -232,38 +233,20 @@ function copyNativeMessagingHosts(profileDir) {
     console.log('[STEP 3] ✓ 공인인증서 clicked.');
     await page.waitForTimeout(3000);
 
-    // Cert row N (0-based): XPath rows are 1-indexed; col3 = expiry date (recorded action).
-    let certN = 0;
-    const certIndexEnv = process.env.CERT_INDEX || process.env.WOORI_CERT_INDEX;
-    if (certIndexEnv != null && certIndexEnv !== '') {
-      const parsed = parseInt(certIndexEnv, 10);
-      if (!Number.isNaN(parsed) && parsed >= 1) {
-        certN = parsed - 1;
-      }
-    } else {
-      const certExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
-      if (certExpiry) {
-        certN = await page.evaluate((expiry) => {
-          const rows = document.querySelectorAll(
-            '#xwup_cert_table tbody tr, table tbody tr'
-          );
-          for (let i = 0; i < rows.length; i++) {
-            const td3 = rows[i].querySelector('td:nth-child(3)');
-            const text = td3?.textContent || '';
-            if (text.includes(expiry) || text.includes(expiry.replace(/-/g, '.'))) {
-              return i;
-            }
-          }
-          return 0;
-        }, certExpiry);
-      }
+    // xwup cert list = .xwup-tableview-cell divs (4 cols), NOT <table tbody tr>
+    console.log('[STEP 4] Selecting certificate...');
+    const certTarget = await page.evaluate(resolveWooriCertCellInBrowser, {
+      index: parseInt(process.env.CERT_INDEX || process.env.WOORI_CERT_INDEX || '1', 10) || 1,
+      expiry: process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '',
+      name: '',
+    });
+    if (!certTarget?.ok) {
+      throw new Error(certTarget?.reason || 'cert cell not found');
     }
-    console.log(`[STEP 4] Clicking certificate row ${certN + 1} (expiry column)...`);
-    await page
-      .locator(
-        `xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[${certN + 1}]/td[3]/div`
-      )
-      .click({ timeout: 5000 });
+    console.log(
+      `[STEP 4] Clicking row ${certTarget.rowIdx}: expiry="${certTarget.expiryText}" (.xwup-tableview-cell nth ${certTarget.cellIndex})...`
+    );
+    await page.locator('.xwup-tableview-cell').nth(certTarget.cellIndex).click({ timeout: 5000, force: true });
     console.log('[STEP 4] ✓ Certificate selected.');
     await page.waitForTimeout(2000);
 
