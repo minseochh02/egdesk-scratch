@@ -11,11 +11,8 @@ const {
   waitForCertWindowClose,
   dismissCertErrorConfirmButton,
   ensureCertWindowOnScreen,
-  getINICertManUIListGeometry,
-  calcINICertRowTarget,
-  getINICertManUIHarddiskButtonCoords,
-  getINICertManUIPasswordFieldCoords,
 } = require('../../utils/windows-uia-native');
+const { runShinhanINICertManUIHidNavigation } = require('../../utils/shinhan-inicertmanui-hid');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
   runNativeCertArduinoSteps,
@@ -687,51 +684,25 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
         let inputSteps = SHINHAN_NATIVE_CERT_STEPS;
 
-        // INICertManUI: 하드디스크 → cert row via Arduino HID (DOWN key blocked by secure list).
-        // Only on first attempt; on retry the list/selection is already set.
+        // INICertManUI: 하드디스크 (required) → row offset → password field (shinhan-cert-hid-click.js order).
         if (!certNavigated) {
-          const hdCoords = getINICertManUIHarddiskButtonCoords();
-          if (hdCoords.ok) {
-            this.log(`[SHINHAN] 하드디스크 클릭 (리스트 채우기): x=${hdCoords.x}, y=${hdCoords.y}`);
-            await this._arduinoHid.moveTo(hdCoords.x, hdCoords.y);
-            await this._arduinoHid.click('left');
-            await this.page.waitForTimeout(2500);
-          } else {
-            this.warn(`[SHINHAN] 하드디스크 버튼 좌표 획득 실패: ${hdCoords.error} — 리스트가 이미 채워져 있을 수 있습니다.`);
-          }
-
           const certIdx =
             certificateIndex != null && certificateIndex > 0 ? certificateIndex : 1;
-          this.log(`[SHINHAN] 인증서 ${certIdx}번 행 클릭 — UIA 좌표 계산 중...`);
-          const geo = getINICertManUIListGeometry();
-          if (geo.ok) {
-            const { targetX, targetY } = calcINICertRowTarget({
-              listX: geo.listX,
-              listWidth: geo.listWidth,
-              headerBottom: geo.headerBottom,
-              windowDpi: geo.windowDpi,
-              certIndex: certIdx,
-            });
-            this.log(`[SHINHAN] 인증서 행 클릭: index=${certIdx}, x=${targetX}, y=${targetY} (DPI=${geo.windowDpi})`);
-            await this._arduinoHid.moveTo(targetX, targetY);
-            await this._arduinoHid.click('left');
-            await this.page.waitForTimeout(300);
-
-            const pwCoords = getINICertManUIPasswordFieldCoords();
-            if (pwCoords.ok) {
-              this.log(`[SHINHAN] 비밀번호 필드 클릭 (포커스 복구): x=${pwCoords.x}, y=${pwCoords.y}`);
-              await this._arduinoHid.moveTo(pwCoords.x, pwCoords.y);
-              await this._arduinoHid.click('left');
-              await this.page.waitForTimeout(300);
-            } else {
-              this.warn(`[SHINHAN] 비밀번호 필드 좌표 획득 실패: ${pwCoords.error}`);
-            }
-          } else {
-            this.warn(`[SHINHAN] INICertManUI 리스트 좌표 획득 실패: ${geo.error} — 키보드 단계만 진행합니다.`);
+          const nav = await runShinhanINICertManUIHidNavigation(this._arduinoHid, this.page, {
+            certIndex: certIdx,
+            log: (m) => this.log(m),
+            warn: (m) => this.warn(m),
+          });
+          if (!nav.ok) {
+            await this._disconnectArduinoHid();
+            return {
+              success: false,
+              error: nav.error || '인증서 창 HID 클릭에 실패했습니다.',
+            };
           }
           certNavigated = true;
         } else {
-          this.log('[SHINHAN] 재시도 — 기존 선택된 인증서 유지');
+          this.log('[SHINHAN] 재시도 — 기존 선택된 인증서 유지 (하드디스크/행 클릭 생략)');
         }
 
         await runNativeCertArduinoSteps(
