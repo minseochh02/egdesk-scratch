@@ -1,0 +1,204 @@
+{
+  "label": "after-click-ok",
+  "timestamp": "2026-06-01T10-41-59-256Z",
+  "url": "https://nbi.wooribank.com/nbi/woori?withyou=bi",
+  "title": "기업 | 우리은행",
+  "xwupRoot": "xwup_title",
+  "cellCount": 10,
+  "cells": [
+    {
+      "index": 0,
+      "text": "선택 정상 인증서",
+      "visible": false,
+      "display": "none",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: none; width: 0px; height: 0px;\">선택 정상 인증서</div>"
+    },
+    {
+      "index": 1,
+      "text": "은행기업",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 761,
+        "y": 375,
+        "width": 76.2734375,
+        "height": 19.2890625,
+        "top": 375,
+        "right": 837.2734375,
+        "bottom": 394.2890625,
+        "left": 761
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"\"><img src=\"/js/nbi/sec/AnySign/AnySign4PC/img/cert0.png\" alt=\"정상 인증서\" style=\"\">은행기업</div>"
+    },
+    {
+      "index": 2,
+      "text": "[주]원컨덕터(won conductor)0004021904182384",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 850.2734375,
+        "y": 375.390625,
+        "width": 116.65625,
+        "height": 18.5,
+        "top": 375.390625,
+        "right": 966.9296875,
+        "bottom": 393.890625,
+        "left": 850.2734375
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block;\">[주]원컨덕터(won conductor)0004021904182384</div>"
+    },
+    {
+      "index": 3,
+      "text": "2026-08-15",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 979.9296875,
+        "y": 375.390625,
+        "width": 82.78125,
+        "height": 18.5,
+        "top": 375.390625,
+        "right": 1062.7109375,
+        "bottom": 393.890625,
+        "left": 979.9296875
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block; text-align: center;\">2026-08-15</div>"
+    },
+    {
+      "index": 4,
+      "text": "금융결제원",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 1075.7109375,
+        "y": 375.390625,
+        "width": 83.2890625,
+        "height": 18.5,
+        "top": 375.390625,
+        "right": 1159,
+        "bottom": 393.890625,
+        "left": 1075.7109375
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block; text-align: center;\">금융결제원</div>"
+    },
+    {
+      "index": 5,
+      "text": "선택 정상 인증서",
+      "visible": false,
+      "display": "none",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: none; width: 0px; height: 0px;\">선택 정상 인증서</div>"
+    },
+    {
+      "index": 6,
+      "text": "범용기업",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 761,
+        "y": 407.2890625,
+        "width": 76.2734375,
+        "height": 19.2890625,
+        "top": 407.2890625,
+        "right": 837.2734375,
+        "bottom": 426.578125,
+        "left": 761
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"\"><img src=\"/js/nbi/sec/AnySign/AnySign4PC/img/cert0.png\" alt=\"정상 인증서\" style=\"\">범용기업</div>"
+    },
+    {
+      "index": 7,
+      "text": "(주)원컨덕터",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 850.2734375,
+        "y": 407.6796875,
+        "width": 116.65625,
+        "height": 18.5,
+        "top": 407.6796875,
+        "right": 966.9296875,
+        "bottom": 426.1796875,
+        "left": 850.2734375
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block;\">(주)원컨덕터</div>"
+    },
+    {
+      "index": 8,
+      "text": "2026-09-28",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 979.9296875,
+        "y": 407.6796875,
+        "width": 82.78125,
+        "height": 18.5,
+        "top": 407.6796875,
+        "right": 1062.7109375,
+        "bottom": 426.1796875,
+        "left": 979.9296875
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block; text-align: center;\">2026-09-28</div>"
+    },
+    {
+      "index": 9,
+      "text": "한국전자인증",
+      "visible": true,
+      "display": "block",
+      "rect": {
+        "x": 1075.7109375,
+        "y": 407.6796875,
+        "width": 83.2890625,
+        "height": 18.5,
+        "top": 407.6796875,
+        "right": 1159,
+        "bottom": 426.1796875,
+        "left": 1075.7109375
+      },
+      "outerHTML": "<div class=\"xwup-tableview-cell\" style=\"display: block; text-align: center;\">한국전자인증</div>"
+    }
+  ],
+  "target": {
+    "ok": true,
+    "cellIndex": 2,
+    "rowIdx": 0,
+    "texts": [
+      "선택 정상 인증서",
+      "은행기업",
+      "[주]원컨덕터(won conductor)0004021904182384",
+      "2026-08-15"
+    ],
+    "expiryText": "[주]원컨덕터(won conductor)0004021904182384",
+    "nameText": "은행기업",
+    "expiryXpath": "/div[@id=\"xwup_cert_table\"]/table[1]/tbody[1]/tr[1]/td[2]/div[1]"
+  },
+  "clickResult": {
+    "method": "playwright-click",
+    "ok": true
+  },
+  "afterClick": {
+    "pwdVisible": true,
+    "pwdDisplayed": true
+  },
+  "month": 11,
+  "expiry": ""
+}
