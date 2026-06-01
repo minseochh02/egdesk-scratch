@@ -180,12 +180,23 @@ export class LocalServerManager {
   public registerIPCHandlers(): void {
     // Start HTTPS server
     ipcMain.handle('https-server-start', async (event, options: HTTPServerOptions) => {
-      return await this.startServer(options);
+      const result = await this.startServer(options);
+      if (result.success) {
+        const store = getStore();
+        store.set('mcpLocalServerEnabled', true);
+        store.set('mcpLocalServerOptions', options);
+      }
+      return result;
     });
 
     // Stop HTTPS server
     ipcMain.handle('https-server-stop', async () => {
-      return await this.stopServer();
+      const result = await this.stopServer();
+      if (result.success) {
+        const store = getStore();
+        store.set('mcpLocalServerEnabled', false);
+      }
+      return result;
     });
 
     // Get server status

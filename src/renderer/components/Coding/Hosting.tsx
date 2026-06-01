@@ -113,6 +113,15 @@ const Hosting: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // Sync hosted project paths to electron-store so main process can auto-start on next launch
+  useEffect(() => {
+    const paths = availableProjects.map(p => p.path);
+    const electron = (window as any).electron;
+    if (electron?.ipcRenderer) {
+      electron.ipcRenderer.invoke('hosting:persist-project-paths', paths).catch(console.error);
+    }
+  }, [availableProjects]);
+
   // Fetch projects from registry
   useEffect(() => {
     const fetchProjects = async () => {

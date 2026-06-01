@@ -551,6 +551,25 @@ export class DevServerManager {
         return { success: false, removed: 0, error: error.message };
       }
     });
+
+    ipcMain.handle('hosting:persist-project-paths', async (_event, paths: string[]) => {
+      try {
+        const store = getStore();
+        store.set('hostedProjectPaths', paths);
+        return { success: true };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('hosting:get-project-paths', async () => {
+      try {
+        const store = getStore();
+        return { success: true, paths: store.get('hostedProjectPaths', []) as string[] };
+      } catch (error: any) {
+        return { success: false, error: error.message, paths: [] };
+      }
+    });
   }
 
   /**

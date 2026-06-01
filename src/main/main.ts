@@ -4266,8 +4266,29 @@ const createWindow = async () => {
     console.log('✅ Developer Windows IPC handlers registered');
 
     // Initialize Dev Server Manager
-    getDevServerManager();
+    const devServerManager = getDevServerManager();
     console.log('✅ Dev Server Manager initialized');
+
+    // Auto-start hosted projects from last session
+    setTimeout(async () => {
+      try {
+        const store = getStore();
+        const hostedPaths = store.get('hostedProjectPaths', []) as string[];
+        const modeConfigs = store.get('projectModeConfigs', {}) as Record<string, 'dev' | 'production'>;
+        if (hostedPaths.length > 0) {
+          console.log(`🚀 Auto-starting ${hostedPaths.length} hosted project(s)...`);
+          for (const folderPath of hostedPaths) {
+            const projectName = require('path').basename(folderPath);
+            const mode = modeConfigs[projectName] || 'production';
+            devServerManager.startServer(folderPath, mode).catch((err: any) => {
+              console.error(`❌ Auto-start failed for ${folderPath}:`, err);
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to auto-start hosted projects:', err);
+      }
+    }, 3000);
 
     // Initialize Scheduled Posts Executor - only once
     if (!scheduledPostsExecutor) {
@@ -5375,6 +5396,25 @@ const createWindow = async () => {
     // Register MCP Local Server Manager handlers
     const mcpLocalServerManager = getLocalServerManager();
     mcpLocalServerManager.registerIPCHandlers();
+
+    // Auto-start MCP local server if it was enabled in the last session
+    setTimeout(async () => {
+      try {
+        const store = getStore();
+        const mcpEnabled = store.get('mcpLocalServerEnabled', false) as boolean;
+        if (mcpEnabled) {
+          const mcpOptions = store.get('mcpLocalServerOptions', { port: 8080, useHTTPS: false }) as any;
+          const result = await mcpLocalServerManager.startServer(mcpOptions);
+          if (result.success) {
+            console.log(`✅ MCP local server auto-started on port ${result.port}`);
+          } else {
+            console.error(`❌ MCP local server auto-start failed:`, result.error);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to auto-start MCP local server:', err);
+      }
+    }, 2000);
 
     // Generate or restore the dedicated Kakao callback API key (fixed — survives tunnel reconnects)
     try {

@@ -186,10 +186,21 @@ function firstOfThisMonthYmd(): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}01`;
 }
 
+function daysAgoYmd(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function oneYearAgoYmd(): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - 1);
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** IBK 배서내역: inclusive 12-month max = 364 days back from today (not 365). */
+function ibkEndorsementsStartYmd(): string {
+  return daysAgoYmd(364);
 }
 
 function formatCell(value: unknown, format?: Format, currency?: string): string {
@@ -233,11 +244,11 @@ const TABLE_SECTIONS: TableSection[] = [
   {
     slug: 'ibk_endorsements',
     title: 'IBK 배서내역',
-    subtitle: 'B2B → 전자어음 → 조회 → 배서내역조회 (최대 12개월)',
+    subtitle: 'B2B → 전자어음 → 조회 → 배서내역조회 (최대 12개월, 364일)',
     bankId: 'ibk',
     acceptsDateRange: true,
     canImportExcel: true,
-    defaultDateRange: () => ({ startDate: oneYearAgoYmd(), endDate: todayYmd() }),
+    defaultDateRange: () => ({ startDate: ibkEndorsementsStartYmd(), endDate: todayYmd() }),
     load: () => window.electron.financeHubDb.getIbkEndorsements(),
     sync: async (opts) => {
       return await window.electron.financeHub.syncIbkEndorsements(opts);

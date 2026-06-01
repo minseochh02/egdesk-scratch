@@ -803,7 +803,7 @@ class IbkBankAutomator extends BaseBankAutomator {
 
   /**
    * Navigate to 배서내역조회 and download the Excel.
-   * @param {{ startDate?: string, endDate?: string }} [opts] YYYYMMDD; max 12-month span.
+   * @param {{ startDate?: string, endDate?: string }} [opts] YYYYMMDD; max 364-day inclusive span (12 months).
    * Returns { success, filePath } on success; auto-import happens in main process.
    */
   async syncEndorsements(opts = {}) {
@@ -1871,16 +1871,32 @@ class IbkBankAutomator extends BaseBankAutomator {
     return { yyyy: d.slice(0, 4), mm: d.slice(4, 6), dd: d.slice(6, 8) };
   }
 
-  /** IBK 배서내역조회: max 12-month window, default = last 365 days → today. */
+  /**
+   * IBK 배서내역 12-month limit is inclusive — span must be ≤364 days (not 365).
+   */
+  static IBK_ENDORSEMENTS_MAX_SPAN_DAYS = 364;
+
+  /** IBK 배서내역조회: default = today minus 364 days → today (max inclusive 12-month window). */
+  _ibkEndorsementsDefaultDateRange() {
+    const span = IbkBankAutomator.IBK_ENDORSEMENTS_MAX_SPAN_DAYS;
+    const now = new Date();
+    const back = new Date(now.getTime() - span * 24 * 3600 * 1000);
+    const fmt = (d) =>
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    return { startDate: fmt(back), endDate: fmt(now) };
+  }
+
+  /** IBK 배서내역조회: max 12-month window (364 inclusive days), default = last 364 days → today. */
   _ibkEndorsementsDateRange(opts = {}) {
+    const maxSpan = IbkBankAutomator.IBK_ENDORSEMENTS_MAX_SPAN_DAYS;
     return this._clampIbkInquiryDateRange(
-      opts.startDate && opts.endDate ? opts : this._ibkDefaultLoanDateRange(),
-      365,
+      opts.startDate && opts.endDate ? opts : this._ibkEndorsementsDefaultDateRange(),
+      maxSpan,
     );
   }
 
   /**
-   * Clamp IBK inquiry dates: end ≤ today, span ≤ maxDays (배서내역 = 12 months).
+   * Clamp IBK inquiry dates: end ≤ today, span ≤ maxDays (배서내역 = 364 inclusive days).
    */
   _clampIbkInquiryDateRange(range, maxDays = 365) {
     const fallback = this._ibkDefaultLoanDateRange();
