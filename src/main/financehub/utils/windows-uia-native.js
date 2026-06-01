@@ -595,6 +595,36 @@ function ensureCertWindowOnScreen(windowClass) {
 }
 
 /**
+ * DPI-aware physical cursor position (matches shinhan-cert-hid-click.js).
+ * @returns {{ ok: boolean, x?: number, y?: number, error?: string }}
+ */
+function readPhysicalCursorPos() {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  try {
+    const raw = runPowerShellUtf8(
+      'Add-Type -TypeDefinition @\' ' +
+        'using System; using System.Runtime.InteropServices; ' +
+        'public class CurPos { ' +
+        '  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); ' +
+        '  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p); ' +
+        '  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; } ' +
+        '} ' +
+        '\'; ' +
+        '[void][CurPos]::SetProcessDPIAware(); ' +
+        '$p = New-Object CurPos+POINT; ' +
+        '[void][CurPos]::GetCursorPos([ref]$p); ' +
+        'Write-Output ("CUR:{0},{1}" -f $p.X,$p.Y)',
+      { timeoutMs: 10000 }
+    );
+    const m = raw.match(/CUR:(-?\d+),(-?\d+)/);
+    if (!m) return { ok: false, error: 'cursor_read_failed' };
+    return { ok: true, x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Read the bounding geometry of the cert list inside INICertManUI via UIA.
  * UIA BoundingRectangle always returns physical pixels regardless of DPI awareness.
  * Also reads the window DPI via GetDpiForWindow for DPI-portable coordinate scaling.
@@ -611,8 +641,12 @@ function getINICertManUIListGeometry() {
       '$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'INICertManUI\'); ' +
       '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
       'if (-not $w) { \'{"ok":false,"error":"window_not_found"}\'; exit } ' +
-      '$lc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'SysListView32\'); ' +
+      '$lc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, \'14006\'); ' +
       '$list = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $lc); ' +
+      'if (-not $list) { ' +
+      '  $lc2 = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'SysListView32\'); ' +
+      '  $list = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $lc2) ' +
+      '} ' +
       'if (-not $list) { \'{"ok":false,"error":"list_not_found"}\'; exit } ' +
       '$lr = $list.Current.BoundingRectangle; ' +
       '$hc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'SysHeader32\'); ' +
@@ -750,6 +784,7 @@ module.exports = {
   waitForCertWindowClose,
   dismissCertErrorConfirmButton,
   ensureCertWindowOnScreen,
+  readPhysicalCursorPos,
   getINICertManUIListGeometry,
   calcINICertRowTarget,
   getINICertManUIHarddiskButtonCoords,

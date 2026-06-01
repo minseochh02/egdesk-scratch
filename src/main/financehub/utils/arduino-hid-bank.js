@@ -10,6 +10,11 @@ try {
   /* optional dependency */
 }
 
+const { readPhysicalCursorPos } = require('./windows-uia-native');
+
+const MOVE_TOL = parseInt(process.env.SHINHAN_HID_MOVE_TOL || '2', 10);
+const MOVE_CAP = parseInt(process.env.SHINHAN_HID_MOVE_CAP || '400', 10);
+
 class ArduinoHidBankSession {
   /**
    * @param {{ portPath: string, baudRate?: number, log?: (msg: string) => void, warn?: (msg: string) => void }} opts
@@ -92,25 +97,95 @@ class ArduinoHidBankSession {
   }
 
   /**
-   * @param {number} x - Target screen X
-   * @param {number} y - Target screen Y
+   * @param {string} cmd
+   * @param {number} settleMs
    */
-  async moveTo(x, y) {
-    if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
-    this.log(`Arduino Absolute Move to ${x},${y}`);
-    
-    // 1. 원점(0,0)으로 이동 (충분히 큰 음수 값을 여러 번 보내 구석으로 보냄)
-    for (let i = 0; i < 4; i++) {
-      await new Promise(r => this.arduino.write(`MOUSE_MOVE:-3000,-3000\n`, () => setTimeout(r, 100)));
-    }
-    
-    // 2. 목적지 좌표만큼 상대 이동
-    await new Promise((resolve, reject) => {
-      this.arduino.write(`MOUSE_MOVE:${x},${y}\n`, (err) => {
+  _hidWrite(cmd, settleMs) {
+    return new Promise((resolve, reject) => {
+      this.arduino.write(`${cmd}\n`, (err) => {
         if (err) return reject(err);
-        setTimeout(() => resolve(), 1000);
+        this.arduino.drain(() => setTimeout(resolve, settleMs));
       });
     });
+  }
+
+  /**
+   * Chunked relative move (±100 per command) — same as shinhan-cert-hid-click.js.
+   * @param {number} dx
+   * @param {number} dy
+   */
+  async _moveRel(dx, dy) {
+    while (dx !== 0 || dy !== 0) {
+      const sx = Math.max(-100, Math.min(100, dx));
+      const sy = Math.max(-100, Math.min(100, dy));
+      const moveMs = Math.max(Math.abs(sx), Math.abs(sy)) + 70;
+      await this._hidWrite(`MOUSE_MOVE:${sx},${sy}`, moveMs);
+      dx -= sx;
+      dy -= sy;
+    }
+  }
+
+  /**
+   * Closed-loop move to absolute physical (tx, ty). Corner-reset + one MOUSE_MOVE does not
+   * land on target under pointer acceleration / multi-monitor clamping (see shinhan-cert-hid-click.js).
+   * @param {number} tx
+   * @param {number} ty
+   * @param {string} [label]
+   */
+  async moveTo(tx, ty, label = 'target') {
+    if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
+    this.log(`Arduino closed-loop move to (${tx},${ty}) [${label}]`);
+
+    let stepScale = 0.5;
+    let lastSign = { x: 0, y: 0 };
+
+    for (let i = 1; i <= 28; i++) {
+      const cur = readPhysicalCursorPos();
+      if (!cur.ok) {
+        this.warn(`[${label}] cursor read failed: ${cur.error}`);
+        break;
+      }
+
+      const dx = tx - cur.x;
+      const dy = ty - cur.y;
+      const err = Math.max(Math.abs(dx), Math.abs(dy));
+
+      if (err <= MOVE_TOL) {
+        this.log(`[${label}] locked at (${cur.x},${cur.y}), err=${err}px`);
+        return { x: cur.x, y: cur.y };
+      }
+
+      const curSign = { x: Math.sign(dx), y: Math.sign(dy) };
+      if (
+        (lastSign.x !== 0 && curSign.x !== 0 && curSign.x !== lastSign.x) ||
+        (lastSign.y !== 0 && curSign.y !== 0 && curSign.y !== lastSign.y)
+      ) {
+        stepScale = Math.max(0.03, stepScale * 0.5);
+      }
+      lastSign = curSign;
+
+      let mvx;
+      let mvy;
+      if (err <= 20) {
+        mvx = Math.max(-2, Math.min(2, dx));
+        mvy = Math.max(-2, Math.min(2, dy));
+      } else {
+        mvx = Math.max(-MOVE_CAP, Math.min(MOVE_CAP, Math.round(dx * stepScale)));
+        mvy = Math.max(-MOVE_CAP, Math.min(MOVE_CAP, Math.round(dy * stepScale)));
+        if (mvx === 0 && dx !== 0) mvx = Math.sign(dx);
+        if (mvy === 0 && dy !== 0) mvy = Math.sign(dy);
+      }
+
+      await this._moveRel(mvx, mvy);
+    }
+
+    const final = readPhysicalCursorPos();
+    if (final.ok) {
+      const residual = `Δ=(${tx - final.x},${ty - final.y})`;
+      this.warn(`[${label}] move finished at (${final.x},${final.y}), target (${tx},${ty}) ${residual}`);
+      return { x: final.x, y: final.y };
+    }
+    return null;
   }
 
   /**
@@ -118,14 +193,9 @@ class ArduinoHidBankSession {
    */
   async click(button = 'left') {
     if (!this.arduino || !this.arduino.isOpen) throw new Error('Arduino serial not open');
-    const btn = button === 'L' ? 'left' : (button === 'R' ? 'right' : button);
+    const btn = button === 'L' ? 'left' : button === 'R' ? 'right' : button;
     this.log(`Arduino MOUSE_CLICK:${btn}`);
-    await new Promise((resolve, reject) => {
-      this.arduino.write(`MOUSE_CLICK:${btn}\n`, (err) => {
-        if (err) return reject(err);
-        setTimeout(() => resolve(), 500);
-      });
-    });
+    await this._hidWrite(`MOUSE_CLICK:${btn}`, 350);
   }
 
   async disconnect() {
