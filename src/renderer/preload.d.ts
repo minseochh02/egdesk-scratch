@@ -780,7 +780,7 @@ interface FinanceHubAPI {
     error?: string;
   }>;
   corporateCertCancel: (bankId: string) => Promise<{ success: boolean; error?: string }>;
-  resolveCertificateIndex: (metadata: { name: string; issuer: string; notAfter?: string; folder?: string }) => Promise<{
+  resolveCertificateIndex: (metadata: { name: string; issuer: string; notAfter?: string; folder?: string; sortByExpiry?: boolean }) => Promise<{
     success: boolean;
     index: number | null;
     error?: string;

@@ -1751,12 +1751,13 @@ export class FinanceHubScheduler extends EventEmitter {
           const certFolder = (savedCredentials as any).certificateFolder;
 
           if (NPKI_DISK_CERT_BANK_IDS.has(bankId) && certName && certIssuer) {
+            // INICertManUI (Shinhan) sorts by nearest expiry first; Delfino banks use NTFS readdir order
             const resolvedIndex = resolveCertificateIndex({
               name: certName,
               issuer: certIssuer,
               notAfter: certNotAfter,
               folder: certFolder,
-            });
+            }, { sortByExpiry: bankId === 'shinhan' });
 
             if (resolvedIndex !== null) {
               if (resolvedIndex !== currentCertIndex) {
@@ -2330,12 +2331,13 @@ export class FinanceHubScheduler extends EventEmitter {
           const certFolder = (savedCredentials as any).certificateFolder;
 
           if (NPKI_DISK_CERT_BANK_IDS.has(bankId) && certName && certIssuer) {
+            // INICertManUI (Shinhan) sorts by nearest expiry first; Delfino banks use NTFS readdir order
             const resolvedIndex = resolveCertificateIndex({
               name: certName,
               issuer: certIssuer,
               notAfter: certNotAfter,
               folder: certFolder,
-            });
+            }, { sortByExpiry: bankId === 'shinhan' });
 
             if (resolvedIndex !== null) {
               if (resolvedIndex !== currentCertIndex) {

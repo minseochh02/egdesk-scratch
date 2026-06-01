@@ -595,6 +595,96 @@ function ensureCertWindowOnScreen(windowClass) {
 }
 
 /**
+ * Read the bounding geometry of the cert list inside INICertManUI via UIA.
+ * UIA BoundingRectangle always returns physical pixels regardless of DPI awareness.
+ * Also reads the window DPI via GetDpiForWindow for DPI-portable coordinate scaling.
+ *
+ * @returns {{ ok: boolean, listX?: number, listWidth?: number, headerBottom?: number, windowDpi?: number, error?: string }}
+ */
+function getINICertManUIListGeometry() {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  try {
+    const script =
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      'Add-Type -MemberDefinition \'[DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);\' -Name DpiHelper -Namespace Win32 -ErrorAction SilentlyContinue; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      '$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'INICertManUI\'); ' +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
+      'if (-not $w) { \'{"ok":false,"error":"window_not_found"}\'; exit } ' +
+      '$lc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'SysListView32\'); ' +
+      '$list = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $lc); ' +
+      'if (-not $list) { \'{"ok":false,"error":"list_not_found"}\'; exit } ' +
+      '$lr = $list.Current.BoundingRectangle; ' +
+      '$hc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'SysHeader32\'); ' +
+      '$hdr = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $hc); ' +
+      '$hdrBottom = if ($hdr) { [int]($hdr.Current.BoundingRectangle.Y + $hdr.Current.BoundingRectangle.Height) } else { [int]$lr.Y }; ' +
+      '$hwnd = New-Object IntPtr($list.Current.NativeWindowHandle); ' +
+      '$dpi = [Win32.DpiHelper]::GetDpiForWindow($hwnd); ' +
+      '@{ok=$true;listX=[int]$lr.X;listWidth=[int]$lr.Width;headerBottom=$hdrBottom;windowDpi=[int]$dpi} | ConvertTo-Json -Compress';
+    const raw = runPowerShellUtf8(script, { timeoutMs: 10000 });
+    const parsed = JSON.parse(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error || 'unknown' };
+    return {
+      ok: true,
+      listX: parsed.listX,
+      listWidth: parsed.listWidth,
+      headerBottom: parsed.headerBottom,
+      windowDpi: parsed.windowDpi || 96,
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Calculate the physical-pixel target for clicking cert row N in INICertManUI.
+ * Row offset (35 px) and row height (20 px) were calibrated at 192 DPI (200 % scaling).
+ * Scale proportionally for other DPI values.
+ *
+ * @param {{ listX: number, listWidth: number, headerBottom: number, windowDpi: number, certIndex: number }} p
+ * @returns {{ targetX: number, targetY: number }}
+ */
+function calcINICertRowTarget({ listX, listWidth, headerBottom, windowDpi, certIndex }) {
+  const scale = windowDpi / 192;
+  const rowOffset = Math.round(35 * scale);
+  const rowHeight = Math.round(20 * scale);
+  return {
+    targetX: listX + Math.floor(listWidth / 2),
+    targetY: headerBottom + rowOffset + (certIndex - 1) * rowHeight,
+  };
+}
+
+/**
+ * Find the center coordinates of the password Edit control inside INICertManUI.
+ * Used to re-focus the password field after clicking a cert row.
+ *
+ * @returns {{ ok: boolean, x?: number, y?: number, error?: string }}
+ */
+function getINICertManUIPasswordFieldCoords() {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  try {
+    const script =
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      '$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'INICertManUI\'); ' +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
+      'if (-not $w) { \'{"ok":false,"error":"window_not_found"}\'; exit } ' +
+      '$pwCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsPasswordProperty, $true); ' +
+      '$pwEl = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $pwCond); ' +
+      'if (-not $pwEl) { \'{"ok":false,"error":"password_field_not_found"}\'; exit } ' +
+      '$rect = $pwEl.Current.BoundingRectangle; ' +
+      'if ($rect.Width -le 0) { \'{"ok":false,"error":"no_bounds"}\'; exit } ' +
+      '@{ok=$true;x=[int]($rect.X + $rect.Width / 2);y=[int]($rect.Y + $rect.Height / 2)} | ConvertTo-Json -Compress';
+    const raw = runPowerShellUtf8(script, { timeoutMs: 8000 });
+    const parsed = JSON.parse(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error || 'unknown' };
+    return { ok: true, x: parsed.x, y: parsed.y };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Send Enter to the foreground window (fallback after typing cert password).
  */
 function sendEnterKeyViaSendKeys() {
@@ -630,4 +720,7 @@ module.exports = {
   waitForCertWindowClose,
   dismissCertErrorConfirmButton,
   ensureCertWindowOnScreen,
+  getINICertManUIListGeometry,
+  calcINICertRowTarget,
+  getINICertManUIPasswordFieldCoords,
 };

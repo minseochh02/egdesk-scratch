@@ -779,6 +779,8 @@ const FinanceHub: React.FC = () => {
             issuer: cred.certificateIssuer,
             notAfter: cred.certificateNotAfter,
             folder: cred.certificateFolder,
+            // INICertManUI (Shinhan) sorts by nearest expiry first; Delfino banks use NTFS readdir order
+            sortByExpiry: bankId === 'shinhan',
           });
 
           if (resolved.success && resolved.index !== null) {

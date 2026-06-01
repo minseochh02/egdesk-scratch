@@ -11,6 +11,9 @@ const {
   waitForCertWindowClose,
   dismissCertErrorConfirmButton,
   ensureCertWindowOnScreen,
+  getINICertManUIListGeometry,
+  calcINICertRowTarget,
+  getINICertManUIPasswordFieldCoords,
 } = require('../../utils/windows-uia-native');
 const { ArduinoHidBankSession } = require('../../utils/arduino-hid-bank');
 const {
@@ -683,23 +686,43 @@ class ShinhanBankAutomator extends BaseBankAutomator {
 
         let inputSteps = SHINHAN_NATIVE_CERT_STEPS;
 
-        // [추가] certificateIndex 지원 (1보다 큰 경우 DOWN 키로 선택)
-        // Only on first attempt; cert is already selected on retry
+        // INICertManUI cert row selection via Arduino HID mouse click.
+        // DOWN key is blocked by the list control even from real hardware — only mouse works.
+        // Only on first attempt; on retry the row is already selected.
         if (!certNavigated) {
           if (certificateIndex && certificateIndex > 1) {
-            this.log(`[SHINHAN] ${certificateIndex}번째 인증서 선택을 위해 DOWN 키를 ${certificateIndex - 1}회 전송합니다.`);
-            const indexSteps = [];
-            for (let i = 0; i < certificateIndex - 1; i++) {
-              indexSteps.push({ key: 'DOWN', waitMs: 200 });
+            this.log(`[SHINHAN] 인증서 ${certificateIndex}번 행 클릭 — UIA 좌표 계산 중...`);
+            const geo = getINICertManUIListGeometry();
+            if (geo.ok) {
+              const { targetX, targetY } = calcINICertRowTarget({
+                listX: geo.listX,
+                listWidth: geo.listWidth,
+                headerBottom: geo.headerBottom,
+                windowDpi: geo.windowDpi,
+                certIndex: certificateIndex,
+              });
+              this.log(`[SHINHAN] 인증서 행 클릭: index=${certificateIndex}, x=${targetX}, y=${targetY} (DPI=${geo.windowDpi})`);
+              await this._arduinoHid.moveTo(targetX, targetY);
+              await this._arduinoHid.click('left');
+              await page.waitForTimeout(300);
+
+              // Re-focus the password field — clicking the list row may steal keyboard focus
+              const pwCoords = getINICertManUIPasswordFieldCoords();
+              if (pwCoords.ok) {
+                this.log(`[SHINHAN] 비밀번호 필드 클릭 (포커스 복구): x=${pwCoords.x}, y=${pwCoords.y}`);
+                await this._arduinoHid.moveTo(pwCoords.x, pwCoords.y);
+                await this._arduinoHid.click('left');
+                await page.waitForTimeout(300);
+              } else {
+                this.warn(`[SHINHAN] 비밀번호 필드 좌표 획득 실패: ${pwCoords.error}`);
+              }
+            } else {
+              this.warn(`[SHINHAN] INICertManUI 리스트 좌표 획득 실패: ${geo.error} — index 1로 진행합니다.`);
             }
-            inputSteps = [...indexSteps, ...inputSteps];
           }
           certNavigated = true;
         } else {
           this.log('[SHINHAN] 재시도 — 기존 선택된 인증서 유지');
-          // On retry, we should skip the initial navigation steps if they exist in SHINHAN_NATIVE_CERT_STEPS
-          // Looking at SHINHAN_NATIVE_CERT_STEPS, it might contain initial TABs or ENTERs.
-          // However, the pattern for other banks is to just skip the DOWN presses.
         }
 
         await runNativeCertArduinoSteps(

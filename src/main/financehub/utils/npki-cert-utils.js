@@ -110,6 +110,10 @@ function parseCert(signCertPath, folderName) {
 /**
  * Full pipeline: find NPKI root → enumerate → parse → return display-ready list.
  *
+ * @param {{ sortByExpiry?: boolean }} [opts]
+ *   sortByExpiry: if true, sort by notAfter ascending (nearest expiry = index 1).
+ *   Used for INICertManUI (Shinhan), which renders the list in expiry order.
+ *   Delfino QWidget banks use NTFS readdir order — leave this false (default).
  * @returns {{
  *   ok: boolean,
  *   error?: string,
@@ -126,7 +130,8 @@ function parseCert(signCertPath, folderName) {
  *   }>
  * }}
  */
-function listAllNpkiCerts() {
+function listAllNpkiCerts(opts = {}) {
+  const { sortByExpiry = false } = opts;
   const root = findNpkiRoot();
   if (!root) {
     return { ok: false, error: 'NPKI 폴더를 찾을 수 없습니다.', certificates: [] };
@@ -138,7 +143,7 @@ function listAllNpkiCerts() {
   }
 
   const now = new Date();
-  const certificates = raw.map((entry) => {
+  let certificates = raw.map((entry) => {
     const parsed = parseCert(entry.signCert, entry.folder);
     const expired = parsed.notAfter ? parsed.notAfter < now : false;
     const notAfterStr = parsed.notAfter
@@ -158,6 +163,18 @@ function listAllNpkiCerts() {
     };
   });
 
+  if (sortByExpiry) {
+    // INICertManUI sort: nearest expiry first; null expiry goes last
+    certificates.sort((a, b) => {
+      if (a.notAfter === null && b.notAfter === null) return 0;
+      if (a.notAfter === null) return 1;
+      if (b.notAfter === null) return -1;
+      return a.notAfter < b.notAfter ? -1 : a.notAfter > b.notAfter ? 1 : 0;
+    });
+    // Reassign 1-based index to match the sorted visual row order
+    certificates = certificates.map((c, i) => ({ ...c, certificateIndex: i + 1 }));
+  }
+
   return { ok: true, certificates };
 }
 
@@ -169,10 +186,11 @@ function listAllNpkiCerts() {
  * @param {string} metadata.issuer - Certificate issuer (O)
  * @param {string} [metadata.notAfter] - Expiry date string (YYYY-MM-DD)
  * @param {string} [metadata.folder] - Folder name (optional fallback)
+ * @param {{ sortByExpiry?: boolean }} [opts] - Pass { sortByExpiry: true } for Shinhan (INICertManUI)
  * @returns {number | null} Current 1-based index, or null if not found
  */
-function resolveCertificateIndex(metadata) {
-  const { ok, certificates } = listAllNpkiCerts();
+function resolveCertificateIndex(metadata, opts = {}) {
+  const { ok, certificates } = listAllNpkiCerts(opts);
   if (!ok || !certificates.length) return null;
 
   // Try to find an exact match by name, issuer, and expiry

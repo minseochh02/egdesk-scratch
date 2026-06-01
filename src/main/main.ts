@@ -1127,7 +1127,8 @@ const createWindow = async () => {
           if (NPKI_DISK_CERT_BANK_IDS.has(id)) {
             try {
               const { listAllNpkiCerts } = require('./financehub/utils/npki-cert-utils');
-              const result = listAllNpkiCerts();
+              // INICertManUI (Shinhan) sorts by nearest expiry first; Delfino banks use NTFS readdir order
+              const result = listAllNpkiCerts({ sortByExpiry: id === 'shinhan' });
               console.log(`[FINANCE-HUB] NPKI disk certs for ${id}: ok=${result.ok}, count=${result.certificates?.length ?? 0}`);
               if (result.ok) {
                 return { success: true, certificates: result.certificates };
@@ -1187,10 +1188,11 @@ const createWindow = async () => {
 
       ipcMain.handle(
         'finance-hub:resolve-certificate-index',
-        async (_event, metadata: { name: string; issuer: string; notAfter?: string; folder?: string }) => {
+        async (_event, metadata: { name: string; issuer: string; notAfter?: string; folder?: string; sortByExpiry?: boolean }) => {
           try {
             const { resolveCertificateIndex } = require('./financehub/utils/npki-cert-utils');
-            const index = resolveCertificateIndex(metadata);
+            const { sortByExpiry, ...certMeta } = metadata;
+            const index = resolveCertificateIndex(certMeta, { sortByExpiry: !!sortByExpiry });
             return { success: true, index };
           } catch (error) {
             console.error('[FINANCE-HUB] resolve-certificate-index failed:', error);
