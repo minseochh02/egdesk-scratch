@@ -47,6 +47,9 @@ import {
   FinanceHubDeleteImportedDataForBankTool,
   FinanceHubDeleteTransactionsTool,
   FinanceHubDeleteBankProductRowsTool,
+  FinanceHubImportHometaxDataTool,
+  FinanceHubDeleteHometaxDataTool,
+  FinanceHubDeleteImportedHometaxForBusinessTool,
   InternalKnowledgeListSnapshotsTool,
   InternalKnowledgeGetSnapshotTool,
   InternalKnowledgeGetCompanyInfoTool,
@@ -679,6 +682,48 @@ export class ToolRegistry {
           required: ['tableSlug']
         };
 
+      case 'financehub_import_hometax_data':
+        return {
+          type: 'object',
+          properties: {
+            dataType: {
+              type: 'string',
+              enum: ['tax-invoice', 'tax-exempt-invoice', 'cash-receipt']
+            },
+            businessNumber: { type: 'string' },
+            invoiceType: { type: 'string', enum: ['sales', 'purchase'] },
+            rows: { type: 'array', items: { type: 'object' } },
+            excelFilePath: { type: 'string' }
+          },
+          required: ['dataType', 'businessNumber', 'rows']
+        };
+
+      case 'financehub_delete_hometax_data':
+        return {
+          type: 'object',
+          properties: {
+            dataType: {
+              type: 'string',
+              enum: ['tax-invoice', 'tax-exempt-invoice', 'cash-receipt']
+            },
+            businessNumber: { type: 'string' },
+            invoiceType: { type: 'string', enum: ['sales', 'purchase'] },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            ids: { type: 'array', items: { type: 'number' } }
+          },
+          required: ['dataType', 'businessNumber']
+        };
+
+      case 'financehub_delete_imported_hometax_for_business':
+        return {
+          type: 'object',
+          properties: {
+            businessNumber: { type: 'string' }
+          },
+          required: ['businessNumber']
+        };
+
       case 'businessidentity_list_snapshots':
         return {
           type: 'object',
@@ -1172,6 +1217,9 @@ export class ToolRegistry {
     this.registerTool(new FinanceHubDeleteImportedDataForBankTool());
     this.registerTool(new FinanceHubDeleteTransactionsTool());
     this.registerTool(new FinanceHubDeleteBankProductRowsTool());
+    this.registerTool(new FinanceHubImportHometaxDataTool());
+    this.registerTool(new FinanceHubDeleteHometaxDataTool());
+    this.registerTool(new FinanceHubDeleteImportedHometaxForBusinessTool());
 
     // Business Identity & Internal Knowledge Tools
     this.registerTool(new InternalKnowledgeListSnapshotsTool());

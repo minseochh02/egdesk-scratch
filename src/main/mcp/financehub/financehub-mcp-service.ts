@@ -2,8 +2,8 @@
  * FinanceHub MCP Service
  * Implements the IMCPService interface for FinanceHub database operations
  *
- * Read/write access to Korean bank accounts, transactions, bank-product tables, and Hometax reads.
- * Write/delete tools for accounts, transactions, and bank-product rows. No credential operations.
+ * Read/write access to Korean bank accounts, transactions, bank-product tables, and Hometax data.
+ * Write/delete tools for accounts, transactions, bank-product rows, and Hometax imports. No credential operations.
  */
 
 import Database from 'better-sqlite3';
@@ -413,6 +413,84 @@ export class FinanceHubMCPService implements IMCPService {
             }
           },
           required: []
+        }
+      },
+      {
+        name: 'financehub_import_hometax_data',
+        description:
+          'Import Hometax rows (세금계산서, 전자계산서, or 현금영수증). Deduplicates on business_number + 승인번호 (and 매출일시 for cash receipts). Max 1000 rows per call. Returns: { success: true, dataType, inserted, duplicate }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            dataType: {
+              type: 'string',
+              enum: ['tax-invoice', 'tax-exempt-invoice', 'cash-receipt'],
+              description: 'Which Hometax table to import into'
+            },
+            businessNumber: {
+              type: 'string',
+              description: 'Business registration number (사업자등록번호, digits only or with hyphens)'
+            },
+            invoiceType: {
+              type: 'string',
+              enum: ['sales', 'purchase'],
+              description: 'Required for tax-invoice and tax-exempt-invoice (매출/매입)'
+            },
+            rows: {
+              type: 'array',
+              description:
+                'Row objects using Korean column names from Hometax Excel (e.g. 작성일자, 승인번호, 공급가액, …). Cash receipts need 승인번호 and 매출일시.',
+              items: { type: 'object' }
+            },
+            excelFilePath: {
+              type: 'string',
+              description: 'Optional source file path stored on each row (default: mcp-import)'
+            }
+          },
+          required: ['dataType', 'businessNumber', 'rows']
+        }
+      },
+      {
+        name: 'financehub_delete_hometax_data',
+        description:
+          'Delete Hometax rows by businessNumber and ids or date range. Requires ids or startDate/endDate. Max 500 ids. Returns: { success: true, dataType, deleted }',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            dataType: {
+              type: 'string',
+              enum: ['tax-invoice', 'tax-exempt-invoice', 'cash-receipt']
+            },
+            businessNumber: { type: 'string' },
+            invoiceType: {
+              type: 'string',
+              enum: ['sales', 'purchase'],
+              description: 'Optional filter for invoice tables'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date (작성일자 for invoices, 매출일시 prefix for cash receipts)'
+            },
+            endDate: { type: 'string' },
+            ids: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Row ids from query tools (max 500)'
+            }
+          },
+          required: ['dataType', 'businessNumber']
+        }
+      },
+      {
+        name: 'financehub_delete_imported_hometax_for_business',
+        description:
+          'Delete all imported Hometax rows and sync history for a business (tax_invoices, tax_exempt_invoices, cash_receipts, hometax_sync_operations). Does not remove hometax_connections registry row. Returns per-table counts.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            businessNumber: { type: 'string' }
+          },
+          required: ['businessNumber']
         }
       },
       {
@@ -1230,6 +1308,51 @@ export class FinanceHubMCPService implements IMCPService {
             throw new Error(delRows.error);
           }
           result = { success: true, ...delRows };
+          break;
+        }
+
+        case 'financehub_import_hometax_data': {
+          const { dataType, businessNumber, invoiceType, rows, excelFilePath } = args;
+          if (!dataType || !businessNumber || !Array.isArray(rows)) {
+            throw new Error('dataType, businessNumber, and rows array are required');
+          }
+          const importResult = this.manager.importHometaxData({
+            dataType,
+            businessNumber,
+            invoiceType,
+            rows,
+            excelFilePath
+          });
+          result = { success: true, ...importResult };
+          break;
+        }
+
+        case 'financehub_delete_hometax_data': {
+          const { dataType, businessNumber, invoiceType, startDate, endDate, ids } = args;
+          if (!dataType || !businessNumber) {
+            throw new Error('dataType and businessNumber are required');
+          }
+          const cappedIds = Array.isArray(ids)
+            ? ids.filter((id: unknown) => Number.isInteger(id)).slice(0, 500)
+            : undefined;
+          const delHometax = this.manager.deleteHometaxData({
+            dataType,
+            businessNumber,
+            invoiceType,
+            startDate,
+            endDate,
+            ids: cappedIds
+          });
+          result = { success: true, ...delHometax };
+          break;
+        }
+
+        case 'financehub_delete_imported_hometax_for_business': {
+          const { businessNumber } = args;
+          if (!businessNumber) {
+            throw new Error('businessNumber is required');
+          }
+          result = this.manager.deleteImportedHometaxForBusiness(businessNumber);
           break;
         }
 

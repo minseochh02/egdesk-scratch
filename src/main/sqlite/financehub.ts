@@ -6,7 +6,20 @@
 import path from 'path';
 import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'crypto';
-import { getTaxInvoices, getTaxExemptInvoices, getCashReceipts } from './hometax';
+import {
+  getTaxInvoices,
+  getTaxExemptInvoices,
+  getCashReceipts,
+  importTaxInvoices,
+  importTaxExemptInvoices,
+  importCashReceipts,
+  deleteTaxInvoices,
+  deleteTaxExemptInvoices,
+  deleteCashReceipts,
+  deleteAllImportedHometaxForBusiness,
+  type HometaxDeleteFilters
+} from './hometax';
+import type { TaxInvoiceData, CashReceiptData } from '../hometax-excel-parser';
 
 // ============================================
 // Per-(bank, product) bank-product tables registry
@@ -2749,7 +2762,7 @@ export class FinanceHubDbManager {
   }
 
   // ========================================
-  // Hometax (read-only; same DB as FinanceHub)
+  // Hometax (same DB as FinanceHub)
   // ========================================
 
   /**
@@ -2846,6 +2859,199 @@ export class FinanceHubDbManager {
       LIMIT ?
     `);
     return stmt.all(capped) as Record<string, unknown>[];
+  }
+
+  private coerceStr(value: unknown): string {
+    return value == null ? '' : String(value);
+  }
+
+  private coerceNum(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  private coerceTaxInvoiceRow(row: Record<string, unknown>): TaxInvoiceData {
+    return {
+      작성일자: this.coerceStr(row.작성일자),
+      승인번호: this.coerceStr(row.승인번호),
+      발급일자: this.coerceStr(row.발급일자),
+      전송일자: this.coerceStr(row.전송일자),
+      공급자사업자등록번호: this.coerceStr(row.공급자사업자등록번호),
+      공급자종사업장번호: this.coerceStr(row.공급자종사업장번호),
+      공급자상호: this.coerceStr(row.공급자상호),
+      공급자대표자명: this.coerceStr(row.공급자대표자명),
+      공급자주소: this.coerceStr(row.공급자주소),
+      공급받는자사업자등록번호: this.coerceStr(row.공급받는자사업자등록번호),
+      공급받는자종사업장번호: this.coerceStr(row.공급받는자종사업장번호),
+      공급받는자상호: this.coerceStr(row.공급받는자상호),
+      공급받는자대표자명: this.coerceStr(row.공급받는자대표자명),
+      공급받는자주소: this.coerceStr(row.공급받는자주소),
+      합계금액: this.coerceNum(row.합계금액),
+      공급가액: this.coerceNum(row.공급가액),
+      세액: this.coerceNum(row.세액),
+      전자세금계산서분류: this.coerceStr(row.전자세금계산서분류),
+      전자세금계산서종류: this.coerceStr(row.전자세금계산서종류),
+      발급유형: this.coerceStr(row.발급유형),
+      비고: this.coerceStr(row.비고),
+      영수청구구분: this.coerceStr(row.영수청구구분),
+      공급자이메일: this.coerceStr(row.공급자이메일),
+      공급받는자이메일1: this.coerceStr(row.공급받는자이메일1),
+      공급받는자이메일2: this.coerceStr(row.공급받는자이메일2),
+      품목일자: this.coerceStr(row.품목일자),
+      품목명: this.coerceStr(row.품목명),
+      품목규격: this.coerceStr(row.품목규격),
+      품목수량: this.coerceStr(row.품목수량),
+      품목단가: this.coerceStr(row.품목단가),
+      품목공급가액: this.coerceNum(row.품목공급가액),
+      품목세액: this.coerceNum(row.품목세액),
+      품목비고: this.coerceStr(row.품목비고)
+    };
+  }
+
+  private coerceCashReceiptRow(row: Record<string, unknown>): CashReceiptData {
+    return {
+      발행구분: this.coerceStr(row.발행구분),
+      매출일시: this.coerceStr(row.매출일시),
+      공급가액: this.coerceNum(row.공급가액),
+      부가세: this.coerceNum(row.부가세),
+      봉사료: this.coerceNum(row.봉사료),
+      총금액: this.coerceNum(row.총금액),
+      승인번호: this.coerceStr(row.승인번호),
+      신분확인뒷4자리: this.coerceStr(row.신분확인뒷4자리),
+      거래구분: this.coerceStr(row.거래구분),
+      용도구분: this.coerceStr(row.용도구분),
+      비고: this.coerceStr(row.비고)
+    };
+  }
+
+  importHometaxData(args: {
+    dataType: 'tax-invoice' | 'tax-exempt-invoice' | 'cash-receipt';
+    businessNumber: string;
+    invoiceType?: 'sales' | 'purchase';
+    rows: Record<string, unknown>[];
+    excelFilePath?: string;
+  }): { success: boolean; inserted: number; duplicate: number; dataType: string; error?: string } {
+    const businessNumber = args.businessNumber?.trim();
+    if (!businessNumber) {
+      throw new Error('businessNumber is required');
+    }
+
+    const capped = args.rows.slice(0, 1000);
+    if (capped.length === 0) {
+      throw new Error('rows must be a non-empty array');
+    }
+
+    const excelFilePath = args.excelFilePath?.trim() || 'mcp-import';
+
+    if (args.dataType === 'tax-invoice' || args.dataType === 'tax-exempt-invoice') {
+      if (args.invoiceType !== 'sales' && args.invoiceType !== 'purchase') {
+        throw new Error('invoiceType must be "sales" or "purchase" for invoice data types');
+      }
+      const invoices = capped.map((row) => this.coerceTaxInvoiceRow(row));
+      for (const inv of invoices) {
+        if (!inv.승인번호?.trim()) {
+          throw new Error('Each invoice row must include 승인번호');
+        }
+      }
+
+      if (args.dataType === 'tax-invoice') {
+        const result = importTaxInvoices(
+          this.db,
+          businessNumber,
+          args.invoiceType,
+          invoices,
+          excelFilePath
+        );
+        if (!result.success) {
+          throw new Error(result.error || 'Import failed');
+        }
+        return { ...result, dataType: args.dataType };
+      }
+
+      const result = importTaxExemptInvoices(
+        this.db,
+        businessNumber,
+        args.invoiceType,
+        invoices,
+        excelFilePath
+      );
+      if (!result.success) {
+        throw new Error(result.error || 'Import failed');
+      }
+      return { ...result, dataType: args.dataType };
+    }
+
+    if (args.dataType === 'cash-receipt') {
+      const receipts = capped.map((row) => this.coerceCashReceiptRow(row));
+      for (const receipt of receipts) {
+        if (!receipt.승인번호?.trim() || !receipt.매출일시?.trim()) {
+          throw new Error('Each cash receipt row must include 승인번호 and 매출일시');
+        }
+      }
+      const result = importCashReceipts(this.db, businessNumber, receipts, excelFilePath);
+      if (!result.success) {
+        throw new Error(result.error || 'Import failed');
+      }
+      return { ...result, dataType: args.dataType };
+    }
+
+    throw new Error(`Unknown dataType: ${args.dataType}`);
+  }
+
+  deleteHometaxData(args: {
+    dataType: 'tax-invoice' | 'tax-exempt-invoice' | 'cash-receipt';
+    businessNumber: string;
+    invoiceType?: 'sales' | 'purchase';
+    startDate?: string;
+    endDate?: string;
+    ids?: number[];
+  }): { success: boolean; deleted: number; dataType: string; error?: string } {
+    const filters: HometaxDeleteFilters = {
+      businessNumber: args.businessNumber,
+      invoiceType: args.invoiceType,
+      startDate: args.startDate,
+      endDate: args.endDate,
+      ids: args.ids
+    };
+
+    let result: { success: boolean; deleted: number; error?: string };
+    if (args.dataType === 'tax-invoice') {
+      result = deleteTaxInvoices(this.db, filters);
+    } else if (args.dataType === 'tax-exempt-invoice') {
+      result = deleteTaxExemptInvoices(this.db, filters);
+    } else if (args.dataType === 'cash-receipt') {
+      result = deleteCashReceipts(this.db, filters);
+    } else {
+      throw new Error(`Unknown dataType: ${args.dataType}`);
+    }
+
+    if (!result.success) {
+      throw new Error(result.error || 'Delete failed');
+    }
+    return { ...result, dataType: args.dataType };
+  }
+
+  deleteImportedHometaxForBusiness(businessNumber: string): {
+    success: boolean;
+    businessNumber: string;
+    taxInvoices: number;
+    taxExemptInvoices: number;
+    cashReceipts: number;
+    hometaxSyncOperations: number;
+  } {
+    const result = deleteAllImportedHometaxForBusiness(this.db, businessNumber);
+    if (!result.success) {
+      throw new Error(result.error || 'Delete failed');
+    }
+    return {
+      success: true,
+      businessNumber: businessNumber.trim(),
+      taxInvoices: result.taxInvoices,
+      taxExemptInvoices: result.taxExemptInvoices,
+      cashReceipts: result.cashReceipts,
+      hometaxSyncOperations: result.hometaxSyncOperations
+    };
   }
 
   // ========================================

@@ -57,6 +57,11 @@ export { FinanceHubDeleteAccountTool } from './financehub-delete-account';
 export { FinanceHubDeleteImportedDataForBankTool } from './financehub-delete-imported-data-for-bank';
 export { FinanceHubDeleteTransactionsTool } from './financehub-delete-transactions';
 export { FinanceHubDeleteBankProductRowsTool } from './financehub-delete-bank-product-rows';
+export { FinanceHubImportHometaxDataTool } from './financehub-import-hometax-data';
+export {
+  FinanceHubDeleteHometaxDataTool,
+  FinanceHubDeleteImportedHometaxForBusinessTool
+} from './financehub-delete-hometax-data';
 export { InternalKnowledgeListSnapshotsTool } from './internalknowledge-list-snapshots';
 export { InternalKnowledgeGetSnapshotTool } from './internalknowledge-get-snapshot';
 export { InternalKnowledgeGetCompanyInfoTool } from './internalknowledge-get-company-info';

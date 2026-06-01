@@ -5,10 +5,11 @@
  */
 
 const BASE = process.env.EGDESK_API_URL || 'http://localhost:8080';
-const API_KEY = process.env.EGDESK_API_KEY || process.argv[2] || '';
+const API_KEY = process.env.EGDESK_API_KEY || process.argv[2] || '44c9e9ba-d732-42c1-9ad5-d0344ee1705c';
 
 const TEST_BANK_ID = 'serp';
 const TEST_CARD_ID = 'bc-card';
+const TEST_HOMETAX_BN = '9999999999';
 const TEST_BANK_ACCOUNT = 'MCP-TEST-BANK-99001';
 const TEST_CARD_ACCOUNT = 'MCP-TEST-CARD-99002';
 
@@ -181,6 +182,64 @@ async function main() {
     throw new Error(`Test accounts still present: ${JSON.stringify(leftover)}`);
   }
   log('Verify cleanup', { message: 'No test accounts remain', totalAccounts: after.totalAccounts });
+
+  // --- Hometax import / delete ---
+  const hometaxImport = await callTool('financehub_import_hometax_data', {
+    dataType: 'tax-invoice',
+    businessNumber: TEST_HOMETAX_BN,
+    invoiceType: 'sales',
+    rows: [
+      {
+        작성일자: '2026-05-01',
+        승인번호: 'MCP-HOMETAX-TEST-001',
+        발급일자: '2026-05-01',
+        전송일자: '2026-05-01',
+        공급자사업자등록번호: '1234567890',
+        공급자상호: 'MCP Test Supplier',
+        공급받는자사업자등록번호: TEST_HOMETAX_BN,
+        공급받는자상호: 'MCP Test Buyer',
+        합계금액: 11000,
+        공급가액: 10000,
+        세액: 1000,
+      },
+    ],
+  });
+  log('Import Hometax tax invoice', hometaxImport);
+
+  const hometaxQuery = await callTool('financehub_query_tax_invoices', {
+    businessNumber: TEST_HOMETAX_BN,
+    invoiceType: 'sales',
+    limit: 10,
+  });
+  log('Query Hometax tax invoices', { total: hometaxQuery.total });
+
+  const delHometax = await callTool('financehub_delete_hometax_data', {
+    dataType: 'tax-invoice',
+    businessNumber: TEST_HOMETAX_BN,
+    invoiceType: 'sales',
+    startDate: '2026-05-01',
+    endDate: '2026-05-31',
+  });
+  log('Delete Hometax tax invoices', delHometax);
+
+  const hometaxAfter = await callTool('financehub_query_tax_invoices', {
+    businessNumber: TEST_HOMETAX_BN,
+    invoiceType: 'sales',
+    startDate: '2026-05-01',
+    endDate: '2026-05-31',
+    limit: 10,
+  });
+
+  const leftoverInvoices = (hometaxAfter.invoices || []).filter(
+    (inv) => inv['승인번호'] === 'MCP-HOMETAX-TEST-001'
+  );
+  if (leftoverInvoices.length > 0) {
+    await callTool('financehub_delete_imported_hometax_for_business', {
+      businessNumber: TEST_HOMETAX_BN,
+    });
+    throw new Error('Test Hometax invoice still present after delete');
+  }
+  log('Verify Hometax cleanup', { message: 'No test invoices remain' });
 
   console.log('\n🎉 All FinanceHub MCP write/delete steps passed.');
 }

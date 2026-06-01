@@ -779,3 +779,142 @@ export function getCashReceipts(
     };
   }
 }
+
+export type HometaxDeleteFilters = {
+  businessNumber: string;
+  invoiceType?: 'sales' | 'purchase';
+  startDate?: string;
+  endDate?: string;
+  ids?: number[];
+};
+
+function deleteHometaxRows(
+  db: Database.Database,
+  tableName: 'tax_invoices' | 'tax_exempt_invoices' | 'cash_receipts',
+  filters: HometaxDeleteFilters,
+  dateColumn: string
+): { success: boolean; deleted: number; error?: string } {
+  try {
+    if (!filters.businessNumber?.trim()) {
+      return { success: false, deleted: 0, error: 'businessNumber is required' };
+    }
+
+    const ids = Array.isArray(filters.ids)
+      ? filters.ids.filter((id) => Number.isInteger(id) && id > 0).slice(0, 500)
+      : [];
+
+    if (ids.length === 0 && !filters.startDate && !filters.endDate) {
+      return {
+        success: false,
+        deleted: 0,
+        error: 'Provide ids or startDate/endDate (or use deleteAllImportedHometaxForBusiness to wipe all rows for a business)'
+      };
+    }
+
+    let query = `DELETE FROM ${tableName} WHERE business_number = ?`;
+    const params: unknown[] = [filters.businessNumber.trim()];
+
+    if (filters.invoiceType && tableName !== 'cash_receipts') {
+      query += ' AND invoice_type = ?';
+      params.push(filters.invoiceType);
+    }
+
+    if (ids.length > 0) {
+      query += ` AND id IN (${ids.map(() => '?').join(', ')})`;
+      params.push(...ids);
+    } else {
+      if (filters.startDate) {
+        query += ` AND ${dateColumn} >= ?`;
+        params.push(filters.startDate);
+      }
+      if (filters.endDate) {
+        query += ` AND ${dateColumn} <= ?`;
+        params.push(filters.endDate);
+      }
+    }
+
+    const deleted = db.prepare(query).run(...params).changes;
+    return { success: true, deleted };
+  } catch (error) {
+    console.error(`[Hometax DB] Error deleting from ${tableName}:`, error);
+    return {
+      success: false,
+      deleted: 0,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+export function deleteTaxInvoices(
+  db: Database.Database,
+  filters: HometaxDeleteFilters
+): { success: boolean; deleted: number; error?: string } {
+  return deleteHometaxRows(db, 'tax_invoices', filters, '작성일자');
+}
+
+export function deleteTaxExemptInvoices(
+  db: Database.Database,
+  filters: HometaxDeleteFilters
+): { success: boolean; deleted: number; error?: string } {
+  return deleteHometaxRows(db, 'tax_exempt_invoices', filters, '작성일자');
+}
+
+export function deleteCashReceipts(
+  db: Database.Database,
+  filters: Omit<HometaxDeleteFilters, 'invoiceType'>
+): { success: boolean; deleted: number; error?: string } {
+  return deleteHometaxRows(db, 'cash_receipts', filters, '매출일시');
+}
+
+export function deleteAllImportedHometaxForBusiness(
+  db: Database.Database,
+  businessNumber: string
+): {
+  success: boolean;
+  taxInvoices: number;
+  taxExemptInvoices: number;
+  cashReceipts: number;
+  hometaxSyncOperations: number;
+  error?: string;
+} {
+  try {
+    const bn = businessNumber?.trim();
+    if (!bn) {
+      return {
+        success: false,
+        taxInvoices: 0,
+        taxExemptInvoices: 0,
+        cashReceipts: 0,
+        hometaxSyncOperations: 0,
+        error: 'businessNumber is required'
+      };
+    }
+
+    const taxInvoices = db.prepare('DELETE FROM tax_invoices WHERE business_number = ?').run(bn).changes;
+    const taxExemptInvoices = db
+      .prepare('DELETE FROM tax_exempt_invoices WHERE business_number = ?')
+      .run(bn).changes;
+    const cashReceipts = db.prepare('DELETE FROM cash_receipts WHERE business_number = ?').run(bn).changes;
+    const hometaxSyncOperations = db
+      .prepare('DELETE FROM hometax_sync_operations WHERE business_number = ?')
+      .run(bn).changes;
+
+    return {
+      success: true,
+      taxInvoices,
+      taxExemptInvoices,
+      cashReceipts,
+      hometaxSyncOperations
+    };
+  } catch (error) {
+    console.error('[Hometax DB] Error deleting all imported data for business:', error);
+    return {
+      success: false,
+      taxInvoices: 0,
+      taxExemptInvoices: 0,
+      cashReceipts: 0,
+      hometaxSyncOperations: 0,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
