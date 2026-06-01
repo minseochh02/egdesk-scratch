@@ -12,6 +12,7 @@ import {
   buildEgdeskSeedAgentMessage,
   buildEgdeskSeedUserMessage,
   cleanupOrphanEgdeskChatStubs,
+  postLaunchRegistration,
   registerEgdeskChatHistory,
   repairEgdeskChatHub,
   writeEgdeskChatConversation,
@@ -499,6 +500,7 @@ export async function openAntigravityFolder(
   console.log(`[open-antigravity] Registered project ${projectId} → ${resolvedPath}`);
 
   let egdeskChatCascadeId: string | undefined;
+  let egdeskChatLsRegistered = false;
   let egdeskChatNeedsActivation = false;
   let egdeskChatActivated = false;
   let egdeskChatError: string | undefined;
@@ -539,6 +541,7 @@ export async function openAntigravityFolder(
   try {
     const egdeskChat = await registerEgdeskChatHistory(egdeskChatContext);
     egdeskChatCascadeId = egdeskChat.cascadeId;
+    egdeskChatLsRegistered = egdeskChat.lsRegistered;
     egdeskChatActivated = true;
     egdeskChatNeedsActivation = false;
     egdeskChatError = egdeskChat.error;
@@ -600,10 +603,20 @@ export async function openAntigravityFolder(
     `[open-antigravity] Launchers: ide=${ideLauncher ?? 'none'}, desktop=${desktopExecutable ?? 'none'}`,
   );
 
+  /** Fire background LS registration after a successful launch so Antigravity's
+   * hub rebuild includes the cascade. On Windows the hub is rebuilt entirely from
+   * LS state on startup — without an LS trajectory the cascade disappears. */
+  const schedulePostLaunchRegistration = (): void => {
+    if (!egdeskChatCascadeId) return;
+    postLaunchRegistration(egdeskChatContext, egdeskChatCascadeId, egdeskChatLsRegistered)
+      .catch((err) => console.warn('[open-antigravity] Post-launch registration failed:', err));
+  };
+
   if (ideLauncher) {
     const result = launchWithIdeBinary(ideLauncher, resolvedPath, launchEnv);
     if (result.success) {
       console.log(`[open-antigravity] Opened via IDE (${result.method})`);
+      schedulePostLaunchRegistration();
       return buildResult({ ...result, port, projectId });
     }
     console.warn('[open-antigravity] IDE launch failed, trying desktop…', result.error);
@@ -612,6 +625,7 @@ export async function openAntigravityFolder(
   const desktopResult = await launchAntigravityDesktop(projectId, launchEnv);
   if (desktopResult.success) {
     console.log(`[open-antigravity] Opened via desktop (${desktopResult.method})`);
+    schedulePostLaunchRegistration();
     return buildResult({ ...desktopResult, port, projectId });
   }
 

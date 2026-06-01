@@ -41,6 +41,8 @@ export interface EgdeskChatRegistrationResult {
   cascadeId: string;
   created: boolean;
   hubLinked: boolean;
+  /** True when the cascade was registered with the running LS (has a server-side trajectory). */
+  lsRegistered: boolean;
   error?: string;
 }
 
@@ -239,7 +241,7 @@ export async function registerEgdeskChatHistory(
   // SendUserCascadeMessage causes the LS to rewrite the hub entry and strips the
   // project link (field 17.18), making the thread appear under "all conversations"
   // instead of the project.
-  const { cascadeId } = await registerCascadeWithLS(context, endpoint);
+  const { cascadeId, lsRegistered } = await registerCascadeWithLS(context, endpoint);
 
   // Write our hub entry on top of whatever StartCascade wrote — this restores the
   // correct egdesk-chat title and project link that StartCascade strips.
@@ -259,7 +261,64 @@ export async function registerEgdeskChatHistory(
     );
   }
 
-  return { cascadeId, created: true, hubLinked };
+  return { cascadeId, created: true, hubLinked, lsRegistered };
+}
+
+/**
+ * Run after Antigravity has been launched. Waits for the new LS to come up,
+ * registers the cascade so Antigravity includes it in its hub rebuild, then
+ * re-applies the project link (field 17.18) that StartCascade drops.
+ *
+ * When the cascade was created with a local UUID (LS timed out before launch),
+ * it has no server-side trajectory. On Windows, Antigravity rebuilds its hub
+ * entirely from LS state on startup — without an LS trajectory the cascade
+ * never appears in the sidebar. This function fixes that by registering the
+ * cascade with the freshly-started LS.
+ *
+ * Fire-and-forget: call without await and let errors be swallowed by the caller.
+ */
+export async function postLaunchRegistration(
+  context: EgdeskChatContext,
+  cascadeId: string,
+  lsRegistered: boolean,
+): Promise<void> {
+  const ls = await waitForLanguageServerReady(context.projectId, { timeoutMs: 90_000 });
+
+  let finalCascadeId = cascadeId;
+
+  if (!lsRegistered) {
+    // The cascade has no LS trajectory yet — register it now so Antigravity's
+    // hub rebuild will include it. We pass cascadeId as a hint; some LS versions
+    // honour it (returning the same ID), others ignore it (returning a new one).
+    await addTrackedWorkspace(ls, context.folderUri);
+    const { cascadeId: lsCascadeId } = await startCascade(ls, {
+      projectId: context.projectId,
+      workspaceUris: [context.folderUri],
+      cascadeId,
+    });
+    finalCascadeId = lsCascadeId;
+
+    if (finalCascadeId !== cascadeId) {
+      // LS assigned a different cascade id — migrate all artifacts to the new id.
+      console.log(`[egdesk-chat] LS assigned new cascade ${finalCascadeId} (was ${cascadeId}) — migrating`);
+      writeEgdeskChatHistory(context, finalCascadeId);
+      writeEgdeskChatConversation(
+        finalCascadeId,
+        buildEgdeskSeedUserMessage(context),
+        buildEgdeskSeedAgentMessage(context),
+      );
+      removeHubEntryForCascade(cascadeId);
+      const oldDb = path.join(os.homedir(), '.gemini', 'antigravity', 'conversations', `${cascadeId}.db`);
+      if (fs.existsSync(oldDb)) {
+        try { fs.rmSync(oldDb); } catch { /* best-effort */ }
+      }
+      saveEgdeskChatCascadeId(context.projectId, finalCascadeId, context.folderPath);
+    }
+  }
+
+  // Re-apply the hub entry with the project link — StartCascade strips it.
+  await repairEgdeskChatHub(context, finalCascadeId);
+  console.log(`[egdesk-chat] Post-launch hub repair done (cascade=${finalCascadeId}, lsRegistered=${String(!lsRegistered && finalCascadeId !== cascadeId ? false : true)})`);
 }
 
 /** @deprecated */
@@ -268,7 +327,7 @@ export async function activateEgdeskChatThread(
   endpoint?: LanguageServerEndpoint,
 ): Promise<EgdeskChatRegistrationResult & { activated: boolean; needsActivation: boolean }> {
   const result = await registerEgdeskChatHistory(context, endpoint);
-  return { ...result, activated: result.hubLinked, needsActivation: !result.hubLinked };
+  return { ...result, lsRegistered: result.lsRegistered, activated: result.hubLinked, needsActivation: !result.hubLinked };
 }
 
 /** @deprecated */
