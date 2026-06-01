@@ -655,6 +655,36 @@ function calcINICertRowTarget({ listX, listWidth, headerBottom, windowDpi, certI
 }
 
 /**
+ * Center of the 하드디스크 button (AutomationId 14001) in INICertManUI.
+ * Must be clicked before the cert list is populated; row offsets are calibrated after this.
+ *
+ * @returns {{ ok: boolean, x?: number, y?: number, error?: string }}
+ */
+function getINICertManUIHarddiskButtonCoords() {
+  if (!isWindows()) return { ok: false, error: 'not windows' };
+  try {
+    const script =
+      'Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; ' +
+      '$r = [System.Windows.Automation.AutomationElement]::RootElement; ' +
+      '$wc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, \'INICertManUI\'); ' +
+      '$w = $r.FindFirst([System.Windows.Automation.TreeScope]::Children, $wc); ' +
+      'if (-not $w) { \'{"ok":false,"error":"window_not_found"}\'; exit } ' +
+      '$dc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, \'14001\'); ' +
+      '$dk = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $dc); ' +
+      'if (-not $dk) { \'{"ok":false,"error":"harddisk_button_not_found"}\'; exit } ' +
+      '$rect = $dk.Current.BoundingRectangle; ' +
+      'if ($rect.Width -le 0) { \'{"ok":false,"error":"no_bounds"}\'; exit } ' +
+      '@{ok=$true;x=[int]($rect.X + $rect.Width / 2);y=[int]($rect.Y + $rect.Height / 2)} | ConvertTo-Json -Compress';
+    const raw = runPowerShellUtf8(script, { timeoutMs: 8000 });
+    const parsed = JSON.parse(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error || 'unknown' };
+    return { ok: true, x: parsed.x, y: parsed.y };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Find the center coordinates of the password Edit control inside INICertManUI.
  * Used to re-focus the password field after clicking a cert row.
  *
@@ -722,5 +752,6 @@ module.exports = {
   ensureCertWindowOnScreen,
   getINICertManUIListGeometry,
   calcINICertRowTarget,
+  getINICertManUIHarddiskButtonCoords,
   getINICertManUIPasswordFieldCoords,
 };
