@@ -8,7 +8,7 @@ const WOORI_CERT_COLS = 4;
 const WOORI_CERT_HEADER = new Set(['구분', '사용자', '만료일', '발급자', '']);
 
 /** Self-contained for page.evaluate (must not call other module exports). */
-function resolveWooriCertCellInBrowser({ index = 1, expiry = '', name = '' } = {}) {
+function resolveWooriCertCellInBrowser({ index = 1, expiry = '', name = '', month = 0 } = {}) {
   const COLS = 4;
   const HEADER = new Set(['구분', '사용자', '만료일', '발급자', '']);
   const allCells = Array.from(document.querySelectorAll('.xwup-tableview-cell'));
@@ -27,21 +27,35 @@ function resolveWooriCertCellInBrowser({ index = 1, expiry = '', name = '' } = {
     return { ok: false, reason: 'no cert rows in .xwup-tableview-cell' };
   }
 
-  let rowIdx = 0;
+  const expiryMatchesMonth = (text, m) => {
+    const mm = String(m).padStart(2, '0');
+    return (
+      text.includes(`-${mm}-`) ||
+      text.includes(`.${mm}.`) ||
+      text.includes(`/${mm}/`) ||
+      new RegExp(`\\d{4}[.\\-/]${mm}[.\\-/]`).test(text)
+    );
+  };
+
+  let rowIdx = -1;
   if (expiry) {
     const norm = expiry.replace(/-/g, '.');
-    const found = rows.findIndex(
+    rowIdx = rows.findIndex(
       (r) => r.texts[2].includes(expiry) || r.texts[2].includes(norm)
     );
-    if (found >= 0) rowIdx = found;
-  } else if (name) {
-    const found = rows.findIndex(
+  }
+  if (rowIdx < 0 && month >= 1 && month <= 12) {
+    rowIdx = rows.findIndex((r) => expiryMatchesMonth(r.texts[2], month));
+  }
+  if (rowIdx < 0 && name) {
+    rowIdx = rows.findIndex(
       (r) => r.texts[1].includes(name) || r.texts.some((t) => t.includes(name))
     );
-    if (found >= 0) rowIdx = found;
-  } else if (index >= 1) {
+  }
+  if (rowIdx < 0 && index >= 1) {
     rowIdx = Math.min(index - 1, rows.length - 1);
   }
+  if (rowIdx < 0) rowIdx = 0;
 
   const row = rows[rowIdx];
   return {

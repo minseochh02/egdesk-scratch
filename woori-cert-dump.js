@@ -2,10 +2,13 @@
  * woori-cert-dump.js
  *
  * Opens Woori Bank's cert selection dialog, dumps every cert row with real
- * .xwup-tableview-cell XPaths, then exits WITHOUT completing login.
+ * .xwup-tableview-cell XPaths, clicks the November-expiry cert, then keeps
+ * the browser open for inspection (does NOT complete login).
  *
  * Usage (from egdesk-scratch/):
- *   node woori-cert-dump.js
+ *   node woori-cert-dump.js              # click cert expiring in November (month 11)
+ *   node woori-cert-dump.js --month 9    # click September instead
+ *   CERT_EXPIRY=2026-11-15 node woori-cert-dump.js
  */
 
 require('dotenv').config();
@@ -18,7 +21,22 @@ const {
   dumpWooriCertRowsInBrowser,
 } = require('./scripts/bank-excel-download-automation/woori-xwup-cert');
 
+function parseArgs(argv) {
+  let month = parseInt(process.env.WOORI_CERT_MONTH || '11', 10);
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === '--month' && argv[i + 1]) {
+      month = parseInt(argv[i + 1], 10);
+      i += 1;
+    }
+  }
+  return {
+    month: Number.isNaN(month) ? 11 : month,
+    expiry: process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '',
+  };
+}
+
 (async () => {
+  const { month, expiry } = parseArgs(process.argv);
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-profile-'));
 
   const context = await chromium.launchPersistentContext(profileDir, {
@@ -100,26 +118,39 @@ const {
         );
         console.log(`     click: page.locator('.xwup-tableview-cell').nth(${row.cellIndex}).click({ force: true })`);
         console.log(`     expiry xpath: ${row.expiryXpath}`);
-        console.log(`     name xpath:   ${row.nameXpath}`);
         console.log();
       }
       console.log('─'.repeat(80));
-
-      const sample = dump.rows[0];
-      console.log('\nRecommended click by row index N (0-based):');
-      console.log('  await page.locator(".xwup-tableview-cell").nth(rows[N].cellIndex).click({ force: true });');
-      console.log(`\nExample row [0] expiry "${sample.texts[2]}":`);
-      console.log(`  page.locator('.xwup-tableview-cell').nth(${sample.cellIndex}).click({ force: true })`);
-      console.log(`  xpath=${sample.expiryXpath}`);
     }
 
-    const envExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
-    if (envExpiry) {
-      const resolved = await page.evaluate(resolveWooriCertCellInBrowser, { expiry: envExpiry });
-      console.log(`\nCERT_EXPIRY=${envExpiry} →`, resolved);
+    const resolveArgs = expiry ? { expiry } : { month };
+    console.log(
+      `\n[5] Clicking cert${expiry ? ` expiry=${expiry}` : ` with November expiry (month=${month})`}...`
+    );
+    const target = await page.evaluate(resolveWooriCertCellInBrowser, resolveArgs);
+    if (!target?.ok) {
+      throw new Error(target?.reason || 'cert not found for given month/expiry');
+    }
+    console.log(
+      `[5] Target row ${target.rowIdx}: name="${target.nameText}" expiry="${target.expiryText}" → nth(${target.cellIndex})`
+    );
+
+    await page.locator('.xwup-tableview-cell').nth(target.cellIndex).click({ timeout: 8000, force: true });
+    await page.waitForTimeout(1500);
+
+    const afterClick = await page.evaluate(() => ({
+      pwdVisible: !!document.querySelector('#xwup_certselect_tek_input1'),
+      pwdDisplay: document.querySelector('#xwup_certselect_tek_input1')?.offsetParent != null,
+      selectedText: document.querySelector('.xwup_cert_table, #xwup_cert_table')?.innerText?.slice(0, 200) || '',
+    }));
+    if (afterClick.pwdVisible) {
+      console.log('[5] ✓ Click OK — password field (#xwup_certselect_tek_input1) is present');
+    } else {
+      console.log('[5] ⚠️ Click done but password field not visible yet — check browser');
     }
 
-    await page.waitForTimeout(15000);
+    console.log('\nBrowser stays open 30s for inspection (Ctrl+C to exit early)...');
+    await page.waitForTimeout(30000);
   } finally {
     await context.close();
     try {
