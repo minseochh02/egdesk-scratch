@@ -1775,6 +1775,9 @@ export class FinanceHubScheduler extends EventEmitter {
             certificatePassword: certPw,
             certificateIndex: currentCertIndex,
             xpath: (savedCredentials as any).certificateXPath,
+            certificateName: certName,
+            certificateIssuer: certIssuer,
+            certificateNotAfter: certNotAfter,
           });
 
           // Wrong password: retry once with slow-typing mode (automator increments attempt counter)
@@ -1784,6 +1787,9 @@ export class FinanceHubScheduler extends EventEmitter {
               certificatePassword: certPw,
               certificateIndex: currentCertIndex,
               xpath: (savedCredentials as any).certificateXPath,
+              certificateName: certName,
+              certificateIssuer: certIssuer,
+              certificateNotAfter: certNotAfter,
             });
           }
 
@@ -2351,6 +2357,9 @@ export class FinanceHubScheduler extends EventEmitter {
             certificatePassword: certPw,
             certificateIndex: currentCertIndex,
             xpath: (savedCredentials as any).certificateXPath,
+            certificateName: certName,
+            certificateIssuer: certIssuer,
+            certificateNotAfter: certNotAfter,
           });
 
           // Wrong password: retry once with slow-typing mode (automator increments attempt counter)
@@ -2360,6 +2369,9 @@ export class FinanceHubScheduler extends EventEmitter {
               certificatePassword: certPw,
               certificateIndex: currentCertIndex,
               xpath: (savedCredentials as any).certificateXPath,
+              certificateName: certName,
+              certificateIssuer: certIssuer,
+              certificateNotAfter: certNotAfter,
             });
           }
 

@@ -1236,7 +1236,25 @@ const createWindow = async () => {
         'finance-hub:corporate-cert-complete',
         async (
           _event,
-          { bankId, certificatePassword, certificateIndex, xpath }: { bankId?: string; certificatePassword: string; certificateIndex?: number; xpath?: string }
+          {
+            bankId,
+            certificatePassword,
+            certificateIndex,
+            xpath,
+            certificateName,
+            certificateIssuer,
+            certificateNotAfter,
+            certificateFolder,
+          }: {
+            bankId?: string;
+            certificatePassword: string;
+            certificateIndex?: number;
+            xpath?: string;
+            certificateName?: string;
+            certificateIssuer?: string;
+            certificateNotAfter?: string;
+            certificateFolder?: string;
+          }
         ) => {
           try {
             const id = String(bankId || '').toLowerCase();
@@ -1244,7 +1262,15 @@ const createWindow = async () => {
             if (!automator || typeof automator.completeCorporateCertificateLogin !== 'function') {
               return { success: false, error: '활성 세션이 없습니다. 처음부터 다시 시도하세요.' };
             }
-            return await automator.completeCorporateCertificateLogin({ certificatePassword, certificateIndex, xpath });
+            return await automator.completeCorporateCertificateLogin({
+              certificatePassword,
+              certificateIndex,
+              xpath,
+              certificateName,
+              certificateIssuer,
+              certificateNotAfter,
+              certificateFolder,
+            });
           } catch (error) {
             console.error('[FINANCE-HUB] corporate-cert-complete failed:', error);
             return { success: false, error: error instanceof Error ? error.message : String(error) };

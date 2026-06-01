@@ -144,64 +144,67 @@ class WooriBankAutomator extends BaseBankAutomator {
   }
 
   /**
-   * Same cascade as woori.spec.js STEP 4: optional getByRole/getByText for CERT_EXPIRY (or WOORI_CERT_EXPIRY),
-   * then #xwup_cert_table cell → .xwup-tableview-cell → XPath. getByRole can be count=0 when the date cell has no accessible name.
+   * 1-based tbody row for recorded XPath (col3 = expiry). Skips header rows without a date in td[3].
    */
+  async _wooriResolveCertXPathRow({ certificateIndex, certificateNotAfter, certificateName } = {}) {
+    return this.page.evaluate(({ index, expiry, name }) => {
+      const rows = Array.from(
+        document.querySelectorAll('#xwup_cert_table tbody tr, table tbody tr')
+      );
+      const dataRows = rows.filter((row) => {
+        const td3 = row.querySelector('td:nth-child(3)');
+        return td3 && /\d{4}/.test(td3.textContent || '');
+      });
+      if (dataRows.length === 0) {
+        return index >= 1 ? index : 1;
+      }
+
+      let targetRow = null;
+      if (expiry) {
+        const norm = expiry.replace(/-/g, '.');
+        targetRow = dataRows.find((row) => {
+          const text = row.querySelector('td:nth-child(3)')?.textContent || '';
+          return text.includes(expiry) || text.includes(norm);
+        });
+      }
+      if (!targetRow && name) {
+        targetRow = dataRows.find((row) => (row.textContent || '').includes(name));
+      }
+      if (!targetRow && index >= 1) {
+        targetRow = dataRows[index - 1];
+      }
+      if (!targetRow) {
+        targetRow = dataRows[0];
+      }
+      return rows.indexOf(targetRow) + 1;
+    }, {
+      index: certificateIndex != null && certificateIndex >= 1 ? certificateIndex : 1,
+      expiry: certificateNotAfter || '',
+      name: certificateName || '',
+    });
+  }
+
+  /** woori.spec.js STEP 4 — click expiry cell via recorded absolute XPath. */
+  async _wooriClickCertExpiryCell({ certificateIndex, certificateNotAfter, certificateName } = {}) {
+    const envExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
+    const xpathRow = await this._wooriResolveCertXPathRow({
+      certificateIndex,
+      certificateNotAfter: certificateNotAfter || envExpiry,
+      certificateName,
+    });
+    this.log(`[WOORI] cert row: xpath …/tr[${xpathRow}]/td[3]/div`);
+    await this.page
+      .locator(
+        `xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[${xpathRow}]/td[3]/div`
+      )
+      .click({ timeout: 5000, force: true });
+  }
+
   async _wooriClickCertTableCell() {
-    const targetExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
     if (process.env.WOORI_DEBUG_CERT === '1') {
       await this._logWooriCertSelectionDebug();
     }
-
-    if (targetExpiry) {
-      try {
-        const locator = this.page.getByRole('div', { name: targetExpiry });
-        await locator.hover({ force: true });
-        await locator.click({ timeout: 5000 });
-        this.log(`[WOORI] cert row: getByRole('div', { name: '${targetExpiry}' })`);
-        return;
-      } catch (error) {
-        this.warn('[WOORI] getByRole failed (common in Electron — a11y name may differ):', error.message);
-      }
-      try {
-        const table = this.page.locator('#xwup_cert_table');
-        const byText = table.getByText(targetExpiry, { exact: true });
-        await byText.first().hover({ force: true });
-        await byText.first().click({ timeout: 5000 });
-        this.log(`[WOORI] cert row: #xwup_cert_table getByText('${targetExpiry}', exact)`);
-        return;
-      } catch (errorText) {
-        this.warn('[WOORI] #xwup_cert_table getByText failed, trying table cell fallbacks:', errorText.message);
-      }
-    } else {
-      this.log('[WOORI] CERT_EXPIRY / WOORI_CERT_EXPIRY not set; using cert table cell fallbacks');
-    }
-
-    try {
-      const scoped = this.page.locator('#xwup_cert_table .xwup-tableview-cell');
-      if ((await scoped.count()) > 0) {
-        await scoped.first().hover({ force: true });
-        await scoped.first().click({ timeout: 5000 });
-        this.log('[WOORI] cert row: #xwup_cert_table .xwup-tableview-cell.first()');
-        return;
-      }
-    } catch (e) {
-      this.warn('[WOORI] #xwup_cert_table scoped cell failed:', e.message);
-    }
-    try {
-      const fallbackLocator = this.page.locator('.xwup-tableview-cell').first();
-      await fallbackLocator.hover({ force: true });
-      await fallbackLocator.click({ timeout: 5000 });
-      this.warn('[WOORI] cert row: first .xwup-tableview-cell (woori.spec.js fallback — may be wrong cell)');
-    } catch (error2) {
-      this.warn('[WOORI] CSS fallback failed, woori.spec.js XPath:', error2.message);
-      const xpathLocator = this.page.locator(
-        'xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div'
-      );
-      await xpathLocator.hover({ force: true });
-      await xpathLocator.click();
-      this.log('[WOORI] cert row: xpath …/tr[1]/td[3]/div (woori.spec.js last resort)');
-    }
+    await this._wooriClickCertExpiryCell({});
   }
 
   async prepareCorporateCertificateLogin(proxyUrl) {
@@ -319,55 +322,15 @@ class WooriBankAutomator extends BaseBankAutomator {
         if (!certNavigated) {
           this.log(`[WOORI] 인증서 선택 시도 (Name: ${certificateName || 'N/A'}, Expiry: ${certificateNotAfter || 'N/A'}, Index: ${certificateIndex || 'N/A'})...`);
 
-          // Find the CSS selector for the target cell using metadata or index.
-          // Use tbody tr to skip header rows. .xwup-tableview-cell is the clickable cell.
-          const targetSelector = await this.page.evaluate(({ name, expiry, index }) => {
-            // Cert rows are in tbody, excluding the header
-            const rows = Array.from(document.querySelectorAll('#xwup_cert_table tbody tr, #xwup_cert_table tr:not(:first-child)'));
-            if (rows.length === 0) return null;
-
-            let targetRow = null;
-            if (name) {
-              targetRow = rows.find(row => {
-                const text = row.textContent || '';
-                const nameMatch = text.includes(name);
-                const expiryMatch = expiry ? text.includes(expiry.replace(/-/g, '.')) || text.includes(expiry) : true;
-                return nameMatch && expiryMatch;
-              });
-            }
-            // Index fallback (1-based, already skipping header)
-            if (!targetRow && index >= 1) {
-              targetRow = rows[index - 1];
-            }
-
-            if (!targetRow) return null;
-
-            // Return a unique-enough identifier so we can click it via Playwright
-            const cell = targetRow.querySelector('.xwup-tableview-cell');
-            const rowText = (cell || targetRow).textContent?.trim().substring(0, 60) || '';
-            return { rowText, rowIndex: rows.indexOf(targetRow) };
-          }, { name: certificateName, expiry: certificateNotAfter, index: certificateIndex });
-
-          if (targetSelector) {
-            this.log(`[WOORI] 대상 인증서 확인: index=${targetSelector.rowIndex} text="${targetSelector.rowText}"`);
-            // Use Playwright click — more reliable than dispatchEvent for triggering xwup handlers
-            try {
-              const rows = this.page.locator('#xwup_cert_table tbody tr, #xwup_cert_table tr:not(:first-child)');
-              const targetRow = rows.nth(targetSelector.rowIndex);
-              const cell = targetRow.locator('.xwup-tableview-cell').first();
-              const cellCount = await cell.count();
-              if (cellCount > 0) {
-                await cell.click({ timeout: 5000 });
-                this.log(`[WOORI] ✓ 인증서 클릭 성공 (.xwup-tableview-cell)`);
-              } else {
-                await targetRow.click({ timeout: 5000 });
-                this.log(`[WOORI] ✓ 인증서 클릭 성공 (row fallback)`);
-              }
-            } catch (e) {
-              this.warn(`[WOORI] ⚠️ Playwright 클릭 실패: ${e.message}`);
-            }
-          } else {
-            this.warn('[WOORI] ⚠️ 대상 인증서를 찾을 수 없습니다 — 기본 선택 유지');
+          try {
+            await this._wooriClickCertExpiryCell({
+              certificateIndex,
+              certificateNotAfter,
+              certificateName,
+            });
+            this.log('[WOORI] ✓ 인증서 클릭 성공 (expiry column XPath)');
+          } catch (e) {
+            this.warn(`[WOORI] ⚠️ 인증서 클릭 실패: ${e.message}`);
           }
 
           // Wait for xwup to show the password section after the cert is clicked
