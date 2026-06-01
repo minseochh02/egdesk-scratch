@@ -4,53 +4,48 @@
  * DOM layout (from woori-cert-debug dumps): each cert row has a hidden template cell
  * "선택 정상 인증서" (display:none) followed by 4 visible cells:
  *   구분 | 사용자 | 만료일 | 발급자
- * Do NOT chunk all .xwup-tableview-cell by 4 from index 0 — that misaligns columns.
+ *
+ * Each function passed to page.evaluate MUST be fully self-contained — Playwright
+ * only serializes that one function, not other exports in this module.
  */
 
 const WOORI_CERT_DATA_COLS = 4;
 
-/** Self-contained for page.evaluate — parse visible cert rows. */
-function parseWooriCertRowsInBrowser() {
-  const allCells = Array.from(document.querySelectorAll('.xwup-tableview-cell'));
-  const dataCells = [];
-
-  for (let i = 0; i < allCells.length; i++) {
-    const el = allCells[i];
-    const text = el.innerText.trim().replace(/\s+/g, ' ');
-    if (!text || text === '선택 정상 인증서') continue;
-    const style = getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) continue;
-    dataCells.push({ el, text, globalIndex: i });
-  }
-
-  const rows = [];
-  for (let i = 0; i < dataCells.length; i += WOORI_CERT_DATA_COLS) {
-    const chunk = dataCells.slice(i, i + WOORI_CERT_DATA_COLS);
-    if (chunk.length < WOORI_CERT_DATA_COLS) break;
-    const texts = chunk.map((c) => c.text);
-    if (!/\d{4}/.test(texts[2])) continue;
-    rows.push({
-      texts,
-      typeText: texts[0],
-      nameText: texts[1],
-      expiryText: texts[2],
-      issuerText: texts[3],
-      expiryIndex: chunk[2].globalIndex,
-      nameIndex: chunk[1].globalIndex,
-      expiryEl: chunk[2].el,
-      nameEl: chunk[1].el,
-    });
-  }
-
-  return { allCells, dataCells, rows };
-}
-
-/** Self-contained for page.evaluate (must not call other module exports). */
+/** Self-contained for page.evaluate. */
 function resolveWooriCertCellInBrowser({ index = 1, expiry = '', name = '', month = 0 } = {}) {
-  const { rows } = parseWooriCertRowsInBrowser();
+  const DATA_COLS = 4;
 
+  function parseRows() {
+    const allCells = Array.from(document.querySelectorAll('.xwup-tableview-cell'));
+    const dataCells = [];
+    for (let i = 0; i < allCells.length; i++) {
+      const el = allCells[i];
+      const text = el.innerText.trim().replace(/\s+/g, ' ');
+      if (!text || text === '선택 정상 인증서') continue;
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      dataCells.push({ text, globalIndex: i });
+    }
+    const rows = [];
+    for (let i = 0; i < dataCells.length; i += DATA_COLS) {
+      const chunk = dataCells.slice(i, i + DATA_COLS);
+      if (chunk.length < DATA_COLS) break;
+      const texts = chunk.map((c) => c.text);
+      if (!/\d{4}/.test(texts[2])) continue;
+      rows.push({
+        texts,
+        nameText: texts[1],
+        expiryText: texts[2],
+        typeText: texts[0],
+        expiryIndex: chunk[2].globalIndex,
+      });
+    }
+    return rows;
+  }
+
+  const rows = parseRows();
   if (rows.length === 0) {
     return { ok: false, reason: 'no cert rows in .xwup-tableview-cell' };
   }
@@ -104,9 +99,11 @@ function resolveWooriCertCellInBrowser({ index = 1, expiry = '', name = '', mont
   };
 }
 
-/** Self-contained for page.evaluate — dump rows with xpaths. */
+/** Self-contained for page.evaluate. */
 function dumpWooriCertRowsInBrowser() {
-  const xpathFor = (el) => {
+  const DATA_COLS = 4;
+
+  function xpathFor(el) {
     if (!el || el.nodeType !== 1) return '';
     const parts = [];
     let node = el;
@@ -125,19 +122,39 @@ function dumpWooriCertRowsInBrowser() {
       node = parent;
     }
     return parts.length ? `/${parts.join('/')}` : '';
-  };
+  }
 
-  const { allCells, dataCells, rows } = parseWooriCertRowsInBrowser();
+  const allCells = Array.from(document.querySelectorAll('.xwup-tableview-cell'));
+  const dataCells = [];
+  for (let i = 0; i < allCells.length; i++) {
+    const el = allCells[i];
+    const text = el.innerText.trim().replace(/\s+/g, ' ');
+    if (!text || text === '선택 정상 인증서') continue;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    dataCells.push({ el, text, globalIndex: i });
+  }
+
+  const parsedRows = [];
+  for (let i = 0; i < dataCells.length; i += DATA_COLS) {
+    const chunk = dataCells.slice(i, i + DATA_COLS);
+    if (chunk.length < DATA_COLS) break;
+    const texts = chunk.map((c) => c.text);
+    if (!/\d{4}/.test(texts[2])) continue;
+    parsedRows.push({ texts, chunk });
+  }
 
   return {
     allCellCount: allCells.length,
     visibleDataCellCount: dataCells.length,
-    rows: rows.map((row, index) => ({
+    rows: parsedRows.map((row, index) => ({
       index,
       texts: row.texts,
-      cellIndex: row.expiryIndex,
-      expiryXpath: xpathFor(row.expiryEl),
-      nameXpath: xpathFor(row.nameEl),
+      cellIndex: row.chunk[2].globalIndex,
+      expiryXpath: xpathFor(row.chunk[2].el),
+      nameXpath: xpathFor(row.chunk[1].el),
     })),
     staleTableRowCount: document.querySelectorAll('table tbody tr').length,
     hasCertTable: !!document.querySelector('#xwup_cert_table'),
@@ -146,7 +163,6 @@ function dumpWooriCertRowsInBrowser() {
 
 module.exports = {
   WOORI_CERT_DATA_COLS,
-  parseWooriCertRowsInBrowser,
   resolveWooriCertCellInBrowser,
   dumpWooriCertRowsInBrowser,
 };
