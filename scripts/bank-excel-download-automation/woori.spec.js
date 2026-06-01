@@ -232,53 +232,38 @@ function copyNativeMessagingHosts(profileDir) {
     console.log('[STEP 3] ✓ 공인인증서 clicked.');
     await page.waitForTimeout(3000);
 
-    const certExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
-    console.log(
-      `[STEP 4] Clicking certificate${certExpiry ? ` (${certExpiry})` : ' (CERT_EXPIRY unset — first table cell / XPath)'}...`
-    );
-    let step4Done = false;
-    if (certExpiry) {
-      try {
-        const locator = page.getByRole('div', { name: certExpiry });
-        await locator.hover({ force: true });
-        await locator.click({ timeout: 5000 });
-        step4Done = true;
-      } catch (error) {
-        console.log('⚠️ getByRole failed, trying #xwup_cert_table getByText...');
-        try {
-          const table = page.locator('#xwup_cert_table');
-          const byText = table.getByText(certExpiry, { exact: true });
-          await byText.first().hover({ force: true });
-          await byText.first().click({ timeout: 5000 });
-          step4Done = true;
-        } catch (e2) {
-          console.log('⚠️ getByText failed, trying fallbacks...');
-        }
+    // Cert row N (0-based): XPath rows are 1-indexed; col3 = expiry date (recorded action).
+    let certN = 0;
+    const certIndexEnv = process.env.CERT_INDEX || process.env.WOORI_CERT_INDEX;
+    if (certIndexEnv != null && certIndexEnv !== '') {
+      const parsed = parseInt(certIndexEnv, 10);
+      if (!Number.isNaN(parsed) && parsed >= 1) {
+        certN = parsed - 1;
+      }
+    } else {
+      const certExpiry = process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '';
+      if (certExpiry) {
+        certN = await page.evaluate((expiry) => {
+          const rows = document.querySelectorAll(
+            '#xwup_cert_table tbody tr, table tbody tr'
+          );
+          for (let i = 0; i < rows.length; i++) {
+            const td3 = rows[i].querySelector('td:nth-child(3)');
+            const text = td3?.textContent || '';
+            if (text.includes(expiry) || text.includes(expiry.replace(/-/g, '.'))) {
+              return i;
+            }
+          }
+          return 0;
+        }, certExpiry);
       }
     }
-    if (!step4Done) {
-      try {
-        const scoped = page.locator('#xwup_cert_table .xwup-tableview-cell');
-        if ((await scoped.count()) > 0) {
-          await scoped.first().hover({ force: true });
-          await scoped.first().click({ timeout: 5000 });
-        } else {
-          throw new Error('no scoped cells');
-        }
-      } catch (error) {
-        console.log('⚠️ Scoped cell failed, trying CSS selector...');
-        try {
-          const fallbackLocator = page.locator('.xwup-tableview-cell').first();
-          await fallbackLocator.hover({ force: true });
-          await fallbackLocator.click({ timeout: 5000 });
-        } catch (error2) {
-          console.log('⚠️ CSS selector also failed, trying XPath...');
-          const xpathLocator = page.locator('xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[1]/td[3]/div');
-          await xpathLocator.hover({ force: true });
-          await xpathLocator.click();
-        }
-      }
-    }
+    console.log(`[STEP 4] Clicking certificate row ${certN + 1} (expiry column)...`);
+    await page
+      .locator(
+        `xpath=/html/body/div[1]/div/div[2]/div[3]/table/tbody/tr[${certN + 1}]/td[3]/div`
+      )
+      .click({ timeout: 5000 });
     console.log('[STEP 4] ✓ Certificate selected.');
     await page.waitForTimeout(2000);
 
