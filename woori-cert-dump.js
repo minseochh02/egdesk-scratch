@@ -9,8 +9,8 @@
  * woori-cert-debug/woori-cert-<timestamp>-*.html
  *
  * Usage (from egdesk-scratch/):
- *   node woori-cert-dump.js              # click cert expiring in November (month 11)
- *   node woori-cert-dump.js --month 9    # click September instead
+ *   node woori-cert-dump.js              # click cert expiring in September (month 9) by default
+ *   node woori-cert-dump.js --month 8    # August (2026-08-15)
  *   CERT_EXPIRY=2026-11-15 node woori-cert-dump.js
  */
 
@@ -27,7 +27,8 @@ const {
 const DEBUG_DIR = path.join(__dirname, 'woori-cert-debug');
 
 function parseArgs(argv) {
-  let month = parseInt(process.env.WOORI_CERT_MONTH || '11', 10);
+  // Default month 9: debug dumps show certs at 2026-08-15 and 2026-09-28 (no November cert).
+  let month = parseInt(process.env.WOORI_CERT_MONTH || '9', 10);
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--month' && argv[i + 1]) {
       month = parseInt(argv[i + 1], 10);
@@ -35,7 +36,7 @@ function parseArgs(argv) {
     }
   }
   return {
-    month: Number.isNaN(month) ? 11 : month,
+    month: Number.isNaN(month) ? 9 : month,
     expiry: process.env.CERT_EXPIRY || process.env.WOORI_CERT_EXPIRY || '',
   };
 }
@@ -244,7 +245,7 @@ async function clickCertCell(page, target) {
 
     const resolveArgs = expiry ? { expiry } : { month };
     console.log(
-      `\n[5] Clicking cert${expiry ? ` expiry=${expiry}` : ` with November expiry (month=${month})`}...`
+      `\n[5] Clicking cert${expiry ? ` expiry=${expiry}` : ` with expiry month=${month}`}...`
     );
     const target = await page.evaluate(resolveWooriCertCellInBrowser, resolveArgs);
     if (!target?.ok) {
